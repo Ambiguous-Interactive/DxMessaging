@@ -14,42 +14,22 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Tests;
 [TestFixture]
 internal sealed class GeneratedStructInitializerCompatibilityTests
 {
-    private sealed record Shape(
-        bool Properties,
-        bool FirstInitializer,
-        bool SecondInitializer,
-        bool UserConstructor
-    );
+    private sealed record Shape(bool Properties, bool FirstInitializer, bool SecondInitializer, bool UserConstructor);
 
     [TestCaseSource(nameof(Cases))]
-    public void GeneratedConstructorsPreserveInitializersAndConstructorEffects(
-        string target,
-        string shape,
-        int language
-    )
+    public void GeneratedConstructorsPreserveInitializersAndConstructorEffects(string target, string shape, int language)
     {
         Shape item = GetShape(shape);
         string context = $"target={target}, shape={shape}, language={language}";
-        AssertCallerExecutes(
-            CreateCompilation(CreateSource(target, item, manual: true), language),
-            item,
-            "Handwritten oracle: " + context
-        );
+        AssertCallerExecutes(CreateCompilation(CreateSource(target, item, manual: true), language), item, "Handwritten oracle: " + context);
         CSharpParseOptions options = ParseOptions(language);
-        GeneratorDriver driver = CSharpGeneratorDriver.Create(
-            new ISourceGenerator[] { new DxAutoConstructorGenerator() },
-            parseOptions: options
-        );
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(new ISourceGenerator[] { new DxAutoConstructorGenerator() }, parseOptions: options);
         driver = driver.RunGeneratorsAndUpdateCompilation(
             CreateCompilation(CreateSource(target, item, manual: false), language),
             out Compilation generated,
             out ImmutableArray<Diagnostic> diagnostics
         );
-        Assert.That(
-            driver.GetRunResult().Results.Select(result => result.Exception),
-            Has.All.Null,
-            context
-        );
+        Assert.That(driver.GetRunResult().Results.Select(result => result.Exception), Has.All.Null, context);
         Assert.That(driver.GetRunResult().GeneratedTrees, Has.Length.EqualTo(1), context);
         Assert.That(diagnostics, Is.Empty, context + "\n" + string.Join("\n", diagnostics));
         AssertCallerExecutes(generated, item, "Generated caller: " + context);
@@ -75,9 +55,7 @@ internal sealed class GeneratedStructInitializerCompatibilityTests
             {
                 foreach (int language in new[] { 10, 11 })
                 {
-                    yield return new TestCaseData(target, shape, language).SetName(
-                        $"GeneratedConstructorsPreserveInitializersAndConstructorEffects({target},{shape},{language})"
-                    );
+                    yield return new TestCaseData(target, shape, language).SetName($"GeneratedConstructorsPreserveInitializersAndConstructorEffects({target},{shape},{language})");
                 }
             }
         }
@@ -94,33 +72,22 @@ internal sealed class GeneratedStructInitializerCompatibilityTests
             "PropertiesAllInitialized" => new(true, true, true, false),
             "PropertiesMixedInitialized" => new(true, true, false, false),
             "PropertiesMixedUserConstructor" => new(true, true, false, true),
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(name),
-                name,
-                "Unknown initialization shape"
-            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(name), name, "Unknown initialization shape"),
         };
 
     private static string CreateSource(string target, Shape shape, bool manual)
     {
         string first = shape.Properties ? "First" : "_first";
         string second = shape.Properties ? "Second" : "_second";
-        string declaration =
-            target == "readonly struct" ? "readonly partial struct" : "partial " + target;
+        string declaration = target == "readonly struct" ? "readonly partial struct" : "partial " + target;
         string firstInitializer = shape.FirstInitializer ? " = Probe.Initialize(17);" : "";
         string secondInitializer = shape.SecondInitializer ? " = Probe.Initialize(23);" : "";
         string members = shape.Properties
             ? $"public int First {{ get; }}{firstInitializer} public int Second {{ get; }}{secondInitializer}"
             : $"private readonly int _first{(shape.FirstInitializer ? firstInitializer : ";")} private readonly int _second{(shape.SecondInitializer ? secondInitializer : ";")} public int First => _first; public int Second => _second;";
-        string assignments =
-            (shape.FirstInitializer ? "" : $"{first} = 0;")
-            + (shape.SecondInitializer ? "" : $"{second} = 0;");
-        string constructor = manual
-            ? $"public Packet(int Value) {{ this.Value = Value; {assignments} }}"
-            : "";
-        string userConstructor = shape.UserConstructor
-            ? $"public Packet() {{ Probe.DefaultCalls++; Value = -2; {first} = 101; {second} = 103; }}"
-            : "";
+        string assignments = (shape.FirstInitializer ? "" : $"{first} = 0;") + (shape.SecondInitializer ? "" : $"{second} = 0;");
+        string constructor = manual ? $"public Packet(int Value) {{ this.Value = Value; {assignments} }}" : "";
+        string userConstructor = shape.UserConstructor ? $"public Packet() {{ Probe.DefaultCalls++; Value = -2; {first} = 101; {second} = 103; }}" : "";
         return $$"""
             using DxMessaging.Core.Attributes;
             {{(manual ? "" : "[DxAutoConstructor]")}}
@@ -149,8 +116,7 @@ internal sealed class GeneratedStructInitializerCompatibilityTests
             """;
     }
 
-    private static CSharpParseOptions ParseOptions(int language) =>
-        new(language == 10 ? LanguageVersion.CSharp10 : LanguageVersion.CSharp11);
+    private static CSharpParseOptions ParseOptions(int language) => new(language == 10 ? LanguageVersion.CSharp10 : LanguageVersion.CSharp11);
 
     private static CSharpCompilation CreateCompilation(string source, int language)
     {
@@ -162,13 +128,7 @@ internal sealed class GeneratedStructInitializerCompatibilityTests
         Assert.That(root, Is.Not.Null, "Find the repository containing the shipped attributes.");
         CSharpParseOptions options = ParseOptions(language);
         List<SyntaxTree> trees = new();
-        foreach (
-            string name in new[]
-            {
-                "DxAutoConstructorAttribute.cs",
-                "DxOptionalParameterAttribute.cs",
-            }
-        )
+        foreach (string name in new[] { "DxAutoConstructorAttribute.cs", "DxOptionalParameterAttribute.cs" })
         {
             string path = Path.Combine(root!.FullName, "Runtime", "Attributes", name);
             trees.Add(CSharpSyntaxTree.ParseText(File.ReadAllText(path), options, path));
@@ -178,10 +138,7 @@ internal sealed class GeneratedStructInitializerCompatibilityTests
             "StructInitializerCompatibility",
             trees,
             GeneratorTestUtilities.CompilationReferences,
-            new CSharpCompilationOptions(
-                OutputKind.DynamicallyLinkedLibrary,
-                generalDiagnosticOption: ReportDiagnostic.Error
-            )
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, generalDiagnosticOption: ReportDiagnostic.Error)
         );
     }
 
@@ -189,11 +146,7 @@ internal sealed class GeneratedStructInitializerCompatibilityTests
     {
         using MemoryStream image = new();
         Microsoft.CodeAnalysis.Emit.EmitResult emitted = compilation.Emit(image);
-        Assert.That(
-            emitted.Success,
-            Is.True,
-            context + "\n" + string.Join("\n", emitted.Diagnostics)
-        );
+        Assert.That(emitted.Success, Is.True, context + "\n" + string.Join("\n", emitted.Diagnostics));
         image.Position = 0;
         AssemblyLoadContext load = new("StructInitializerCompatibility", isCollectible: true);
         try
@@ -204,17 +157,9 @@ internal sealed class GeneratedStructInitializerCompatibilityTests
             Assert.That(
                 read!.Invoke(null, null),
                 Is.EqualTo(
-                    new[]
-                    {
-                        42,
-                        shape.FirstInitializer ? 17 : 0,
-                        shape.SecondInitializer ? 23 : 0,
-                        (shape.FirstInitializer ? 1 : 0) + (shape.SecondInitializer ? 1 : 0),
-                        0,
-                    }
+                    new[] { 42, shape.FirstInitializer ? 17 : 0, shape.SecondInitializer ? 23 : 0, (shape.FirstInitializer ? 1 : 0) + (shape.SecondInitializer ? 1 : 0), 0 }
                 ),
-                context
-                    + ": retain initialized/default values, initializer counts and zero unintended constructor calls"
+                context + ": retain initialized/default values, initializer counts and zero unintended constructor calls"
             );
         }
         finally

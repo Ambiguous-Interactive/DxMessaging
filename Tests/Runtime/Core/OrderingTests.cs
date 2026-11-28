@@ -15,10 +15,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void UntargetedMixedFastThenActions()
         {
-            GameObject go = new(
-                nameof(UntargetedMixedFastThenActions),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(UntargetedMixedFastThenActions), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
@@ -34,10 +31,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void PipelineOrderingUntargeted()
         {
-            GameObject go = new(
-                nameof(PipelineOrderingUntargeted),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(PipelineOrderingUntargeted), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
@@ -69,27 +63,18 @@ namespace DxMessaging.Tests.Runtime.Core
             _ = token.RegisterUntargeted((in SimpleUntargetedMessage _) => stages.Add("H"));
 
             // Post-processor
-            _ = token.RegisterUntargetedPostProcessor(
-                (in SimpleUntargetedMessage _) => stages.Add("P")
-            );
+            _ = token.RegisterUntargetedPostProcessor((in SimpleUntargetedMessage _) => stages.Add("P"));
 
             SimpleUntargetedMessage msg = new();
             msg.EmitUntargeted();
 
-            Assert.AreEqual(
-                new[] { "I0", "I1", "G", "H", "P" },
-                stages.ToArray(),
-                "Untargeted pipeline must be Interceptors -> Global -> Handlers -> Post-Processors."
-            );
+            Assert.AreEqual(new[] { "I0", "I1", "G", "H", "P" }, stages.ToArray(), "Untargeted pipeline must be Interceptors -> Global -> Handlers -> Post-Processors.");
         }
 
         [Test]
         public void PipelineOrderingTargetedGameObject()
         {
-            GameObject go = new(
-                nameof(PipelineOrderingTargetedGameObject),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(PipelineOrderingTargetedGameObject), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
@@ -116,29 +101,18 @@ namespace DxMessaging.Tests.Runtime.Core
 
             _ = token.RegisterGlobalAcceptAll(_ => { }, (_, _) => stages.Add("G"), (_, _) => { });
 
-            _ = token.RegisterGameObjectTargeted(go, (in SimpleTargetedMessage _) =>
-                stages.Add("H")
-            );
-            _ = token.RegisterGameObjectTargetedPostProcessor(go, (in SimpleTargetedMessage _) =>
-                stages.Add("P")
-            );
+            _ = token.RegisterGameObjectTargeted(go, (in SimpleTargetedMessage _) => stages.Add("H"));
+            _ = token.RegisterGameObjectTargetedPostProcessor(go, (in SimpleTargetedMessage _) => stages.Add("P"));
 
             SimpleTargetedMessage msg = new();
             msg.EmitTargeted(target);
-            Assert.AreEqual(
-                new[] { "I0", "I1", "G", "H", "P" },
-                stages.ToArray(),
-                "Targeted pipeline must be Interceptors -> Global -> Handlers -> Post-Processors."
-            );
+            Assert.AreEqual(new[] { "I0", "I1", "G", "H", "P" }, stages.ToArray(), "Targeted pipeline must be Interceptors -> Global -> Handlers -> Post-Processors.");
         }
 
         [Test]
         public void PipelineOrderingBroadcastGameObject()
         {
-            GameObject go = new(
-                nameof(PipelineOrderingBroadcastGameObject),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(PipelineOrderingBroadcastGameObject), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
@@ -164,239 +138,126 @@ namespace DxMessaging.Tests.Runtime.Core
 
             _ = token.RegisterGlobalAcceptAll(_ => { }, (_, _) => { }, (_, _) => stages.Add("G"));
 
-            _ = token.RegisterGameObjectBroadcast(go, (in SimpleBroadcastMessage _) =>
-                stages.Add("H")
-            );
-            _ = token.RegisterGameObjectBroadcastPostProcessor(go, (in SimpleBroadcastMessage _) =>
-                stages.Add("P")
-            );
+            _ = token.RegisterGameObjectBroadcast(go, (in SimpleBroadcastMessage _) => stages.Add("H"));
+            _ = token.RegisterGameObjectBroadcastPostProcessor(go, (in SimpleBroadcastMessage _) => stages.Add("P"));
 
             SimpleBroadcastMessage msg = new();
             msg.EmitGameObjectBroadcast(go);
-            Assert.AreEqual(
-                new[] { "I0", "I1", "G", "H", "P" },
-                stages.ToArray(),
-                "Broadcast pipeline must be Interceptors -> Global -> Handlers -> Post-Processors."
-            );
+            Assert.AreEqual(new[] { "I0", "I1", "G", "H", "P" }, stages.ToArray(), "Broadcast pipeline must be Interceptors -> Global -> Handlers -> Post-Processors.");
         }
 
         [Test]
         public void PostProcessorTargetedSamePriorityInRegistrationOrder()
         {
-            GameObject go = new(
-                nameof(PostProcessorTargetedSamePriorityInRegistrationOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(PostProcessorTargetedSamePriorityInRegistrationOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
 
             List<int> order = new();
-            _ = token.RegisterGameObjectTargetedPostProcessor(
-                go,
-                (in SimpleTargetedMessage _) => order.Add(1),
-                0
-            );
-            _ = token.RegisterGameObjectTargetedPostProcessor(
-                go,
-                (in SimpleTargetedMessage _) => order.Add(2),
-                0
-            );
-            _ = token.RegisterGameObjectTargetedPostProcessor(
-                go,
-                (in SimpleTargetedMessage _) => order.Add(3),
-                0
-            );
+            _ = token.RegisterGameObjectTargetedPostProcessor(go, (in SimpleTargetedMessage _) => order.Add(1), 0);
+            _ = token.RegisterGameObjectTargetedPostProcessor(go, (in SimpleTargetedMessage _) => order.Add(2), 0);
+            _ = token.RegisterGameObjectTargetedPostProcessor(go, (in SimpleTargetedMessage _) => order.Add(3), 0);
 
             SimpleTargetedMessage msg = new();
             msg.EmitGameObjectTargeted(go);
-            Assert.AreEqual(
-                new[] { 1, 2, 3 },
-                order.ToArray(),
-                "Targeted post-processors at same priority should run by registration order."
-            );
+            Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray(), "Targeted post-processors at same priority should run by registration order.");
         }
 
         [Test]
         public void PostProcessorBroadcastSamePriorityInRegistrationOrder()
         {
-            GameObject go = new(
-                nameof(PostProcessorBroadcastSamePriorityInRegistrationOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(PostProcessorBroadcastSamePriorityInRegistrationOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
 
             List<int> order = new();
-            _ = token.RegisterGameObjectBroadcastPostProcessor(
-                go,
-                (in SimpleBroadcastMessage _) => order.Add(1),
-                0
-            );
-            _ = token.RegisterGameObjectBroadcastPostProcessor(
-                go,
-                (in SimpleBroadcastMessage _) => order.Add(2),
-                0
-            );
-            _ = token.RegisterGameObjectBroadcastPostProcessor(
-                go,
-                (in SimpleBroadcastMessage _) => order.Add(3),
-                0
-            );
+            _ = token.RegisterGameObjectBroadcastPostProcessor(go, (in SimpleBroadcastMessage _) => order.Add(1), 0);
+            _ = token.RegisterGameObjectBroadcastPostProcessor(go, (in SimpleBroadcastMessage _) => order.Add(2), 0);
+            _ = token.RegisterGameObjectBroadcastPostProcessor(go, (in SimpleBroadcastMessage _) => order.Add(3), 0);
 
             SimpleBroadcastMessage msg = new();
             msg.EmitGameObjectBroadcast(go);
-            Assert.AreEqual(
-                new[] { 1, 2, 3 },
-                order.ToArray(),
-                "Broadcast post-processors at same priority should run by registration order."
-            );
+            Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray(), "Broadcast post-processors at same priority should run by registration order.");
         }
 
         [Test]
         public void TargetedWithoutTargetingHandlersSamePriorityInRegistrationOrder()
         {
-            GameObject go = new(
-                nameof(TargetedWithoutTargetingHandlersSamePriorityInRegistrationOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(TargetedWithoutTargetingHandlersSamePriorityInRegistrationOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
 
             List<int> order = new();
-            _ = token.RegisterTargetedWithoutTargeting(
-                (InstanceId _, SimpleTargetedMessage _) => order.Add(1),
-                0
-            );
-            _ = token.RegisterTargetedWithoutTargeting(
-                (InstanceId _, SimpleTargetedMessage _) => order.Add(2),
-                0
-            );
-            _ = token.RegisterTargetedWithoutTargeting(
-                (InstanceId _, SimpleTargetedMessage _) => order.Add(3),
-                0
-            );
+            _ = token.RegisterTargetedWithoutTargeting((InstanceId _, SimpleTargetedMessage _) => order.Add(1), 0);
+            _ = token.RegisterTargetedWithoutTargeting((InstanceId _, SimpleTargetedMessage _) => order.Add(2), 0);
+            _ = token.RegisterTargetedWithoutTargeting((InstanceId _, SimpleTargetedMessage _) => order.Add(3), 0);
 
             SimpleTargetedMessage msg = new();
             msg.EmitGameObjectTargeted(go);
-            Assert.AreEqual(
-                new[] { 1, 2, 3 },
-                order.ToArray(),
-                "TargetedWithoutTargeting handlers at same priority should run by registration order."
-            );
+            Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray(), "TargetedWithoutTargeting handlers at same priority should run by registration order.");
         }
 
         [Test]
         public void TargetedWithoutTargetingPostProcessorsSamePriorityInRegistrationOrder()
         {
-            GameObject go = new(
-                nameof(TargetedWithoutTargetingPostProcessorsSamePriorityInRegistrationOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(TargetedWithoutTargetingPostProcessorsSamePriorityInRegistrationOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
 
             List<int> order = new();
-            _ = token.RegisterTargetedWithoutTargetingPostProcessor(
-                (InstanceId _, SimpleTargetedMessage _) => order.Add(1),
-                0
-            );
-            _ = token.RegisterTargetedWithoutTargetingPostProcessor(
-                (InstanceId _, SimpleTargetedMessage _) => order.Add(2),
-                0
-            );
-            _ = token.RegisterTargetedWithoutTargetingPostProcessor(
-                (InstanceId _, SimpleTargetedMessage _) => order.Add(3),
-                0
-            );
+            _ = token.RegisterTargetedWithoutTargetingPostProcessor((InstanceId _, SimpleTargetedMessage _) => order.Add(1), 0);
+            _ = token.RegisterTargetedWithoutTargetingPostProcessor((InstanceId _, SimpleTargetedMessage _) => order.Add(2), 0);
+            _ = token.RegisterTargetedWithoutTargetingPostProcessor((InstanceId _, SimpleTargetedMessage _) => order.Add(3), 0);
 
             SimpleTargetedMessage msg = new();
             msg.EmitGameObjectTargeted(go);
-            Assert.AreEqual(
-                new[] { 1, 2, 3 },
-                order.ToArray(),
-                "TargetedWithoutTargeting post-processors at same priority should run by registration order."
-            );
+            Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray(), "TargetedWithoutTargeting post-processors at same priority should run by registration order.");
         }
 
         [Test]
         public void BroadcastWithoutSourceHandlersSamePriorityInRegistrationOrder()
         {
-            GameObject go = new(
-                nameof(BroadcastWithoutSourceHandlersSamePriorityInRegistrationOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(BroadcastWithoutSourceHandlersSamePriorityInRegistrationOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
 
             List<int> order = new();
-            _ = token.RegisterBroadcastWithoutSource(
-                (InstanceId _, SimpleBroadcastMessage _) => order.Add(1),
-                0
-            );
-            _ = token.RegisterBroadcastWithoutSource(
-                (InstanceId _, SimpleBroadcastMessage _) => order.Add(2),
-                0
-            );
-            _ = token.RegisterBroadcastWithoutSource(
-                (InstanceId _, SimpleBroadcastMessage _) => order.Add(3),
-                0
-            );
+            _ = token.RegisterBroadcastWithoutSource((InstanceId _, SimpleBroadcastMessage _) => order.Add(1), 0);
+            _ = token.RegisterBroadcastWithoutSource((InstanceId _, SimpleBroadcastMessage _) => order.Add(2), 0);
+            _ = token.RegisterBroadcastWithoutSource((InstanceId _, SimpleBroadcastMessage _) => order.Add(3), 0);
 
             SimpleBroadcastMessage msg = new();
             msg.EmitGameObjectBroadcast(go);
-            Assert.AreEqual(
-                new[] { 1, 2, 3 },
-                order.ToArray(),
-                "BroadcastWithoutSource handlers at same priority should run by registration order."
-            );
+            Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray(), "BroadcastWithoutSource handlers at same priority should run by registration order.");
         }
 
         [Test]
         public void BroadcastWithoutSourcePostProcessorsSamePriorityInRegistrationOrder()
         {
-            GameObject go = new(
-                nameof(BroadcastWithoutSourcePostProcessorsSamePriorityInRegistrationOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(BroadcastWithoutSourcePostProcessorsSamePriorityInRegistrationOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
 
             List<int> order = new();
-            _ = token.RegisterBroadcastWithoutSourcePostProcessor(
-                (InstanceId _, SimpleBroadcastMessage _) => order.Add(1),
-                0
-            );
-            _ = token.RegisterBroadcastWithoutSourcePostProcessor(
-                (InstanceId _, SimpleBroadcastMessage _) => order.Add(2),
-                0
-            );
-            _ = token.RegisterBroadcastWithoutSourcePostProcessor(
-                (InstanceId _, SimpleBroadcastMessage _) => order.Add(3),
-                0
-            );
+            _ = token.RegisterBroadcastWithoutSourcePostProcessor((InstanceId _, SimpleBroadcastMessage _) => order.Add(1), 0);
+            _ = token.RegisterBroadcastWithoutSourcePostProcessor((InstanceId _, SimpleBroadcastMessage _) => order.Add(2), 0);
+            _ = token.RegisterBroadcastWithoutSourcePostProcessor((InstanceId _, SimpleBroadcastMessage _) => order.Add(3), 0);
 
             SimpleBroadcastMessage msg = new();
             msg.EmitGameObjectBroadcast(go);
-            Assert.AreEqual(
-                new[] { 1, 2, 3 },
-                order.ToArray(),
-                "BroadcastWithoutSource post-processors at same priority should run by registration order."
-            );
+            Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray(), "BroadcastWithoutSource post-processors at same priority should run by registration order.");
         }
 
         [Test]
         public void GlobalAcceptAllUntargetedFastBeforeActions()
         {
-            GameObject go = new(
-                nameof(GlobalAcceptAllUntargetedFastBeforeActions),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(GlobalAcceptAllUntargetedFastBeforeActions), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
@@ -412,20 +273,13 @@ namespace DxMessaging.Tests.Runtime.Core
 
             SimpleUntargetedMessage msg = new();
             msg.EmitUntargeted();
-            Assert.AreEqual(
-                new[] { "F", "A" },
-                order.ToArray(),
-                "GlobalAcceptAll (Untargeted) should run fast handlers before action handlers at the same logical step."
-            );
+            Assert.AreEqual(new[] { "F", "A" }, order.ToArray(), "GlobalAcceptAll (Untargeted) should run fast handlers before action handlers at the same logical step.");
         }
 
         [Test]
         public void GlobalAcceptAllTargetedFastBeforeActions()
         {
-            GameObject go = new(
-                nameof(GlobalAcceptAllTargetedFastBeforeActions),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(GlobalAcceptAllTargetedFastBeforeActions), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
@@ -440,20 +294,13 @@ namespace DxMessaging.Tests.Runtime.Core
 
             SimpleTargetedMessage msg = new();
             msg.EmitGameObjectTargeted(go);
-            Assert.AreEqual(
-                new[] { "F", "A" },
-                order.ToArray(),
-                "GlobalAcceptAll (Targeted) should run fast handlers before action handlers at the same logical step."
-            );
+            Assert.AreEqual(new[] { "F", "A" }, order.ToArray(), "GlobalAcceptAll (Targeted) should run fast handlers before action handlers at the same logical step.");
         }
 
         [Test]
         public void GlobalAcceptAllBroadcastFastBeforeActions()
         {
-            GameObject go = new(
-                nameof(GlobalAcceptAllBroadcastFastBeforeActions),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(GlobalAcceptAllBroadcastFastBeforeActions), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
@@ -468,34 +315,21 @@ namespace DxMessaging.Tests.Runtime.Core
 
             SimpleBroadcastMessage msg = new();
             msg.EmitGameObjectBroadcast(go);
-            Assert.AreEqual(
-                new[] { "F", "A" },
-                order.ToArray(),
-                "GlobalAcceptAll (Broadcast) should run fast handlers before action handlers at the same logical step."
-            );
+            Assert.AreEqual(new[] { "F", "A" }, order.ToArray(), "GlobalAcceptAll (Broadcast) should run fast handlers before action handlers at the same logical step.");
         }
 
         [Test]
         public void TargetedWithoutTargetingMixedFastBeforeActions()
         {
-            GameObject go = new(
-                nameof(TargetedWithoutTargetingMixedFastBeforeActions),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(TargetedWithoutTargetingMixedFastBeforeActions), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
 
             List<string> order = new();
             // Register action then fast; fast should still be invoked first within the group
-            _ = token.RegisterTargetedWithoutTargeting(
-                (InstanceId _, SimpleTargetedMessage _) => order.Add("A"),
-                0
-            );
-            _ = token.RegisterTargetedWithoutTargeting(
-                (in InstanceId _, in SimpleTargetedMessage _) => order.Add("F"),
-                0
-            );
+            _ = token.RegisterTargetedWithoutTargeting((InstanceId _, SimpleTargetedMessage _) => order.Add("A"), 0);
+            _ = token.RegisterTargetedWithoutTargeting((in InstanceId _, in SimpleTargetedMessage _) => order.Add("F"), 0);
 
             SimpleTargetedMessage msg = new();
             msg.EmitGameObjectTargeted(go);
@@ -505,23 +339,14 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void BroadcastWithoutSourceMixedFastBeforeActions()
         {
-            GameObject go = new(
-                nameof(BroadcastWithoutSourceMixedFastBeforeActions),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(BroadcastWithoutSourceMixedFastBeforeActions), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
 
             List<string> order = new();
-            _ = token.RegisterBroadcastWithoutSource(
-                (InstanceId _, SimpleBroadcastMessage _) => order.Add("A"),
-                0
-            );
-            _ = token.RegisterBroadcastWithoutSource(
-                (in InstanceId _, in SimpleBroadcastMessage _) => order.Add("F"),
-                0
-            );
+            _ = token.RegisterBroadcastWithoutSource((InstanceId _, SimpleBroadcastMessage _) => order.Add("A"), 0);
+            _ = token.RegisterBroadcastWithoutSource((in InstanceId _, in SimpleBroadcastMessage _) => order.Add("F"), 0);
 
             SimpleBroadcastMessage msg = new();
             msg.EmitGameObjectBroadcast(go);
@@ -531,10 +356,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void PipelineOrderingTargetedWithWithoutTargetingHandlersAndPostProcessors()
         {
-            GameObject go = new(
-                nameof(PipelineOrderingTargetedWithWithoutTargetingHandlersAndPostProcessors),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(PipelineOrderingTargetedWithWithoutTargetingHandlersAndPostProcessors), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
@@ -550,18 +372,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 0
             );
             _ = token.RegisterGlobalAcceptAll(_ => { }, (_, _) => stages.Add("G"), (_, _) => { });
-            _ = token.RegisterGameObjectTargeted(go, (in SimpleTargetedMessage _) =>
-                stages.Add("Hspec")
-            );
-            _ = token.RegisterTargetedWithoutTargeting(
-                (InstanceId _, SimpleTargetedMessage _) => stages.Add("Hall")
-            );
-            _ = token.RegisterGameObjectTargetedPostProcessor(go, (in SimpleTargetedMessage _) =>
-                stages.Add("Pspec")
-            );
-            _ = token.RegisterTargetedWithoutTargetingPostProcessor(
-                (InstanceId _, SimpleTargetedMessage _) => stages.Add("Pall")
-            );
+            _ = token.RegisterGameObjectTargeted(go, (in SimpleTargetedMessage _) => stages.Add("Hspec"));
+            _ = token.RegisterTargetedWithoutTargeting((InstanceId _, SimpleTargetedMessage _) => stages.Add("Hall"));
+            _ = token.RegisterGameObjectTargetedPostProcessor(go, (in SimpleTargetedMessage _) => stages.Add("Pspec"));
+            _ = token.RegisterTargetedWithoutTargetingPostProcessor((InstanceId _, SimpleTargetedMessage _) => stages.Add("Pall"));
 
             SimpleTargetedMessage msg = new();
             msg.EmitGameObjectTargeted(go);
@@ -575,10 +389,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void PipelineOrderingBroadcastWithWithoutSourceHandlersAndPostProcessors()
         {
-            GameObject go = new(
-                nameof(PipelineOrderingBroadcastWithWithoutSourceHandlersAndPostProcessors),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(PipelineOrderingBroadcastWithWithoutSourceHandlersAndPostProcessors), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
@@ -593,18 +404,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 0
             );
             _ = token.RegisterGlobalAcceptAll(_ => { }, (_, _) => { }, (_, _) => stages.Add("G"));
-            _ = token.RegisterGameObjectBroadcast(go, (in SimpleBroadcastMessage _) =>
-                stages.Add("Hspec")
-            );
-            _ = token.RegisterBroadcastWithoutSource(
-                (InstanceId _, SimpleBroadcastMessage _) => stages.Add("Hall")
-            );
-            _ = token.RegisterGameObjectBroadcastPostProcessor(go, (in SimpleBroadcastMessage _) =>
-                stages.Add("Pspec")
-            );
-            _ = token.RegisterBroadcastWithoutSourcePostProcessor(
-                (InstanceId _, SimpleBroadcastMessage _) => stages.Add("Pall")
-            );
+            _ = token.RegisterGameObjectBroadcast(go, (in SimpleBroadcastMessage _) => stages.Add("Hspec"));
+            _ = token.RegisterBroadcastWithoutSource((InstanceId _, SimpleBroadcastMessage _) => stages.Add("Hall"));
+            _ = token.RegisterGameObjectBroadcastPostProcessor(go, (in SimpleBroadcastMessage _) => stages.Add("Pspec"));
+            _ = token.RegisterBroadcastWithoutSourcePostProcessor((InstanceId _, SimpleBroadcastMessage _) => stages.Add("Pall"));
 
             SimpleBroadcastMessage msg = new();
             msg.EmitGameObjectBroadcast(go);
@@ -618,10 +421,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void UntargetedSamePriorityActionsInRegistrationOrder()
         {
-            GameObject go = new(
-                nameof(UntargetedSamePriorityActionsInRegistrationOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(UntargetedSamePriorityActionsInRegistrationOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
@@ -633,20 +433,13 @@ namespace DxMessaging.Tests.Runtime.Core
 
             SimpleUntargetedMessage msg = new();
             msg.EmitUntargeted();
-            Assert.AreEqual(
-                new[] { 1, 2, 3 },
-                order.ToArray(),
-                "Untargeted action handlers at same priority should run by registration order."
-            );
+            Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray(), "Untargeted action handlers at same priority should run by registration order.");
         }
 
         [Test]
         public void UntargetedSamePriorityFastInRegistrationOrder()
         {
-            GameObject go = new(
-                nameof(UntargetedSamePriorityFastInRegistrationOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(UntargetedSamePriorityFastInRegistrationOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
@@ -658,20 +451,13 @@ namespace DxMessaging.Tests.Runtime.Core
 
             SimpleUntargetedMessage msg = new();
             msg.EmitUntargeted();
-            Assert.AreEqual(
-                new[] { 1, 2, 3 },
-                order.ToArray(),
-                "Untargeted fast handlers at same priority should run by registration order."
-            );
+            Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray(), "Untargeted fast handlers at same priority should run by registration order.");
         }
 
         [Test]
         public void UntargetedSamePriorityMixedFastBeforeActions()
         {
-            GameObject go = new(
-                nameof(UntargetedSamePriorityMixedFastBeforeActions),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(UntargetedSamePriorityMixedFastBeforeActions), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
@@ -693,10 +479,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void TargetedSamePriorityActionsGameObjectInRegistrationOrder()
         {
-            GameObject go = new(
-                nameof(TargetedSamePriorityActionsGameObjectInRegistrationOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(TargetedSamePriorityActionsGameObjectInRegistrationOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
@@ -708,37 +491,21 @@ namespace DxMessaging.Tests.Runtime.Core
 
             SimpleTargetedMessage msg = new();
             msg.EmitGameObjectTargeted(go);
-            Assert.AreEqual(
-                new[] { 1, 2, 3 },
-                order.ToArray(),
-                "Targeted action handlers at same priority should run by registration order."
-            );
+            Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray(), "Targeted action handlers at same priority should run by registration order.");
         }
 
         [Test]
         public void BroadcastWithoutSourcePostProcessorsFastOnlySamePriorityInRegistrationOrder()
         {
-            GameObject go = new(
-                nameof(BroadcastWithoutSourcePostProcessorsFastOnlySamePriorityInRegistrationOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(BroadcastWithoutSourcePostProcessorsFastOnlySamePriorityInRegistrationOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
 
             List<int> order = new();
-            _ = token.RegisterBroadcastWithoutSourcePostProcessor(
-                (in InstanceId _, in SimpleBroadcastMessage _) => order.Add(1),
-                0
-            );
-            _ = token.RegisterBroadcastWithoutSourcePostProcessor(
-                (in InstanceId _, in SimpleBroadcastMessage _) => order.Add(2),
-                0
-            );
-            _ = token.RegisterBroadcastWithoutSourcePostProcessor(
-                (in InstanceId _, in SimpleBroadcastMessage _) => order.Add(3),
-                0
-            );
+            _ = token.RegisterBroadcastWithoutSourcePostProcessor((in InstanceId _, in SimpleBroadcastMessage _) => order.Add(1), 0);
+            _ = token.RegisterBroadcastWithoutSourcePostProcessor((in InstanceId _, in SimpleBroadcastMessage _) => order.Add(2), 0);
+            _ = token.RegisterBroadcastWithoutSourcePostProcessor((in InstanceId _, in SimpleBroadcastMessage _) => order.Add(3), 0);
 
             SimpleBroadcastMessage msg = new();
             msg.EmitGameObjectBroadcast(go);
@@ -748,29 +515,15 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void TargetedWithoutTargetingPostProcessorsFastOnlySamePriorityInRegistrationOrder()
         {
-            GameObject go = new(
-                nameof(
-                    TargetedWithoutTargetingPostProcessorsFastOnlySamePriorityInRegistrationOrder
-                ),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(TargetedWithoutTargetingPostProcessorsFastOnlySamePriorityInRegistrationOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
 
             List<int> order = new();
-            _ = token.RegisterTargetedWithoutTargetingPostProcessor(
-                (in InstanceId _, in SimpleTargetedMessage _) => order.Add(1),
-                0
-            );
-            _ = token.RegisterTargetedWithoutTargetingPostProcessor(
-                (in InstanceId _, in SimpleTargetedMessage _) => order.Add(2),
-                0
-            );
-            _ = token.RegisterTargetedWithoutTargetingPostProcessor(
-                (in InstanceId _, in SimpleTargetedMessage _) => order.Add(3),
-                0
-            );
+            _ = token.RegisterTargetedWithoutTargetingPostProcessor((in InstanceId _, in SimpleTargetedMessage _) => order.Add(1), 0);
+            _ = token.RegisterTargetedWithoutTargetingPostProcessor((in InstanceId _, in SimpleTargetedMessage _) => order.Add(2), 0);
+            _ = token.RegisterTargetedWithoutTargetingPostProcessor((in InstanceId _, in SimpleTargetedMessage _) => order.Add(3), 0);
 
             SimpleTargetedMessage msg = new();
             msg.EmitGameObjectTargeted(go);
@@ -780,163 +533,85 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void TargetedSamePriorityFastGameObjectInRegistrationOrder()
         {
-            GameObject go = new(
-                nameof(TargetedSamePriorityFastGameObjectInRegistrationOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(TargetedSamePriorityFastGameObjectInRegistrationOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
 
             List<int> order = new();
-            _ = token.RegisterGameObjectTargeted(
-                go,
-                (in SimpleTargetedMessage _) => order.Add(1),
-                0
-            );
-            _ = token.RegisterGameObjectTargeted(
-                go,
-                (in SimpleTargetedMessage _) => order.Add(2),
-                0
-            );
-            _ = token.RegisterGameObjectTargeted(
-                go,
-                (in SimpleTargetedMessage _) => order.Add(3),
-                0
-            );
+            _ = token.RegisterGameObjectTargeted(go, (in SimpleTargetedMessage _) => order.Add(1), 0);
+            _ = token.RegisterGameObjectTargeted(go, (in SimpleTargetedMessage _) => order.Add(2), 0);
+            _ = token.RegisterGameObjectTargeted(go, (in SimpleTargetedMessage _) => order.Add(3), 0);
 
             SimpleTargetedMessage msg = new();
             msg.EmitGameObjectTargeted(go);
-            Assert.AreEqual(
-                new[] { 1, 2, 3 },
-                order.ToArray(),
-                "Targeted fast handlers at same priority should run by registration order."
-            );
+            Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray(), "Targeted fast handlers at same priority should run by registration order.");
         }
 
         [Test]
         public void BroadcastSamePriorityActionsGameObjectInRegistrationOrder()
         {
-            GameObject go = new(
-                nameof(BroadcastSamePriorityActionsGameObjectInRegistrationOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(BroadcastSamePriorityActionsGameObjectInRegistrationOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
 
             List<int> order = new();
-            _ = token.RegisterGameObjectBroadcast(
-                go,
-                (SimpleBroadcastMessage _) => order.Add(1),
-                0
-            );
-            _ = token.RegisterGameObjectBroadcast(
-                go,
-                (SimpleBroadcastMessage _) => order.Add(2),
-                0
-            );
-            _ = token.RegisterGameObjectBroadcast(
-                go,
-                (SimpleBroadcastMessage _) => order.Add(3),
-                0
-            );
+            _ = token.RegisterGameObjectBroadcast(go, (SimpleBroadcastMessage _) => order.Add(1), 0);
+            _ = token.RegisterGameObjectBroadcast(go, (SimpleBroadcastMessage _) => order.Add(2), 0);
+            _ = token.RegisterGameObjectBroadcast(go, (SimpleBroadcastMessage _) => order.Add(3), 0);
 
             SimpleBroadcastMessage msg = new();
             msg.EmitGameObjectBroadcast(go);
-            Assert.AreEqual(
-                new[] { 1, 2, 3 },
-                order.ToArray(),
-                "Broadcast action handlers at same priority should run by registration order."
-            );
+            Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray(), "Broadcast action handlers at same priority should run by registration order.");
         }
 
         [Test]
         public void BroadcastSamePriorityFastGameObjectInRegistrationOrder()
         {
-            GameObject go = new(
-                nameof(BroadcastSamePriorityFastGameObjectInRegistrationOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(BroadcastSamePriorityFastGameObjectInRegistrationOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
 
             List<int> order = new();
-            _ = token.RegisterGameObjectBroadcast(
-                go,
-                (in SimpleBroadcastMessage _) => order.Add(1),
-                0
-            );
-            _ = token.RegisterGameObjectBroadcast(
-                go,
-                (in SimpleBroadcastMessage _) => order.Add(2),
-                0
-            );
-            _ = token.RegisterGameObjectBroadcast(
-                go,
-                (in SimpleBroadcastMessage _) => order.Add(3),
-                0
-            );
+            _ = token.RegisterGameObjectBroadcast(go, (in SimpleBroadcastMessage _) => order.Add(1), 0);
+            _ = token.RegisterGameObjectBroadcast(go, (in SimpleBroadcastMessage _) => order.Add(2), 0);
+            _ = token.RegisterGameObjectBroadcast(go, (in SimpleBroadcastMessage _) => order.Add(3), 0);
 
             SimpleBroadcastMessage msg = new();
             msg.EmitGameObjectBroadcast(go);
-            Assert.AreEqual(
-                new[] { 1, 2, 3 },
-                order.ToArray(),
-                "Broadcast fast handlers at same priority should run by registration order."
-            );
+            Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray(), "Broadcast fast handlers at same priority should run by registration order.");
         }
 
         [Test]
         public void PostProcessorUntargetedSamePriorityInRegistrationOrder()
         {
-            GameObject go = new(
-                nameof(PostProcessorUntargetedSamePriorityInRegistrationOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(PostProcessorUntargetedSamePriorityInRegistrationOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
 
             List<int> order = new();
-            _ = token.RegisterUntargetedPostProcessor(
-                (in SimpleUntargetedMessage _) => order.Add(1),
-                0
-            );
-            _ = token.RegisterUntargetedPostProcessor(
-                (in SimpleUntargetedMessage _) => order.Add(2),
-                0
-            );
-            _ = token.RegisterUntargetedPostProcessor(
-                (in SimpleUntargetedMessage _) => order.Add(3),
-                0
-            );
+            _ = token.RegisterUntargetedPostProcessor((in SimpleUntargetedMessage _) => order.Add(1), 0);
+            _ = token.RegisterUntargetedPostProcessor((in SimpleUntargetedMessage _) => order.Add(2), 0);
+            _ = token.RegisterUntargetedPostProcessor((in SimpleUntargetedMessage _) => order.Add(3), 0);
 
             SimpleUntargetedMessage msg = new();
             msg.EmitUntargeted();
-            Assert.AreEqual(
-                new[] { 1, 2, 3 },
-                order.ToArray(),
-                "Untargeted post-processors at same priority should run by registration order."
-            );
+            Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray(), "Untargeted post-processors at same priority should run by registration order.");
         }
 
         [Test]
         public void DisposableRemovesRegistration()
         {
-            GameObject go = new(
-                nameof(DisposableRemovesRegistration),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(DisposableRemovesRegistration), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
 
             int count = 0;
-            MessageRegistrationHandle handle = token.RegisterUntargeted(
-                (in SimpleUntargetedMessage _) => ++count
-            );
+            MessageRegistrationHandle handle = token.RegisterUntargeted((in SimpleUntargetedMessage _) => ++count);
             using (token.AsDisposable(handle))
             {
                 SimpleUntargetedMessage msg = new();
@@ -952,30 +627,15 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void TargetedMixedFastBeforeActionsGameObject()
         {
-            GameObject go = new(
-                nameof(TargetedMixedFastBeforeActionsGameObject),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(TargetedMixedFastBeforeActionsGameObject), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
 
             List<string> order = new();
-            _ = token.RegisterGameObjectTargeted(
-                go,
-                (SimpleTargetedMessage _) => order.Add("A1"),
-                0
-            );
-            _ = token.RegisterGameObjectTargeted(
-                go,
-                (in SimpleTargetedMessage _) => order.Add("F1"),
-                0
-            );
-            _ = token.RegisterGameObjectTargeted(
-                go,
-                (SimpleTargetedMessage _) => order.Add("A2"),
-                0
-            );
+            _ = token.RegisterGameObjectTargeted(go, (SimpleTargetedMessage _) => order.Add("A1"), 0);
+            _ = token.RegisterGameObjectTargeted(go, (in SimpleTargetedMessage _) => order.Add("F1"), 0);
+            _ = token.RegisterGameObjectTargeted(go, (SimpleTargetedMessage _) => order.Add("A2"), 0);
 
             SimpleTargetedMessage msg = new();
             msg.EmitGameObjectTargeted(go);
@@ -985,30 +645,15 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void BroadcastMixedFastBeforeActionsGameObject()
         {
-            GameObject go = new(
-                nameof(BroadcastMixedFastBeforeActionsGameObject),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(BroadcastMixedFastBeforeActionsGameObject), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
 
             List<string> order = new();
-            _ = token.RegisterGameObjectBroadcast(
-                go,
-                (SimpleBroadcastMessage _) => order.Add("A1"),
-                0
-            );
-            _ = token.RegisterGameObjectBroadcast(
-                go,
-                (in SimpleBroadcastMessage _) => order.Add("F1"),
-                0
-            );
-            _ = token.RegisterGameObjectBroadcast(
-                go,
-                (SimpleBroadcastMessage _) => order.Add("A2"),
-                0
-            );
+            _ = token.RegisterGameObjectBroadcast(go, (SimpleBroadcastMessage _) => order.Add("A1"), 0);
+            _ = token.RegisterGameObjectBroadcast(go, (in SimpleBroadcastMessage _) => order.Add("F1"), 0);
+            _ = token.RegisterGameObjectBroadcast(go, (SimpleBroadcastMessage _) => order.Add("A2"), 0);
 
             SimpleBroadcastMessage msg = new();
             msg.EmitGameObjectBroadcast(go);
@@ -1018,10 +663,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void TargetedSamePriorityActionsComponentInRegistrationOrder()
         {
-            GameObject go = new(
-                nameof(TargetedSamePriorityActionsComponentInRegistrationOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(TargetedSamePriorityActionsComponentInRegistrationOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
@@ -1037,29 +679,14 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void TargetedSamePriorityFastComponentInRegistrationOrder()
         {
-            GameObject go = new(
-                nameof(TargetedSamePriorityFastComponentInRegistrationOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(TargetedSamePriorityFastComponentInRegistrationOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
             List<int> order = new();
-            _ = token.RegisterComponentTargeted(
-                comp,
-                (in SimpleTargetedMessage _) => order.Add(1),
-                0
-            );
-            _ = token.RegisterComponentTargeted(
-                comp,
-                (in SimpleTargetedMessage _) => order.Add(2),
-                0
-            );
-            _ = token.RegisterComponentTargeted(
-                comp,
-                (in SimpleTargetedMessage _) => order.Add(3),
-                0
-            );
+            _ = token.RegisterComponentTargeted(comp, (in SimpleTargetedMessage _) => order.Add(1), 0);
+            _ = token.RegisterComponentTargeted(comp, (in SimpleTargetedMessage _) => order.Add(2), 0);
+            _ = token.RegisterComponentTargeted(comp, (in SimpleTargetedMessage _) => order.Add(3), 0);
             SimpleTargetedMessage msg = new();
             msg.EmitComponentTargeted(comp);
             Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray());
@@ -1068,29 +695,14 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void TargetedMixedFastBeforeActionsComponent()
         {
-            GameObject go = new(
-                nameof(TargetedMixedFastBeforeActionsComponent),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(TargetedMixedFastBeforeActionsComponent), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
             List<string> order = new();
-            _ = token.RegisterComponentTargeted(
-                comp,
-                (SimpleTargetedMessage _) => order.Add("A1"),
-                0
-            );
-            _ = token.RegisterComponentTargeted(
-                comp,
-                (in SimpleTargetedMessage _) => order.Add("F1"),
-                0
-            );
-            _ = token.RegisterComponentTargeted(
-                comp,
-                (SimpleTargetedMessage _) => order.Add("A2"),
-                0
-            );
+            _ = token.RegisterComponentTargeted(comp, (SimpleTargetedMessage _) => order.Add("A1"), 0);
+            _ = token.RegisterComponentTargeted(comp, (in SimpleTargetedMessage _) => order.Add("F1"), 0);
+            _ = token.RegisterComponentTargeted(comp, (SimpleTargetedMessage _) => order.Add("A2"), 0);
             SimpleTargetedMessage msg = new();
             msg.EmitComponentTargeted(comp);
             Assert.AreEqual(new[] { "F1", "A1", "A2" }, order.ToArray());
@@ -1099,29 +711,14 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void BroadcastSamePriorityActionsComponentInRegistrationOrder()
         {
-            GameObject go = new(
-                nameof(BroadcastSamePriorityActionsComponentInRegistrationOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(BroadcastSamePriorityActionsComponentInRegistrationOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
             List<int> order = new();
-            _ = token.RegisterComponentBroadcast(
-                comp,
-                (SimpleBroadcastMessage _) => order.Add(1),
-                0
-            );
-            _ = token.RegisterComponentBroadcast(
-                comp,
-                (SimpleBroadcastMessage _) => order.Add(2),
-                0
-            );
-            _ = token.RegisterComponentBroadcast(
-                comp,
-                (SimpleBroadcastMessage _) => order.Add(3),
-                0
-            );
+            _ = token.RegisterComponentBroadcast(comp, (SimpleBroadcastMessage _) => order.Add(1), 0);
+            _ = token.RegisterComponentBroadcast(comp, (SimpleBroadcastMessage _) => order.Add(2), 0);
+            _ = token.RegisterComponentBroadcast(comp, (SimpleBroadcastMessage _) => order.Add(3), 0);
             SimpleBroadcastMessage msg = new();
             msg.EmitComponentBroadcast(comp);
             Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray());
@@ -1130,29 +727,14 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void BroadcastSamePriorityFastComponentInRegistrationOrder()
         {
-            GameObject go = new(
-                nameof(BroadcastSamePriorityFastComponentInRegistrationOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(BroadcastSamePriorityFastComponentInRegistrationOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
             List<int> order = new();
-            _ = token.RegisterComponentBroadcast(
-                comp,
-                (in SimpleBroadcastMessage _) => order.Add(1),
-                0
-            );
-            _ = token.RegisterComponentBroadcast(
-                comp,
-                (in SimpleBroadcastMessage _) => order.Add(2),
-                0
-            );
-            _ = token.RegisterComponentBroadcast(
-                comp,
-                (in SimpleBroadcastMessage _) => order.Add(3),
-                0
-            );
+            _ = token.RegisterComponentBroadcast(comp, (in SimpleBroadcastMessage _) => order.Add(1), 0);
+            _ = token.RegisterComponentBroadcast(comp, (in SimpleBroadcastMessage _) => order.Add(2), 0);
+            _ = token.RegisterComponentBroadcast(comp, (in SimpleBroadcastMessage _) => order.Add(3), 0);
             SimpleBroadcastMessage msg = new();
             msg.EmitComponentBroadcast(comp);
             Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray());
@@ -1161,29 +743,14 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void BroadcastMixedFastBeforeActionsComponent()
         {
-            GameObject go = new(
-                nameof(BroadcastMixedFastBeforeActionsComponent),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(BroadcastMixedFastBeforeActionsComponent), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
             List<string> order = new();
-            _ = token.RegisterComponentBroadcast(
-                comp,
-                (SimpleBroadcastMessage _) => order.Add("A1"),
-                0
-            );
-            _ = token.RegisterComponentBroadcast(
-                comp,
-                (in SimpleBroadcastMessage _) => order.Add("F1"),
-                0
-            );
-            _ = token.RegisterComponentBroadcast(
-                comp,
-                (SimpleBroadcastMessage _) => order.Add("A2"),
-                0
-            );
+            _ = token.RegisterComponentBroadcast(comp, (SimpleBroadcastMessage _) => order.Add("A1"), 0);
+            _ = token.RegisterComponentBroadcast(comp, (in SimpleBroadcastMessage _) => order.Add("F1"), 0);
+            _ = token.RegisterComponentBroadcast(comp, (SimpleBroadcastMessage _) => order.Add("A2"), 0);
             SimpleBroadcastMessage msg = new();
             msg.EmitComponentBroadcast(comp);
             Assert.AreEqual(new[] { "F1", "A1", "A2" }, order.ToArray());
@@ -1192,26 +759,14 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void TargetedWithoutTargetingHandlersSamePriorityComponentInRegistrationOrder()
         {
-            GameObject go = new(
-                nameof(TargetedWithoutTargetingHandlersSamePriorityComponentInRegistrationOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(TargetedWithoutTargetingHandlersSamePriorityComponentInRegistrationOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
             List<int> order = new();
-            _ = token.RegisterTargetedWithoutTargeting(
-                (InstanceId _, SimpleTargetedMessage _) => order.Add(1),
-                0
-            );
-            _ = token.RegisterTargetedWithoutTargeting(
-                (InstanceId _, SimpleTargetedMessage _) => order.Add(2),
-                0
-            );
-            _ = token.RegisterTargetedWithoutTargeting(
-                (InstanceId _, SimpleTargetedMessage _) => order.Add(3),
-                0
-            );
+            _ = token.RegisterTargetedWithoutTargeting((InstanceId _, SimpleTargetedMessage _) => order.Add(1), 0);
+            _ = token.RegisterTargetedWithoutTargeting((InstanceId _, SimpleTargetedMessage _) => order.Add(2), 0);
+            _ = token.RegisterTargetedWithoutTargeting((InstanceId _, SimpleTargetedMessage _) => order.Add(3), 0);
             SimpleTargetedMessage msg = new();
             msg.EmitComponentTargeted(comp);
             Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray());
@@ -1220,26 +775,14 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void TargetedWithoutTargetingMixedFastBeforeActionsComponent()
         {
-            GameObject go = new(
-                nameof(TargetedWithoutTargetingMixedFastBeforeActionsComponent),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(TargetedWithoutTargetingMixedFastBeforeActionsComponent), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
             List<string> order = new();
-            _ = token.RegisterTargetedWithoutTargeting(
-                (InstanceId _, SimpleTargetedMessage _) => order.Add("A1"),
-                0
-            );
-            _ = token.RegisterTargetedWithoutTargeting(
-                (in InstanceId _, in SimpleTargetedMessage _) => order.Add("F1"),
-                0
-            );
-            _ = token.RegisterTargetedWithoutTargeting(
-                (InstanceId _, SimpleTargetedMessage _) => order.Add("A2"),
-                0
-            );
+            _ = token.RegisterTargetedWithoutTargeting((InstanceId _, SimpleTargetedMessage _) => order.Add("A1"), 0);
+            _ = token.RegisterTargetedWithoutTargeting((in InstanceId _, in SimpleTargetedMessage _) => order.Add("F1"), 0);
+            _ = token.RegisterTargetedWithoutTargeting((InstanceId _, SimpleTargetedMessage _) => order.Add("A2"), 0);
             SimpleTargetedMessage msg = new();
             msg.EmitComponentTargeted(comp);
             Assert.AreEqual(new[] { "F1", "A1", "A2" }, order.ToArray());
@@ -1248,28 +791,14 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void TargetedWithoutTargetingPostProcessorsSamePriorityComponentInRegistrationOrder()
         {
-            GameObject go = new(
-                nameof(
-                    TargetedWithoutTargetingPostProcessorsSamePriorityComponentInRegistrationOrder
-                ),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(TargetedWithoutTargetingPostProcessorsSamePriorityComponentInRegistrationOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
             List<int> order = new();
-            _ = token.RegisterTargetedWithoutTargetingPostProcessor(
-                (InstanceId _, SimpleTargetedMessage _) => order.Add(1),
-                0
-            );
-            _ = token.RegisterTargetedWithoutTargetingPostProcessor(
-                (InstanceId _, SimpleTargetedMessage _) => order.Add(2),
-                0
-            );
-            _ = token.RegisterTargetedWithoutTargetingPostProcessor(
-                (InstanceId _, SimpleTargetedMessage _) => order.Add(3),
-                0
-            );
+            _ = token.RegisterTargetedWithoutTargetingPostProcessor((InstanceId _, SimpleTargetedMessage _) => order.Add(1), 0);
+            _ = token.RegisterTargetedWithoutTargetingPostProcessor((InstanceId _, SimpleTargetedMessage _) => order.Add(2), 0);
+            _ = token.RegisterTargetedWithoutTargetingPostProcessor((InstanceId _, SimpleTargetedMessage _) => order.Add(3), 0);
             SimpleTargetedMessage msg = new();
             msg.EmitComponentTargeted(comp);
             Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray());
@@ -1278,26 +807,14 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void TargetedWithoutTargetingPostProcessorsFastOnlyComponentInRegistrationOrder()
         {
-            GameObject go = new(
-                nameof(TargetedWithoutTargetingPostProcessorsFastOnlyComponentInRegistrationOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(TargetedWithoutTargetingPostProcessorsFastOnlyComponentInRegistrationOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
             List<int> order = new();
-            _ = token.RegisterTargetedWithoutTargetingPostProcessor(
-                (in InstanceId _, in SimpleTargetedMessage _) => order.Add(1),
-                0
-            );
-            _ = token.RegisterTargetedWithoutTargetingPostProcessor(
-                (in InstanceId _, in SimpleTargetedMessage _) => order.Add(2),
-                0
-            );
-            _ = token.RegisterTargetedWithoutTargetingPostProcessor(
-                (in InstanceId _, in SimpleTargetedMessage _) => order.Add(3),
-                0
-            );
+            _ = token.RegisterTargetedWithoutTargetingPostProcessor((in InstanceId _, in SimpleTargetedMessage _) => order.Add(1), 0);
+            _ = token.RegisterTargetedWithoutTargetingPostProcessor((in InstanceId _, in SimpleTargetedMessage _) => order.Add(2), 0);
+            _ = token.RegisterTargetedWithoutTargetingPostProcessor((in InstanceId _, in SimpleTargetedMessage _) => order.Add(3), 0);
             SimpleTargetedMessage msg = new();
             msg.EmitComponentTargeted(comp);
             Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray());
@@ -1306,26 +823,14 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void BroadcastWithoutSourceHandlersSamePriorityComponentInRegistrationOrder()
         {
-            GameObject go = new(
-                nameof(BroadcastWithoutSourceHandlersSamePriorityComponentInRegistrationOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(BroadcastWithoutSourceHandlersSamePriorityComponentInRegistrationOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
             List<int> order = new();
-            _ = token.RegisterBroadcastWithoutSource(
-                (InstanceId _, SimpleBroadcastMessage _) => order.Add(1),
-                0
-            );
-            _ = token.RegisterBroadcastWithoutSource(
-                (InstanceId _, SimpleBroadcastMessage _) => order.Add(2),
-                0
-            );
-            _ = token.RegisterBroadcastWithoutSource(
-                (InstanceId _, SimpleBroadcastMessage _) => order.Add(3),
-                0
-            );
+            _ = token.RegisterBroadcastWithoutSource((InstanceId _, SimpleBroadcastMessage _) => order.Add(1), 0);
+            _ = token.RegisterBroadcastWithoutSource((InstanceId _, SimpleBroadcastMessage _) => order.Add(2), 0);
+            _ = token.RegisterBroadcastWithoutSource((InstanceId _, SimpleBroadcastMessage _) => order.Add(3), 0);
             SimpleBroadcastMessage msg = new();
             msg.EmitComponentBroadcast(comp);
             Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray());
@@ -1334,26 +839,14 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void BroadcastWithoutSourceMixedFastBeforeActionsComponent()
         {
-            GameObject go = new(
-                nameof(BroadcastWithoutSourceMixedFastBeforeActionsComponent),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(BroadcastWithoutSourceMixedFastBeforeActionsComponent), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
             List<string> order = new();
-            _ = token.RegisterBroadcastWithoutSource(
-                (InstanceId _, SimpleBroadcastMessage _) => order.Add("A1"),
-                0
-            );
-            _ = token.RegisterBroadcastWithoutSource(
-                (in InstanceId _, in SimpleBroadcastMessage _) => order.Add("F1"),
-                0
-            );
-            _ = token.RegisterBroadcastWithoutSource(
-                (InstanceId _, SimpleBroadcastMessage _) => order.Add("A2"),
-                0
-            );
+            _ = token.RegisterBroadcastWithoutSource((InstanceId _, SimpleBroadcastMessage _) => order.Add("A1"), 0);
+            _ = token.RegisterBroadcastWithoutSource((in InstanceId _, in SimpleBroadcastMessage _) => order.Add("F1"), 0);
+            _ = token.RegisterBroadcastWithoutSource((InstanceId _, SimpleBroadcastMessage _) => order.Add("A2"), 0);
             SimpleBroadcastMessage msg = new();
             msg.EmitComponentBroadcast(comp);
             Assert.AreEqual(new[] { "F1", "A1", "A2" }, order.ToArray());
@@ -1362,28 +855,14 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void BroadcastWithoutSourcePostProcessorsSamePriorityComponentInRegistrationOrder()
         {
-            GameObject go = new(
-                nameof(
-                    BroadcastWithoutSourcePostProcessorsSamePriorityComponentInRegistrationOrder
-                ),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(BroadcastWithoutSourcePostProcessorsSamePriorityComponentInRegistrationOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
             List<int> order = new();
-            _ = token.RegisterBroadcastWithoutSourcePostProcessor(
-                (InstanceId _, SimpleBroadcastMessage _) => order.Add(1),
-                0
-            );
-            _ = token.RegisterBroadcastWithoutSourcePostProcessor(
-                (InstanceId _, SimpleBroadcastMessage _) => order.Add(2),
-                0
-            );
-            _ = token.RegisterBroadcastWithoutSourcePostProcessor(
-                (InstanceId _, SimpleBroadcastMessage _) => order.Add(3),
-                0
-            );
+            _ = token.RegisterBroadcastWithoutSourcePostProcessor((InstanceId _, SimpleBroadcastMessage _) => order.Add(1), 0);
+            _ = token.RegisterBroadcastWithoutSourcePostProcessor((InstanceId _, SimpleBroadcastMessage _) => order.Add(2), 0);
+            _ = token.RegisterBroadcastWithoutSourcePostProcessor((InstanceId _, SimpleBroadcastMessage _) => order.Add(3), 0);
             SimpleBroadcastMessage msg = new();
             msg.EmitComponentBroadcast(comp);
             Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray());
@@ -1392,26 +871,14 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void BroadcastWithoutSourcePostProcessorsFastOnlyComponentInRegistrationOrder()
         {
-            GameObject go = new(
-                nameof(BroadcastWithoutSourcePostProcessorsFastOnlyComponentInRegistrationOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(BroadcastWithoutSourcePostProcessorsFastOnlyComponentInRegistrationOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
             List<int> order = new();
-            _ = token.RegisterBroadcastWithoutSourcePostProcessor(
-                (in InstanceId _, in SimpleBroadcastMessage _) => order.Add(1),
-                0
-            );
-            _ = token.RegisterBroadcastWithoutSourcePostProcessor(
-                (in InstanceId _, in SimpleBroadcastMessage _) => order.Add(2),
-                0
-            );
-            _ = token.RegisterBroadcastWithoutSourcePostProcessor(
-                (in InstanceId _, in SimpleBroadcastMessage _) => order.Add(3),
-                0
-            );
+            _ = token.RegisterBroadcastWithoutSourcePostProcessor((in InstanceId _, in SimpleBroadcastMessage _) => order.Add(1), 0);
+            _ = token.RegisterBroadcastWithoutSourcePostProcessor((in InstanceId _, in SimpleBroadcastMessage _) => order.Add(2), 0);
+            _ = token.RegisterBroadcastWithoutSourcePostProcessor((in InstanceId _, in SimpleBroadcastMessage _) => order.Add(3), 0);
             SimpleBroadcastMessage msg = new();
             msg.EmitComponentBroadcast(comp);
             Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray());
@@ -1420,21 +887,14 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void OnlyGlobalAcceptAllUntargetedInvoked()
         {
-            GameObject go = new(
-                nameof(OnlyGlobalAcceptAllUntargetedInvoked),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(OnlyGlobalAcceptAllUntargetedInvoked), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
             int gUntargeted = 0,
                 gTargeted = 0,
                 gBroadcast = 0;
-            _ = token.RegisterGlobalAcceptAll(
-                _ => ++gUntargeted,
-                (_, _) => ++gTargeted,
-                (_, _) => ++gBroadcast
-            );
+            _ = token.RegisterGlobalAcceptAll(_ => ++gUntargeted, (_, _) => ++gTargeted, (_, _) => ++gBroadcast);
             SimpleUntargetedMessage msg = new();
             msg.EmitUntargeted();
             Assert.AreEqual(1, gUntargeted);
@@ -1445,21 +905,14 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void OnlyGlobalAcceptAllTargetedInvoked()
         {
-            GameObject go = new(
-                nameof(OnlyGlobalAcceptAllTargetedInvoked),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(OnlyGlobalAcceptAllTargetedInvoked), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
             int gUntargeted = 0,
                 gTargeted = 0,
                 gBroadcast = 0;
-            _ = token.RegisterGlobalAcceptAll(
-                _ => ++gUntargeted,
-                (_, _) => ++gTargeted,
-                (_, _) => ++gBroadcast
-            );
+            _ = token.RegisterGlobalAcceptAll(_ => ++gUntargeted, (_, _) => ++gTargeted, (_, _) => ++gBroadcast);
             SimpleTargetedMessage msg = new();
             msg.EmitComponentTargeted(comp);
             Assert.AreEqual(0, gUntargeted);
@@ -1470,21 +923,14 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void OnlyGlobalAcceptAllBroadcastInvoked()
         {
-            GameObject go = new(
-                nameof(OnlyGlobalAcceptAllBroadcastInvoked),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(OnlyGlobalAcceptAllBroadcastInvoked), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
             int gUntargeted = 0,
                 gTargeted = 0,
                 gBroadcast = 0;
-            _ = token.RegisterGlobalAcceptAll(
-                _ => ++gUntargeted,
-                (_, _) => ++gTargeted,
-                (_, _) => ++gBroadcast
-            );
+            _ = token.RegisterGlobalAcceptAll(_ => ++gUntargeted, (_, _) => ++gTargeted, (_, _) => ++gBroadcast);
             SimpleBroadcastMessage msg = new();
             msg.EmitComponentBroadcast(comp);
             Assert.AreEqual(0, gUntargeted);
@@ -1495,10 +941,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void NoRegistrationsNoInvocation()
         {
-            GameObject go = new(
-                nameof(NoRegistrationsNoInvocation),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(NoRegistrationsNoInvocation), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             // No explicit registrations
@@ -1514,10 +957,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void GlobalAcceptAllUntargetedMultipleFastAndActionOrder()
         {
-            GameObject go = new(
-                nameof(GlobalAcceptAllUntargetedMultipleFastAndActionOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(GlobalAcceptAllUntargetedMultipleFastAndActionOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
@@ -1546,10 +986,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void GlobalAcceptAllTargetedMultipleFastAndActionOrder()
         {
-            GameObject go = new(
-                nameof(GlobalAcceptAllTargetedMultipleFastAndActionOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(GlobalAcceptAllTargetedMultipleFastAndActionOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
@@ -1576,10 +1013,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void GlobalAcceptAllBroadcastMultipleFastAndActionOrder()
         {
-            GameObject go = new(
-                nameof(GlobalAcceptAllBroadcastMultipleFastAndActionOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(GlobalAcceptAllBroadcastMultipleFastAndActionOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
@@ -1606,33 +1040,18 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void UntargetedTwoPrioritiesFastBeforeActionWithinEachPriority()
         {
-            GameObject go = new(
-                nameof(UntargetedTwoPrioritiesFastBeforeActionWithinEachPriority),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(UntargetedTwoPrioritiesFastBeforeActionWithinEachPriority), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
             List<string> order = new();
 
             // Priority 0: fast then action
-            _ = token.RegisterUntargeted(
-                (in SimpleUntargetedMessage _) => order.Add("F0"),
-                priority: 0
-            );
-            _ = token.RegisterUntargeted(
-                (SimpleUntargetedMessage _) => order.Add("A0"),
-                priority: 0
-            );
+            _ = token.RegisterUntargeted((in SimpleUntargetedMessage _) => order.Add("F0"), priority: 0);
+            _ = token.RegisterUntargeted((SimpleUntargetedMessage _) => order.Add("A0"), priority: 0);
             // Priority 1: fast then action
-            _ = token.RegisterUntargeted(
-                (in SimpleUntargetedMessage _) => order.Add("F1"),
-                priority: 1
-            );
-            _ = token.RegisterUntargeted(
-                (SimpleUntargetedMessage _) => order.Add("A1"),
-                priority: 1
-            );
+            _ = token.RegisterUntargeted((in SimpleUntargetedMessage _) => order.Add("F1"), priority: 1);
+            _ = token.RegisterUntargeted((SimpleUntargetedMessage _) => order.Add("A1"), priority: 1);
 
             SimpleUntargetedMessage msg = new();
             msg.EmitUntargeted();
@@ -1644,26 +1063,14 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void TargetedWithoutTargetingMixedFastThenActionsGameObject()
         {
-            GameObject go = new(
-                nameof(TargetedWithoutTargetingMixedFastThenActionsGameObject),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(TargetedWithoutTargetingMixedFastThenActionsGameObject), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
             List<string> order = new();
-            _ = token.RegisterTargetedWithoutTargeting(
-                (in InstanceId _, in SimpleTargetedMessage _) => order.Add("F1"),
-                0
-            );
-            _ = token.RegisterTargetedWithoutTargeting(
-                (InstanceId _, SimpleTargetedMessage _) => order.Add("A1"),
-                0
-            );
-            _ = token.RegisterTargetedWithoutTargeting(
-                (InstanceId _, SimpleTargetedMessage _) => order.Add("A2"),
-                0
-            );
+            _ = token.RegisterTargetedWithoutTargeting((in InstanceId _, in SimpleTargetedMessage _) => order.Add("F1"), 0);
+            _ = token.RegisterTargetedWithoutTargeting((InstanceId _, SimpleTargetedMessage _) => order.Add("A1"), 0);
+            _ = token.RegisterTargetedWithoutTargeting((InstanceId _, SimpleTargetedMessage _) => order.Add("A2"), 0);
             SimpleTargetedMessage msg = new();
             msg.EmitGameObjectTargeted(go);
             Assert.AreEqual(new[] { "F1", "A1", "A2" }, order.ToArray());
@@ -1672,26 +1079,14 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void BroadcastWithoutSourceMixedFastThenActionsGameObject()
         {
-            GameObject go = new(
-                nameof(BroadcastWithoutSourceMixedFastThenActionsGameObject),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(BroadcastWithoutSourceMixedFastThenActionsGameObject), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
             List<string> order = new();
-            _ = token.RegisterBroadcastWithoutSource(
-                (in InstanceId _, in SimpleBroadcastMessage _) => order.Add("F1"),
-                0
-            );
-            _ = token.RegisterBroadcastWithoutSource(
-                (InstanceId _, SimpleBroadcastMessage _) => order.Add("A1"),
-                0
-            );
-            _ = token.RegisterBroadcastWithoutSource(
-                (InstanceId _, SimpleBroadcastMessage _) => order.Add("A2"),
-                0
-            );
+            _ = token.RegisterBroadcastWithoutSource((in InstanceId _, in SimpleBroadcastMessage _) => order.Add("F1"), 0);
+            _ = token.RegisterBroadcastWithoutSource((InstanceId _, SimpleBroadcastMessage _) => order.Add("A1"), 0);
+            _ = token.RegisterBroadcastWithoutSource((InstanceId _, SimpleBroadcastMessage _) => order.Add("A2"), 0);
             SimpleBroadcastMessage msg = new();
             msg.EmitGameObjectBroadcast(go);
             Assert.AreEqual(new[] { "F1", "A1", "A2" }, order.ToArray());
@@ -1702,22 +1097,13 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void TargetedWithoutTargetingPostProcessorsMixedFastBeforeActions()
         {
-            GameObject go = new(
-                nameof(TargetedWithoutTargetingPostProcessorsMixedFastBeforeActions),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(TargetedWithoutTargetingPostProcessorsMixedFastBeforeActions), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
             List<string> order = new();
-            _ = token.RegisterTargetedWithoutTargetingPostProcessor(
-                (in InstanceId _, in SimpleTargetedMessage _) => order.Add("F"),
-                0
-            );
-            _ = token.RegisterTargetedWithoutTargetingPostProcessor(
-                (InstanceId _, SimpleTargetedMessage _) => order.Add("A"),
-                0
-            );
+            _ = token.RegisterTargetedWithoutTargetingPostProcessor((in InstanceId _, in SimpleTargetedMessage _) => order.Add("F"), 0);
+            _ = token.RegisterTargetedWithoutTargetingPostProcessor((InstanceId _, SimpleTargetedMessage _) => order.Add("A"), 0);
             SimpleTargetedMessage msg = new();
             msg.EmitComponentTargeted(comp);
             Assert.AreEqual(new[] { "F", "A" }, order.ToArray());
@@ -1726,22 +1112,13 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void TargetedWithoutTargetingPostProcessorsMixedFastThenActions()
         {
-            GameObject go = new(
-                nameof(TargetedWithoutTargetingPostProcessorsMixedFastThenActions),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(TargetedWithoutTargetingPostProcessorsMixedFastThenActions), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
             List<string> order = new();
-            _ = token.RegisterTargetedWithoutTargetingPostProcessor(
-                (InstanceId _, SimpleTargetedMessage _) => order.Add("A"),
-                0
-            );
-            _ = token.RegisterTargetedWithoutTargetingPostProcessor(
-                (in InstanceId _, in SimpleTargetedMessage _) => order.Add("F"),
-                0
-            );
+            _ = token.RegisterTargetedWithoutTargetingPostProcessor((InstanceId _, SimpleTargetedMessage _) => order.Add("A"), 0);
+            _ = token.RegisterTargetedWithoutTargetingPostProcessor((in InstanceId _, in SimpleTargetedMessage _) => order.Add("F"), 0);
             SimpleTargetedMessage msg = new();
             msg.EmitComponentTargeted(comp);
             Assert.AreEqual(new[] { "F", "A" }, order.ToArray());
@@ -1750,22 +1127,13 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void BroadcastWithoutSourcePostProcessorsMixedFastBeforeActions()
         {
-            GameObject go = new(
-                nameof(BroadcastWithoutSourcePostProcessorsMixedFastBeforeActions),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(BroadcastWithoutSourcePostProcessorsMixedFastBeforeActions), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
             List<string> order = new();
-            _ = token.RegisterBroadcastWithoutSourcePostProcessor(
-                (in InstanceId _, in SimpleBroadcastMessage _) => order.Add("F"),
-                0
-            );
-            _ = token.RegisterBroadcastWithoutSourcePostProcessor(
-                (InstanceId _, SimpleBroadcastMessage _) => order.Add("A"),
-                0
-            );
+            _ = token.RegisterBroadcastWithoutSourcePostProcessor((in InstanceId _, in SimpleBroadcastMessage _) => order.Add("F"), 0);
+            _ = token.RegisterBroadcastWithoutSourcePostProcessor((InstanceId _, SimpleBroadcastMessage _) => order.Add("A"), 0);
             SimpleBroadcastMessage msg = new();
             msg.EmitComponentBroadcast(comp);
             Assert.AreEqual(new[] { "F", "A" }, order.ToArray());
@@ -1774,22 +1142,13 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void BroadcastWithoutSourcePostProcessorsMixedFastThenActions()
         {
-            GameObject go = new(
-                nameof(BroadcastWithoutSourcePostProcessorsMixedFastThenActions),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(BroadcastWithoutSourcePostProcessorsMixedFastThenActions), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
             List<string> order = new();
-            _ = token.RegisterBroadcastWithoutSourcePostProcessor(
-                (InstanceId _, SimpleBroadcastMessage _) => order.Add("A"),
-                0
-            );
-            _ = token.RegisterBroadcastWithoutSourcePostProcessor(
-                (in InstanceId _, in SimpleBroadcastMessage _) => order.Add("F"),
-                0
-            );
+            _ = token.RegisterBroadcastWithoutSourcePostProcessor((InstanceId _, SimpleBroadcastMessage _) => order.Add("A"), 0);
+            _ = token.RegisterBroadcastWithoutSourcePostProcessor((in InstanceId _, in SimpleBroadcastMessage _) => order.Add("F"), 0);
             SimpleBroadcastMessage msg = new();
             msg.EmitComponentBroadcast(comp);
             Assert.AreEqual(new[] { "F", "A" }, order.ToArray());
@@ -1798,29 +1157,14 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void TargetedMixedFastThenActionsComponent()
         {
-            GameObject go = new(
-                nameof(TargetedMixedFastThenActionsComponent),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(TargetedMixedFastThenActionsComponent), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
             List<string> order = new();
-            _ = token.RegisterComponentTargeted(
-                comp,
-                (in SimpleTargetedMessage _) => order.Add("F1"),
-                0
-            );
-            _ = token.RegisterComponentTargeted(
-                comp,
-                (SimpleTargetedMessage _) => order.Add("A1"),
-                0
-            );
-            _ = token.RegisterComponentTargeted(
-                comp,
-                (SimpleTargetedMessage _) => order.Add("A2"),
-                0
-            );
+            _ = token.RegisterComponentTargeted(comp, (in SimpleTargetedMessage _) => order.Add("F1"), 0);
+            _ = token.RegisterComponentTargeted(comp, (SimpleTargetedMessage _) => order.Add("A1"), 0);
+            _ = token.RegisterComponentTargeted(comp, (SimpleTargetedMessage _) => order.Add("A2"), 0);
             SimpleTargetedMessage msg = new();
             msg.EmitComponentTargeted(comp);
             Assert.AreEqual(new[] { "F1", "A1", "A2" }, order.ToArray());
@@ -1829,29 +1173,14 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void BroadcastMixedFastThenActionsComponent()
         {
-            GameObject go = new(
-                nameof(BroadcastMixedFastThenActionsComponent),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject go = new(nameof(BroadcastMixedFastThenActionsComponent), typeof(EmptyMessageAwareComponent));
             _spawned.Add(go);
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
             List<string> order = new();
-            _ = token.RegisterComponentBroadcast(
-                comp,
-                (in SimpleBroadcastMessage _) => order.Add("F1"),
-                0
-            );
-            _ = token.RegisterComponentBroadcast(
-                comp,
-                (SimpleBroadcastMessage _) => order.Add("A1"),
-                0
-            );
-            _ = token.RegisterComponentBroadcast(
-                comp,
-                (SimpleBroadcastMessage _) => order.Add("A2"),
-                0
-            );
+            _ = token.RegisterComponentBroadcast(comp, (in SimpleBroadcastMessage _) => order.Add("F1"), 0);
+            _ = token.RegisterComponentBroadcast(comp, (SimpleBroadcastMessage _) => order.Add("A1"), 0);
+            _ = token.RegisterComponentBroadcast(comp, (SimpleBroadcastMessage _) => order.Add("A2"), 0);
             SimpleBroadcastMessage msg = new();
             msg.EmitComponentBroadcast(comp);
             Assert.AreEqual(new[] { "F1", "A1", "A2" }, order.ToArray());

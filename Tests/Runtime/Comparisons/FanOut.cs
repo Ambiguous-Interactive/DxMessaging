@@ -43,11 +43,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         {
             if (subscriberCount < 0)
             {
-                throw new ArgumentOutOfRangeException(
-                    nameof(subscriberCount),
-                    subscriberCount,
-                    "Fan-out subscriber count must be non-negative."
-                );
+                throw new ArgumentOutOfRangeException(nameof(subscriberCount), subscriberCount, "Fan-out subscriber count must be non-negative.");
             }
 
             _subscribers = new Subscriber[subscriberCount];

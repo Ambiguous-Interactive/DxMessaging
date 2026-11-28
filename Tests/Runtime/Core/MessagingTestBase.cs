@@ -182,29 +182,16 @@ namespace DxMessaging.Tests.Runtime.Core
                 return parsed;
             }
 
-            if (
-                raw.StartsWith("0x", StringComparison.Ordinal)
-                || raw.StartsWith("0X", StringComparison.Ordinal)
-            )
+            if (raw.StartsWith("0x", StringComparison.Ordinal) || raw.StartsWith("0X", StringComparison.Ordinal))
             {
                 string stripped = raw.Substring(2);
-                if (
-                    int.TryParse(
-                        stripped,
-                        NumberStyles.HexNumber,
-                        CultureInfo.InvariantCulture,
-                        out int hexParsed
-                    )
-                )
+                if (int.TryParse(stripped, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int hexParsed))
                 {
                     return hexParsed;
                 }
             }
 
-            Debug.LogWarning(
-                $"DXMESSAGING_TEST_SEED='{raw}' is not a valid integer or hex value. "
-                    + $"Falling back to default seed 0x{DefaultTestSeed:X8}."
-            );
+            Debug.LogWarning($"DXMESSAGING_TEST_SEED='{raw}' is not a valid integer or hex value. " + $"Falling back to default seed 0x{DefaultTestSeed:X8}.");
             return DefaultTestSeed;
         }
 
@@ -374,11 +361,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
                 if (synchronizeDeregistrations)
                 {
-                    foreach (
-                        int index in Enumerable
-                            .Range(0, indexedRegistrations.Count)
-                            .OrderBy(_ => _random.Next())
-                    )
+                    foreach (int index in Enumerable.Range(0, indexedRegistrations.Count).OrderBy(_ => _random.Next()))
                     {
                         emit();
                         assert();
@@ -391,11 +374,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 else
                 {
-                    foreach (
-                        MessageRegistrationHandle handle in handles
-                            .OrderBy(_ => _random.Next())
-                            .ToList()
-                    )
+                    foreach (MessageRegistrationHandle handle in handles.OrderBy(_ => _random.Next()).ToList())
                     {
                         emit();
                         assert();
@@ -462,9 +441,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             bool IsStale()
             {
-                return messageBus.RegisteredUntargeted != 0
-                    || messageBus.RegisteredTargeted != 0
-                    || messageBus.RegisteredBroadcast != 0;
+                return messageBus.RegisteredUntargeted != 0 || messageBus.RegisteredTargeted != 0 || messageBus.RegisteredBroadcast != 0;
             }
         }
 
@@ -479,20 +456,14 @@ namespace DxMessaging.Tests.Runtime.Core
             Object.DestroyImmediate(spawned);
         }
 
-        protected static string DescribeMessageBusState(
-            IMessageBus messageBus,
-            bool includeLog = false
-        )
+        protected static string DescribeMessageBusState(IMessageBus messageBus, bool includeLog = false)
         {
             if (messageBus == null)
             {
                 return "MessageBus=<null>.";
             }
 
-            string details =
-                $"Untargeted={messageBus.RegisteredUntargeted}, "
-                + $"Targeted={messageBus.RegisteredTargeted}, "
-                + $"Broadcast={messageBus.RegisteredBroadcast}.";
+            string details = $"Untargeted={messageBus.RegisteredUntargeted}, " + $"Targeted={messageBus.RegisteredTargeted}, " + $"Broadcast={messageBus.RegisteredBroadcast}.";
             if (!includeLog)
             {
                 return details;

@@ -1,6 +1,11 @@
 ---
 name: unity-licensing
-description: "Unity Editor licensing for CI: classic serial activation with the UNITY_SERIAL, UNITY_EMAIL, and UNITY_PASSWORD secrets, the four-layer always-return guarantee (return-at-start, PowerShell try/finally, an if: always() return-unity-license workflow step inside the org-lock window, and the next run's return-at-start), the seven-step per-job flow, the roughly two-seat no-reclaim tradeoff, and the retired UNITY_LICENSING_SERVER secret that must not come back. Use when a Unity job reports Failed to activate, No valid Unity Editor license found, or consumed serial seats; when wiring Unity secrets on a runner; or when editing license handling in run-ci-tests.ps1 or a Unity workflow. Local Unity needs no license."
+description:
+  "Unity Editor licensing for CI: classic serial activation with the UNITY_SERIAL, UNITY_EMAIL, and UNITY_PASSWORD secrets, the four-layer always-return guarantee (return-at-start,
+  PowerShell try/finally, an if: always() return-unity-license workflow step inside the org-lock window, and the next run's return-at-start), the seven-step per-job flow, the
+  roughly two-seat no-reclaim tradeoff, and the retired UNITY_LICENSING_SERVER secret that must not come back. Use when a Unity job reports Failed to activate, No valid Unity
+  Editor license found, or consumed serial seats; when wiring Unity secrets on a runner; or when editing license handling in run-ci-tests.ps1 or a Unity workflow. Local Unity needs
+  no license."
 metadata:
   category: "unity"
   tags: "unity, serial, license, return, leak, seat, ci"
@@ -8,7 +13,8 @@ metadata:
 
 # Unity Licensing
 
-CI activates Unity with a classic serial and attempts return on every exit path. A serial has no server-side reclaim and only about two concurrent seats, so successful return is required to free one.
+CI activates Unity with a classic serial and attempts return on every exit path. A serial has no server-side reclaim and only about two concurrent seats, so successful return is
+required to free one.
 
 ## When to use
 
@@ -18,50 +24,69 @@ CI activates Unity with a classic serial and attempts return on every exit path.
 - Reviewing or changing license activation and return handling in `scripts/unity/run-ci-tests.ps1`.
 - Adding, removing, or reordering the `if: always()` `return-unity-license` step in a Unity workflow.
 
-Local Unity verification needs NO license. The devcontainer ships no Unity build; local runs drive the host editor through the MCP loop, and that editor holds its own license. There is no local `.ulf`, no `UNITY_LICENSE` / `UNITY_LICENSE_B64`, and no local serial.
+Local Unity verification needs NO license. The devcontainer ships no Unity build; local runs drive the host editor through the MCP loop, and that editor holds its own license.
+There is no local `.ulf`, no `UNITY_LICENSE` / `UNITY_LICENSE_B64`, and no local serial.
 
 ## Rules
 
 ### Secrets and the activation path
 
 - Classic serial activation is the only supported CI path. Three repository secrets are required: `UNITY_SERIAL`, `UNITY_EMAIL`, `UNITY_PASSWORD`.
-- The floating licensing server is RETIRED. `UNITY_LICENSING_SERVER` must not be reintroduced; the `./.github/actions/validate-unity-license` action rejects it, and `findForbiddenUnityLicenseSecretViolations` plus the static guard fail any workflow that re-wires it.
-- `scripts/unity/run-ci-tests.ps1` wraps the CLI in two functions with deliberately different failure semantics. `Invoke-UnityLicenseActivate` runs `-serial <UNITY_SERIAL> -username <UNITY_EMAIL> -password <UNITY_PASSWORD>` and THROWS on failure, so a job that cannot activate fails loudly instead of running unlicensed. `Invoke-UnityLicenseReturn` runs `-returnlicense` best-effort and NEVER throws, so a return attempt cannot mask the real job result.
+- The floating licensing server is RETIRED. `UNITY_LICENSING_SERVER` must not be reintroduced; the `./.github/actions/validate-unity-license` action rejects it, and
+  `findForbiddenUnityLicenseSecretViolations` plus the static guard fail any workflow that re-wires it.
+- `scripts/unity/run-ci-tests.ps1` wraps the CLI in two functions with deliberately different failure semantics. `Invoke-UnityLicenseActivate` runs
+  `-serial <UNITY_SERIAL> -username <UNITY_EMAIL> -password <UNITY_PASSWORD>` and THROWS on failure, so a job that cannot activate fails loudly instead of running unlicensed.
+  `Invoke-UnityLicenseReturn` runs `-returnlicense` best-effort and NEVER throws, so a return attempt cannot mask the real job result.
 
 ### The four-layer return attempt contract
 
-1. **Return-at-start.** Each job calls `Invoke-UnityLicenseReturn` defensively before activating, attempting to reclaim any seat a prior force-killed run leaked on that persistent runner.
-1. **PowerShell `try`/`finally`.** `run-ci-tests.ps1` activates inside a `try` and attempts return in the `finally`, covering both a clean exit and an editor throw or non-zero exit.
-1. **Workflow terminal return step.** Every Unity workflow invokes the
-   centrally pinned `return-unity-license` action after diagnostics and before
-   classify/release/gate, scoped to an acquired lock, so a failed Unity step
-   still attempts to return the license before the next job acquires the lock.
+1. **Return-at-start.** Each job calls `Invoke-UnityLicenseReturn` defensively before activating, attempting to reclaim any seat a prior force-killed run leaked on that persistent
+   runner.
+1. **PowerShell `try`/`finally`.** `run-ci-tests.ps1` activates inside a `try` and attempts return in the `finally`, covering both a clean exit and an editor throw or non-zero
+   exit.
+1. **Workflow terminal return step.** Every Unity workflow invokes the centrally pinned `return-unity-license` action after diagnostics and before classify/release/gate, scoped to
+   an acquired lock, so a failed Unity step still attempts to return the license before the next job acquires the lock.
 1. **The next run's return-at-start.** If the whole runner process is killed and the three layers above never run, layer 1 of the next run on that machine retries the return.
 
 ### Per-job flow
 
-Validate the secrets with `./.github/actions/validate-unity-license` BEFORE acquiring the lock, so a misconfiguration fails with a clear diagnostic before Unity starts or blocks the shared seat. Then acquire `wallstop-organization-builds` through the pinned central action with the physical `runner-id`, return-at-start, activate, run Unity (editmode / playmode / standalone IL2CPP) against the generated project, and return in the `finally`. Finish with the acquired-scoped central return, classification, release, and confirmed-cleanup gate.
+Validate the secrets with `./.github/actions/validate-unity-license` BEFORE acquiring the lock, so a misconfiguration fails with a clear diagnostic before Unity starts or blocks
+the shared seat. Then acquire `wallstop-organization-builds` through the pinned central action with the physical `runner-id`, return-at-start, activate, run Unity (editmode /
+playmode / standalone IL2CPP) against the generated project, and return in the `finally`. Finish with the acquired-scoped central return, classification, release, and
+confirmed-cleanup gate.
 
-The central configuration owns admission across repositories: at most two holders, one holder per physical runner, resource lifecycle checks, and account health checks. Consumers dispatch the workflow and let this chain acquire, work, and release automatically. Keep normal admission separate from recovery of an actual active incident; do not maintain a second lock or require portal evidence for normal CI.
+The central configuration owns admission across repositories: at most two holders, one holder per physical runner, resource lifecycle checks, and account health checks. Consumers
+dispatch the workflow and let this chain acquire, work, and release automatically. Keep normal admission separate from recovery of an actual active incident; do not maintain a
+second lock or require portal evidence for normal CI.
 
 ### Contract invariants to check on every change
 
 - The return lives in a `finally`, and the defensive return-at-start is still present.
-- Every Unity workflow keeps the acquired-scoped central return followed by
-  classifier, release, and final cleanup gate inside the org-lock window.
+- Every Unity workflow keeps the acquired-scoped central return followed by classifier, release, and final cleanup gate inside the org-lock window.
 - No workflow references `secrets.UNITY_LICENSING_SERVER`, and every Unity job wires all three serial secrets.
 
-Anti-patterns: returning the license only on the success path; dropping the `if: always()` step and relying on the next run's return-at-start; echoing or logging the serial or password; re-adding the retired licensing-server secret.
+Anti-patterns: returning the license only on the success path; dropping the `if: always()` step and relying on the next run's return-at-start; echoing or logging the serial or
+password; re-adding the retired licensing-server secret.
 
 ### Security
 
-Never echo or log the serial or password. They are passed as Unity CLI arguments only - not printed, not written to an artifact, not added to a shell trace. License activation and return logs go to `RUNNER_TEMP`, never into uploaded artifacts.
+Never echo or log the serial or password. They are passed as Unity CLI arguments only - not printed, not written to an artifact, not added to a shell trace. License activation and
+return logs go to `RUNNER_TEMP`, never into uploaded artifacts.
 
-Keeping activation logs out of the artifact tree is necessary but not sufficient. Unity also writes its license identity into the ordinary run logs, `unity.log` and `configure.log`, which every Unity job uploads. GitHub masks a registered secret in a rendered job log but never in the bytes of an uploaded artifact, so on a public repository those logs published the serial to any downloader until run 33581438234. Every Unity artifact upload must therefore be preceded, in the same job, by the `./.github/actions/redact-unity-artifacts` step covering the uploaded path. `scripts/__tests__/unity-artifact-redaction.test.js` asserts that invariant, and `scripts/unity/credential-patterns.js` is the one list of shapes both the redactor and the evidence-bundle sealer use. Do not add a Unity artifact upload without a redaction step in front of it.
+Keeping activation logs out of the artifact tree is necessary but not sufficient. Unity also writes its license identity into the ordinary run logs, `unity.log` and
+`configure.log`, which every Unity job uploads. GitHub masks a registered secret in a rendered job log but never in the bytes of an uploaded artifact, so on a public repository
+those logs published the serial to any downloader until run 33581438234. Every Unity artifact upload must therefore be preceded, in the same job, by the
+`./.github/actions/redact-unity-artifacts` step covering the uploaded path. `scripts/__tests__/unity-artifact-redaction.test.js` asserts that invariant, and
+`scripts/unity/credential-patterns.js` is the one list of shapes both the redactor and the evidence-bundle sealer use. Do not add a Unity artifact upload without a redaction step
+in front of it.
 
 ### The seat-limit tradeoff, stated honestly
 
-A serial has no server-side reclaim and typically about two concurrent activations, and the schema-5 organization lock admits at most two distinct runners. Because the runners are persistent, the next job on the same machine attempts to return a leaked seat. The reaper can quarantine a stale holder and later auto-recover that lock reservation after the owning run is terminal and its lease expires. Neither transition returns an activation in Unity's portal. A completed return command with `return-ulf-skipped` also leaves cleanup unconfirmed. Check portal activation state before further licensed work when return evidence is inconclusive; reconcile a remaining seat there. The four return layers reduce leak risk, but the small seat pool remains a real constraint.
+A serial has no server-side reclaim and typically about two concurrent activations, and the schema-5 organization lock admits at most two distinct runners. Because the runners are
+persistent, the next job on the same machine attempts to return a leaked seat. The reaper can quarantine a stale holder and later auto-recover that lock reservation after the
+owning run is terminal and its lease expires. Neither transition returns an activation in Unity's portal. A completed return command with `return-ulf-skipped` also leaves cleanup
+unconfirmed. Check portal activation state before further licensed work when return evidence is inconclusive; reconcile a remaining seat there. The four return layers reduce leak
+risk, but the small seat pool remains a real constraint.
 
 ### Common failures
 

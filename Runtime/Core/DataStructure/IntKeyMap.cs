@@ -251,9 +251,7 @@ namespace DxMessaging.Core.DataStructure
         {
             if (MaximumCapacity <= capacity)
             {
-                throw new InvalidOperationException(
-                    "The integer map reached its maximum capacity."
-                );
+                throw new InvalidOperationException("The integer map reached its maximum capacity.");
             }
 
             return capacity << 1;

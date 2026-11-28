@@ -49,13 +49,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             SimpleUntargetedMessage message = new();
             Run(
-                () =>
-                    new[]
-                    {
-                        token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
-                            PostProcessor
-                        ),
-                    },
+                () => new[] { token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(PostProcessor) },
                 () => message.EmitUntargeted(),
                 () =>
                 {
@@ -77,14 +71,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 lastSeenCount = count;
             };
             Run(
-                () =>
-                    new[]
-                    {
-                        token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
-                            PostProcessor
-                        ),
-                        token.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++count),
-                    },
+                () => new[] { token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(PostProcessor), token.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++count) },
                 () => message.EmitUntargeted(),
                 () =>
                 {
@@ -109,12 +96,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 () =>
                     new[]
                     {
-                        token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
-                            PostProcessor
-                        ),
-                        token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
-                            PostProcessor
-                        ),
+                        token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(PostProcessor),
+                        token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(PostProcessor),
                     },
                 () => message.EmitUntargeted(),
                 () => Assert.AreEqual(++lastSeenCount, count),
@@ -165,14 +148,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             SimpleTargetedMessage message = new();
             Run(
-                () =>
-                    new[]
-                    {
-                        token.RegisterGameObjectTargetedPostProcessor<SimpleTargetedMessage>(
-                            test,
-                            PostProcessor
-                        ),
-                    },
+                () => new[] { token.RegisterGameObjectTargetedPostProcessor<SimpleTargetedMessage>(test, PostProcessor) },
                 () => message.EmitGameObjectTargeted(test),
                 () =>
                 {
@@ -197,10 +173,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 () =>
                     new[]
                     {
-                        token.RegisterGameObjectTargetedPostProcessor<SimpleTargetedMessage>(
-                            test,
-                            PostProcessor
-                        ),
+                        token.RegisterGameObjectTargetedPostProcessor<SimpleTargetedMessage>(test, PostProcessor),
                         token.RegisterGameObjectTargeted<SimpleTargetedMessage>(test, _ => ++count),
                     },
                 () => message.EmitGameObjectTargeted(test),
@@ -227,14 +200,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 () =>
                     new[]
                     {
-                        token.RegisterGameObjectTargetedPostProcessor<SimpleTargetedMessage>(
-                            test,
-                            PostProcessor
-                        ),
-                        token.RegisterGameObjectTargetedPostProcessor<SimpleTargetedMessage>(
-                            test,
-                            PostProcessor
-                        ),
+                        token.RegisterGameObjectTargetedPostProcessor<SimpleTargetedMessage>(test, PostProcessor),
+                        token.RegisterGameObjectTargetedPostProcessor<SimpleTargetedMessage>(test, PostProcessor),
                     },
                 () => message.EmitGameObjectTargeted(test),
                 () => Assert.AreEqual(++lastSeenCount, count),
@@ -252,14 +219,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Assert.Fail("Should never be called, we're emitting the wrong thing");
             };
             Run(
-                () =>
-                    new[]
-                    {
-                        token.RegisterGameObjectTargetedPostProcessor<SimpleTargetedMessage>(
-                            test,
-                            PostProcessor
-                        ),
-                    },
+                () => new[] { token.RegisterGameObjectTargetedPostProcessor<SimpleTargetedMessage>(test, PostProcessor) },
                 () => message.EmitComponentTargeted(component),
                 () =>
                 {
@@ -292,10 +252,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void GameObjectTargetedWithoutTargeting()
         {
-            GameObject test = new(
-                nameof(GameObjectTargetedWithoutTargeting),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject test = new(nameof(GameObjectTargetedWithoutTargeting), typeof(EmptyMessageAwareComponent));
             _spawned.Add(test);
 
             EmptyMessageAwareComponent component = test.GetComponent<EmptyMessageAwareComponent>();
@@ -316,13 +273,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             SimpleTargetedMessage message = new();
             Run(
-                () =>
-                    new[]
-                    {
-                        token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(
-                            PostProcessor
-                        ),
-                    },
+                () => new[] { token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(PostProcessor) },
                 () => message.EmitGameObjectTargeted(test),
                 () =>
                 {
@@ -347,9 +298,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 () =>
                     new[]
                     {
-                        token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(
-                            PostProcessor
-                        ),
+                        token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(PostProcessor),
                         token.RegisterGameObjectTargeted<SimpleTargetedMessage>(test, _ => ++count),
                     },
                 () => message.EmitGameObjectTargeted(test),
@@ -376,12 +325,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 () =>
                     new[]
                     {
-                        token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(
-                            PostProcessor
-                        ),
-                        token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(
-                            PostProcessor
-                        ),
+                        token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(PostProcessor),
+                        token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(PostProcessor),
                     },
                 () => message.EmitGameObjectTargeted(test),
                 () => Assert.AreEqual(++lastSeenCount, count),
@@ -432,14 +377,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             SimpleTargetedMessage message = new();
             Run(
-                () =>
-                    new[]
-                    {
-                        token.RegisterComponentTargetedPostProcessor<SimpleTargetedMessage>(
-                            component,
-                            PostProcessor
-                        ),
-                    },
+                () => new[] { token.RegisterComponentTargetedPostProcessor<SimpleTargetedMessage>(component, PostProcessor) },
                 () => message.EmitComponentTargeted(component),
                 () =>
                 {
@@ -464,13 +402,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 () =>
                     new[]
                     {
-                        token.RegisterComponentTargetedPostProcessor<SimpleTargetedMessage>(
-                            component,
-                            PostProcessor
-                        ),
-                        token.RegisterComponentTargeted<SimpleTargetedMessage>(component, _ =>
-                            ++count
-                        ),
+                        token.RegisterComponentTargetedPostProcessor<SimpleTargetedMessage>(component, PostProcessor),
+                        token.RegisterComponentTargeted<SimpleTargetedMessage>(component, _ => ++count),
                     },
                 () => message.EmitComponentTargeted(component),
                 () =>
@@ -496,14 +429,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 () =>
                     new[]
                     {
-                        token.RegisterComponentTargetedPostProcessor<SimpleTargetedMessage>(
-                            component,
-                            PostProcessor
-                        ),
-                        token.RegisterComponentTargetedPostProcessor<SimpleTargetedMessage>(
-                            component,
-                            PostProcessor
-                        ),
+                        token.RegisterComponentTargetedPostProcessor<SimpleTargetedMessage>(component, PostProcessor),
+                        token.RegisterComponentTargetedPostProcessor<SimpleTargetedMessage>(component, PostProcessor),
                     },
                 () => message.EmitComponentTargeted(component),
                 () => Assert.AreEqual(++lastSeenCount, count),
@@ -521,14 +448,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Assert.Fail("Should never be called, we're emitting the wrong thing");
             };
             Run(
-                () =>
-                    new[]
-                    {
-                        token.RegisterComponentTargetedPostProcessor<SimpleTargetedMessage>(
-                            component,
-                            PostProcessor
-                        ),
-                    },
+                () => new[] { token.RegisterComponentTargetedPostProcessor<SimpleTargetedMessage>(component, PostProcessor) },
                 () => message.EmitGameObjectTargeted(test),
                 () =>
                 {
@@ -561,10 +481,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void ComponentTargetedWithoutTargeting()
         {
-            GameObject test = new(
-                nameof(ComponentTargetedWithoutTargeting),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject test = new(nameof(ComponentTargetedWithoutTargeting), typeof(EmptyMessageAwareComponent));
             _spawned.Add(test);
 
             EmptyMessageAwareComponent component = test.GetComponent<EmptyMessageAwareComponent>();
@@ -585,13 +502,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             SimpleTargetedMessage message = new();
             Run(
-                () =>
-                    new[]
-                    {
-                        token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>(
-                            PostProcessor
-                        ),
-                    },
+                () => new[] { token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>(PostProcessor) },
                 () => message.EmitComponentTargeted(component),
                 () =>
                 {
@@ -616,12 +527,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 () =>
                     new[]
                     {
-                        token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>(
-                            PostProcessor
-                        ),
-                        token.RegisterComponentTargeted<SimpleTargetedMessage>(component, _ =>
-                            ++count
-                        ),
+                        token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>(PostProcessor),
+                        token.RegisterComponentTargeted<SimpleTargetedMessage>(component, _ => ++count),
                     },
                 () => message.EmitComponentTargeted(component),
                 () =>
@@ -647,12 +554,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 () =>
                     new[]
                     {
-                        token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>(
-                            PostProcessor
-                        ),
-                        token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>(
-                            PostProcessor
-                        ),
+                        token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>(PostProcessor),
+                        token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>(PostProcessor),
                     },
                 () => message.EmitComponentTargeted(component),
                 () => Assert.AreEqual(++lastSeenCount, count),
@@ -705,14 +608,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             SimpleBroadcastMessage message = new();
             Run(
-                () =>
-                    new[]
-                    {
-                        token.RegisterGameObjectBroadcastPostProcessor<SimpleBroadcastMessage>(
-                            test,
-                            PostProcessor
-                        ),
-                    },
+                () => new[] { token.RegisterGameObjectBroadcastPostProcessor<SimpleBroadcastMessage>(test, PostProcessor) },
                 () => message.EmitGameObjectBroadcast(test),
                 () =>
                 {
@@ -737,22 +633,13 @@ namespace DxMessaging.Tests.Runtime.Core
                 () =>
                     new[]
                     {
-                        token.RegisterGameObjectBroadcastPostProcessor<SimpleBroadcastMessage>(
-                            test,
-                            PostProcessor
-                        ),
-                        token.RegisterGameObjectBroadcast<SimpleBroadcastMessage>(test, _ =>
-                            ++count
-                        ),
+                        token.RegisterGameObjectBroadcastPostProcessor<SimpleBroadcastMessage>(test, PostProcessor),
+                        token.RegisterGameObjectBroadcast<SimpleBroadcastMessage>(test, _ => ++count),
                     },
                 () => message.EmitGameObjectBroadcast(test),
                 () =>
                 {
-                    Assert.AreEqual(
-                        lastSeenCount,
-                        count,
-                        "GameObjectBroadcast PostProcessor was not run!"
-                    );
+                    Assert.AreEqual(lastSeenCount, count, "GameObjectBroadcast PostProcessor was not run!");
                     finalCount = count;
                 },
                 () =>
@@ -773,29 +660,14 @@ namespace DxMessaging.Tests.Runtime.Core
                 () =>
                     new[]
                     {
-                        token.RegisterGameObjectBroadcastPostProcessor<SimpleBroadcastMessage>(
-                            test,
-                            PostProcessor
-                        ),
-                        token.RegisterGameObjectBroadcastPostProcessor<SimpleBroadcastMessage>(
-                            test,
-                            PostProcessor
-                        ),
+                        token.RegisterGameObjectBroadcastPostProcessor<SimpleBroadcastMessage>(test, PostProcessor),
+                        token.RegisterGameObjectBroadcastPostProcessor<SimpleBroadcastMessage>(test, PostProcessor),
                     },
                 () => message.EmitGameObjectBroadcast(test),
-                () =>
-                    Assert.AreEqual(
-                        ++lastSeenCount,
-                        count,
-                        "GameObjectBroadcast PostProcessor was ran twice!"
-                    ),
+                () => Assert.AreEqual(++lastSeenCount, count, "GameObjectBroadcast PostProcessor was ran twice!"),
                 () =>
                 {
-                    Assert.AreEqual(
-                        lastSeenCount,
-                        count,
-                        "GameObjectPostProcessor ran without any receivers subscribed!"
-                    );
+                    Assert.AreEqual(lastSeenCount, count, "GameObjectPostProcessor ran without any receivers subscribed!");
                 },
                 token,
                 synchronizeDeregistrations: true
@@ -807,14 +679,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Assert.Fail("Should never be called, we're emitting the wrong thing");
             };
             Run(
-                () =>
-                    new[]
-                    {
-                        token.RegisterGameObjectBroadcastPostProcessor<SimpleBroadcastMessage>(
-                            test,
-                            PostProcessor
-                        ),
-                    },
+                () => new[] { token.RegisterGameObjectBroadcastPostProcessor<SimpleBroadcastMessage>(test, PostProcessor) },
                 () => message.EmitComponentBroadcast(component),
                 () =>
                 {
@@ -847,10 +712,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void GameObjectBroadcastWithoutSource()
         {
-            GameObject test = new(
-                nameof(GameObjectBroadcastWithoutSource),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject test = new(nameof(GameObjectBroadcastWithoutSource), typeof(EmptyMessageAwareComponent));
             _spawned.Add(test);
 
             EmptyMessageAwareComponent component = test.GetComponent<EmptyMessageAwareComponent>();
@@ -871,13 +733,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             SimpleBroadcastMessage message = new();
             Run(
-                () =>
-                    new[]
-                    {
-                        token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(
-                            PostProcessor
-                        ),
-                    },
+                () => new[] { token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(PostProcessor) },
                 () => message.EmitGameObjectBroadcast(test),
                 () =>
                 {
@@ -902,21 +758,13 @@ namespace DxMessaging.Tests.Runtime.Core
                 () =>
                     new[]
                     {
-                        token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(
-                            PostProcessor
-                        ),
-                        token.RegisterGameObjectBroadcast<SimpleBroadcastMessage>(test, _ =>
-                            ++count
-                        ),
+                        token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(PostProcessor),
+                        token.RegisterGameObjectBroadcast<SimpleBroadcastMessage>(test, _ => ++count),
                     },
                 () => message.EmitGameObjectBroadcast(test),
                 () =>
                 {
-                    Assert.AreEqual(
-                        lastSeenCount,
-                        count,
-                        "GameObjectBroadcast PostProcessor was not run!"
-                    );
+                    Assert.AreEqual(lastSeenCount, count, "GameObjectBroadcast PostProcessor was not run!");
                     finalCount = count;
                 },
                 () =>
@@ -937,27 +785,14 @@ namespace DxMessaging.Tests.Runtime.Core
                 () =>
                     new[]
                     {
-                        token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(
-                            PostProcessor
-                        ),
-                        token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(
-                            PostProcessor
-                        ),
+                        token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(PostProcessor),
+                        token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(PostProcessor),
                     },
                 () => message.EmitGameObjectBroadcast(test),
-                () =>
-                    Assert.AreEqual(
-                        ++lastSeenCount,
-                        count,
-                        "GameObjectBroadcast PostProcessor was ran twice!"
-                    ),
+                () => Assert.AreEqual(++lastSeenCount, count, "GameObjectBroadcast PostProcessor was ran twice!"),
                 () =>
                 {
-                    Assert.AreEqual(
-                        lastSeenCount,
-                        count,
-                        "GameObjectPostProcessor ran without any receivers subscribed!"
-                    );
+                    Assert.AreEqual(lastSeenCount, count, "GameObjectPostProcessor ran without any receivers subscribed!");
                 },
                 token,
                 synchronizeDeregistrations: true
@@ -1002,14 +837,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             SimpleBroadcastMessage message = new();
             Run(
-                () =>
-                    new[]
-                    {
-                        token.RegisterComponentBroadcastPostProcessor<SimpleBroadcastMessage>(
-                            component,
-                            PostProcessor
-                        ),
-                    },
+                () => new[] { token.RegisterComponentBroadcastPostProcessor<SimpleBroadcastMessage>(component, PostProcessor) },
                 () => message.EmitComponentBroadcast(component),
                 () =>
                 {
@@ -1034,13 +862,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 () =>
                     new[]
                     {
-                        token.RegisterComponentBroadcastPostProcessor<SimpleBroadcastMessage>(
-                            component,
-                            PostProcessor
-                        ),
-                        token.RegisterComponentBroadcast<SimpleBroadcastMessage>(component, _ =>
-                            ++count
-                        ),
+                        token.RegisterComponentBroadcastPostProcessor<SimpleBroadcastMessage>(component, PostProcessor),
+                        token.RegisterComponentBroadcast<SimpleBroadcastMessage>(component, _ => ++count),
                     },
                 () => message.EmitComponentBroadcast(component),
                 () =>
@@ -1066,14 +889,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 () =>
                     new[]
                     {
-                        token.RegisterComponentBroadcastPostProcessor<SimpleBroadcastMessage>(
-                            component,
-                            PostProcessor
-                        ),
-                        token.RegisterComponentBroadcastPostProcessor<SimpleBroadcastMessage>(
-                            component,
-                            PostProcessor
-                        ),
+                        token.RegisterComponentBroadcastPostProcessor<SimpleBroadcastMessage>(component, PostProcessor),
+                        token.RegisterComponentBroadcastPostProcessor<SimpleBroadcastMessage>(component, PostProcessor),
                     },
                 () => message.EmitComponentBroadcast(component),
                 () => Assert.AreEqual(++lastSeenCount, count),
@@ -1091,14 +908,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Assert.Fail("Should never be called, we're emitting the wrong thing");
             };
             Run(
-                () =>
-                    new[]
-                    {
-                        token.RegisterComponentBroadcastPostProcessor<SimpleBroadcastMessage>(
-                            component,
-                            PostProcessor
-                        ),
-                    },
+                () => new[] { token.RegisterComponentBroadcastPostProcessor<SimpleBroadcastMessage>(component, PostProcessor) },
                 () => message.EmitGameObjectBroadcast(test),
                 () =>
                 {
@@ -1131,10 +941,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void ComponentBroadcastWithoutSource()
         {
-            GameObject test = new(
-                nameof(ComponentBroadcastWithoutSource),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject test = new(nameof(ComponentBroadcastWithoutSource), typeof(EmptyMessageAwareComponent));
             _spawned.Add(test);
 
             EmptyMessageAwareComponent component = test.GetComponent<EmptyMessageAwareComponent>();
@@ -1155,13 +962,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             SimpleBroadcastMessage message = new();
             Run(
-                () =>
-                    new[]
-                    {
-                        token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(
-                            PostProcessor
-                        ),
-                    },
+                () => new[] { token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(PostProcessor) },
                 () => message.EmitComponentBroadcast(component),
                 () =>
                 {
@@ -1186,12 +987,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 () =>
                     new[]
                     {
-                        token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(
-                            PostProcessor
-                        ),
-                        token.RegisterComponentBroadcast<SimpleBroadcastMessage>(component, _ =>
-                            ++count
-                        ),
+                        token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(PostProcessor),
+                        token.RegisterComponentBroadcast<SimpleBroadcastMessage>(component, _ => ++count),
                     },
                 () => message.EmitComponentBroadcast(component),
                 () =>
@@ -1217,12 +1014,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 () =>
                     new[]
                     {
-                        token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(
-                            PostProcessor
-                        ),
-                        token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(
-                            PostProcessor
-                        ),
+                        token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(PostProcessor),
+                        token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(PostProcessor),
                     },
                 () => message.EmitComponentBroadcast(component),
                 () => Assert.AreEqual(++lastSeenCount, count),

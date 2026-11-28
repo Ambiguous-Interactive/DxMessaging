@@ -2,7 +2,9 @@
 
 # Devcontainer Cache Contract
 
-> **One-line summary**: `.devcontainer/cache-contract.sh` is the single source of truth for the six non-Unity devcontainer named-volume mounts (NuGet, .NET tools, PowerShell, pip, npm, and node_modules); the same file is sourced by `post-create.sh`, `post-start.sh`, and `validate-caching.sh` so the four surfaces (Dockerfile, devcontainer.json, lifecycle scripts, validator) cannot drift.
+> **One-line summary**: `.devcontainer/cache-contract.sh` is the single source of truth for the six non-Unity devcontainer named-volume mounts (NuGet, .NET tools, PowerShell, pip,
+> npm, and node_modules); the same file is sourced by `post-create.sh`, `post-start.sh`, and `validate-caching.sh` so the four surfaces (Dockerfile, devcontainer.json, lifecycle
+> scripts, validator) cannot drift.
 
 ## When to Use
 
@@ -18,19 +20,21 @@
 
 ## Why This Exists
 
-Docker named volumes have a subtle ownership rule: when a volume is attached to a target directory for the first time, Docker copies the target's owner UID/GID onto the empty volume. Subsequent attaches keep that initial UID/GID regardless of the running container's user. If the first container that mounts the volume runs as root (which most build steps do), every later attach as `vscode` (uid 1000) sees an unwritable directory.
+Docker named volumes have a subtle ownership rule: when a volume is attached to a target directory for the first time, Docker copies the target's owner UID/GID onto the empty
+volume. Subsequent attaches keep that initial UID/GID regardless of the running container's user. If the first container that mounts the volume runs as root (which most build steps
+do), every later attach as `vscode` (uid 1000) sees an unwritable directory.
 
 The fix has two parts:
 
 1. The Dockerfile pre-creates each target with `vscode:vscode` ownership before any volume can attach.
-1. The lifecycle scripts repair foreign-owned cache entries before initial attachment and on every container start, so an ownership drift (rare but possible after host upgrades) self-heals on the next attach.
+1. The lifecycle scripts repair foreign-owned cache entries before initial attachment and on every container start, so an ownership drift (rare but possible after host upgrades)
+   self-heals on the next attach.
 
-`cache-contract.sh` is the table the devcontainer prongs read from. If a target is missing from the contract or misaligned by index, the validator fails loud rather than the developer hitting "permission denied" three minutes into a build.
+`cache-contract.sh` is the table the devcontainer prongs read from. If a target is missing from the contract or misaligned by index, the validator fails loud rather than the
+developer hitting "permission denied" three minutes into a build.
 
-Unity `Library/` is intentionally not in this devcontainer contract. The
-container ships no local Unity build; local Unity verification runs on the host
-editor through the MCP loop (see [Unity MCP Test Loop](../../unity-mcp-test-loop/references/mcp-test-loop.md)), and
-the host editor owns its own `Library/` cache outside any container volume.
+Unity `Library/` is intentionally not in this devcontainer contract. The container ships no local Unity build; local Unity verification runs on the host editor through the MCP loop
+(see [Unity MCP Test Loop](../../unity-mcp-test-loop/references/mcp-test-loop.md)), and the host editor owns its own `Library/` cache outside any container volume.
 
 ## The Contract
 
@@ -74,9 +78,11 @@ The arrays are `readonly`. The file uses a re-source guard so the validator and 
 The `dxm-node-modules` target is built from `${CACHE_WORKSPACE_ROOT}/node_modules`, so the script must resolve the workspace root correctly. It resolves in this precedence:
 
 1. `WORKSPACE_FOLDER` when set. `devcontainer.json` sets it through `remoteEnv` to `${containerWorkspaceFolder}`.
-1. Otherwise, the parent of the script's own directory. `cache-contract.sh` lives in `<workspaceRoot>/.devcontainer/`, so the parent of its directory is the workspace root and equals `${containerWorkspaceFolder}` by construction.
+1. Otherwise, the parent of the script's own directory. `cache-contract.sh` lives in `<workspaceRoot>/.devcontainer/`, so the parent of its directory is the workspace root and
+   equals `${containerWorkspaceFolder}` by construction.
 
-The derivation matters because `postCreateCommand` runs BEFORE `remoteEnv` is applied, so `WORKSPACE_FOLDER` is unset there. Deriving from the script location keeps the target correct in that window and survives a repo path or name change. Do NOT reintroduce a hardcoded absolute fallback: a stale literal silently diverges from the real mount target.
+The derivation matters because `postCreateCommand` runs BEFORE `remoteEnv` is applied, so `WORKSPACE_FOLDER` is unset there. Deriving from the script location keeps the target
+correct in that window and survives a repo path or name change. Do NOT reintroduce a hardcoded absolute fallback: a stale literal silently diverges from the real mount target.
 
 ```bash
 CACHE_WORKSPACE_ROOT="${WORKSPACE_FOLDER:-}"
@@ -86,11 +92,15 @@ fi
 readonly CACHE_WORKSPACE_ROOT
 ```
 
-The `${BASH_SOURCE[0]:?...}` form fails loud rather than deriving a wrong root from the caller's working directory if the file is ever sourced without a resolvable path. Every real consumer sources it by absolute path, so this never trips in practice.
+The `${BASH_SOURCE[0]:?...}` form fails loud rather than deriving a wrong root from the caller's working directory if the file is ever sourced without a resolvable path. Every real
+consumer sources it by absolute path, so this never trips in practice.
 
-`cache_contract_describe_workspace_root` emits a one-line diagnostic stating which branch resolved the root (`from WORKSPACE_FOLDER env` versus `derived from script location; WORKSPACE_FOLDER unset`). Sourcing the file stays silent; `validate-caching.sh` calls the helper explicitly so the resolution is visible in validator output.
+`cache_contract_describe_workspace_root` emits a one-line diagnostic stating which branch resolved the root (`from WORKSPACE_FOLDER env` versus
+`derived from script location; WORKSPACE_FOLDER unset`). Sourcing the file stays silent; `validate-caching.sh` calls the helper explicitly so the resolution is visible in validator
+output.
 
-Anti-drift invariants to keep honest when editing the contract: no hardcoded absolute workspace literal; the derived fallback (with `WORKSPACE_FOLDER` unset) resolves to the repo root; an explicit `WORKSPACE_FOLDER` wins; and the `node_modules` contract target lines up with the `${containerWorkspaceFolder}/node_modules` mount in `devcontainer.json`.
+Anti-drift invariants to keep honest when editing the contract: no hardcoded absolute workspace literal; the derived fallback (with `WORKSPACE_FOLDER` unset) resolves to the repo
+root; an explicit `WORKSPACE_FOLDER` wins; and the `node_modules` contract target lines up with the `${containerWorkspaceFolder}/node_modules` mount in `devcontainer.json`.
 
 ## How the Validator Works
 
@@ -102,7 +112,8 @@ Anti-drift invariants to keep honest when editing the contract: no hardcoded abs
 1. **Workflow configuration**: `devcontainer-test.yml` and `devcontainer-prebuild.yml` push and pull the prebuilt image.
 1. **Runtime mount state** (only inside a container): each target is a real mount point owned by `vscode:vscode`, and a write probe succeeds.
 
-Outside a container the runtime block is skipped with a single warning. Inside the devcontainer, every assertion is a hard failure. The pre-commit hook checks `.devcontainer/` edits locally, and the `devcontainer-test.yml` workflow runs `validate-caching.sh` inside the built image.
+Outside a container the runtime block is skipped with a single warning. Inside the devcontainer, every assertion is a hard failure. The pre-commit hook checks `.devcontainer/`
+edits locally, and the `devcontainer-test.yml` workflow runs `validate-caching.sh` inside the built image.
 
 ## Adding a New Cache Mount
 
@@ -126,7 +137,8 @@ A pre-commit hook re-runs the validator when files under `.devcontainer/` change
 
 ## Removing a Cache Mount
 
-Remove in the inverse order: devcontainer.json first (so a fresh build does not request a mount that no longer has a target), then `cache-contract.sh`, then optionally the Dockerfile pre-create line. Do NOT remove the volume itself with `docker volume rm` until you are sure no team member's container is still running against it.
+Remove in the inverse order: devcontainer.json first (so a fresh build does not request a mount that no longer has a target), then `cache-contract.sh`, then optionally the
+Dockerfile pre-create line. Do NOT remove the volume itself with `docker volume rm` until you are sure no team member's container is still running against it.
 
 ## See Also
 
@@ -143,8 +155,6 @@ Remove in the inverse order: devcontainer.json first (so a fresh build does not 
 
 ## Agent startup
 
-`updateContentCommand` runs `post-start.sh --prepare` before the initial attach.
-It repairs nested cache ownership and writes MCP configs without network access.
-The same script runs on start and attach, then launches the CLI updater in the
-background. Image dependencies under `/opt/dxm-mcp` keep the configurator usable
-before workspace npm dependencies are installed. See [Agent MCP setup](../../../../scripts/mcp/README.md).
+`updateContentCommand` runs `post-start.sh --prepare` before the initial attach. It repairs nested cache ownership and writes MCP configs without network access. The same script
+runs on start and attach, then launches the CLI updater in the background. Image dependencies under `/opt/dxm-mcp` keep the configurator usable before workspace npm dependencies
+are installed. See [Agent MCP setup](../../../../scripts/mcp/README.md).

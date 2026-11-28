@@ -52,20 +52,10 @@ namespace DxMessaging.Tests.Runtime.Core
             ReentrantReplayRemovalBus bus = new(innerBus);
             MessageHandler handler = new(new InstanceId(OwnerInstanceId), bus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
-            using LeakWatcher watcher = new(
-                bus,
-                throwOnLeak: true,
-                label: nameof(CopiedRegistrationDisposableCannotRemoveReusedSlot)
-            );
-            MessageRegistrationHandle originalHandle =
-                token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (in SimpleUntargetedMessage _) => { },
-                    priority: 1
-                );
+            using LeakWatcher watcher = new(bus, throwOnLeak: true, label: nameof(CopiedRegistrationDisposableCannotRemoveReusedSlot));
+            MessageRegistrationHandle originalHandle = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => { }, priority: 1);
             token.Enable();
-            MessageRegistrationToken.RegistrationDisposable disposable = token.AsDisposable(
-                originalHandle
-            );
+            MessageRegistrationToken.RegistrationDisposable disposable = token.AsDisposable(originalHandle);
             MessageRegistrationToken.RegistrationDisposable copy = disposable;
 
             if (disposeCopyFirst)
@@ -77,43 +67,19 @@ namespace DxMessaging.Tests.Runtime.Core
                 disposable.Dispose();
             }
 
-            Assert.AreEqual(
-                1,
-                bus.DeregistrationAttempts,
-                "The first copy disposed must deregister the original exactly once. copyFirst={0}",
-                disposeCopyFirst
-            );
-            Assert.AreEqual(
-                0,
-                bus.RegisteredUntargeted,
-                "The original registration must be gone before its slot is reused. copyFirst={0}",
-                disposeCopyFirst
-            );
+            Assert.AreEqual(1, bus.DeregistrationAttempts, "The first copy disposed must deregister the original exactly once. copyFirst={0}", disposeCopyFirst);
+            Assert.AreEqual(0, bus.RegisteredUntargeted, "The original registration must be gone before its slot is reused. copyFirst={0}", disposeCopyFirst);
 
             DxMessagingStaticState.Reset();
-            MessageRegistrationHandle replacementHandle =
-                token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (in SimpleUntargetedMessage _) => { },
-                    priority: 2
-                );
+            MessageRegistrationHandle replacementHandle = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => { }, priority: 2);
             Assert.AreEqual(
                 originalHandle.Slot,
                 replacementHandle.Slot,
                 "The regression requires the replacement to recycle the original arena slot. copyFirst={0}",
                 disposeCopyFirst
             );
-            Assert.AreNotEqual(
-                originalHandle,
-                replacementHandle,
-                "A recycled slot must receive a new opaque identity after static reset. copyFirst={0}",
-                disposeCopyFirst
-            );
-            Assert.AreEqual(
-                1,
-                bus.RegisteredUntargeted,
-                "The replacement registration must be live before stale-copy disposal. copyFirst={0}",
-                disposeCopyFirst
-            );
+            Assert.AreNotEqual(originalHandle, replacementHandle, "A recycled slot must receive a new opaque identity after static reset. copyFirst={0}", disposeCopyFirst);
+            Assert.AreEqual(1, bus.RegisteredUntargeted, "The replacement registration must be live before stale-copy disposal. copyFirst={0}", disposeCopyFirst);
 
             if (disposeCopyFirst)
             {
@@ -124,26 +90,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 copy.Dispose();
             }
 
-            Assert.AreEqual(
-                1,
-                bus.DeregistrationAttempts,
-                "The stale copy must not reach the bus after slot reuse. copyFirst={0}",
-                disposeCopyFirst
-            );
-            Assert.AreEqual(
-                1,
-                bus.RegisteredUntargeted,
-                "The stale copy must not remove the replacement registration. copyFirst={0}",
-                disposeCopyFirst
-            );
+            Assert.AreEqual(1, bus.DeregistrationAttempts, "The stale copy must not reach the bus after slot reuse. copyFirst={0}", disposeCopyFirst);
+            Assert.AreEqual(1, bus.RegisteredUntargeted, "The stale copy must not remove the replacement registration. copyFirst={0}", disposeCopyFirst);
 
             token.Dispose();
-            Assert.AreEqual(
-                2,
-                bus.DeregistrationAttempts,
-                "Token disposal must still remove the replacement registration. copyFirst={0}",
-                disposeCopyFirst
-            );
+            Assert.AreEqual(2, bus.DeregistrationAttempts, "Token disposal must still remove the replacement registration. copyFirst={0}", disposeCopyFirst);
         }
 
         [TestCase(false)]
@@ -154,63 +105,29 @@ namespace DxMessaging.Tests.Runtime.Core
             FailingDeregistrationBus bus = new(innerBus);
             MessageHandler handler = new(new InstanceId(OwnerInstanceId), bus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
-            using LeakWatcher watcher = new(
-                bus,
-                throwOnLeak: true,
-                label: nameof(CopiedRegistrationDisposableRetriesFailedDeregistration)
-            );
-            MessageRegistrationHandle handle = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                (in SimpleUntargetedMessage _) => { }
-            );
+            using LeakWatcher watcher = new(bus, throwOnLeak: true, label: nameof(CopiedRegistrationDisposableRetriesFailedDeregistration));
+            MessageRegistrationHandle handle = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => { });
             token.Enable();
             MessageRegistrationToken.RegistrationDisposable disposable = token.AsDisposable(handle);
             MessageRegistrationToken.RegistrationDisposable copy = disposable;
 
-            MessageRegistrationToken.RegistrationDisposable first = disposeCopyFirst
-                ? copy
-                : disposable;
-            MessageRegistrationToken.RegistrationDisposable retry = disposeCopyFirst
-                ? disposable
-                : copy;
-            Assert.Throws<InvalidOperationException>(
-                first.Dispose,
-                "The first disposal must surface the bus deregistration failure."
-            );
-            Assert.AreEqual(
-                1,
-                bus.RegisteredUntargeted,
-                "A failed disposal must keep the registration live and retryable."
-            );
+            MessageRegistrationToken.RegistrationDisposable first = disposeCopyFirst ? copy : disposable;
+            MessageRegistrationToken.RegistrationDisposable retry = disposeCopyFirst ? disposable : copy;
+            Assert.Throws<InvalidOperationException>(first.Dispose, "The first disposal must surface the bus deregistration failure.");
+            Assert.AreEqual(1, bus.RegisteredUntargeted, "A failed disposal must keep the registration live and retryable.");
 
             bus.AllowDeregistrations();
-            Assert.DoesNotThrow(
-                retry.Dispose,
-                "A copied wrapper must retry the failed deregistration."
-            );
-            Assert.AreEqual(
-                0,
-                bus.RegisteredUntargeted,
-                "The retry through a copy must remove the registration."
-            );
-            Assert.DoesNotThrow(
-                first.Dispose,
-                "A stale copy after successful retry must be harmless."
-            );
-            Assert.AreEqual(
-                0,
-                bus.RegisteredUntargeted,
-                "A stale copy must not recreate or otherwise change the removed registration."
-            );
+            Assert.DoesNotThrow(retry.Dispose, "A copied wrapper must retry the failed deregistration.");
+            Assert.AreEqual(0, bus.RegisteredUntargeted, "The retry through a copy must remove the registration.");
+            Assert.DoesNotThrow(first.Dispose, "A stale copy after successful retry must be harmless.");
+            Assert.AreEqual(0, bus.RegisteredUntargeted, "A stale copy must not recreate or otherwise change the removed registration.");
         }
 
         [Test]
         public void DefaultRegistrationDisposableDisposalDoesNothing()
         {
             MessageRegistrationToken.RegistrationDisposable disposable = default;
-            Assert.DoesNotThrow(
-                disposable.Dispose,
-                "Disposing a default registration wrapper must be a harmless no-op."
-            );
+            Assert.DoesNotThrow(disposable.Dispose, "Disposing a default registration wrapper must be a harmless no-op.");
         }
 
         [Test]
@@ -222,16 +139,12 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
             int oldCalls = 0;
             int replacementCalls = 0;
-            MessageRegistrationHandle oldHandle = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                (in SimpleUntargetedMessage _) => ++oldCalls
-            );
+            MessageRegistrationHandle oldHandle = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => ++oldCalls);
             bus.OnRegistration = () =>
             {
                 bus.OnRegistration = null;
                 token.RemoveRegistration(oldHandle);
-                _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (in SimpleUntargetedMessage _) => ++replacementCalls
-                );
+                _ = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => ++replacementCalls);
             };
 
             token.Enable();
@@ -257,16 +170,12 @@ namespace DxMessaging.Tests.Runtime.Core
             ReentrantReplayRemovalBus bus = new(innerBus) { ThrowOnDeregistration = true };
             MessageHandler handler = new(new InstanceId(OwnerInstanceId), bus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
-            MessageRegistrationHandle oldHandle = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                (in SimpleUntargetedMessage _) => { }
-            );
+            MessageRegistrationHandle oldHandle = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => { });
             bus.OnRegistration = () =>
             {
                 bus.OnRegistration = null;
                 token.RemoveRegistration(oldHandle);
-                _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (in SimpleUntargetedMessage _) => { }
-                );
+                _ = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => { });
             };
 
             token.Enable();
@@ -289,9 +198,7 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, oldBus);
             int oldCalls = 0;
             int replacementCalls = 0;
-            MessageRegistrationHandle oldHandle = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                (in SimpleUntargetedMessage _) => ++oldCalls
-            );
+            MessageRegistrationHandle oldHandle = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => ++oldCalls);
             token.Enable();
 
             BusType newInnerBus = new();
@@ -300,9 +207,7 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 newBus.OnRegistration = null;
                 token.RemoveRegistration(oldHandle);
-                _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (in SimpleUntargetedMessage _) => ++replacementCalls
-                );
+                _ = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => ++replacementCalls);
             };
 
             token.RetargetMessageBus(newBus, MessageBusRebindMode.RebindActive);
@@ -334,10 +239,7 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationHandle[] handles = new MessageRegistrationHandle[priorities.Length];
             for (int i = 0; i < priorities.Length; ++i)
             {
-                handles[i] = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (in SimpleUntargetedMessage _) => { },
-                    priorities[i]
-                );
+                handles[i] = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => { }, priorities[i]);
             }
 
             bus.OnRegistrationWithPriority = priority =>
@@ -349,28 +251,19 @@ namespace DxMessaging.Tests.Runtime.Core
 
                 bus.OnRegistrationWithPriority = null;
                 token.RemoveRegistration(handles[orphanIndex]);
-                _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (in SimpleUntargetedMessage _) => { },
-                    priority: 40
-                );
+                _ = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => { }, priority: 40);
             };
 
             token.Enable();
             bus.DeregistrationOrder.Clear();
             token.Disable();
-            CollectionAssert.AreEqual(
-                priorities,
-                bus.DeregistrationOrder,
-                "Live slots and orphan teardowns must share original registration order."
-            );
+            CollectionAssert.AreEqual(priorities, bus.DeregistrationOrder, "Live slots and orphan teardowns must share original registration order.");
             token.Dispose();
         }
 
         [TestCase(0)]
         [TestCase(1)]
-        public void MultipleTeardownFailuresReportFirstRegistrationOrderExceptionWithOrphan(
-            int orphanIndex
-        )
+        public void MultipleTeardownFailuresReportFirstRegistrationOrderExceptionWithOrphan(int orphanIndex)
         {
             BusType innerBus = new();
             ReentrantReplayRemovalBus bus = new(innerBus);
@@ -380,10 +273,7 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationHandle[] handles = new MessageRegistrationHandle[priorities.Length];
             for (int i = 0; i < priorities.Length; ++i)
             {
-                handles[i] = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (in SimpleUntargetedMessage _) => { },
-                    priorities[i]
-                );
+                handles[i] = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => { }, priorities[i]);
             }
 
             bus.OnRegistrationWithPriority = priority =>
@@ -395,10 +285,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
                 bus.OnRegistrationWithPriority = null;
                 token.RemoveRegistration(handles[orphanIndex]);
-                _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (in SimpleUntargetedMessage _) => { },
-                    priority: 40
-                );
+                _ = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => { }, priority: 40);
             };
             token.Enable();
             foreach (int priority in priorities)
@@ -407,20 +294,14 @@ namespace DxMessaging.Tests.Runtime.Core
             }
 
             bus.DeregistrationOrder.Clear();
-            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
-                token.Disable
-            );
+            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(token.Disable);
             Assert.That(exception.Message, Does.Contain("10"));
             CollectionAssert.AreEqual(priorities, bus.DeregistrationOrder);
 
             bus.ThrowPriorities.Clear();
             bus.DeregistrationOrder.Clear();
             Assert.DoesNotThrow(token.Disable);
-            CollectionAssert.AreEqual(
-                priorities,
-                bus.DeregistrationOrder,
-                "Every failed teardown must remain retryable in original order."
-            );
+            CollectionAssert.AreEqual(priorities, bus.DeregistrationOrder, "Every failed teardown must remain retryable in original order.");
             token.Dispose();
         }
 
@@ -431,14 +312,8 @@ namespace DxMessaging.Tests.Runtime.Core
             ReentrantReplayRemovalBus bus = new(innerBus);
             MessageHandler handler = new(new InstanceId(OwnerInstanceId), bus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
-            _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                (in SimpleUntargetedMessage _) => { },
-                priority: 10
-            );
-            _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                (in SimpleUntargetedMessage _) => { },
-                priority: 20
-            );
+            _ = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => { }, priority: 10);
+            _ = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => { }, priority: 20);
             token.Enable();
 
             bus.OnDeregistration = priority =>
@@ -454,16 +329,11 @@ namespace DxMessaging.Tests.Runtime.Core
                     if (addedPriority == 40)
                     {
                         bus.OnRegistrationWithPriority = null;
-                        MessageRegistrationHandle addedHandle = token
-                            ._metadata.Single(entry => entry.Value.priority == addedPriority)
-                            .Key;
+                        MessageRegistrationHandle addedHandle = token._metadata.Single(entry => entry.Value.priority == addedPriority).Key;
                         token.RemoveRegistration(addedHandle);
                     }
                 };
-                _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (in SimpleUntargetedMessage _) => { },
-                    priority: 40
-                );
+                _ = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => { }, priority: 40);
             };
 
             bus.DeregistrationOrder.Clear();
@@ -479,242 +349,109 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void DisposeUnregistersAllHandlersAndDisablesToken(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void DisposeUnregistersAllHandlersAndDisablesToken([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             using TokenScope scope = TokenScope.Create();
             InstanceId context = new(ContextInstanceId);
             int handled = 0;
 
-            using (
-                LeakWatcher watcher = new(
-                    bus: scope.Bus,
-                    throwOnLeak: true,
-                    label: nameof(DisposeUnregistersAllHandlersAndDisablesToken)
-                        + "_"
-                        + scenario.DisplayName
-                )
-            )
+            using (LeakWatcher watcher = new(bus: scope.Bus, throwOnLeak: true, label: nameof(DisposeUnregistersAllHandlersAndDisablesToken) + "_" + scenario.DisplayName))
             {
                 _ = RegisterHandler(scenario, scope.Token, context, () => ++handled);
                 Emit(scenario, context, scope.Bus);
-                Assert.AreEqual(
-                    1,
-                    handled,
-                    "Control failed: handler must fire before Dispose for scenario {0}.",
-                    scenario
-                );
+                Assert.AreEqual(1, handled, "Control failed: handler must fire before Dispose for scenario {0}.", scenario);
 
                 scope.Token.Dispose();
-                Assert.IsFalse(
-                    scope.Token.Enabled,
-                    "Dispose must leave the token disabled (UnregisterAll semantics)."
-                );
+                Assert.IsFalse(scope.Token.Enabled, "Dispose must leave the token disabled (UnregisterAll semantics).");
 
                 Emit(scenario, context, scope.Bus);
-                Assert.AreEqual(
-                    1,
-                    handled,
-                    "Handlers must not fire after Dispose for scenario {0}.",
-                    scenario
-                );
+                Assert.AreEqual(1, handled, "Handlers must not fire after Dispose for scenario {0}.", scenario);
             }
         }
 
         [Test]
-        public void UnregisterAllClearsDiagnosticState(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void UnregisterAllClearsDiagnosticState([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            using DiagnosticsScope diagnosticsScope = new(
-                diagnosticsTargets: DiagnosticsTarget.Off,
-                messageBufferSize: 4
-            );
+            using DiagnosticsScope diagnosticsScope = new(diagnosticsTargets: DiagnosticsTarget.Off, messageBufferSize: 4);
             using TokenScope scope = TokenScope.Create();
             scope.Token.DiagnosticMode = true;
             InstanceId context = new(ContextInstanceId);
             int handled = 0;
 
-            using (
-                LeakWatcher watcher = new(
-                    bus: scope.Bus,
-                    throwOnLeak: true,
-                    label: nameof(UnregisterAllClearsDiagnosticState) + "_" + scenario.DisplayName
-                )
-            )
+            using (LeakWatcher watcher = new(bus: scope.Bus, throwOnLeak: true, label: nameof(UnregisterAllClearsDiagnosticState) + "_" + scenario.DisplayName))
             {
-                MessageRegistrationHandle handle = RegisterHandler(
-                    scenario,
-                    scope.Token,
-                    context,
-                    () => ++handled
-                );
+                MessageRegistrationHandle handle = RegisterHandler(scenario, scope.Token, context, () => ++handled);
 
                 Emit(scenario, context, scope.Bus);
-                Assert.AreEqual(
-                    1,
-                    handled,
-                    "Control failed: handler must fire before UnregisterAll for scenario {0}.",
-                    scenario
-                );
+                Assert.AreEqual(1, handled, "Control failed: handler must fire before UnregisterAll for scenario {0}.", scenario);
                 AssertTokenDiagnosticsPopulated(scope.Token, handle, scenario.DisplayName);
 
                 scope.Token.UnregisterAll();
 
                 Assert.IsFalse(scope.Token.Enabled, "UnregisterAll must disable the token.");
-                AssertTokenDiagnosticsEmpty(
-                    scope.Token,
-                    nameof(UnregisterAllClearsDiagnosticState),
-                    scenario.DisplayName
-                );
+                AssertTokenDiagnosticsEmpty(scope.Token, nameof(UnregisterAllClearsDiagnosticState), scenario.DisplayName);
 
                 Emit(scenario, context, scope.Bus);
-                Assert.AreEqual(
-                    1,
-                    handled,
-                    "Handlers must not fire after UnregisterAll for scenario {0}.",
-                    scenario
-                );
+                Assert.AreEqual(1, handled, "Handlers must not fire after UnregisterAll for scenario {0}.", scenario);
             }
         }
 
         [Test]
-        public void DisposeClearsDiagnosticsBeforeReuse(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void DisposeClearsDiagnosticsBeforeReuse([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            using DiagnosticsScope diagnosticsScope = new(
-                diagnosticsTargets: DiagnosticsTarget.Off,
-                messageBufferSize: 4
-            );
+            using DiagnosticsScope diagnosticsScope = new(diagnosticsTargets: DiagnosticsTarget.Off, messageBufferSize: 4);
             using TokenScope scope = TokenScope.Create();
             scope.Token.DiagnosticMode = true;
             InstanceId context = new(ContextInstanceId);
             int handled = 0;
 
-            using (
-                LeakWatcher watcher = new(
-                    bus: scope.Bus,
-                    throwOnLeak: true,
-                    label: nameof(DisposeClearsDiagnosticsBeforeReuse) + "_" + scenario.DisplayName
-                )
-            )
+            using (LeakWatcher watcher = new(bus: scope.Bus, throwOnLeak: true, label: nameof(DisposeClearsDiagnosticsBeforeReuse) + "_" + scenario.DisplayName))
             {
-                MessageRegistrationHandle firstHandle = RegisterHandler(
-                    scenario,
-                    scope.Token,
-                    context,
-                    () => ++handled
-                );
+                MessageRegistrationHandle firstHandle = RegisterHandler(scenario, scope.Token, context, () => ++handled);
 
                 Emit(scenario, context, scope.Bus);
                 AssertTokenDiagnosticsPopulated(scope.Token, firstHandle, scenario.DisplayName);
 
                 scope.Token.Dispose();
-                AssertTokenDiagnosticsEmpty(
-                    scope.Token,
-                    nameof(DisposeClearsDiagnosticsBeforeReuse),
-                    scenario.DisplayName
-                );
+                AssertTokenDiagnosticsEmpty(scope.Token, nameof(DisposeClearsDiagnosticsBeforeReuse), scenario.DisplayName);
 
-                MessageRegistrationHandle secondHandle = RegisterHandler(
-                    scenario,
-                    scope.Token,
-                    context,
-                    () => ++handled
-                );
-                Assert.AreEqual(
-                    1,
-                    scope.Token._metadata.Count,
-                    "A reused token must contain only the newly staged registration."
-                );
-                Assert.IsTrue(
-                    scope.Token._metadata.ContainsKey(secondHandle),
-                    "A reused token must not keep metadata for the disposed registration."
-                );
-                Assert.AreEqual(
-                    0,
-                    scope.Token._callCounts.Count,
-                    "A newly staged registration must not inherit old call counts."
-                );
-                Assert.AreEqual(
-                    0,
-                    scope.Token._emissionBuffer.Count,
-                    "A reused token must not expose old emission history before it is emitted."
-                );
+                MessageRegistrationHandle secondHandle = RegisterHandler(scenario, scope.Token, context, () => ++handled);
+                Assert.AreEqual(1, scope.Token._metadata.Count, "A reused token must contain only the newly staged registration.");
+                Assert.IsTrue(scope.Token._metadata.ContainsKey(secondHandle), "A reused token must not keep metadata for the disposed registration.");
+                Assert.AreEqual(0, scope.Token._callCounts.Count, "A newly staged registration must not inherit old call counts.");
+                Assert.AreEqual(0, scope.Token._emissionBuffer.Count, "A reused token must not expose old emission history before it is emitted.");
 
                 Emit(scenario, context, scope.Bus);
-                Assert.AreEqual(
-                    1,
-                    handled,
-                    "A reused token registration must stay inactive until Enable for scenario {0}.",
-                    scenario
-                );
+                Assert.AreEqual(1, handled, "A reused token registration must stay inactive until Enable for scenario {0}.", scenario);
 
                 scope.Token.Enable();
                 Emit(scenario, context, scope.Bus);
-                Assert.AreEqual(
-                    2,
-                    handled,
-                    "Enable must activate the reused token registration for scenario {0}.",
-                    scenario
-                );
+                Assert.AreEqual(2, handled, "Enable must activate the reused token registration for scenario {0}.", scenario);
                 AssertTokenDiagnosticsPopulated(scope.Token, secondHandle, scenario.DisplayName);
 
                 scope.Token.Dispose();
-                AssertTokenDiagnosticsEmpty(
-                    scope.Token,
-                    nameof(DisposeClearsDiagnosticsBeforeReuse),
-                    scenario.DisplayName
-                );
+                AssertTokenDiagnosticsEmpty(scope.Token, nameof(DisposeClearsDiagnosticsBeforeReuse), scenario.DisplayName);
             }
         }
 
         [Test]
-        public void RemoveFinalRegistrationClearsDiagnosticState(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void RemoveFinalRegistrationClearsDiagnosticState([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            using DiagnosticsScope diagnosticsScope = new(
-                diagnosticsTargets: DiagnosticsTarget.Off,
-                messageBufferSize: 4
-            );
+            using DiagnosticsScope diagnosticsScope = new(diagnosticsTargets: DiagnosticsTarget.Off, messageBufferSize: 4);
             using TokenScope scope = TokenScope.Create();
             scope.Token.DiagnosticMode = true;
             InstanceId context = new(ContextInstanceId);
             int handled = 0;
 
-            using (
-                LeakWatcher watcher = new(
-                    bus: scope.Bus,
-                    throwOnLeak: true,
-                    label: nameof(RemoveFinalRegistrationClearsDiagnosticState)
-                        + "_"
-                        + scenario.DisplayName
-                )
-            )
+            using (LeakWatcher watcher = new(bus: scope.Bus, throwOnLeak: true, label: nameof(RemoveFinalRegistrationClearsDiagnosticState) + "_" + scenario.DisplayName))
             {
-                MessageRegistrationHandle handle = RegisterHandler(
-                    scenario,
-                    scope.Token,
-                    context,
-                    () => ++handled
-                );
+                MessageRegistrationHandle handle = RegisterHandler(scenario, scope.Token, context, () => ++handled);
 
                 Emit(scenario, context, scope.Bus);
                 AssertTokenDiagnosticsPopulated(scope.Token, handle, scenario.DisplayName);
 
                 scope.Token.RemoveRegistration(handle);
-                AssertTokenDiagnosticsEmpty(
-                    scope.Token,
-                    nameof(RemoveFinalRegistrationClearsDiagnosticState),
-                    scenario.DisplayName
-                );
+                AssertTokenDiagnosticsEmpty(scope.Token, nameof(RemoveFinalRegistrationClearsDiagnosticState), scenario.DisplayName);
             }
         }
 
@@ -723,10 +460,7 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             BusType innerBus = new();
             FailingDeregistrationBus throwingBus = new(innerBus);
-            MessageHandler handler = new(new InstanceId(OwnerInstanceId), throwingBus)
-            {
-                active = true,
-            };
+            MessageHandler handler = new(new InstanceId(OwnerInstanceId), throwingBus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, throwingBus);
             token.DiagnosticMode = true;
             token.Enable();
@@ -734,57 +468,26 @@ namespace DxMessaging.Tests.Runtime.Core
 
             try
             {
-                using (
-                    LeakWatcher watcher = new(
-                        bus: throwingBus,
-                        throwOnLeak: true,
-                        label: nameof(RemoveRegistrationLeavesFailedDeregistrationRetryable)
-                    )
-                )
+                using (LeakWatcher watcher = new(bus: throwingBus, throwOnLeak: true, label: nameof(RemoveRegistrationLeavesFailedDeregistrationRetryable)))
                 {
-                    MessageRegistrationHandle handle =
-                        token.RegisterUntargeted<SimpleUntargetedMessage>(
-                            (in SimpleUntargetedMessage _) => ++handled
-                        );
+                    MessageRegistrationHandle handle = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => ++handled);
                     SimpleUntargetedMessage message = new();
                     throwingBus.UntargetedBroadcast(ref message);
                     Assert.AreEqual(1, handled, "Control failed: handler must fire.");
-                    AssertTokenDiagnosticsPopulated(
-                        token,
-                        handle,
-                        MessageKind.Untargeted.ToString()
-                    );
+                    AssertTokenDiagnosticsPopulated(token, handle, MessageKind.Untargeted.ToString());
 
-                    Assert.Throws<InvalidOperationException>(
-                        () => token.RemoveRegistration(handle),
-                        "The throwing bus must surface the deregistration failure."
-                    );
-                    Assert.AreEqual(
-                        1,
-                        throwingBus.RegisteredUntargeted,
-                        "A deregistration that fails before cleanup must leave the handler live."
-                    );
-                    Assert.IsTrue(
-                        token._metadata.ContainsKey(handle),
-                        "The failed removal must keep token metadata retryable."
-                    );
+                    Assert.Throws<InvalidOperationException>(() => token.RemoveRegistration(handle), "The throwing bus must surface the deregistration failure.");
+                    Assert.AreEqual(1, throwingBus.RegisteredUntargeted, "A deregistration that fails before cleanup must leave the handler live.");
+                    Assert.IsTrue(token._metadata.ContainsKey(handle), "The failed removal must keep token metadata retryable.");
 
                     throwingBus.AllowDeregistrations();
                     token.RemoveRegistration(handle);
                     Assert.AreEqual(0, throwingBus.RegisteredUntargeted, "Retry must deregister.");
-                    AssertTokenDiagnosticsEmpty(
-                        token,
-                        nameof(RemoveRegistrationLeavesFailedDeregistrationRetryable),
-                        MessageKind.Untargeted.ToString()
-                    );
+                    AssertTokenDiagnosticsEmpty(token, nameof(RemoveRegistrationLeavesFailedDeregistrationRetryable), MessageKind.Untargeted.ToString());
 
                     token.Enable();
                     throwingBus.UntargetedBroadcast(ref message);
-                    Assert.AreEqual(
-                        1,
-                        handled,
-                        "The removed staged registration must not replay after a throwing removal."
-                    );
+                    Assert.AreEqual(1, handled, "The removed staged registration must not replay after a throwing removal.");
                 }
             }
             finally
@@ -795,25 +498,14 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void DisableThenDisposeDoesNotOverDeregister(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void DisableThenDisposeDoesNotOverDeregister([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             using TokenScope scope = TokenScope.Create();
             using MessagingDebugCapture debug = new();
             InstanceId context = new(ContextInstanceId);
             int handled = 0;
 
-            using (
-                LeakWatcher watcher = new(
-                    bus: scope.Bus,
-                    throwOnLeak: true,
-                    label: nameof(DisableThenDisposeDoesNotOverDeregister)
-                        + "_"
-                        + scenario.DisplayName
-                )
-            )
+            using (LeakWatcher watcher = new(bus: scope.Bus, throwOnLeak: true, label: nameof(DisableThenDisposeDoesNotOverDeregister) + "_" + scenario.DisplayName))
             {
                 _ = RegisterHandler(scenario, scope.Token, context, () => ++handled);
                 Emit(scenario, context, scope.Bus);
@@ -826,32 +518,16 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void DisableThenRemoveRegistrationDoesNotOverDeregister(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void DisableThenRemoveRegistrationDoesNotOverDeregister([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             using TokenScope scope = TokenScope.Create();
             using MessagingDebugCapture debug = new();
             InstanceId context = new(ContextInstanceId);
             int handled = 0;
 
-            using (
-                LeakWatcher watcher = new(
-                    bus: scope.Bus,
-                    throwOnLeak: true,
-                    label: nameof(DisableThenRemoveRegistrationDoesNotOverDeregister)
-                        + "_"
-                        + scenario.DisplayName
-                )
-            )
+            using (LeakWatcher watcher = new(bus: scope.Bus, throwOnLeak: true, label: nameof(DisableThenRemoveRegistrationDoesNotOverDeregister) + "_" + scenario.DisplayName))
             {
-                MessageRegistrationHandle handle = RegisterHandler(
-                    scenario,
-                    scope.Token,
-                    context,
-                    () => ++handled
-                );
+                MessageRegistrationHandle handle = RegisterHandler(scenario, scope.Token, context, () => ++handled);
                 Emit(scenario, context, scope.Bus);
                 Assert.AreEqual(1, handled, "Control failed: handler must fire.");
 
@@ -861,11 +537,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
                 scope.Token.Enable();
                 Emit(scenario, context, scope.Bus);
-                Assert.AreEqual(
-                    1,
-                    handled,
-                    "RemoveRegistration after Disable must remove the staged handler."
-                );
+                Assert.AreEqual(1, handled, "RemoveRegistration after Disable must remove the staged handler.");
             }
         }
 
@@ -875,19 +547,9 @@ namespace DxMessaging.Tests.Runtime.Core
             using TokenScope scope = TokenScope.Create();
             using MessagingDebugCapture debug = new();
 
-            using (
-                LeakWatcher watcher = new(
-                    bus: scope.Bus,
-                    throwOnLeak: true,
-                    label: nameof(
-                        DisableThenDisposeDoesNotOverDeregisterInterceptorOrGlobalAcceptAll
-                    )
-                )
-            )
+            using (LeakWatcher watcher = new(bus: scope.Bus, throwOnLeak: true, label: nameof(DisableThenDisposeDoesNotOverDeregisterInterceptorOrGlobalAcceptAll)))
             {
-                _ = scope.Token.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(
-                    (ref SimpleUntargetedMessage _) => true
-                );
+                _ = scope.Token.RegisterUntargetedInterceptor<SimpleUntargetedMessage>((ref SimpleUntargetedMessage _) => true);
                 _ = scope.Token.RegisterGlobalAcceptAll(
                     (in IUntargetedMessage _) => { },
                     (in InstanceId _, in ITargetedMessage __) => { },
@@ -902,39 +564,18 @@ namespace DxMessaging.Tests.Runtime.Core
 
         [Test]
         public void GlobalAcceptAllDuplicateRefcountSurvivesRemoveDisableAndReenable(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario
         )
         {
             using TokenScope scope = TokenScope.Create();
-            using LeakWatcher watcher = new(
-                scope.Bus,
-                label: nameof(GlobalAcceptAllDuplicateRefcountSurvivesRemoveDisableAndReenable)
-                    + "_"
-                    + scenario.DisplayName
-            );
+            using LeakWatcher watcher = new(scope.Bus, label: nameof(GlobalAcceptAllDuplicateRefcountSurvivesRemoveDisableAndReenable) + "_" + scenario.DisplayName);
             int calls = 0;
-            MessageHandler.FastHandler<IUntargetedMessage> untargeted = (in IUntargetedMessage _) =>
-                ++calls;
-            MessageHandler.FastHandlerWithContext<ITargetedMessage> targeted = (
-                in InstanceId _,
-                in ITargetedMessage __
-            ) => ++calls;
-            MessageHandler.FastHandlerWithContext<IBroadcastMessage> broadcast = (
-                in InstanceId _,
-                in IBroadcastMessage __
-            ) => ++calls;
+            MessageHandler.FastHandler<IUntargetedMessage> untargeted = (in IUntargetedMessage _) => ++calls;
+            MessageHandler.FastHandlerWithContext<ITargetedMessage> targeted = (in InstanceId _, in ITargetedMessage __) => ++calls;
+            MessageHandler.FastHandlerWithContext<IBroadcastMessage> broadcast = (in InstanceId _, in IBroadcastMessage __) => ++calls;
 
-            MessageRegistrationHandle first = scope.Token.RegisterGlobalAcceptAll(
-                untargeted,
-                targeted,
-                broadcast
-            );
-            MessageRegistrationHandle second = scope.Token.RegisterGlobalAcceptAll(
-                untargeted,
-                targeted,
-                broadcast
-            );
+            MessageRegistrationHandle first = scope.Token.RegisterGlobalAcceptAll(untargeted, targeted, broadcast);
+            MessageRegistrationHandle second = scope.Token.RegisterGlobalAcceptAll(untargeted, targeted, broadcast);
 
             InstanceId context = new(ContextInstanceId);
             Emit(scenario, context, scope.Bus);
@@ -967,10 +608,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             try
             {
-                using LeakWatcher watcher = new(
-                    bus,
-                    label: nameof(GlobalAcceptAllFailedBusTeardownRemainsRetryable)
-                );
+                using LeakWatcher watcher = new(bus, label: nameof(GlobalAcceptAllFailedBusTeardownRemainsRetryable));
                 _ = token.RegisterGlobalAcceptAll(
                     (in IUntargetedMessage _) => { },
                     (in InstanceId _, in ITargetedMessage __) => { },
@@ -994,8 +632,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Assert.AreEqual(
                     3,
                     handler.ResetEmptyTypedSlotsForSweep(bus),
-                    "The successful retry and final disable must drain all three embedded "
-                        + "global typed-slot teardown states, not only the bus registration."
+                    "The successful retry and final disable must drain all three embedded " + "global typed-slot teardown states, not only the bus registration."
                 );
             }
             finally
@@ -1009,56 +646,27 @@ namespace DxMessaging.Tests.Runtime.Core
         public void EnableFailureRollsBackPartialRegistrations()
         {
             BusType innerBus = new();
-            ThrowingUntargetedRegistrationBus throwingBus = new(
-                innerBus,
-                successfulRegistrationsBeforeThrow: 1
-            );
-            MessageHandler handler = new(new InstanceId(OwnerInstanceId), throwingBus)
-            {
-                active = true,
-            };
+            ThrowingUntargetedRegistrationBus throwingBus = new(innerBus, successfulRegistrationsBeforeThrow: 1);
+            MessageHandler handler = new(new InstanceId(OwnerInstanceId), throwingBus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, throwingBus);
             int handled = 0;
 
             try
             {
-                using (
-                    LeakWatcher watcher = new(
-                        bus: throwingBus,
-                        throwOnLeak: true,
-                        label: nameof(EnableFailureRollsBackPartialRegistrations)
-                    )
-                )
+                using (LeakWatcher watcher = new(bus: throwingBus, throwOnLeak: true, label: nameof(EnableFailureRollsBackPartialRegistrations)))
                 {
-                    _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (in SimpleUntargetedMessage _) => ++handled,
-                        priority: 0
-                    );
-                    _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (in SimpleUntargetedMessage _) => ++handled,
-                        priority: 1
-                    );
+                    _ = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => ++handled, priority: 0);
+                    _ = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => ++handled, priority: 1);
 
-                    Assert.Throws<InvalidOperationException>(
-                        token.Enable,
-                        "The throwing bus must fail during registration replay."
-                    );
+                    Assert.Throws<InvalidOperationException>(token.Enable, "The throwing bus must fail during registration replay.");
                     Assert.IsFalse(token.Enabled, "A failed Enable must leave the token disabled.");
-                    Assert.AreEqual(
-                        0,
-                        throwingBus.RegisteredUntargeted,
-                        "A failed Enable must roll back registrations replayed before the throw."
-                    );
+                    Assert.AreEqual(0, throwingBus.RegisteredUntargeted, "A failed Enable must roll back registrations replayed before the throw.");
 
                     throwingBus.AllowRegistrations();
                     token.Enable();
                     SimpleUntargetedMessage message = new();
                     throwingBus.UntargetedBroadcast(ref message);
-                    Assert.AreEqual(
-                        2,
-                        handled,
-                        "Retrying Enable after rollback must register each staged handler once."
-                    );
+                    Assert.AreEqual(2, handled, "Retrying Enable after rollback must register each staged handler once.");
 
                     token.Dispose();
                 }
@@ -1075,85 +683,37 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             BusType oldBus = new();
             BusType newInnerBus = new();
-            ThrowingUntargetedRegistrationBus throwingNewBus = new(
-                newInnerBus,
-                successfulRegistrationsBeforeThrow: 1
-            );
+            ThrowingUntargetedRegistrationBus throwingNewBus = new(newInnerBus, successfulRegistrationsBeforeThrow: 1);
             MessageHandler handler = new(new InstanceId(OwnerInstanceId), oldBus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, oldBus);
             int handled = 0;
 
             try
             {
-                using (
-                    LeakWatcher oldWatcher = new(
-                        bus: oldBus,
-                        throwOnLeak: true,
-                        label: nameof(RetargetFailureRollsBackPartialRegistrations) + "_Old"
-                    )
-                )
-                using (
-                    LeakWatcher newWatcher = new(
-                        bus: throwingNewBus,
-                        throwOnLeak: true,
-                        label: nameof(RetargetFailureRollsBackPartialRegistrations) + "_New"
-                    )
-                )
+                using (LeakWatcher oldWatcher = new(bus: oldBus, throwOnLeak: true, label: nameof(RetargetFailureRollsBackPartialRegistrations) + "_Old"))
+                using (LeakWatcher newWatcher = new(bus: throwingNewBus, throwOnLeak: true, label: nameof(RetargetFailureRollsBackPartialRegistrations) + "_New"))
                 {
-                    _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (in SimpleUntargetedMessage _) => ++handled,
-                        priority: 0
-                    );
-                    _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (in SimpleUntargetedMessage _) => ++handled,
-                        priority: 1
-                    );
+                    _ = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => ++handled, priority: 0);
+                    _ = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => ++handled, priority: 1);
                     token.Enable();
                     Assert.AreEqual(2, oldBus.RegisteredUntargeted, "Control failed.");
 
                     Assert.Throws<InvalidOperationException>(
-                        () =>
-                            token.RetargetMessageBus(
-                                throwingNewBus,
-                                MessageBusRebindMode.RebindActive
-                            ),
+                        () => token.RetargetMessageBus(throwingNewBus, MessageBusRebindMode.RebindActive),
                         "The throwing bus must fail during active retarget replay."
                     );
-                    Assert.IsTrue(
-                        token.Enabled,
-                        "A failed active retarget must restore the token to its previous enabled state."
-                    );
-                    Assert.AreEqual(
-                        2,
-                        oldBus.RegisteredUntargeted,
-                        "A failed active retarget must restore old-bus registrations."
-                    );
-                    Assert.AreEqual(
-                        0,
-                        throwingNewBus.RegisteredUntargeted,
-                        "A failed retarget must roll back new-bus registrations replayed before the throw."
-                    );
+                    Assert.IsTrue(token.Enabled, "A failed active retarget must restore the token to its previous enabled state.");
+                    Assert.AreEqual(2, oldBus.RegisteredUntargeted, "A failed active retarget must restore old-bus registrations.");
+                    Assert.AreEqual(0, throwingNewBus.RegisteredUntargeted, "A failed retarget must roll back new-bus registrations replayed before the throw.");
 
                     throwingNewBus.AllowRegistrations();
                     token.RetargetMessageBus(throwingNewBus, MessageBusRebindMode.RebindActive);
                     Assert.IsTrue(token.Enabled, "Retrying retarget must leave the token enabled.");
-                    Assert.AreEqual(
-                        0,
-                        oldBus.RegisteredUntargeted,
-                        "Retrying retarget must remove restored old-bus registrations."
-                    );
-                    Assert.AreEqual(
-                        2,
-                        throwingNewBus.RegisteredUntargeted,
-                        "Retrying retarget must register each staged handler on the new bus."
-                    );
+                    Assert.AreEqual(0, oldBus.RegisteredUntargeted, "Retrying retarget must remove restored old-bus registrations.");
+                    Assert.AreEqual(2, throwingNewBus.RegisteredUntargeted, "Retrying retarget must register each staged handler on the new bus.");
                     SimpleUntargetedMessage message = new();
                     throwingNewBus.UntargetedBroadcast(ref message);
-                    Assert.AreEqual(
-                        2,
-                        handled,
-                        "Retrying Enable after retarget rollback must register each staged handler once."
-                    );
+                    Assert.AreEqual(2, handled, "Retrying Enable after retarget rollback must register each staged handler once.");
 
                     token.Dispose();
                 }
@@ -1169,10 +729,7 @@ namespace DxMessaging.Tests.Runtime.Core
         public void RetargetOldDeregistrationFailureRestoresSuccessfulOldDeregistrations()
         {
             BusType oldInnerBus = new();
-            PartiallyFailingDeregistrationBus oldBus = new(
-                oldInnerBus,
-                successfulDeregistrationsBeforeThrow: 1
-            );
+            PartiallyFailingDeregistrationBus oldBus = new(oldInnerBus, successfulDeregistrationsBeforeThrow: 1);
             BusType newBus = new();
             MessageHandler handler = new(new InstanceId(OwnerInstanceId), oldBus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, oldBus);
@@ -1180,31 +737,11 @@ namespace DxMessaging.Tests.Runtime.Core
 
             try
             {
-                using (
-                    LeakWatcher oldWatcher = new(
-                        bus: oldBus,
-                        throwOnLeak: true,
-                        label: nameof(
-                            RetargetOldDeregistrationFailureRestoresSuccessfulOldDeregistrations
-                        ) + "_Old"
-                    )
-                )
-                using (
-                    LeakWatcher newWatcher = new(
-                        bus: newBus,
-                        throwOnLeak: true,
-                        label: nameof(
-                            RetargetOldDeregistrationFailureRestoresSuccessfulOldDeregistrations
-                        ) + "_New"
-                    )
-                )
+                using (LeakWatcher oldWatcher = new(bus: oldBus, throwOnLeak: true, label: nameof(RetargetOldDeregistrationFailureRestoresSuccessfulOldDeregistrations) + "_Old"))
+                using (LeakWatcher newWatcher = new(bus: newBus, throwOnLeak: true, label: nameof(RetargetOldDeregistrationFailureRestoresSuccessfulOldDeregistrations) + "_New"))
                 {
-                    _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (in SimpleUntargetedMessage _) => ++handled
-                    );
-                    _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (in SimpleUntargetedMessage _) => ++handled
-                    );
+                    _ = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => ++handled);
+                    _ = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => ++handled);
                     token.Enable();
                     int oldRegistrationCount = oldBus.RegisteredUntargeted;
                     Assert.Greater(oldRegistrationCount, 0, "Control failed.");
@@ -1213,29 +750,14 @@ namespace DxMessaging.Tests.Runtime.Core
                         () => token.RetargetMessageBus(newBus, MessageBusRebindMode.RebindActive),
                         "The old bus must fail during active retarget teardown."
                     );
-                    Assert.IsTrue(
-                        token.Enabled,
-                        "A failed old-bus teardown must leave the token retryable and active."
-                    );
-                    Assert.AreEqual(
-                        oldRegistrationCount,
-                        oldBus.RegisteredUntargeted,
-                        "A failed old-bus teardown must restore registrations already removed."
-                    );
-                    Assert.AreEqual(
-                        0,
-                        newBus.RegisteredUntargeted,
-                        "Retarget must not register on the new bus when old-bus teardown failed."
-                    );
+                    Assert.IsTrue(token.Enabled, "A failed old-bus teardown must leave the token retryable and active.");
+                    Assert.AreEqual(oldRegistrationCount, oldBus.RegisteredUntargeted, "A failed old-bus teardown must restore registrations already removed.");
+                    Assert.AreEqual(0, newBus.RegisteredUntargeted, "Retarget must not register on the new bus when old-bus teardown failed.");
 
                     oldBus.AllowDeregistrations();
                     token.RetargetMessageBus(newBus, MessageBusRebindMode.RebindActive);
                     Assert.AreEqual(0, oldBus.RegisteredUntargeted, "Retry must clear old bus.");
-                    Assert.AreEqual(
-                        oldRegistrationCount,
-                        newBus.RegisteredUntargeted,
-                        "Retry must move the active registrations to the new bus."
-                    );
+                    Assert.AreEqual(oldRegistrationCount, newBus.RegisteredUntargeted, "Retry must move the active registrations to the new bus.");
 
                     token.Dispose();
                 }
@@ -1251,10 +773,7 @@ namespace DxMessaging.Tests.Runtime.Core
         public void RetargetOldDeregistrationFailureWithRestoreFailureKeepsFailedHandleRetryable()
         {
             BusType oldInnerBus = new();
-            PartiallyFailingDeregistrationWithRestoreFailureBus oldBus = new(
-                oldInnerBus,
-                successfulDeregistrationsBeforeThrow: 1
-            );
+            PartiallyFailingDeregistrationWithRestoreFailureBus oldBus = new(oldInnerBus, successfulDeregistrationsBeforeThrow: 1);
             BusType newBus = new();
             MessageHandler handler = new(new InstanceId(OwnerInstanceId), oldBus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, oldBus);
@@ -1266,29 +785,19 @@ namespace DxMessaging.Tests.Runtime.Core
                     LeakWatcher oldWatcher = new(
                         bus: oldBus,
                         throwOnLeak: true,
-                        label: nameof(
-                            RetargetOldDeregistrationFailureWithRestoreFailureKeepsFailedHandleRetryable
-                        ) + "_Old"
+                        label: nameof(RetargetOldDeregistrationFailureWithRestoreFailureKeepsFailedHandleRetryable) + "_Old"
                     )
                 )
                 using (
                     LeakWatcher newWatcher = new(
                         bus: newBus,
                         throwOnLeak: true,
-                        label: nameof(
-                            RetargetOldDeregistrationFailureWithRestoreFailureKeepsFailedHandleRetryable
-                        ) + "_New"
+                        label: nameof(RetargetOldDeregistrationFailureWithRestoreFailureKeepsFailedHandleRetryable) + "_New"
                     )
                 )
                 {
-                    _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (in SimpleUntargetedMessage _) => ++handled,
-                        priority: 0
-                    );
-                    _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (in SimpleUntargetedMessage _) => ++handled,
-                        priority: 1
-                    );
+                    _ = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => ++handled, priority: 0);
+                    _ = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => ++handled, priority: 1);
                     token.Enable();
                     Assert.AreEqual(2, oldBus.RegisteredUntargeted, "Control failed.");
 
@@ -1296,33 +805,14 @@ namespace DxMessaging.Tests.Runtime.Core
                         () => token.RetargetMessageBus(newBus, MessageBusRebindMode.RebindActive),
                         "The old bus must fail during teardown and then fail to restore the removed handler."
                     );
-                    Assert.IsTrue(
-                        token.Enabled,
-                        "The failed old-bus deregistration must keep the token active for cleanup retry."
-                    );
-                    Assert.AreEqual(
-                        1,
-                        oldBus.RegisteredUntargeted,
-                        "The handler whose deregistration failed must remain live."
-                    );
-                    Assert.AreEqual(
-                        0,
-                        newBus.RegisteredUntargeted,
-                        "Retarget must not register on the new bus when old-bus teardown failed."
-                    );
-                    Assert.AreEqual(
-                        2,
-                        oldBus.DeregistrationAttempts,
-                        "Restore rollback must not invoke the unrelated failed old-bus cleanup again."
-                    );
+                    Assert.IsTrue(token.Enabled, "The failed old-bus deregistration must keep the token active for cleanup retry.");
+                    Assert.AreEqual(1, oldBus.RegisteredUntargeted, "The handler whose deregistration failed must remain live.");
+                    Assert.AreEqual(0, newBus.RegisteredUntargeted, "Retarget must not register on the new bus when old-bus teardown failed.");
+                    Assert.AreEqual(2, oldBus.DeregistrationAttempts, "Restore rollback must not invoke the unrelated failed old-bus cleanup again.");
 
                     SimpleUntargetedMessage message = new();
                     oldBus.UntargetedBroadcast(ref message);
-                    Assert.AreEqual(
-                        1,
-                        handled,
-                        "The originally failed old-bus registration must still dispatch."
-                    );
+                    Assert.AreEqual(1, handled, "The originally failed old-bus registration must still dispatch.");
 
                     oldBus.AllowDeregistrations();
                     oldBus.AllowRegistrations();
@@ -1332,11 +822,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
                     token.Enable();
                     oldBus.UntargetedBroadcast(ref message);
-                    Assert.AreEqual(
-                        3,
-                        handled,
-                        "Re-enabling after cleanup retry must restore both staged handlers once."
-                    );
+                    Assert.AreEqual(3, handled, "Re-enabling after cleanup retry must restore both staged handlers once.");
 
                     token.Dispose();
                 }
@@ -1355,89 +841,40 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             BusType oldBus = new();
             BusType newInnerBus = new();
-            ThrowingRegistrationWithFailingRollbackBus throwingNewBus = new(
-                newInnerBus,
-                successfulRegistrationsBeforeThrow: 1
-            );
+            ThrowingRegistrationWithFailingRollbackBus throwingNewBus = new(newInnerBus, successfulRegistrationsBeforeThrow: 1);
             MessageHandler handler = new(new InstanceId(OwnerInstanceId), oldBus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, oldBus);
             int handled = 0;
 
             try
             {
-                using (
-                    LeakWatcher oldWatcher = new(
-                        bus: oldBus,
-                        throwOnLeak: true,
-                        label: nameof(RetargetReplayFailureWithRollbackFailureKeepsCleanupRetryable)
-                            + "_Old"
-                    )
-                )
-                using (
-                    LeakWatcher newWatcher = new(
-                        bus: throwingNewBus,
-                        throwOnLeak: true,
-                        label: nameof(RetargetReplayFailureWithRollbackFailureKeepsCleanupRetryable)
-                            + "_New"
-                    )
-                )
+                using (LeakWatcher oldWatcher = new(bus: oldBus, throwOnLeak: true, label: nameof(RetargetReplayFailureWithRollbackFailureKeepsCleanupRetryable) + "_Old"))
+                using (LeakWatcher newWatcher = new(bus: throwingNewBus, throwOnLeak: true, label: nameof(RetargetReplayFailureWithRollbackFailureKeepsCleanupRetryable) + "_New"))
                 {
-                    _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (in SimpleUntargetedMessage _) => ++handled,
-                        priority: 0
-                    );
-                    _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (in SimpleUntargetedMessage _) => ++handled,
-                        priority: 1
-                    );
+                    _ = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => ++handled, priority: 0);
+                    _ = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => ++handled, priority: 1);
                     token.Enable();
 
                     Assert.Throws<InvalidOperationException>(
-                        () =>
-                            token.RetargetMessageBus(
-                                throwingNewBus,
-                                MessageBusRebindMode.RebindActive
-                            ),
+                        () => token.RetargetMessageBus(throwingNewBus, MessageBusRebindMode.RebindActive),
                         "The throwing bus must fail during active retarget replay."
                     );
-                    Assert.IsTrue(
-                        token.Enabled,
-                        "A rollback cleanup failure leaves live registrations and must stay retryable."
-                    );
-                    Assert.AreEqual(
-                        1,
-                        oldBus.RegisteredUntargeted,
-                        "The old bus must restore only handlers not still live on the failed new bus."
-                    );
-                    Assert.AreEqual(
-                        1,
-                        throwingNewBus.RegisteredUntargeted,
-                        "The failed rollback registration must remain live and retryable on the new bus."
-                    );
+                    Assert.IsTrue(token.Enabled, "A rollback cleanup failure leaves live registrations and must stay retryable.");
+                    Assert.AreEqual(1, oldBus.RegisteredUntargeted, "The old bus must restore only handlers not still live on the failed new bus.");
+                    Assert.AreEqual(1, throwingNewBus.RegisteredUntargeted, "The failed rollback registration must remain live and retryable on the new bus.");
 
                     throwingNewBus.AllowDeregistrations();
                     token.Disable();
                     Assert.IsFalse(token.Enabled, "Retrying cleanup must disable the token.");
                     Assert.AreEqual(0, oldBus.RegisteredUntargeted, "Retry must clear old bus.");
-                    Assert.AreEqual(
-                        0,
-                        throwingNewBus.RegisteredUntargeted,
-                        "Retry must clear new bus."
-                    );
+                    Assert.AreEqual(0, throwingNewBus.RegisteredUntargeted, "Retry must clear new bus.");
 
                     throwingNewBus.AllowRegistrations();
-                    token.RetargetMessageBus(
-                        throwingNewBus,
-                        MessageBusRebindMode.PreserveRegistrations
-                    );
+                    token.RetargetMessageBus(throwingNewBus, MessageBusRebindMode.PreserveRegistrations);
                     token.Enable();
                     SimpleUntargetedMessage message = new();
                     throwingNewBus.UntargetedBroadcast(ref message);
-                    Assert.AreEqual(
-                        2,
-                        handled,
-                        "Retrying Enable must register both handlers once."
-                    );
+                    Assert.AreEqual(2, handled, "Retrying Enable must register both handlers once.");
 
                     token.Dispose();
                 }
@@ -1455,10 +892,7 @@ namespace DxMessaging.Tests.Runtime.Core
             BusType oldInnerBus = new();
             ThrowingRestoreRegistrationBus oldBus = new(oldInnerBus);
             BusType newInnerBus = new();
-            ThrowingRegistrationWithSingleFailingRollbackBus throwingNewBus = new(
-                newInnerBus,
-                successfulRegistrationsBeforeThrow: 1
-            );
+            ThrowingRegistrationWithSingleFailingRollbackBus throwingNewBus = new(newInnerBus, successfulRegistrationsBeforeThrow: 1);
             MessageHandler handler = new(new InstanceId(OwnerInstanceId), oldBus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, oldBus);
             int handled = 0;
@@ -1469,93 +903,44 @@ namespace DxMessaging.Tests.Runtime.Core
                     LeakWatcher oldWatcher = new(
                         bus: oldBus,
                         throwOnLeak: true,
-                        label: nameof(
-                            RetargetReplayFailureWithRestoreFailureDoesNotConsumeNewBusRetryableCleanup
-                        ) + "_Old"
+                        label: nameof(RetargetReplayFailureWithRestoreFailureDoesNotConsumeNewBusRetryableCleanup) + "_Old"
                     )
                 )
                 using (
                     LeakWatcher newWatcher = new(
                         bus: throwingNewBus,
                         throwOnLeak: true,
-                        label: nameof(
-                            RetargetReplayFailureWithRestoreFailureDoesNotConsumeNewBusRetryableCleanup
-                        ) + "_New"
+                        label: nameof(RetargetReplayFailureWithRestoreFailureDoesNotConsumeNewBusRetryableCleanup) + "_New"
                     )
                 )
                 {
-                    _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (in SimpleUntargetedMessage _) => ++handled,
-                        priority: 0
-                    );
-                    _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (in SimpleUntargetedMessage _) => ++handled,
-                        priority: 1
-                    );
+                    _ = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => ++handled, priority: 0);
+                    _ = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => ++handled, priority: 1);
                     token.Enable();
                     Assert.AreEqual(2, oldBus.RegisteredUntargeted, "Control failed.");
 
                     Assert.Throws<InvalidOperationException>(
-                        () =>
-                            token.RetargetMessageBus(
-                                throwingNewBus,
-                                MessageBusRebindMode.RebindActive
-                            ),
+                        () => token.RetargetMessageBus(throwingNewBus, MessageBusRebindMode.RebindActive),
                         "The new bus must fail during replay and the old bus must fail during restore."
                     );
-                    Assert.IsTrue(
-                        token.Enabled,
-                        "The failed new-bus cleanup must keep the token active for retry."
-                    );
-                    Assert.AreEqual(
-                        0,
-                        oldBus.RegisteredUntargeted,
-                        "The old-bus restore throws before re-registering handlers."
-                    );
-                    Assert.AreEqual(
-                        1,
-                        throwingNewBus.RegisteredUntargeted,
-                        "The failed rollback registration must remain live on the new bus."
-                    );
-                    Assert.AreEqual(
-                        1,
-                        throwingNewBus.DeregistrationAttempts,
-                        "Old-bus restore rollback must not consume new-bus retryable cleanup."
-                    );
-                    Assert.AreEqual(
-                        1,
-                        oldBus.RegistrationFailures,
-                        "Control failed: old-bus restore registration must throw once."
-                    );
+                    Assert.IsTrue(token.Enabled, "The failed new-bus cleanup must keep the token active for retry.");
+                    Assert.AreEqual(0, oldBus.RegisteredUntargeted, "The old-bus restore throws before re-registering handlers.");
+                    Assert.AreEqual(1, throwingNewBus.RegisteredUntargeted, "The failed rollback registration must remain live on the new bus.");
+                    Assert.AreEqual(1, throwingNewBus.DeregistrationAttempts, "Old-bus restore rollback must not consume new-bus retryable cleanup.");
+                    Assert.AreEqual(1, oldBus.RegistrationFailures, "Control failed: old-bus restore registration must throw once.");
 
                     throwingNewBus.AllowDeregistrations();
                     token.Disable();
                     Assert.IsFalse(token.Enabled, "Retrying cleanup must disable the token.");
-                    Assert.AreEqual(
-                        0,
-                        oldBus.RegisteredUntargeted,
-                        "Retry must leave old bus clear."
-                    );
-                    Assert.AreEqual(
-                        0,
-                        throwingNewBus.RegisteredUntargeted,
-                        "Retry must clear new bus."
-                    );
-                    Assert.AreEqual(
-                        2,
-                        throwingNewBus.DeregistrationAttempts,
-                        "Disable retry must be the second new-bus cleanup attempt."
-                    );
+                    Assert.AreEqual(0, oldBus.RegisteredUntargeted, "Retry must leave old bus clear.");
+                    Assert.AreEqual(0, throwingNewBus.RegisteredUntargeted, "Retry must clear new bus.");
+                    Assert.AreEqual(2, throwingNewBus.DeregistrationAttempts, "Disable retry must be the second new-bus cleanup attempt.");
 
                     oldBus.AllowRegistrations();
                     token.Enable();
                     SimpleUntargetedMessage message = new();
                     oldBus.UntargetedBroadcast(ref message);
-                    Assert.AreEqual(
-                        2,
-                        handled,
-                        "Re-enabling after cleanup retry must restore both staged handlers once."
-                    );
+                    Assert.AreEqual(2, handled, "Re-enabling after cleanup retry must restore both staged handlers once.");
 
                     token.Dispose();
                 }
@@ -1574,49 +959,21 @@ namespace DxMessaging.Tests.Runtime.Core
         public void EnableFailureWithRollbackFailureKeepsPartialRegistrationRetryable()
         {
             BusType innerBus = new();
-            ThrowingRegistrationWithFailingRollbackBus throwingBus = new(
-                innerBus,
-                successfulRegistrationsBeforeThrow: 1
-            );
-            MessageHandler handler = new(new InstanceId(OwnerInstanceId), throwingBus)
-            {
-                active = true,
-            };
+            ThrowingRegistrationWithFailingRollbackBus throwingBus = new(innerBus, successfulRegistrationsBeforeThrow: 1);
+            MessageHandler handler = new(new InstanceId(OwnerInstanceId), throwingBus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, throwingBus);
             int handled = 0;
 
             try
             {
-                using (
-                    LeakWatcher watcher = new(
-                        bus: throwingBus,
-                        throwOnLeak: true,
-                        label: nameof(
-                            EnableFailureWithRollbackFailureKeepsPartialRegistrationRetryable
-                        )
-                    )
-                )
+                using (LeakWatcher watcher = new(bus: throwingBus, throwOnLeak: true, label: nameof(EnableFailureWithRollbackFailureKeepsPartialRegistrationRetryable)))
                 {
-                    _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (in SimpleUntargetedMessage _) => ++handled
-                    );
-                    _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (in SimpleUntargetedMessage _) => ++handled
-                    );
+                    _ = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => ++handled);
+                    _ = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => ++handled);
 
-                    Assert.Throws<InvalidOperationException>(
-                        token.Enable,
-                        "The throwing bus must fail during registration replay."
-                    );
-                    Assert.IsTrue(
-                        token.Enabled,
-                        "A rollback failure leaves a live partial registration and must stay retryable."
-                    );
-                    Assert.AreEqual(
-                        1,
-                        throwingBus.RegisteredUntargeted,
-                        "Rollback failure must not forget the live partial registration."
-                    );
+                    Assert.Throws<InvalidOperationException>(token.Enable, "The throwing bus must fail during registration replay.");
+                    Assert.IsTrue(token.Enabled, "A rollback failure leaves a live partial registration and must stay retryable.");
+                    Assert.AreEqual(1, throwingBus.RegisteredUntargeted, "Rollback failure must not forget the live partial registration.");
 
                     throwingBus.AllowDeregistrations();
                     token.Disable();
@@ -1627,11 +984,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     token.Enable();
                     SimpleUntargetedMessage message = new();
                     throwingBus.UntargetedBroadcast(ref message);
-                    Assert.AreEqual(
-                        2,
-                        handled,
-                        "Retrying Enable must register both handlers once."
-                    );
+                    Assert.AreEqual(2, handled, "Retrying Enable must register both handlers once.");
 
                     token.Dispose();
                 }
@@ -1644,24 +997,13 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void RegistrationAfterDisposeIsAcceptedAndEnableActivatesIt(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void RegistrationAfterDisposeIsAcceptedAndEnableActivatesIt([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             using TokenScope scope = TokenScope.Create();
             InstanceId context = new(ContextInstanceId);
             int handled = 0;
 
-            using (
-                LeakWatcher watcher = new(
-                    bus: scope.Bus,
-                    throwOnLeak: true,
-                    label: nameof(RegistrationAfterDisposeIsAcceptedAndEnableActivatesIt)
-                        + "_"
-                        + scenario.DisplayName
-                )
-            )
+            using (LeakWatcher watcher = new(bus: scope.Bus, throwOnLeak: true, label: nameof(RegistrationAfterDisposeIsAcceptedAndEnableActivatesIt) + "_" + scenario.DisplayName))
             {
                 scope.Token.Dispose();
                 Assert.IsFalse(scope.Token.Enabled, "Dispose must disable the token.");
@@ -1672,43 +1014,21 @@ namespace DxMessaging.Tests.Runtime.Core
                 */
                 Assert.DoesNotThrow(
                     () => _ = RegisterHandler(scenario, scope.Token, context, () => ++handled),
-                    "Pinned behavior: registering on a disposed token must not throw "
-                        + "(the token is reusable)."
+                    "Pinned behavior: registering on a disposed token must not throw " + "(the token is reusable)."
                 );
 
                 Emit(scenario, context, scope.Bus);
-                Assert.AreEqual(
-                    0,
-                    handled,
-                    "A registration staged after Dispose must stay inactive until Enable "
-                        + "for scenario {0}.",
-                    scenario
-                );
+                Assert.AreEqual(0, handled, "A registration staged after Dispose must stay inactive until Enable " + "for scenario {0}.", scenario);
 
                 scope.Token.Enable();
-                Assert.IsTrue(
-                    scope.Token.Enabled,
-                    "Enable after Dispose must re-enable the token."
-                );
+                Assert.IsTrue(scope.Token.Enabled, "Enable after Dispose must re-enable the token.");
 
                 Emit(scenario, context, scope.Bus);
-                Assert.AreEqual(
-                    1,
-                    handled,
-                    "Enable after Dispose must activate registrations staged post-Dispose "
-                        + "for scenario {0}.",
-                    scenario
-                );
+                Assert.AreEqual(1, handled, "Enable after Dispose must activate registrations staged post-Dispose " + "for scenario {0}.", scenario);
 
                 scope.Token.Dispose();
                 Emit(scenario, context, scope.Bus);
-                Assert.AreEqual(
-                    1,
-                    handled,
-                    "The second Dispose must deregister the post-Dispose registration "
-                        + "for scenario {0}.",
-                    scenario
-                );
+                Assert.AreEqual(1, handled, "The second Dispose must deregister the post-Dispose registration " + "for scenario {0}.", scenario);
             }
         }
 
@@ -1718,30 +1038,16 @@ namespace DxMessaging.Tests.Runtime.Core
             using TokenScope scope = TokenScope.Create();
             int handled = 0;
 
-            using (
-                LeakWatcher watcher = new(
-                    bus: scope.Bus,
-                    throwOnLeak: true,
-                    label: nameof(DoubleDisposeIsHarmless)
-                )
-            )
+            using (LeakWatcher watcher = new(bus: scope.Bus, throwOnLeak: true, label: nameof(DoubleDisposeIsHarmless)))
             {
-                _ = scope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (in SimpleUntargetedMessage _) => ++handled
-                );
+                _ = scope.Token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => ++handled);
                 SimpleUntargetedMessage message = new();
                 scope.Bus.UntargetedBroadcast(ref message);
                 Assert.AreEqual(1, handled, "Control failed: handler must fire before Dispose.");
 
                 scope.Token.Dispose();
-                Assert.DoesNotThrow(
-                    scope.Token.Dispose,
-                    "Disposing an already-disposed token must be a harmless no-op."
-                );
-                Assert.IsFalse(
-                    scope.Token.Enabled,
-                    "Token must stay disabled after double Dispose."
-                );
+                Assert.DoesNotThrow(scope.Token.Dispose, "Disposing an already-disposed token must be a harmless no-op.");
+                Assert.IsFalse(scope.Token.Enabled, "Token must stay disabled after double Dispose.");
 
                 scope.Bus.UntargetedBroadcast(ref message);
                 Assert.AreEqual(1, handled, "No handler may fire after double Dispose.");
@@ -1754,80 +1060,41 @@ namespace DxMessaging.Tests.Runtime.Core
             using TokenScope scope = TokenScope.Create();
             int handled = 0;
 
-            using (
-                LeakWatcher watcher = new(
-                    bus: scope.Bus,
-                    throwOnLeak: true,
-                    label: nameof(EnableAfterDisposeWithoutNewRegistrationsRestoresNothing)
-                )
-            )
+            using (LeakWatcher watcher = new(bus: scope.Bus, throwOnLeak: true, label: nameof(EnableAfterDisposeWithoutNewRegistrationsRestoresNothing)))
             {
-                _ = scope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (in SimpleUntargetedMessage _) => ++handled
-                );
+                _ = scope.Token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => ++handled);
                 SimpleUntargetedMessage message = new();
                 scope.Bus.UntargetedBroadcast(ref message);
                 Assert.AreEqual(1, handled, "Control failed: handler must fire before Dispose.");
 
                 scope.Token.Dispose();
                 scope.Token.Enable();
-                Assert.IsTrue(
-                    scope.Token.Enabled,
-                    "Enable after Dispose must report the token as enabled."
-                );
+                Assert.IsTrue(scope.Token.Enabled, "Enable after Dispose must report the token as enabled.");
 
                 scope.Bus.UntargetedBroadcast(ref message);
-                Assert.AreEqual(
-                    1,
-                    handled,
-                    "Dispose clears staged registrations; a bare Enable must not resurrect "
-                        + "the pre-Dispose handler."
-                );
+                Assert.AreEqual(1, handled, "Dispose clears staged registrations; a bare Enable must not resurrect " + "the pre-Dispose handler.");
             }
         }
 
-        private static MessageRegistrationHandle RegisterHandler(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            InstanceId context,
-            Action onInvoked
-        )
+        private static MessageRegistrationHandle RegisterHandler(MessageScenario scenario, MessageRegistrationToken token, InstanceId context, Action onInvoked)
         {
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
                 {
-                    return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
-                        scenario,
-                        token,
-                        (in SimpleUntargetedMessage _) => onInvoked()
-                    );
+                    return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(scenario, token, (in SimpleUntargetedMessage _) => onInvoked());
                 }
                 case MessageKind.Targeted:
                 {
-                    return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        context,
-                        (in SimpleTargetedMessage _) => onInvoked()
-                    );
+                    return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(scenario, token, context, (in SimpleTargetedMessage _) => onInvoked());
                 }
                 case MessageKind.Broadcast:
                 {
-                    return ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        context,
-                        (in SimpleBroadcastMessage _) => onInvoked()
-                    );
+                    return ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(scenario, token, context, (in SimpleBroadcastMessage _) => onInvoked());
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
@@ -1837,44 +1104,23 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             BusType innerBus = new();
             FailingDeregistrationBus throwingBus = new(innerBus);
-            MessageHandler handler = new(new InstanceId(OwnerInstanceId), throwingBus)
-            {
-                active = true,
-            };
+            MessageHandler handler = new(new InstanceId(OwnerInstanceId), throwingBus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, throwingBus);
             token.Enable();
             int handled = 0;
 
             try
             {
-                using (
-                    LeakWatcher watcher = new(
-                        bus: throwingBus,
-                        throwOnLeak: true,
-                        label: nameof(DisableFailureLeavesDeregistrationRetryable)
-                    )
-                )
+                using (LeakWatcher watcher = new(bus: throwingBus, throwOnLeak: true, label: nameof(DisableFailureLeavesDeregistrationRetryable)))
                 {
-                    _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (in SimpleUntargetedMessage _) => ++handled
-                    );
+                    _ = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => ++handled);
                     SimpleUntargetedMessage message = new();
                     throwingBus.UntargetedBroadcast(ref message);
                     Assert.AreEqual(1, handled, "Control failed: handler must fire.");
 
-                    Assert.Throws<InvalidOperationException>(
-                        token.Disable,
-                        "The throwing bus must surface the deregistration failure."
-                    );
-                    Assert.IsTrue(
-                        token.Enabled,
-                        "A failed Disable must leave the token in a retryable active state."
-                    );
-                    Assert.AreEqual(
-                        1,
-                        throwingBus.RegisteredUntargeted,
-                        "A failed Disable must not forget a live registration."
-                    );
+                    Assert.Throws<InvalidOperationException>(token.Disable, "The throwing bus must surface the deregistration failure.");
+                    Assert.IsTrue(token.Enabled, "A failed Disable must leave the token in a retryable active state.");
+                    Assert.AreEqual(1, throwingBus.RegisteredUntargeted, "A failed Disable must not forget a live registration.");
 
                     throwingBus.AllowDeregistrations();
                     token.Disable();
@@ -1913,78 +1159,25 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
 
-        private static void AssertTokenDiagnosticsPopulated(
-            MessageRegistrationToken token,
-            MessageRegistrationHandle handle,
-            string scenarioName
-        )
+        private static void AssertTokenDiagnosticsPopulated(MessageRegistrationToken token, MessageRegistrationHandle handle, string scenarioName)
         {
-            Assert.AreEqual(
-                1,
-                token._metadata.Count,
-                "Metadata control failed for scenario {0}.",
-                scenarioName
-            );
-            Assert.IsTrue(
-                token._metadata.ContainsKey(handle),
-                "Metadata must include the registered handle for scenario {0}.",
-                scenarioName
-            );
-            Assert.IsTrue(
-                token._callCounts.TryGetValue(handle, out int recordedCount),
-                "Call counts must include the registered handle for scenario {0}.",
-                scenarioName
-            );
-            Assert.AreEqual(
-                1,
-                recordedCount,
-                "Call count control failed for scenario {0}.",
-                scenarioName
-            );
-            Assert.AreEqual(
-                1,
-                token._emissionBuffer.Count,
-                "Emission history control failed for scenario {0}.",
-                scenarioName
-            );
+            Assert.AreEqual(1, token._metadata.Count, "Metadata control failed for scenario {0}.", scenarioName);
+            Assert.IsTrue(token._metadata.ContainsKey(handle), "Metadata must include the registered handle for scenario {0}.", scenarioName);
+            Assert.IsTrue(token._callCounts.TryGetValue(handle, out int recordedCount), "Call counts must include the registered handle for scenario {0}.", scenarioName);
+            Assert.AreEqual(1, recordedCount, "Call count control failed for scenario {0}.", scenarioName);
+            Assert.AreEqual(1, token._emissionBuffer.Count, "Emission history control failed for scenario {0}.", scenarioName);
         }
 
-        private static void AssertTokenDiagnosticsEmpty(
-            MessageRegistrationToken token,
-            string operationName,
-            string scenarioName
-        )
+        private static void AssertTokenDiagnosticsEmpty(MessageRegistrationToken token, string operationName, string scenarioName)
         {
-            Assert.AreEqual(
-                0,
-                token._metadata.Count,
-                "{0} must clear token metadata for scenario {1}.",
-                operationName,
-                scenarioName
-            );
-            Assert.AreEqual(
-                0,
-                token._callCounts.Count,
-                "{0} must clear token call counts for scenario {1}.",
-                operationName,
-                scenarioName
-            );
-            Assert.AreEqual(
-                0,
-                token._emissionBuffer.Count,
-                "{0} must clear token emission history for scenario {1}.",
-                operationName,
-                scenarioName
-            );
+            Assert.AreEqual(0, token._metadata.Count, "{0} must clear token metadata for scenario {1}.", operationName, scenarioName);
+            Assert.AreEqual(0, token._callCounts.Count, "{0} must clear token call counts for scenario {1}.", operationName, scenarioName);
+            Assert.AreEqual(0, token._emissionBuffer.Count, "{0} must clear token emission history for scenario {1}.", operationName, scenarioName);
         }
 
         private sealed class MessagingDebugCapture : IDisposable
@@ -2004,10 +1197,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             internal void AssertNoOverDeregistration()
             {
-                Assert.IsFalse(
-                    _logs.Exists(log => log.Contains("over-deregistration")),
-                    "Expected no over-deregistration logs. Got: " + string.Join(" | ", _logs)
-                );
+                Assert.IsFalse(_logs.Exists(log => log.Contains("over-deregistration")), "Expected no over-deregistration logs. Got: " + string.Join(" | ", _logs));
             }
 
             public void Dispose()
@@ -2044,15 +1234,9 @@ namespace DxMessaging.Tests.Runtime.Core
             internal ReentrantReplayRemovalBus(IMessageBus inner)
                 : base(inner) { }
 
-            public override MessageBusRegistration RegisterUntargeted<T>(
-                MessageHandler messageHandler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterUntargeted<T>(MessageHandler messageHandler, int priority = 0)
             {
-                MessageBusRegistration registration = base.RegisterUntargeted<T>(
-                    messageHandler,
-                    priority
-                );
+                MessageBusRegistration registration = base.RegisterUntargeted<T>(messageHandler, priority);
                 if (typeof(T) == typeof(SimpleUntargetedMessage))
                 {
                     _priorities[registration] = priority;
@@ -2078,9 +1262,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
                     if (ThrowPriorities.Contains(priority))
                     {
-                        throw new InvalidOperationException(
-                            $"Deregistration failure at priority {priority}."
-                        );
+                        throw new InvalidOperationException($"Deregistration failure at priority {priority}.");
                     }
                 }
 
@@ -2118,10 +1300,7 @@ namespace DxMessaging.Tests.Runtime.Core
             private int _registrationAttempts;
             private bool _throwOnRegistration = true;
 
-            internal ThrowingUntargetedRegistrationBus(
-                IMessageBus inner,
-                int successfulRegistrationsBeforeThrow
-            )
+            internal ThrowingUntargetedRegistrationBus(IMessageBus inner, int successfulRegistrationsBeforeThrow)
                 : base(inner)
             {
                 _successfulRegistrationsBeforeThrow = successfulRegistrationsBeforeThrow;
@@ -2132,10 +1311,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 _throwOnRegistration = false;
             }
 
-            public override MessageBusRegistration RegisterUntargeted<T>(
-                MessageHandler messageHandler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterUntargeted<T>(MessageHandler messageHandler, int priority = 0)
             {
                 if (_throwOnRegistration && typeof(T) == typeof(SimpleUntargetedMessage))
                 {
@@ -2179,10 +1355,7 @@ namespace DxMessaging.Tests.Runtime.Core
             private int _successfulDeregistrationsBeforeThrow;
             private bool _throwOnDeregistration = true;
 
-            internal PartiallyFailingDeregistrationBus(
-                IMessageBus inner,
-                int successfulDeregistrationsBeforeThrow
-            )
+            internal PartiallyFailingDeregistrationBus(IMessageBus inner, int successfulDeregistrationsBeforeThrow)
                 : base(inner)
             {
                 _successfulDeregistrationsBeforeThrow = successfulDeregistrationsBeforeThrow;
@@ -2209,17 +1382,13 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private sealed class PartiallyFailingDeregistrationWithRestoreFailureBus
-            : DelegatingMessageBus
+        private sealed class PartiallyFailingDeregistrationWithRestoreFailureBus : DelegatingMessageBus
         {
             private int _successfulDeregistrationsBeforeThrow;
             private bool _throwOnDeregistration = true;
             private bool _throwOnRestoreRegistration;
 
-            internal PartiallyFailingDeregistrationWithRestoreFailureBus(
-                IMessageBus inner,
-                int successfulDeregistrationsBeforeThrow
-            )
+            internal PartiallyFailingDeregistrationWithRestoreFailureBus(IMessageBus inner, int successfulDeregistrationsBeforeThrow)
                 : base(inner)
             {
                 _successfulDeregistrationsBeforeThrow = successfulDeregistrationsBeforeThrow;
@@ -2237,10 +1406,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 _throwOnRestoreRegistration = false;
             }
 
-            public override MessageBusRegistration RegisterUntargeted<T>(
-                MessageHandler messageHandler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterUntargeted<T>(MessageHandler messageHandler, int priority = 0)
             {
                 if (_throwOnRestoreRegistration && typeof(T) == typeof(SimpleUntargetedMessage))
                 {
@@ -2286,10 +1452,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 _throwOnRegistrationAfterDrain = false;
             }
 
-            public override MessageBusRegistration RegisterUntargeted<T>(
-                MessageHandler messageHandler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterUntargeted<T>(MessageHandler messageHandler, int priority = 0)
             {
                 if (_throwOnRegistrationAfterDrain && typeof(T) == typeof(SimpleUntargetedMessage))
                 {
@@ -2317,10 +1480,7 @@ namespace DxMessaging.Tests.Runtime.Core
             private bool _throwOnRegistration = true;
             private bool _throwOnDeregistration = true;
 
-            internal ThrowingRegistrationWithFailingRollbackBus(
-                IMessageBus inner,
-                int successfulRegistrationsBeforeThrow
-            )
+            internal ThrowingRegistrationWithFailingRollbackBus(IMessageBus inner, int successfulRegistrationsBeforeThrow)
                 : base(inner)
             {
                 _successfulRegistrationsBeforeThrow = successfulRegistrationsBeforeThrow;
@@ -2336,10 +1496,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 _throwOnDeregistration = false;
             }
 
-            public override MessageBusRegistration RegisterUntargeted<T>(
-                MessageHandler messageHandler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterUntargeted<T>(MessageHandler messageHandler, int priority = 0)
             {
                 if (_throwOnRegistration && typeof(T) == typeof(SimpleUntargetedMessage))
                 {
@@ -2372,10 +1529,7 @@ namespace DxMessaging.Tests.Runtime.Core
             private int _registrationAttempts;
             private bool _throwOnRegistration = true;
 
-            internal ThrowingRegistrationWithSingleFailingRollbackBus(
-                IMessageBus inner,
-                int successfulRegistrationsBeforeThrow
-            )
+            internal ThrowingRegistrationWithSingleFailingRollbackBus(IMessageBus inner, int successfulRegistrationsBeforeThrow)
                 : base(inner)
             {
                 _successfulRegistrationsBeforeThrow = successfulRegistrationsBeforeThrow;
@@ -2393,10 +1547,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 _deregistrationFailuresRemaining = 0;
             }
 
-            public override MessageBusRegistration RegisterUntargeted<T>(
-                MessageHandler messageHandler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterUntargeted<T>(MessageHandler messageHandler, int priority = 0)
             {
                 if (_throwOnRegistration && typeof(T) == typeof(SimpleUntargetedMessage))
                 {
@@ -2453,10 +1604,7 @@ namespace DxMessaging.Tests.Runtime.Core
             internal static TokenScope Create()
             {
                 BusType bus = new();
-                MessageHandler handler = new(new InstanceId(OwnerInstanceId), bus)
-                {
-                    active = true,
-                };
+                MessageHandler handler = new(new InstanceId(OwnerInstanceId), bus) { active = true };
                 MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
                 token.Enable();
                 return new TokenScope(bus, handler, token);

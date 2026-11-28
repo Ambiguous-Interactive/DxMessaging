@@ -34,12 +34,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         {
                             foreach (int priority in new[] { 0, 1 })
                             {
-                                yield return new TestCaseData(
-                                    scenario.WithPostProcessor(postProcessor),
-                                    sameHandler,
-                                    forwarding,
-                                    priority
-                                );
+                                yield return new TestCaseData(scenario.WithPostProcessor(postProcessor), sameHandler, forwarding, priority);
                             }
                         }
                     }
@@ -55,10 +50,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     foreach (bool forwarding in new[] { false, true })
                     {
-                        yield return new TestCaseData(
-                            scenario.WithPostProcessor(postProcessor),
-                            forwarding
-                        );
+                        yield return new TestCaseData(scenario.WithPostProcessor(postProcessor), forwarding);
                     }
                 }
             }
@@ -85,12 +77,7 @@ namespace DxMessaging.Tests.Runtime.Core
         public void ResetAfterTest() => DxMessagingStaticState.Reset();
 
         [TestCaseSource(nameof(CallbackCases))]
-        public void AddedLiveCallbackIsDetectedAboveTheBaseline(
-            MessageScenario scenario,
-            bool sameHandler,
-            bool forwarding,
-            int priority
-        )
+        public void AddedLiveCallbackIsDetectedAboveTheBaseline(MessageScenario scenario, bool sameHandler, bool forwarding, int priority)
         {
             using RegistrationSession session = new(scenario, sameHandler, forwarding, priority);
             Assert.AreEqual("A", session.Observe(), session.Report);
@@ -100,40 +87,23 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual("AB", session.Observe(), session.Report);
             Assert.AreEqual(1, watcher.LeakedRegistrations, session.Report);
             Assert.AreEqual(watcher.InitialSnapshot + 1, watcher.Snapshot, session.Report);
-            AssertionException failure = Assert.Throws<AssertionException>(
-                watcher.Dispose,
-                session.Report
-            );
+            AssertionException failure = Assert.Throws<AssertionException>(watcher.Dispose, session.Report);
             StringAssert.Contains("Registration delta=1", failure.Message);
             StringAssert.Contains("LiveRegistrations 1->2", failure.Message);
             session.AddedToken.Dispose();
             Assert.AreEqual("A", session.Observe(), session.Report);
-            Assert.AreEqual(
-                1,
-                watcher.LeakedRegistrations,
-                "Disposal freezes the recorded leak. " + session.Report
-            );
+            Assert.AreEqual(1, watcher.LeakedRegistrations, "Disposal freezes the recorded leak. " + session.Report);
             StringAssert.Contains("LiveRegistrations 1->2", watcher.DescribeDelta());
             Assert.DoesNotThrow(watcher.Dispose, "Disposal remains idempotent. " + session.Report);
         }
 
         [TestCaseSource(nameof(CallbackCases))]
-        public void RemovedCallbackPreservesTheLiveBaseline(
-            MessageScenario scenario,
-            bool sameHandler,
-            bool forwarding,
-            int priority
-        )
+        public void RemovedCallbackPreservesTheLiveBaseline(MessageScenario scenario, bool sameHandler, bool forwarding, int priority)
         {
             using RegistrationSession session = new(scenario, sameHandler, forwarding, priority);
             using LeakWatcher watcher = new(session.Bus, label: session.Report);
             session.AddedToken.Enable();
-            MessageRegistrationHandle handle = session.Register(
-                session.AddedToken,
-                session.AddedCallback,
-                scenario,
-                priority
-            );
+            MessageRegistrationHandle handle = session.Register(session.AddedToken, session.AddedCallback, scenario, priority);
             Assert.AreEqual("AB", session.Observe(), session.Report);
             session.AddedToken.RemoveRegistration(handle);
             Assert.AreEqual("A", session.Observe(), session.Report);
@@ -143,31 +113,14 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [TestCaseSource(nameof(DuplicateCases))]
-        public void DuplicateCallbackReferencesRemainCountedUntilRemoved(
-            MessageScenario scenario,
-            bool forwarding
-        )
+        public void DuplicateCallbackReferencesRemainCountedUntilRemoved(MessageScenario scenario, bool forwarding)
         {
             using RegistrationSession session = new(scenario, true, forwarding, 0);
             using LeakWatcher watcher = new(session.Bus, label: session.Report);
             session.AddedToken.Enable();
-            MessageRegistrationHandle first = session.Register(
-                session.AddedToken,
-                session.BaselineCallback,
-                scenario,
-                0
-            );
-            MessageRegistrationHandle second = session.Register(
-                session.AddedToken,
-                session.BaselineCallback,
-                scenario,
-                0
-            );
-            Assert.AreEqual(
-                "A",
-                session.Observe(),
-                "Equal delegates dispatch once. " + session.Report
-            );
+            MessageRegistrationHandle first = session.Register(session.AddedToken, session.BaselineCallback, scenario, 0);
+            MessageRegistrationHandle second = session.Register(session.AddedToken, session.BaselineCallback, scenario, 0);
+            Assert.AreEqual("A", session.Observe(), "Equal delegates dispatch once. " + session.Report);
             Assert.AreEqual(2, watcher.LeakedRegistrations, session.Report);
             session.AddedToken.RemoveRegistration(first);
             Assert.AreEqual("A", session.Observe(), session.Report);
@@ -179,11 +132,7 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [TestCaseSource(nameof(MiddlewareCases))]
-        public void DuplicateMiddlewareReferencesAreDetected(
-            MessageScenario scenario,
-            bool forwarding,
-            bool global
-        )
+        public void DuplicateMiddlewareReferencesAreDetected(MessageScenario scenario, bool forwarding, bool global)
         {
             using RegistrationSession session = new(scenario, true, forwarding, 0);
             using LeakWatcher watcher = new(session.Bus, label: session.Report);
@@ -196,24 +145,16 @@ namespace DxMessaging.Tests.Runtime.Core
             session.AddedToken.RemoveRegistration(first);
             Assert.AreEqual(expected, session.Observe(), session.Report);
             Assert.AreEqual(1, watcher.LeakedRegistrations, session.Report);
-            AssertionException failure = Assert.Throws<AssertionException>(
-                watcher.Dispose,
-                session.Report
-            );
+            AssertionException failure = Assert.Throws<AssertionException>(watcher.Dispose, session.Report);
             StringAssert.Contains("Registration delta=1", failure.Message);
             session.AddedToken.RemoveRegistration(second);
             Assert.AreEqual("A", session.Observe(), session.Report);
-            Assert.AreEqual(
-                1,
-                watcher.LeakedRegistrations,
-                "Recorded leak remains frozen. " + session.Report
-            );
+            Assert.AreEqual(1, watcher.LeakedRegistrations, "Recorded leak remains frozen. " + session.Report);
         }
 
         [Test]
         public void BalancedCrossKindChangesFailTheIndividualCounterInvariant(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
             [Values(false, true)] bool forwarding
         )
         {
@@ -228,34 +169,20 @@ namespace DxMessaging.Tests.Runtime.Core
             session.AddedToken.Enable();
             Assert.AreEqual(string.Empty, session.Observe(), session.Report);
             Assert.AreEqual("B", session.Observe(other), session.Report);
-            Assert.AreEqual(
-                0,
-                watcher.LeakedRegistrations,
-                "Total count is unchanged. " + session.Report
-            );
-            AssertionException failure = Assert.Throws<AssertionException>(
-                watcher.Dispose,
-                session.Report
-            );
+            Assert.AreEqual(0, watcher.LeakedRegistrations, "Total count is unchanged. " + session.Report);
+            AssertionException failure = Assert.Throws<AssertionException>(watcher.Dispose, session.Report);
             StringAssert.Contains("Registration delta=0", failure.Message);
         }
 
         [Test]
-        public void OpaqueCustomBusKeepsItsPublicCounterAccountingLimit(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void OpaqueCustomBusKeepsItsPublicCounterAccountingLimit([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             using RegistrationSession session = new(scenario, true, false, 0, opaque: true);
             using LeakWatcher watcher = new(session.Bus, label: session.Report);
             session.AddedToken.Enable();
             session.Register(session.AddedToken, session.AddedCallback, scenario, 0);
             Assert.AreEqual("AB", session.Observe(), session.Report);
-            Assert.AreEqual(
-                0,
-                watcher.LeakedRegistrations,
-                "Opaque buses expose only their declared counter granularity. " + session.Report
-            );
+            Assert.AreEqual(0, watcher.LeakedRegistrations, "Opaque buses expose only their declared counter granularity. " + session.Report);
             session.AddedToken.Dispose();
             Assert.AreEqual("A", session.Observe(), session.Report);
             Assert.DoesNotThrow(watcher.Dispose, session.Report);
@@ -288,22 +215,16 @@ namespace DxMessaging.Tests.Runtime.Core
 
             public void Broadcast(in SimpleBroadcastMessage message) => _trace.Add(_label);
 
-            public void TargetedContext(in InstanceId context, in SimpleTargetedMessage message) =>
-                _trace.Add(_label);
+            public void TargetedContext(in InstanceId context, in SimpleTargetedMessage message) => _trace.Add(_label);
 
-            public void BroadcastContext(
-                in InstanceId context,
-                in SimpleBroadcastMessage message
-            ) => _trace.Add(_label);
+            public void BroadcastContext(in InstanceId context, in SimpleBroadcastMessage message) => _trace.Add(_label);
 #pragma warning restore RCS1242
 
             public void GlobalUntargeted(in IUntargetedMessage message) => _trace.Add(_label);
 
-            public void GlobalTargeted(in InstanceId context, in ITargetedMessage message) =>
-                _trace.Add(_label);
+            public void GlobalTargeted(in InstanceId context, in ITargetedMessage message) => _trace.Add(_label);
 
-            public void GlobalBroadcast(in InstanceId context, in IBroadcastMessage message) =>
-                _trace.Add(_label);
+            public void GlobalBroadcast(in InstanceId context, in IBroadcastMessage message) => _trace.Add(_label);
 
             public bool InterceptUntargeted(ref SimpleUntargetedMessage message)
             {
@@ -317,10 +238,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 return true;
             }
 
-            public bool InterceptBroadcast(
-                ref InstanceId context,
-                ref SimpleBroadcastMessage message
-            )
+            public bool InterceptBroadcast(ref InstanceId context, ref SimpleBroadcastMessage message)
             {
                 _trace.Add(_label);
                 return true;
@@ -343,26 +261,10 @@ namespace DxMessaging.Tests.Runtime.Core
             private readonly LeakWatcher _cleanup;
             public string Report { get; }
 
-            public RegistrationSession(
-                MessageScenario scenario,
-                bool sameHandler,
-                bool forwarding,
-                int priority,
-                bool opaque = false
-            )
+            public RegistrationSession(MessageScenario scenario, bool sameHandler, bool forwarding, int priority, bool opaque = false)
             {
                 _scenario = scenario;
-                Report =
-                    "kind="
-                    + scenario
-                    + " sameHandler="
-                    + sameHandler
-                    + " forwarding="
-                    + forwarding
-                    + " priority="
-                    + priority
-                    + " opaque="
-                    + opaque;
+                Report = "kind=" + scenario + " sameHandler=" + sameHandler + " forwarding=" + forwarding + " priority=" + priority + " opaque=" + opaque;
                 BusType inner = new() { DiagnosticsMode = false };
                 Bus =
                     opaque ? new OpaqueForwardingBus(inner)
@@ -370,9 +272,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     : inner;
                 _cleanup = new LeakWatcher(Bus, label: Report);
                 _baselineHandler = new MessageHandler(new InstanceId(54800), Bus) { active = true };
-                _addedHandler = sameHandler
-                    ? _baselineHandler
-                    : new MessageHandler(new InstanceId(54801), Bus) { active = true };
+                _addedHandler = sameHandler ? _baselineHandler : new MessageHandler(new InstanceId(54801), Bus) { active = true };
                 BaselineToken = MessageRegistrationToken.Create(_baselineHandler, Bus);
                 AddedToken = MessageRegistrationToken.Create(_addedHandler, Bus);
                 BaselineCallback = new Callback(_trace, "A");
@@ -383,70 +283,31 @@ namespace DxMessaging.Tests.Runtime.Core
                 BaselineToken.Enable();
             }
 
-            public MessageRegistrationHandle Register(
-                MessageRegistrationToken token,
-                Callback callback,
-                MessageScenario scenario,
-                int priority
-            )
+            public MessageRegistrationHandle Register(MessageRegistrationToken token, Callback callback, MessageScenario scenario, int priority)
             {
                 InstanceId context = new(54700);
                 switch (scenario.Kind)
                 {
                     case MessageKind.Untargeted:
                         return scenario.UsePostProcessor
-                            ? token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
-                                callback.Untargeted,
-                                priority
-                            )
-                            : token.RegisterUntargeted<SimpleUntargetedMessage>(
-                                callback.Untargeted,
-                                priority
-                            );
+                            ? token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(callback.Untargeted, priority)
+                            : token.RegisterUntargeted<SimpleUntargetedMessage>(callback.Untargeted, priority);
                     case MessageKind.Targeted:
                         return scenario.UsePostProcessor
-                            ? token.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
-                                context,
-                                callback.Targeted,
-                                priority
-                            )
-                            : token.RegisterTargeted<SimpleTargetedMessage>(
-                                context,
-                                callback.Targeted,
-                                priority
-                            );
+                            ? token.RegisterTargetedPostProcessor<SimpleTargetedMessage>(context, callback.Targeted, priority)
+                            : token.RegisterTargeted<SimpleTargetedMessage>(context, callback.Targeted, priority);
                     case MessageKind.Broadcast:
                         return scenario.UsePostProcessor
-                            ? token.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(
-                                context,
-                                callback.Broadcast,
-                                priority
-                            )
-                            : token.RegisterBroadcast<SimpleBroadcastMessage>(
-                                context,
-                                callback.Broadcast,
-                                priority
-                            );
+                            ? token.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(context, callback.Broadcast, priority)
+                            : token.RegisterBroadcast<SimpleBroadcastMessage>(context, callback.Broadcast, priority);
                     case MessageKind.TargetedWithoutTargeting:
                         return scenario.UsePostProcessor
-                            ? token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>(
-                                callback.TargetedContext,
-                                priority
-                            )
-                            : token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(
-                                callback.TargetedContext,
-                                priority
-                            );
+                            ? token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>(callback.TargetedContext, priority)
+                            : token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(callback.TargetedContext, priority);
                     case MessageKind.BroadcastWithoutSource:
                         return scenario.UsePostProcessor
-                            ? token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(
-                                callback.BroadcastContext,
-                                priority
-                            )
-                            : token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>(
-                                callback.BroadcastContext,
-                                priority
-                            );
+                            ? token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(callback.BroadcastContext, priority)
+                            : token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>(callback.BroadcastContext, priority);
                     default:
                         throw new ArgumentOutOfRangeException(nameof(scenario));
                 }
@@ -456,26 +317,16 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 if (global)
                 {
-                    return AddedToken.RegisterGlobalAcceptAll(
-                        _globalCallback.GlobalUntargeted,
-                        _globalCallback.GlobalTargeted,
-                        _globalCallback.GlobalBroadcast
-                    );
+                    return AddedToken.RegisterGlobalAcceptAll(_globalCallback.GlobalUntargeted, _globalCallback.GlobalTargeted, _globalCallback.GlobalBroadcast);
                 }
                 switch (_scenario.Kind)
                 {
                     case MessageKind.Untargeted:
-                        return AddedToken.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(
-                            _interceptorCallback.InterceptUntargeted
-                        );
+                        return AddedToken.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(_interceptorCallback.InterceptUntargeted);
                     case MessageKind.Targeted:
-                        return AddedToken.RegisterTargetedInterceptor<SimpleTargetedMessage>(
-                            _interceptorCallback.InterceptTargeted
-                        );
+                        return AddedToken.RegisterTargetedInterceptor<SimpleTargetedMessage>(_interceptorCallback.InterceptTargeted);
                     case MessageKind.Broadcast:
-                        return AddedToken.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(
-                            _interceptorCallback.InterceptBroadcast
-                        );
+                        return AddedToken.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(_interceptorCallback.InterceptBroadcast);
                     default:
                         throw new ArgumentOutOfRangeException(nameof(_scenario));
                 }

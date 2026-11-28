@@ -4,7 +4,8 @@
 
 ## Overview
 
-A changelog is only useful if the Unreleased section is maintained during development and converted correctly during releases. This skill defines how to manage Unreleased entries, cut a release, and keep version links accurate.
+A changelog is only useful if the Unreleased section is maintained during development and converted correctly during releases. This skill defines how to manage Unreleased entries,
+cut a release, and keep version links accurate.
 
 ## Problem Statement
 

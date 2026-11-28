@@ -14,22 +14,12 @@ namespace DxMessaging.Tests.Editor.Allocations
     {
         [Test]
         public void EmitsSampleClockNoMoreThanOncePerSixteenEmits(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.AllKindsIncludingWithoutContext)
-            )]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKindsIncludingWithoutContext))] MessageScenario scenario
         )
         {
             const int emits = 10_000;
             CountingClock probeClock = new();
-            MessageBus bus = MessageBus.CreateForInternalUse(
-                probeClock,
-                idleEvictionTicks: 0,
-                evictionTickIntervalSeconds: 60,
-                idleEvictionEnabled: true,
-                trimApiEnabled: true
-            );
+            MessageBus bus = MessageBus.CreateForInternalUse(probeClock, idleEvictionTicks: 0, evictionTickIntervalSeconds: 60, idleEvictionEnabled: true, trimApiEnabled: true);
             MessageHandler handler = new(new InstanceId(0x6501), bus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
             token.Enable();
@@ -42,9 +32,7 @@ namespace DxMessaging.Tests.Editor.Allocations
                     Emit(scenario, bus, handler.owner);
                 }
 
-                int expectedMaximumClockReads =
-                    (emits + MessageBus.SweepGateSampleSize - 1) / MessageBus.SweepGateSampleSize
-                    + 1;
+                int expectedMaximumClockReads = (emits + MessageBus.SweepGateSampleSize - 1) / MessageBus.SweepGateSampleSize + 1;
                 Assert.LessOrEqual(
                     probeClock.ReadCount,
                     expectedMaximumClockReads,
@@ -64,22 +52,12 @@ namespace DxMessaging.Tests.Editor.Allocations
 
         [Test]
         public void DisabledIdleEvictionDoesNotReadClockAfterConstruction(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.AllKindsIncludingWithoutContext)
-            )]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKindsIncludingWithoutContext))] MessageScenario scenario
         )
         {
             const int emits = MessageBus.SweepGateSampleSize * 2;
             CountingClock probeClock = new();
-            MessageBus bus = MessageBus.CreateForInternalUse(
-                probeClock,
-                idleEvictionTicks: 0,
-                evictionTickIntervalSeconds: 0,
-                idleEvictionEnabled: false,
-                trimApiEnabled: true
-            );
+            MessageBus bus = MessageBus.CreateForInternalUse(probeClock, idleEvictionTicks: 0, evictionTickIntervalSeconds: 0, idleEvictionEnabled: false, trimApiEnabled: true);
             MessageHandler handler = new(new InstanceId(0x6502), bus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
             token.Enable();
@@ -113,13 +91,7 @@ namespace DxMessaging.Tests.Editor.Allocations
         public void EmitGateFirstSamplesClockOnSixteenthEmit()
         {
             CountingClock probeClock = new();
-            MessageBus bus = MessageBus.CreateForInternalUse(
-                probeClock,
-                idleEvictionTicks: 0,
-                evictionTickIntervalSeconds: 60,
-                idleEvictionEnabled: true,
-                trimApiEnabled: true
-            );
+            MessageBus bus = MessageBus.CreateForInternalUse(probeClock, idleEvictionTicks: 0, evictionTickIntervalSeconds: 60, idleEvictionEnabled: true, trimApiEnabled: true);
 
             long readsAfterConstruction = probeClock.ReadCount;
             SimpleUntargetedMessage message = new();
@@ -136,32 +108,21 @@ namespace DxMessaging.Tests.Editor.Allocations
 
             bus.UntargetedBroadcast(ref message);
 
-            Assert.AreEqual(
-                readsAfterConstruction + 1,
-                probeClock.ReadCount,
-                "The sixteenth emit should be the first emit-side sampled wall-clock read."
-            );
+            Assert.AreEqual(readsAfterConstruction + 1, probeClock.ReadCount, "The sixteenth emit should be the first emit-side sampled wall-clock read.");
         }
 
         [Test]
         public void SampledIdleSweepAddsOnlyOneSweepClockRead()
         {
             CountingClock probeClock = new();
-            MessageBus bus = MessageBus.CreateForInternalUse(
-                probeClock,
-                idleEvictionTicks: 0,
-                evictionTickIntervalSeconds: 0,
-                idleEvictionEnabled: true,
-                trimApiEnabled: true
-            );
+            MessageBus bus = MessageBus.CreateForInternalUse(probeClock, idleEvictionTicks: 0, evictionTickIntervalSeconds: 0, idleEvictionEnabled: true, trimApiEnabled: true);
             MessageHandler handler = new(new InstanceId(0x6503), bus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
             token.Enable();
 
             try
             {
-                MessageRegistrationHandle handle =
-                    token.RegisterUntargeted<SimpleUntargetedMessage>(NoOpUntargeted);
+                MessageRegistrationHandle handle = token.RegisterUntargeted<SimpleUntargetedMessage>(NoOpUntargeted);
                 token.RemoveRegistration(handle);
                 SimpleUntargetedMessage message = new();
                 for (int index = 0; index <= MessageBus.SweepGateSampleSize; index++)
@@ -189,13 +150,7 @@ namespace DxMessaging.Tests.Editor.Allocations
         {
             const int emits = MessageBus.SweepGateSampleSize * 8;
             CountingClock probeClock = new();
-            MessageBus bus = MessageBus.CreateForInternalUse(
-                probeClock,
-                idleEvictionTicks: 0,
-                evictionTickIntervalSeconds: 60,
-                idleEvictionEnabled: true,
-                trimApiEnabled: true
-            );
+            MessageBus bus = MessageBus.CreateForInternalUse(probeClock, idleEvictionTicks: 0, evictionTickIntervalSeconds: 60, idleEvictionEnabled: true, trimApiEnabled: true);
             MessageHandler handler = new(new InstanceId(0x6504), bus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
             token.Enable();
@@ -205,11 +160,7 @@ namespace DxMessaging.Tests.Editor.Allocations
                 _ = token.RegisterUntargeted<SimpleUntargetedMessage>(NoOpUntargeted);
                 for (int emitIndex = 0; emitIndex < emits; emitIndex++)
                 {
-                    for (
-                        int mutationIndex = 0;
-                        mutationIndex < MessageBus.SweepGateSampleSize - 1;
-                        mutationIndex++
-                    )
+                    for (int mutationIndex = 0; mutationIndex < MessageBus.SweepGateSampleSize - 1; mutationIndex++)
                     {
                         _ = token.RegisterUntargeted<ClassUntargetedMessage>(NoOpClassUntargeted);
                     }
@@ -235,11 +186,7 @@ namespace DxMessaging.Tests.Editor.Allocations
             }
         }
 
-        private static void RegisterNoOpHandler(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            InstanceId context
-        )
+        private static void RegisterNoOpHandler(MessageScenario scenario, MessageRegistrationToken token, InstanceId context)
         {
             switch (scenario.Kind)
             {
@@ -255,9 +202,7 @@ namespace DxMessaging.Tests.Editor.Allocations
                 }
                 case MessageKind.TargetedWithoutTargeting:
                 {
-                    _ = token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(
-                        NoOpTargetedWithoutTargeting
-                    );
+                    _ = token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(NoOpTargetedWithoutTargeting);
                     return;
                 }
                 case MessageKind.Broadcast:
@@ -267,18 +212,12 @@ namespace DxMessaging.Tests.Editor.Allocations
                 }
                 case MessageKind.BroadcastWithoutSource:
                 {
-                    _ = token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>(
-                        NoOpBroadcastWithoutSource
-                    );
+                    _ = token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>(NoOpBroadcastWithoutSource);
                     return;
                 }
                 default:
                 {
-                    throw new System.ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new System.ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
@@ -309,11 +248,7 @@ namespace DxMessaging.Tests.Editor.Allocations
                 }
                 default:
                 {
-                    throw new System.ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new System.ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
@@ -326,15 +261,9 @@ namespace DxMessaging.Tests.Editor.Allocations
 
         private static void NoOpClassUntargeted(in ClassUntargetedMessage message) { }
 
-        private static void NoOpTargetedWithoutTargeting(
-            in InstanceId target,
-            in SimpleTargetedMessage message
-        ) { }
+        private static void NoOpTargetedWithoutTargeting(in InstanceId target, in SimpleTargetedMessage message) { }
 
-        private static void NoOpBroadcastWithoutSource(
-            in InstanceId source,
-            in SimpleBroadcastMessage message
-        ) { }
+        private static void NoOpBroadcastWithoutSource(in InstanceId source, in SimpleBroadcastMessage message) { }
 
         private sealed class CountingClock : IDxMessagingClock
         {

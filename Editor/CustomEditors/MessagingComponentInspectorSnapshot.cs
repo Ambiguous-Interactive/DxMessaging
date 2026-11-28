@@ -16,13 +16,9 @@ namespace DxMessaging.Editor.CustomEditors
     /// </summary>
     internal static class MessagingComponentInspectorSnapshot
     {
-        private static readonly MessageEmissionData[] EmptyEmissions =
-            Array.Empty<MessageEmissionData>();
+        private static readonly MessageEmissionData[] EmptyEmissions = Array.Empty<MessageEmissionData>();
 
-        internal static MessagingComponentInspectorState Capture(
-            MessagingComponent component,
-            bool resolveSerializedProviderBus = true
-        )
+        internal static MessagingComponentInspectorState Capture(MessagingComponent component, bool resolveSerializedProviderBus = true)
         {
             if (component == null)
             {
@@ -46,53 +42,27 @@ namespace DxMessaging.Editor.CustomEditors
                 .Select(pair => CreateListenerView(pair.Key, pair.Value))
                 .ToList();
 
-            ProviderDiagnosticsView providerDiagnostics = CreateProviderDiagnostics(
-                component,
-                resolveSerializedProviderBus
-            );
+            ProviderDiagnosticsView providerDiagnostics = CreateProviderDiagnostics(component, resolveSerializedProviderBus);
 
-            return new MessagingComponentInspectorState(
-                globalDiagnosticsEnabled,
-                globalHistory,
-                listenerViews,
-                providerDiagnostics
-            );
+            return new MessagingComponentInspectorState(globalDiagnosticsEnabled, globalHistory, listenerViews, providerDiagnostics);
         }
 
-        private static ListenerDiagnosticsView CreateListenerView(
-            MonoBehaviour listener,
-            MessageRegistrationToken token
-        )
+        private static ListenerDiagnosticsView CreateListenerView(MonoBehaviour listener, MessageRegistrationToken token)
         {
             MessageRegistrationView[] registrations = token
                 ._metadata.OrderBy(pair => pair.Key)
-                .Select(pair => new MessageRegistrationView(
-                    pair.Key,
-                    pair.Value,
-                    token._callCounts.TryGetValue(pair.Key, out int callCount) ? callCount : 0
-                ))
+                .Select(pair => new MessageRegistrationView(pair.Key, pair.Value, token._callCounts.TryGetValue(pair.Key, out int callCount) ? callCount : 0))
                 .ToArray();
 
-            IReadOnlyList<MessageEmissionData> emissionHistory =
-                0 < token._emissionBuffer.Count ? token._emissionBuffer.ToArray() : EmptyEmissions;
+            IReadOnlyList<MessageEmissionData> emissionHistory = 0 < token._emissionBuffer.Count ? token._emissionBuffer.ToArray() : EmptyEmissions;
 
-            return new ListenerDiagnosticsView(
-                listener,
-                token.DiagnosticMode,
-                token.Enabled,
-                registrations,
-                emissionHistory
-            );
+            return new ListenerDiagnosticsView(listener, token.DiagnosticMode, token.Enabled, registrations, emissionHistory);
         }
 
-        internal static ProviderDiagnosticsView CreateProviderDiagnostics(
-            MessagingComponent component,
-            bool resolveSerializedProviderBus = true
-        )
+        internal static ProviderDiagnosticsView CreateProviderDiagnostics(MessagingComponent component, bool resolveSerializedProviderBus = true)
         {
             bool autoConfigure = component.AutoConfigureSerializedProviderOnAwake;
-            bool hasSerializedProvider =
-                component.SerializedProviderAsset != null || component.HasSerializedProvider;
+            bool hasSerializedProvider = component.SerializedProviderAsset != null || component.HasSerializedProvider;
             bool hasRuntimeProvider = component.HasRuntimeProvider;
             bool hasMessageBusOverride = component.HasMessageBusOverride;
             bool serializedProviderMissingWarning = autoConfigure && !hasSerializedProvider;
@@ -125,8 +95,7 @@ namespace DxMessaging.Editor.CustomEditors
         )
         {
             GlobalDiagnosticsEnabled = globalDiagnosticsEnabled;
-            GlobalEmissionHistory = globalEmissionHistory
-                ?? throw new ArgumentNullException(nameof(globalEmissionHistory));
+            GlobalEmissionHistory = globalEmissionHistory ?? throw new ArgumentNullException(nameof(globalEmissionHistory));
             Listeners = listeners ?? throw new ArgumentNullException(nameof(listeners));
             ProviderDiagnostics = providerDiagnostics;
         }
@@ -154,8 +123,7 @@ namespace DxMessaging.Editor.CustomEditors
             DiagnosticsEnabled = diagnosticsEnabled;
             TokenEnabled = tokenEnabled;
             Registrations = registrations ?? throw new ArgumentNullException(nameof(registrations));
-            EmissionHistory = emissionHistory
-                ?? throw new ArgumentNullException(nameof(emissionHistory));
+            EmissionHistory = emissionHistory ?? throw new ArgumentNullException(nameof(emissionHistory));
         }
 
         internal MonoBehaviour Listener { get; }
@@ -171,11 +139,7 @@ namespace DxMessaging.Editor.CustomEditors
 
     internal readonly struct MessageRegistrationView
     {
-        internal MessageRegistrationView(
-            MessageRegistrationHandle handle,
-            MessageRegistrationMetadata metadata,
-            int callCount
-        )
+        internal MessageRegistrationView(MessageRegistrationHandle handle, MessageRegistrationMetadata metadata, int callCount)
         {
             Handle = handle;
             Metadata = metadata;

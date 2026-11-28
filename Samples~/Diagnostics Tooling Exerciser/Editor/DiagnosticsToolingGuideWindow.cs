@@ -14,8 +14,7 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser.Editor
 
     internal sealed class DiagnosticsToolingGuideWindow : EditorWindow
     {
-        private const string MenuPath =
-            "Tools/Wallstop Studios/DxMessaging/Diagnostics Tooling Guided Tour";
+        private const string MenuPath = "Tools/Wallstop Studios/DxMessaging/Diagnostics Tooling Guided Tour";
         private const string SettingsPath = "Project/Wallstop Studios/DxMessaging";
 
         private Label _liveStatus;
@@ -47,11 +46,7 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser.Editor
             Label title = new("Diagnostics Tooling Guided Tour");
             title.AddToClassList(DxMessagingEditorTheme.DetailTitleClassName);
             root.Add(title);
-            root.Add(
-                new Label(
-                    "Follow these steps in order. The status panel updates while the sample runs."
-                )
-            );
+            root.Add(new Label("Follow these steps in order. The status panel updates while the sample runs."));
 
             _liveStatus = new Label { name = "dx-tooling-guide-status" };
             _liveStatus.AddToClassList(DxMessagingEditorTheme.CardClassName);
@@ -69,13 +64,7 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser.Editor
                 TogglePlayMode
             );
             _playButton.name = "dx-tooling-guide-play";
-            _emitButton = AddStep(
-                steps,
-                "2. Add one trace sequence",
-                "Emit one untargeted pulse, targeted commands, and sourced broadcasts.",
-                "Emit One Of Each",
-                EmitOneOfEach
-            );
+            _emitButton = AddStep(steps, "2. Add one trace sequence", "Emit one untargeted pulse, targeted commands, and sourced broadcasts.", "Emit One Of Each", EmitOneOfEach);
             _emitButton.name = "dx-tooling-guide-emit";
             _resetAndEmitButton = AddStep(
                 steps,
@@ -157,13 +146,7 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser.Editor
             _statusRefresh = null;
         }
 
-        private static Button AddStep(
-            VisualElement parent,
-            string heading,
-            string body,
-            string buttonText,
-            Action action
-        )
+        private static Button AddStep(VisualElement parent, string heading, string body, string buttonText, Action action)
         {
             VisualElement card = new();
             card.AddToClassList(DxMessagingEditorTheme.CardClassName);
@@ -190,9 +173,7 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser.Editor
             _emitButton.SetEnabled(canEmit);
             _resetAndEmitButton.SetEnabled(canEmit);
             _disableReceiverButton.SetEnabled(canEmit && playerShip != null && playerShip.enabled);
-            _releaseTokenButton.SetEnabled(
-                canEmit && enemyDrone != null && enemyDrone.Token != null
-            );
+            _releaseTokenButton.SetEnabled(canEmit && enemyDrone != null && enemyDrone.Token != null);
             _destroyReceiverButton.SetEnabled(canEmit && hudConsole != null);
             _separateBusButton.SetEnabled(canEmit);
 
@@ -212,8 +193,7 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser.Editor
                 runnerSummary =
                     $"Runner: sequence {runner.Sequence} - {runner.LastRunSummary}\nSeparate bus: token {tokenStatus}, registrations {runner.SeparateBusRegistrationCount}, log entries {runner.SeparateBusLogCount}, calls {runner.SeparateBusCallCount}, last trace {runner.LastSeparateBusTraceId}";
             }
-            _liveStatus.text =
-                $"STATUS\nPlay Mode: {(EditorApplication.isPlaying ? "running" : "stopped")}\n{runnerSummary}\n{receiverSummary}";
+            _liveStatus.text = $"STATUS\nPlay Mode: {(EditorApplication.isPlaying ? "running" : "stopped")}\n{runnerSummary}\n{receiverSummary}";
         }
 
         private static void TogglePlayMode()
@@ -301,26 +281,17 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser.Editor
             return FindReceiver(FindReceivers(), listenerLabel);
         }
 
-        private static DiagnosticsToolingReceiver FindReceiver(
-            DiagnosticsToolingReceiver[] receivers,
-            string listenerLabel
-        )
+        private static DiagnosticsToolingReceiver FindReceiver(DiagnosticsToolingReceiver[] receivers, string listenerLabel)
         {
-            return receivers.FirstOrDefault(receiver =>
-                string.Equals(receiver.ListenerLabel, listenerLabel, StringComparison.Ordinal)
-            );
+            return receivers.FirstOrDefault(receiver => string.Equals(receiver.ListenerLabel, listenerLabel, StringComparison.Ordinal));
         }
 
         private static DiagnosticsToolingExerciser FindRunner()
         {
 #if UNITY_6000_4_OR_NEWER
-            return Object.FindAnyObjectByType<DiagnosticsToolingExerciser>(
-                FindObjectsInactive.Exclude
-            );
+            return Object.FindAnyObjectByType<DiagnosticsToolingExerciser>(FindObjectsInactive.Exclude);
 #elif UNITY_2023_1_OR_NEWER
-            return Object.FindFirstObjectByType<DiagnosticsToolingExerciser>(
-                FindObjectsInactive.Exclude
-            );
+            return Object.FindFirstObjectByType<DiagnosticsToolingExerciser>(FindObjectsInactive.Exclude);
 #else
             return Object.FindObjectOfType<DiagnosticsToolingExerciser>();
 #endif
@@ -329,14 +300,9 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser.Editor
         private static DiagnosticsToolingReceiver[] FindReceivers()
         {
 #if UNITY_6000_4_OR_NEWER
-            return Object.FindObjectsByType<DiagnosticsToolingReceiver>(
-                FindObjectsInactive.Exclude
-            );
+            return Object.FindObjectsByType<DiagnosticsToolingReceiver>(FindObjectsInactive.Exclude);
 #elif UNITY_2023_1_OR_NEWER
-            return Object.FindObjectsByType<DiagnosticsToolingReceiver>(
-                FindObjectsInactive.Exclude,
-                FindObjectsSortMode.None
-            );
+            return Object.FindObjectsByType<DiagnosticsToolingReceiver>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
 #else
             return Object.FindObjectsOfType<DiagnosticsToolingReceiver>();
 #endif
@@ -346,8 +312,7 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser.Editor
     [InitializeOnLoad]
     internal static class DiagnosticsToolingGuideBootstrap
     {
-        private const string ScenePathSuffix =
-            "/Diagnostics Tooling Exerciser/DiagnosticsToolingExerciser.unity";
+        private const string ScenePathSuffix = "/Diagnostics Tooling Exerciser/DiagnosticsToolingExerciser.unity";
         private const string SessionKey = "DxMessaging.DiagnosticsToolingGuide.Opened";
 
         static DiagnosticsToolingGuideBootstrap()
@@ -395,10 +360,7 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser.Editor
         internal static bool TryClaimSessionForScene(string scenePath)
         {
             string normalizedPath = (scenePath ?? string.Empty).Replace('\\', '/');
-            if (
-                SessionState.GetBool(SessionKey, false)
-                || !normalizedPath.EndsWith(ScenePathSuffix, StringComparison.Ordinal)
-            )
+            if (SessionState.GetBool(SessionKey, false) || !normalizedPath.EndsWith(ScenePathSuffix, StringComparison.Ordinal))
             {
                 return false;
             }

@@ -127,8 +127,7 @@ Code example (describe with words).
 #### Forbidden: Annotations
 
 ```markdown
-Some code (1)
-{ .annotate }
+Some code (1) { .annotate }
 
 1.  This is an annotation that appears on hover.
 ```
@@ -142,9 +141,7 @@ Press ++ctrl+alt+del++ to restart.
 #### Forbidden: Critic Markup
 
 ```markdown
-{--deleted text--}
-{++inserted text++}
-{~~old~>new~~}
+{--deleted text--} {++inserted text++} {~~old~>new~~}
 ```
 
 #### Correct: Use Plain Descriptions

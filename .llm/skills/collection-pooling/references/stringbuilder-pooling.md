@@ -4,7 +4,8 @@
 
 ## Overview
 
-String concatenation with `+` or `+=` creates new string objects for each operation, causing O(n^2) allocations for n concatenations. StringBuilder avoids this, but creating a new StringBuilder each time still allocates. Pooling StringBuilders eliminates even that allocation.
+String concatenation with `+` or `+=` creates new string objects for each operation, causing O(n^2) allocations for n concatenations. StringBuilder avoids this, but creating a new
+StringBuilder each time still allocates. Pooling StringBuilders eliminates even that allocation.
 
 ## Problem Statement
 

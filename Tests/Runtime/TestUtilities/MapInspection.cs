@@ -5,17 +5,13 @@ namespace DxMessaging.Tests
 
     internal static class MapInspection
     {
-        internal static int Capacity(object map) =>
-            ((System.Array)MessageBusInspection.ReadField(map, "_values")).Length;
+        internal static int Capacity(object map) => ((System.Array)MessageBusInspection.ReadField(map, "_values")).Length;
 
         private static int Bucket(object map, int key, int mask)
         {
             for (System.Type type = map.GetType(); type != null; type = type.BaseType)
             {
-                MethodInfo method = type.GetMethod(
-                    "Bucket",
-                    BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.DeclaredOnly
-                );
+                MethodInfo method = type.GetMethod("Bucket", BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
                 if (method != null)
                 {
                     return (int)method.Invoke(null, new object[] { key, mask });
@@ -61,10 +57,7 @@ namespace DxMessaging.Tests
             return longest;
         }
 
-        internal static IntKeyMapTopologyObservation ObserveTopologyForBenchmark<TValue>(
-            this IntKeyMap<TValue> map,
-            int key
-        )
+        internal static IntKeyMapTopologyObservation ObserveTopologyForBenchmark<TValue>(this IntKeyMap<TValue> map, int key)
             where TValue : class => Observe(map, key);
 
         internal static IntKeyMapTopologyObservation Observe(object map, int key)
@@ -104,13 +97,7 @@ namespace DxMessaging.Tests
                         scan = (scan + 1) & mask;
                     }
 
-                    return new IntKeyMapTopologyObservation(
-                        true,
-                        index,
-                        lookupProbes,
-                        deletionScans,
-                        deletionMoves
-                    );
+                    return new IntKeyMapTopologyObservation(true, index, lookupProbes, deletionScans, deletionMoves);
                 }
 
                 index = (index + 1) & mask;

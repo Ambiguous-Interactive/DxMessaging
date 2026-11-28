@@ -39,13 +39,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             MessagingDebug.enabled = _previousDebug;
         }
 
-        private static MessageBus CreateBus() =>
-            MessageBus.CreateForInternalUse(
-                new ConstantClock(),
-                idleEvictionTicks: 30,
-                idleEvictionEnabled: false,
-                trimApiEnabled: true
-            );
+        private static MessageBus CreateBus() => MessageBus.CreateForInternalUse(new ConstantClock(), idleEvictionTicks: 30, idleEvictionEnabled: false, trimApiEnabled: true);
 
         private static IEnumerable<TestCaseData> Cases()
         {
@@ -65,22 +59,9 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                             {
                                 for (int mode = 0; mode < 3; mode++)
                                 {
-                                    yield return new TestCaseData(
-                                        scenario.Kind,
-                                        oldPost,
-                                        newPost,
-                                        sameType,
-                                        fast,
-                                        mode
-                                    )
-                                        .SetName(
-                                            $"DisabledTokenRetention_{scenario.Kind}_OldPost{oldPost}_NewPost{newPost}_SameType{sameType}_Fast{fast}_Mode{mode}"
-                                        )
-                                        .SetCategory(
-                                            newPost == oldPost && sameType == fast
-                                                ? "FastRetention"
-                                                : "Exhaustive"
-                                        );
+                                    yield return new TestCaseData(scenario.Kind, oldPost, newPost, sameType, fast, mode)
+                                        .SetName($"DisabledTokenRetention_{scenario.Kind}_OldPost{oldPost}_NewPost{newPost}_SameType{sameType}_Fast{fast}_Mode{mode}")
+                                        .SetCategory(newPost == oldPost && sameType == fast ? "FastRetention" : "Exhaustive");
                                 }
                             }
                         }
@@ -90,22 +71,13 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
         }
 
         [TestCaseSource(nameof(Cases))]
-        public void DisabledStagingDoesNotRetainAnUnrelatedReusedMapGraph(
-            MessageKind kind,
-            bool oldPost,
-            bool newPost,
-            bool sameType,
-            bool fast,
-            int mode
-        )
+        public void DisabledStagingDoesNotRetainAnUnrelatedReusedMapGraph(MessageKind kind, bool oldPost, bool newPost, bool sameType, bool fast, int mode)
         {
             OldGraph old = CreateOld(kind, oldPost, fast, mode);
             ForeignGraph foreign = null;
             try
             {
-                foreign = sameType
-                    ? CreateForeign<OldMessage>(kind, newPost, old.Map)
-                    : CreateForeign<NewMessage>(kind, newPost, old.Map);
+                foreign = sameType ? CreateForeign<OldMessage>(kind, newPost, old.Map) : CreateForeign<NewMessage>(kind, newPost, old.Map);
                 if (mode == 1)
                 {
                     old.Root.Token = null;
@@ -116,23 +88,9 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     GC.WaitForPendingFinalizers();
                     GC.Collect();
                 }
-                bool[] alive = new[]
-                {
-                    foreign.Bus.IsAlive,
-                    foreign.Handler.IsAlive,
-                    foreign.Token.IsAlive,
-                    foreign.Receiver.IsAlive,
-                };
-                Assert.That(
-                    foreign.Reused,
-                    Is.EqualTo(mode != 2),
-                    "The collection control must prove exact dictionary reuse or isolation."
-                );
-                Assert.That(
-                    foreign.Calls,
-                    Is.EqualTo(1),
-                    "Valid raw duplicate cleanup must preserve the real token callback."
-                );
+                bool[] alive = new[] { foreign.Bus.IsAlive, foreign.Handler.IsAlive, foreign.Token.IsAlive, foreign.Receiver.IsAlive };
+                Assert.That(foreign.Reused, Is.EqualTo(mode != 2), "The collection control must prove exact dictionary reuse or isolation.");
+                Assert.That(foreign.Calls, Is.EqualTo(1), "Valid raw duplicate cleanup must preserve the real token callback.");
                 Assert.That(
                     alive,
                     Is.EqualTo(new[] { false, false, false, false }),
@@ -149,11 +107,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     "Retained disabled staging must replay exactly its original callback; cleared staging must stay absent."
                 );
                 old.Root.Token?.Disable();
-                Assert.That(
-                    MessageBusInspection.CountLiveRegistrations(old.Bus),
-                    Is.Zero,
-                    "A second successful disable must remove the replayed registration."
-                );
+                Assert.That(MessageBusInspection.CountLiveRegistrations(old.Bus), Is.Zero, "A second successful disable must remove the replayed registration.");
             }
             finally
             {
@@ -161,11 +115,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 old.Root.Token?.Dispose();
                 old.Root.Token = null;
                 _ = old.Bus.Trim(force: true);
-                Assert.That(
-                    MessageBusInspection.CountLiveRegistrations(old.Bus),
-                    Is.Zero,
-                    "Owned old cleanup must leave no registrations."
-                );
+                Assert.That(MessageBusInspection.CountLiveRegistrations(old.Bus), Is.Zero, "Owned old cleanup must leave no registrations.");
                 GC.KeepAlive(old.Root);
                 GC.KeepAlive(old.Bus);
             }
@@ -177,16 +127,12 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             MessageBus bus = CreateBus();
             _ = bus.Trim(force: true);
             using LeakWatcher watcher = new LeakWatcher(bus, label: "disabled token context map");
-            MessageHandler handler = new MessageHandler(new InstanceId(9101), bus)
-            {
-                active = true,
-            };
+            MessageHandler handler = new MessageHandler(new InstanceId(9101), bus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
             Counter counter = new Counter();
             InstanceId context = new InstanceId(9102);
             Action<OldMessage> callback = _ => counter.Calls++;
-            MessageHandler.FastHandler<OldMessage> fastCallback = (in OldMessage _) =>
-                counter.Calls++;
+            MessageHandler.FastHandler<OldMessage> fastCallback = (in OldMessage _) => counter.Calls++;
             if (kind == MessageKind.Targeted)
             {
                 if (post)
@@ -240,27 +186,15 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             token.Enable();
             WeakReference map = new WeakReference(ObserveMap(token));
             token.Disable();
-            Assert.That(
-                MessageBusInspection.CountLiveRegistrations(bus),
-                Is.Zero,
-                "Successful disable must remove the old active registration before recycling."
-            );
-            Assert.That(
-                counter.Calls,
-                Is.Zero,
-                "The old staged callback must not run during teardown."
-            );
+            Assert.That(MessageBusInspection.CountLiveRegistrations(bus), Is.Zero, "Successful disable must remove the old active registration before recycling.");
+            Assert.That(counter.Calls, Is.Zero, "The old staged callback must not run during teardown.");
             for (int i = 0; i < 64; i++)
             {
                 QuietMessage message = new QuietMessage();
                 bus.UntargetedBroadcast(ref message);
             }
             _ = bus.Trim(force: false);
-            Assert.That(
-                bus.OccupiedTargetSlots,
-                Is.Zero,
-                "Counter aging and ordinary trim must reclaim the empty keyed slot."
-            );
+            Assert.That(bus.OccupiedTargetSlots, Is.Zero, "Counter aging and ordinary trim must reclaim the empty keyed slot.");
             if (mode == 2)
             {
                 _ = bus.Trim(force: true);
@@ -275,18 +209,11 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private static ForeignGraph CreateForeign<T>(
-            MessageKind kind,
-            bool post,
-            WeakReference oldMap
-        )
+        private static ForeignGraph CreateForeign<T>(MessageKind kind, bool post, WeakReference oldMap)
             where T : struct, ITargetedMessage, IBroadcastMessage
         {
             MessageBus bus = CreateBus();
-            MessageHandler handler = new MessageHandler(new InstanceId(9201), bus)
-            {
-                active = true,
-            };
+            MessageHandler handler = new MessageHandler(new InstanceId(9201), bus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
             Receiver<T> receiver = new Receiver<T> { Token = token };
             InstanceId context = new InstanceId(9202);
@@ -317,27 +244,15 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             MessageBusRegistration extra;
             if (kind == MessageKind.Targeted)
             {
-                extra = post
-                    ? bus.RegisterTargetedPostProcessor<T>(context, handler)
-                    : bus.RegisterTargeted<T>(context, handler);
+                extra = post ? bus.RegisterTargetedPostProcessor<T>(context, handler) : bus.RegisterTargeted<T>(context, handler);
             }
             else
             {
-                extra = post
-                    ? bus.RegisterBroadcastPostProcessor<T>(context, handler)
-                    : bus.RegisterSourcedBroadcast<T>(context, handler);
+                extra = post ? bus.RegisterBroadcastPostProcessor<T>(context, handler) : bus.RegisterSourcedBroadcast<T>(context, handler);
             }
-            Assert.That(
-                MessageBusInspection.CountLiveRegistrations(bus),
-                Is.EqualTo(2),
-                "A duplicate raw handle adds one registration reference."
-            );
+            Assert.That(MessageBusInspection.CountLiveRegistrations(bus), Is.EqualTo(2), "A duplicate raw handle adds one registration reference.");
             bus.Deregister<T>(in extra);
-            Assert.That(
-                MessageBusInspection.CountLiveRegistrations(bus),
-                Is.EqualTo(1),
-                "Valid raw cleanup must retain the staged token reference."
-            );
+            Assert.That(MessageBusInspection.CountLiveRegistrations(bus), Is.EqualTo(1), "Valid raw cleanup must retain the staged token reference.");
             Emit<T>(bus, kind, context);
             return new ForeignGraph
             {
@@ -370,11 +285,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             object registration = MessageBusInspection.ReadField(slots.GetValue(0), "Registration");
             object state = MessageBusInspection.ReadField(registration, "_typedDeregistration");
             object map = MessageBusInspection.ReadField(state, "_handlersByContext");
-            Assert.That(
-                map,
-                Is.Not.Null,
-                "An enabled keyed registration must own its real typed context map."
-            );
+            Assert.That(map, Is.Not.Null, "An enabled keyed registration must own its real typed context map.");
             return map;
         }
 
@@ -390,11 +301,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             token?.Dispose();
             if (bus != null)
             {
-                Assert.That(
-                    MessageBusInspection.CountLiveRegistrations(bus),
-                    Is.Zero,
-                    "Owned surviving foreign cleanup must remove every registration."
-                );
+                Assert.That(MessageBusInspection.CountLiveRegistrations(bus), Is.Zero, "Owned surviving foreign cleanup must remove every registration.");
                 _ = bus.Trim(force: true);
             }
         }

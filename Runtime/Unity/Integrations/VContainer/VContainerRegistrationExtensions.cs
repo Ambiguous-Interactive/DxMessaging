@@ -30,19 +30,14 @@ namespace DxMessaging.Unity.Integrations.VContainer
         /// <param name="builder">Container builder receiving the registration.</param>
         /// <param name="lifetime">Lifetime to assign to the registration. Defaults to <see cref="Lifetime.Singleton"/>.</param>
         /// <returns>The underlying registration builder for further chaining.</returns>
-        public static RegistrationBuilder RegisterDxMessagingBus(
-            this IContainerBuilder builder,
-            Lifetime lifetime = Lifetime.Singleton
-        )
+        public static RegistrationBuilder RegisterDxMessagingBus(this IContainerBuilder builder, Lifetime lifetime = Lifetime.Singleton)
         {
             if (builder == null)
             {
                 throw new ArgumentNullException(nameof(builder));
             }
 
-            return builder
-                .Register<MessageBus>(CreateMessageBus, lifetime)
-                .As(typeof(MessageBus), typeof(IMessageBus));
+            return builder.Register<MessageBus>(CreateMessageBus, lifetime).As(typeof(MessageBus), typeof(IMessageBus));
         }
 
         /// <summary>
@@ -56,11 +51,7 @@ namespace DxMessaging.Unity.Integrations.VContainer
         /// <param name="factory">Delegate that constructs the <see cref="MessageBus"/> instance using the resolver.</param>
         /// <param name="lifetime">Lifetime to assign to the registration. Defaults to <see cref="Lifetime.Singleton"/>.</param>
         /// <returns>The underlying registration builder for further chaining.</returns>
-        public static RegistrationBuilder RegisterDxMessagingBus(
-            this IContainerBuilder builder,
-            Func<IObjectResolver, MessageBus> factory,
-            Lifetime lifetime = Lifetime.Singleton
-        )
+        public static RegistrationBuilder RegisterDxMessagingBus(this IContainerBuilder builder, Func<IObjectResolver, MessageBus> factory, Lifetime lifetime = Lifetime.Singleton)
         {
             if (builder == null)
             {
@@ -70,9 +61,7 @@ namespace DxMessaging.Unity.Integrations.VContainer
             {
                 throw new ArgumentNullException(nameof(factory));
             }
-            return builder
-                .Register<MessageBus>(factory, lifetime)
-                .As(typeof(MessageBus), typeof(IMessageBus));
+            return builder.Register<MessageBus>(factory, lifetime).As(typeof(MessageBus), typeof(IMessageBus));
         }
 
         /// <summary>
@@ -85,11 +74,7 @@ namespace DxMessaging.Unity.Integrations.VContainer
         /// <param name="clock">Clock implementation injected into the bus. Must not be null.</param>
         /// <param name="lifetime">Lifetime to assign to the registration. Defaults to <see cref="Lifetime.Singleton"/>.</param>
         /// <returns>The underlying registration builder for further chaining.</returns>
-        public static RegistrationBuilder RegisterDxMessagingBus(
-            this IContainerBuilder builder,
-            IDxMessagingClock clock,
-            Lifetime lifetime = Lifetime.Singleton
-        )
+        public static RegistrationBuilder RegisterDxMessagingBus(this IContainerBuilder builder, IDxMessagingClock clock, Lifetime lifetime = Lifetime.Singleton)
         {
             if (builder == null)
             {
@@ -99,9 +84,7 @@ namespace DxMessaging.Unity.Integrations.VContainer
             {
                 throw new ArgumentNullException(nameof(clock));
             }
-            return builder
-                .Register<MessageBus>(_ => MessageBus.CreateForInternalUse(clock), lifetime)
-                .As(typeof(MessageBus), typeof(IMessageBus));
+            return builder.Register<MessageBus>(_ => MessageBus.CreateForInternalUse(clock), lifetime).As(typeof(MessageBus), typeof(IMessageBus));
         }
 
         /// <summary>
@@ -125,10 +108,7 @@ namespace DxMessaging.Unity.Integrations.VContainer
 
         private static IMessageRegistrationBuilder CreateBuilder(IObjectResolver resolver)
         {
-            if (
-                resolver.TryResolve(out IMessageBusProvider provider)
-                && MessageBusProviderUtility.IsAvailable(provider)
-            )
+            if (resolver.TryResolve(out IMessageBusProvider provider) && MessageBusProviderUtility.IsAvailable(provider))
             {
                 return new MessageRegistrationBuilder(provider);
             }

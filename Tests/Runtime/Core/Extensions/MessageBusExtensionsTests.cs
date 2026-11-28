@@ -88,9 +88,7 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
 
             _ = token.RegisterUntargeted((in StructInterceptedMessage msg) => intercepted = msg);
 
-            _ = token.RegisterUntargetedPostProcessor(
-                (in StructInterceptedMessage _) => postProcessCount++
-            );
+            _ = token.RegisterUntargetedPostProcessor((in StructInterceptedMessage _) => postProcessCount++);
 
             token.Enable();
 
@@ -133,9 +131,7 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
             MessageRegistrationToken token2 = MessageRegistrationToken.Create(handler2, bus);
             int messageSum = 0;
 
-            _ = token2.RegisterUntargeted(
-                (in StructUntargetedMessage msg) => messageSum += msg.Value
-            );
+            _ = token2.RegisterUntargeted((in StructUntargetedMessage msg) => messageSum += msg.Value);
 
             token2.Enable();
 
@@ -203,9 +199,7 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
 
             _ = token.RegisterTargeted(target, (in StringMessage m) => targeted = m.message);
 
-            _ = token.RegisterBroadcast(source, (in SourcedStringMessage m) =>
-                broadcast = m.message
-            );
+            _ = token.RegisterBroadcast(source, (in SourcedStringMessage m) => broadcast = m.message);
 
             _ = token.RegisterUntargeted((in GlobalStringMessage m) => untargeted = m.message);
 

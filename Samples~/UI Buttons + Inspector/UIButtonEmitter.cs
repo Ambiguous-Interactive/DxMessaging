@@ -35,6 +35,5 @@ public sealed class UIButtonEmitter : MonoBehaviour
         text.EmitGameObjectTargeted(gameObject);
     }
 
-    private string EffectiveButtonId =>
-        string.IsNullOrWhiteSpace(buttonId) ? FallbackButtonId : buttonId;
+    private string EffectiveButtonId => string.IsNullOrWhiteSpace(buttonId) ? FallbackButtonId : buttonId;
 }

@@ -21,16 +21,11 @@ internal sealed class OptionalStructDocumentationTests
     [TestCase(true, "default(Packet)")]
     [TestCase(true, "new Packet(2f)")]
     [TestCase(true, "new Packet(Label: \"custom\")")]
-    public void OptionalConstructorsRetainOrdinaryCSharpConstruction(
-        bool referenceType,
-        string creation
-    )
+    public void OptionalConstructorsRetainOrdinaryCSharpConstruction(bool referenceType, string creation)
     {
         foreach (bool generated in new[] { false, true })
         {
-            string members = generated
-                ? ""
-                : "public Packet(float Value = 1.25f, string Label = \"ready\") { this.Value = Value; this.Label = Label; }";
+            string members = generated ? "" : "public Packet(float Value = 1.25f, string Label = \"ready\") { this.Value = Value; this.Label = Label; }";
             string source = $$"""
                 using DxMessaging.Core.Attributes;
                 {{(generated ? "[DxAutoConstructor]" : "")}}
@@ -45,8 +40,7 @@ internal sealed class OptionalStructDocumentationTests
             WithCompiledCaller(source, assembly =>
             {
                 object? value = assembly.GetType("DocProbe")!.GetMethod("Read")!.Invoke(null, null);
-                string context =
-                    $"referenceType={referenceType}; generated={generated}; creation={creation}";
+                string context = $"referenceType={referenceType}; generated={generated}; creation={creation}";
                 if (referenceType && creation == "default(Packet)")
                 {
                     Assert.That(value, Is.Null, context);
@@ -85,22 +79,15 @@ internal sealed class OptionalStructDocumentationTests
             .Where(code => code.Contains("partial struct " + typeName, StringComparison.Ordinal))
             .ToArray();
         Assert.That(snippets, Has.Length.EqualTo(1), path + ": " + typeName);
-        CompilationUnitSyntax root = CSharpSyntaxTree
-            .ParseText(snippets[0], new CSharpParseOptions(LanguageVersion.CSharp9))
-            .GetCompilationUnitRoot();
-        string declarations = string.Join(
-            "\n",
-            root.Members.Where(member => member is not GlobalStatementSyntax)
-        );
+        CompilationUnitSyntax root = CSharpSyntaxTree.ParseText(snippets[0], new CSharpParseOptions(LanguageVersion.CSharp9)).GetCompilationUnitRoot();
+        string declarations = string.Join("\n", root.Members.Where(member => member is not GlobalStatementSyntax));
         string statements = string.Join("\n", root.Members.OfType<GlobalStatementSyntax>());
         string result;
         if (typeName == "SpawnEffect")
         {
             ObjectCreationExpressionSyntax first = root
                 .Members.OfType<GlobalStatementSyntax>()
-                .SelectMany(statement =>
-                    statement.DescendantNodes().OfType<ObjectCreationExpressionSyntax>()
-                )
+                .SelectMany(statement => statement.DescendantNodes().OfType<ObjectCreationExpressionSyntax>())
                 .First();
             result = $"return new object[] {{ {first}, largeEffect, redEffect, customEffect }};";
         }
@@ -108,19 +95,9 @@ internal sealed class OptionalStructDocumentationTests
         {
             result = "return EmissionFixture.Values.ToArray();";
         }
-        string[] imports =
-        {
-            "using DxMessaging.Core.Attributes;",
-            "using DxMessaging.Core.Extensions;",
-            "using UnityEngine;",
-        };
+        string[] imports = { "using DxMessaging.Core.Attributes;", "using DxMessaging.Core.Extensions;", "using UnityEngine;" };
         string source =
-            string.Join(
-                "\n",
-                imports
-                    .Concat(root.Usings.Select(directive => directive.ToString()))
-                    .Distinct(StringComparer.Ordinal)
-            )
+            string.Join("\n", imports.Concat(root.Usings.Select(directive => directive.ToString())).Distinct(StringComparer.Ordinal))
             + "\n"
             + declarations
             + "\npublic static class DocProbe { public static object[] Read() {\n"
@@ -131,8 +108,7 @@ internal sealed class OptionalStructDocumentationTests
             + Fixtures;
         WithCompiledCaller(source, assembly =>
         {
-            object[] values = (object[])
-                assembly.GetType("DocProbe")!.GetMethod("Read")!.Invoke(null, null)!;
+            object[] values = (object[])assembly.GetType("DocProbe")!.GetMethod("Read")!.Invoke(null, null)!;
             if (typeName == "SpawnEffect")
             {
                 Assert.That(values, Has.Length.EqualTo(4));
@@ -141,12 +117,7 @@ internal sealed class OptionalStructDocumentationTests
                 AssertField(values[0], "looping", false, typeName + " documented defaults");
                 AssertField(values[1], "scale", 2.5f, typeName + " positional argument");
                 AssertField(values[1], "duration", 5f, typeName + " omitted argument");
-                AssertField(
-                    values[2],
-                    "color",
-                    assembly.GetType("UnityEngine.Color")!.GetProperty("red")!.GetValue(null),
-                    typeName + " custom color"
-                );
+                AssertField(values[2], "color", assembly.GetType("UnityEngine.Color")!.GetProperty("red")!.GetValue(null), typeName + " custom color");
                 AssertField(values[3], "duration", 10f, typeName + " explicit arguments");
                 AssertField(values[3], "looping", true, typeName + " explicit arguments");
             }
@@ -156,76 +127,40 @@ internal sealed class OptionalStructDocumentationTests
                 AssertField(values[0], "masterVolume", 1f, typeName + " documented defaults");
                 AssertField(values[0], "musicVolume", 0.8f, typeName + " documented defaults");
                 AssertField(values[0], "sfxVolume", 1f, typeName + " documented defaults");
-                AssertField(
-                    values[0],
-                    "muteWhenUnfocused",
-                    true,
-                    typeName + " documented defaults"
-                );
+                AssertField(values[0], "muteWhenUnfocused", true, typeName + " documented defaults");
                 AssertField(values[1], "masterVolume", 1f, typeName + " named argument");
                 AssertField(values[1], "musicVolume", 0.5f, typeName + " named argument");
                 AssertField(values[1], "muteWhenUnfocused", true, typeName + " omitted argument");
                 AssertField(values[2], "masterVolume", 0.7f, typeName + " explicit arguments");
-                AssertField(
-                    values[2],
-                    "muteWhenUnfocused",
-                    false,
-                    typeName + " explicit arguments"
-                );
+                AssertField(values[2], "muteWhenUnfocused", false, typeName + " explicit arguments");
             }
         });
     }
 
     private static void AssertField(object instance, string name, object? expected, string context)
     {
-        Assert.That(
-            instance.GetType().GetField(name)!.GetValue(instance),
-            Is.EqualTo(expected),
-            context + ": " + name
-        );
+        Assert.That(instance.GetType().GetField(name)!.GetValue(instance), Is.EqualTo(expected), context + ": " + name);
     }
 
     private static void WithCompiledCaller(string source, Action<Assembly> check)
     {
         CSharpParseOptions parseOptions = new(LanguageVersion.CSharp9);
         string root = ResolveRoot();
-        List<SyntaxTree> trees = new()
-        {
-            CSharpSyntaxTree.ParseText(source, parseOptions, "DocumentedCaller.cs"),
-        };
-        foreach (
-            string file in new[]
-            {
-                "DxAutoConstructorAttribute.cs",
-                "DxOptionalParameterAttribute.cs",
-                "DxBroadcastMessageAttribute.cs",
-                "DxUntargetedMessageAttribute.cs",
-            }
-        )
+        List<SyntaxTree> trees = new() { CSharpSyntaxTree.ParseText(source, parseOptions, "DocumentedCaller.cs") };
+        foreach (string file in new[] { "DxAutoConstructorAttribute.cs", "DxOptionalParameterAttribute.cs", "DxBroadcastMessageAttribute.cs", "DxUntargetedMessageAttribute.cs" })
         {
             string path = Path.Combine(root, "Runtime", "Attributes", file);
             trees.Add(CSharpSyntaxTree.ParseText(File.ReadAllText(path), parseOptions, path));
         }
-        string paths = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
-            ?? throw new InvalidOperationException("Runtime references are unavailable.");
+        string paths = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") ?? throw new InvalidOperationException("Runtime references are unavailable.");
         CSharpCompilation compilation = CSharpCompilation.Create(
             "OptionalStructDocs_" + Guid.NewGuid().ToString("N"),
             trees,
             paths.Split(Path.PathSeparator).Select(path => MetadataReference.CreateFromFile(path)),
-            new CSharpCompilationOptions(
-                OutputKind.DynamicallyLinkedLibrary,
-                generalDiagnosticOption: ReportDiagnostic.Error
-            )
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, generalDiagnosticOption: ReportDiagnostic.Error)
         );
-        GeneratorDriver driver = CSharpGeneratorDriver.Create(
-            new ISourceGenerator[] { new DxAutoConstructorGenerator() },
-            parseOptions: parseOptions
-        );
-        driver = driver.RunGeneratorsAndUpdateCompilation(
-            compilation,
-            out Compilation generated,
-            out ImmutableArray<Diagnostic> diagnostics
-        );
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(new ISourceGenerator[] { new DxAutoConstructorGenerator() }, parseOptions: parseOptions);
+        driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out Compilation generated, out ImmutableArray<Diagnostic> diagnostics);
         Assert.That(driver.GetRunResult().Results.Select(result => result.Exception), Has.All.Null);
         Assert.That(diagnostics, Is.Empty, string.Join("\n", diagnostics));
         using MemoryStream stream = new();
@@ -250,10 +185,7 @@ internal sealed class OptionalStructDocumentationTests
         {
             root = root.Parent;
         }
-        return root?.FullName
-            ?? throw new DirectoryNotFoundException(
-                "Find the repository containing the test assembly."
-            );
+        return root?.FullName ?? throw new DirectoryNotFoundException("Find the repository containing the test assembly.");
     }
 
     /*

@@ -30,38 +30,18 @@ namespace DxMessaging.Tests.Editor
                 4 => message.NullableByte.GetValueOrDefault(),
                 _ => throw new System.ArgumentOutOfRangeException(nameof(field)),
             };
-            Assert.That(
-                actual,
-                Is.EqualTo(expected),
-                $"field={field}: preserve the optional constant."
-            );
-            Assert.That(
-                message.Required,
-                Is.EqualTo(1),
-                "Preserve the explicit required argument."
-            );
+            Assert.That(actual, Is.EqualTo(expected), $"field={field}: preserve the optional constant.");
+            Assert.That(message.Required, Is.EqualTo(1), "Preserve the explicit required argument.");
         }
 
         [TestCase(false)]
         [TestCase(true)]
         public void NullableConstructorParametersAcceptNull(bool optional)
         {
-            string? value = optional
-                ? new OptionalNullablePacket(1, null).Value
-                : new RequiredNullablePacket(1, null).Value;
-            Assert.That(
-                value,
-                Is.Null,
-                $"optional={optional}: preserve the nullable field contract."
-            );
-            string? obliviousValue = optional
-                ? new OptionalObliviousPacket(1, null).Value
-                : new RequiredObliviousPacket(1, null).Value;
-            Assert.That(
-                obliviousValue,
-                Is.Null,
-                $"optional={optional}: retain the field's disabled annotation context."
-            );
+            string? value = optional ? new OptionalNullablePacket(1, null).Value : new RequiredNullablePacket(1, null).Value;
+            Assert.That(value, Is.Null, $"optional={optional}: preserve the nullable field contract.");
+            string? obliviousValue = optional ? new OptionalObliviousPacket(1, null).Value : new RequiredObliviousPacket(1, null).Value;
+            Assert.That(obliviousValue, Is.Null, $"optional={optional}: retain the field's disabled annotation context.");
         }
 
         [DxAutoConstructor]

@@ -69,90 +69,36 @@ namespace DxMessaging.Core.MessageBus
         internal const int SweepGateSampleSize = 16;
         private const long SweepGateMask = SweepGateSampleSize - 1;
 
-        private static readonly SlotKey UntargetedHandleSlot = new SlotKey(
-            DispatchKind.Untargeted,
-            DispatchPhase.Handle,
-            DispatchVariant.Default
-        );
-        private static readonly SlotKey UntargetedPostSlot = new SlotKey(
-            DispatchKind.Untargeted,
-            DispatchPhase.PostProcess,
-            DispatchVariant.Default
-        );
-        private static readonly SlotKey TargetedHandleSlot = new SlotKey(
-            DispatchKind.Targeted,
-            DispatchPhase.Handle,
-            DispatchVariant.Default
-        );
-        private static readonly SlotKey TargetedWithoutContextHandleSlot = new SlotKey(
-            DispatchKind.Targeted,
-            DispatchPhase.Handle,
-            DispatchVariant.WithoutContext
-        );
-        private static readonly SlotKey TargetedPostSlot = new SlotKey(
-            DispatchKind.Targeted,
-            DispatchPhase.PostProcess,
-            DispatchVariant.Default
-        );
-        private static readonly SlotKey TargetedWithoutContextPostSlot = new SlotKey(
-            DispatchKind.Targeted,
-            DispatchPhase.PostProcess,
-            DispatchVariant.WithoutContext
-        );
-        private static readonly SlotKey BroadcastHandleSlot = new SlotKey(
-            DispatchKind.Broadcast,
-            DispatchPhase.Handle,
-            DispatchVariant.Default
-        );
-        private static readonly SlotKey BroadcastWithoutContextHandleSlot = new SlotKey(
-            DispatchKind.Broadcast,
-            DispatchPhase.Handle,
-            DispatchVariant.WithoutContext
-        );
-        private static readonly SlotKey BroadcastPostSlot = new SlotKey(
-            DispatchKind.Broadcast,
-            DispatchPhase.PostProcess,
-            DispatchVariant.Default
-        );
-        private static readonly SlotKey BroadcastWithoutContextPostSlot = new SlotKey(
-            DispatchKind.Broadcast,
-            DispatchPhase.PostProcess,
-            DispatchVariant.WithoutContext
-        );
+        private static readonly SlotKey UntargetedHandleSlot = new SlotKey(DispatchKind.Untargeted, DispatchPhase.Handle, DispatchVariant.Default);
+        private static readonly SlotKey UntargetedPostSlot = new SlotKey(DispatchKind.Untargeted, DispatchPhase.PostProcess, DispatchVariant.Default);
+        private static readonly SlotKey TargetedHandleSlot = new SlotKey(DispatchKind.Targeted, DispatchPhase.Handle, DispatchVariant.Default);
+        private static readonly SlotKey TargetedWithoutContextHandleSlot = new SlotKey(DispatchKind.Targeted, DispatchPhase.Handle, DispatchVariant.WithoutContext);
+        private static readonly SlotKey TargetedPostSlot = new SlotKey(DispatchKind.Targeted, DispatchPhase.PostProcess, DispatchVariant.Default);
+        private static readonly SlotKey TargetedWithoutContextPostSlot = new SlotKey(DispatchKind.Targeted, DispatchPhase.PostProcess, DispatchVariant.WithoutContext);
+        private static readonly SlotKey BroadcastHandleSlot = new SlotKey(DispatchKind.Broadcast, DispatchPhase.Handle, DispatchVariant.Default);
+        private static readonly SlotKey BroadcastWithoutContextHandleSlot = new SlotKey(DispatchKind.Broadcast, DispatchPhase.Handle, DispatchVariant.WithoutContext);
+        private static readonly SlotKey BroadcastPostSlot = new SlotKey(DispatchKind.Broadcast, DispatchPhase.PostProcess, DispatchVariant.Default);
+        private static readonly SlotKey BroadcastWithoutContextPostSlot = new SlotKey(DispatchKind.Broadcast, DispatchPhase.PostProcess, DispatchVariant.WithoutContext);
         private static readonly Func<MessageBus, bool, int>[] SweepableTypeCacheRegistry =
         {
             static (bus, force) => bus.SweepDirtyScalarTypeSlots(force),
             static (bus, force) => bus.SweepDirtyTargetSlots(force),
-            static (bus, force) =>
-                bus.SweepDirtyInterceptorTypeSlots(bus._untargetedInterceptsByType, force),
-            static (bus, force) =>
-                bus.SweepDirtyInterceptorTypeSlots(bus._targetedInterceptsByType, force),
-            static (bus, force) =>
-                bus.SweepDirtyInterceptorTypeSlots(bus._broadcastInterceptsByType, force),
+            static (bus, force) => bus.SweepDirtyInterceptorTypeSlots(bus._untargetedInterceptsByType, force),
+            static (bus, force) => bus.SweepDirtyInterceptorTypeSlots(bus._targetedInterceptsByType, force),
+            static (bus, force) => bus.SweepDirtyInterceptorTypeSlots(bus._broadcastInterceptsByType, force),
             static (bus, force) => bus.SweepStaleUntargetedDispatchPlans(),
             static (bus, force) => bus.SweepStaleDispatchPlans(bus._targetedDispatchPlans),
             static (bus, force) => bus.SweepStaleDispatchPlans(bus._broadcastDispatchPlans),
         };
 
-        private static readonly ArrayPool<DispatchBucket> DispatchBucketPool =
-            ArrayPool<DispatchBucket>.Shared;
-        private static readonly ArrayPool<DispatchEntry> DispatchEntryPool =
-            ArrayPool<DispatchEntry>.Shared;
+        private static readonly ArrayPool<DispatchBucket> DispatchBucketPool = ArrayPool<DispatchBucket>.Shared;
+        private static readonly ArrayPool<DispatchEntry> DispatchEntryPool = ArrayPool<DispatchEntry>.Shared;
 
-        private static CollectionPool<ContextHandlerMap> ContextHandlerByTargetDicts =>
-            ContextHandlerByTargetDictPoolHolder.Instance;
+        private static CollectionPool<ContextHandlerMap> ContextHandlerByTargetDicts => ContextHandlerByTargetDictPoolHolder.Instance;
 
-        private static CollectionPool<ContextHandlerMap> CreateContextHandlerByTargetPool(
-            int maxRetained,
-            bool useLru
-        )
+        private static CollectionPool<ContextHandlerMap> CreateContextHandlerByTargetPool(int maxRetained, bool useLru)
         {
-            return new CollectionPool<ContextHandlerMap>(
-                maxRetained,
-                useLru,
-                factory: static () => CreateFreshContextHandlerMap(),
-                onRecycled: static dict => dict.Clear()
-            );
+            return new CollectionPool<ContextHandlerMap>(maxRetained, useLru, factory: static () => CreateFreshContextHandlerMap(), onRecycled: static dict => dict.Clear());
         }
 
         private static ContextHandlerMap CreateFreshContextHandlerMap()
@@ -162,8 +108,7 @@ namespace DxMessaging.Core.MessageBus
 
         private static class ContextHandlerByTargetDictPoolHolder
         {
-            public static readonly CollectionPool<ContextHandlerMap> Instance =
-                CreateContextHandlerByTargetPool(maxRetained: 512, useLru: true);
+            public static readonly CollectionPool<ContextHandlerMap> Instance = CreateContextHandlerByTargetPool(maxRetained: 512, useLru: true);
         }
 
         internal static int ResetStaticPools()
@@ -189,12 +134,7 @@ namespace DxMessaging.Core.MessageBus
 
         internal struct DispatchBucket
         {
-            public DispatchBucket(
-                int priority,
-                DispatchEntry[] entries,
-                int entryCount,
-                bool pooledEntries
-            )
+            public DispatchBucket(int priority, DispatchEntry[] entries, int entryCount, bool pooledEntries)
             {
                 this.priority = priority;
                 this.entries = entries;
@@ -225,21 +165,9 @@ namespace DxMessaging.Core.MessageBus
 
         internal sealed class DispatchSnapshot
         {
-            public static readonly DispatchSnapshot Empty = new DispatchSnapshot(
-                Array.Empty<DispatchBucket>(),
-                0,
-                0,
-                false,
-                false
-            );
+            public static readonly DispatchSnapshot Empty = new DispatchSnapshot(Array.Empty<DispatchBucket>(), 0, 0, false, false);
 
-            public DispatchSnapshot(
-                DispatchBucket[] buckets,
-                int bucketCount,
-                int entryCount,
-                bool hasRegistrations,
-                bool pooled
-            )
+            public DispatchSnapshot(DispatchBucket[] buckets, int bucketCount, int entryCount, bool hasRegistrations, bool pooled)
             {
                 this.buckets = buckets;
                 this.bucketCount = bucketCount;
@@ -372,16 +300,7 @@ namespace DxMessaging.Core.MessageBus
 
             public PostRouteSnapshotHistoryEntry ReassignCapture(long emissionId, int dispatchDepth)
             {
-                return new PostRouteSnapshotHistoryEntry(
-                    resetGeneration,
-                    messageTypeIndex,
-                    slotKey,
-                    context,
-                    emissionId,
-                    dispatchDepth,
-                    mutationTick,
-                    snapshot
-                );
+                return new PostRouteSnapshotHistoryEntry(resetGeneration, messageTypeIndex, slotKey, context, emissionId, dispatchDepth, mutationTick, snapshot);
             }
         }
 
@@ -410,10 +329,7 @@ namespace DxMessaging.Core.MessageBus
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool Equals(PostRouteKey other)
             {
-                return _hash == other._hash
-                    && _messageTypeIndex == other._messageTypeIndex
-                    && _slotKey == other._slotKey
-                    && _context == other._context;
+                return _hash == other._hash && _messageTypeIndex == other._messageTypeIndex && _slotKey == other._slotKey && _context == other._context;
             }
 
             public override bool Equals(object obj)
@@ -556,8 +472,7 @@ namespace DxMessaging.Core.MessageBus
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal bool TryGetValue(InstanceId key, out HandlerCache<int, HandlerCache> value) =>
-                TryGetValue(key.Id, out value);
+            internal bool TryGetValue(InstanceId key, out HandlerCache<int, HandlerCache> value) => TryGetValue(key.Id, out value);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal bool Remove(InstanceId key) => Remove(key.Id);
@@ -735,11 +650,7 @@ namespace DxMessaging.Core.MessageBus
             public readonly List<Transform> transforms = new();
 
             /// <summary>Reports the largest backing capacity, including peaks hidden by clearing.</summary>
-            public int RetainedCapacity =>
-                Math.Max(
-                    recipients.EnsureCapacity(0),
-                    Math.Max(components.Capacity, transforms.Capacity)
-                );
+            public int RetainedCapacity => Math.Max(recipients.EnsureCapacity(0), Math.Max(components.Capacity, transforms.Capacity));
 
             public void Clear()
             {
@@ -830,10 +741,7 @@ namespace DxMessaging.Core.MessageBus
             public readonly (Type componentType, MethodSignatureKey signature) key;
             public readonly Action<MonoBehaviour, object[]> method;
 
-            public ReflexiveMethodEntry(
-                (Type componentType, MethodSignatureKey signature) key,
-                Action<MonoBehaviour, object[]> method
-            )
+            public ReflexiveMethodEntry((Type componentType, MethodSignatureKey signature) key, Action<MonoBehaviour, object[]> method)
             {
                 this.key = key;
                 this.method = method;
@@ -895,11 +803,7 @@ namespace DxMessaging.Core.MessageBus
         private void RecycleHandlerCache(HandlerCache cache)
         {
             cache.Clear();
-            if (
-                _recycledEmptyHandlerCache == null
-                && 0 < _handlerCacheRetentionLimit
-                && cache.highWaterDistinctHandlers <= _handlerCacheRetentionLimit
-            )
+            if (_recycledEmptyHandlerCache == null && 0 < _handlerCacheRetentionLimit && cache.highWaterDistinctHandlers <= _handlerCacheRetentionLimit)
             {
                 _recycledEmptyHandlerCache = cache;
             }
@@ -913,11 +817,7 @@ namespace DxMessaging.Core.MessageBus
             {
                 int count = 0;
                 count += SumTargetedSinks(_contextSinks[BusContextIndex.TargetedHandleDefault]);
-                foreach (
-                    HandlerCache<int, HandlerCache> entry in _scalarSinks[
-                        BusSinkIndex.TargetedHandleWithoutContext
-                    ]
-                )
+                foreach (HandlerCache<int, HandlerCache> entry in _scalarSinks[BusSinkIndex.TargetedHandleWithoutContext])
                 {
                     count += entry?.handlers?.Count ?? 0;
                 }
@@ -999,11 +899,7 @@ namespace DxMessaging.Core.MessageBus
             {
                 int count = 0;
                 count += SumTargetedSinks(_contextSinks[BusContextIndex.BroadcastHandleDefault]);
-                foreach (
-                    HandlerCache<int, HandlerCache> entry in _scalarSinks[
-                        BusSinkIndex.BroadcastHandleWithoutContext
-                    ]
-                )
+                foreach (HandlerCache<int, HandlerCache> entry in _scalarSinks[BusSinkIndex.BroadcastHandleWithoutContext])
                 {
                     count += entry?.handlers?.Count ?? 0;
                 }
@@ -1019,11 +915,7 @@ namespace DxMessaging.Core.MessageBus
             get
             {
                 int count = 0;
-                foreach (
-                    HandlerCache<int, HandlerCache> entry in _scalarSinks[
-                        BusSinkIndex.UntargetedHandleDefault
-                    ]
-                )
+                foreach (HandlerCache<int, HandlerCache> entry in _scalarSinks[BusSinkIndex.UntargetedHandleDefault])
                 {
                     count += entry?.handlers?.Count ?? 0;
                 }
@@ -1051,33 +943,17 @@ namespace DxMessaging.Core.MessageBus
             get
             {
                 int count = 0;
-                foreach (
-                    HandlerCache<int, HandlerCache> entry in _scalarSinks[
-                        BusSinkIndex.UntargetedPostProcessDefault
-                    ]
-                )
+                foreach (HandlerCache<int, HandlerCache> entry in _scalarSinks[BusSinkIndex.UntargetedPostProcessDefault])
                 {
                     count += entry?.handlers?.Count ?? 0;
                 }
-                count += SumTargetedSinks(
-                    _contextSinks[BusContextIndex.TargetedPostProcessDefault]
-                );
-                count += SumTargetedSinks(
-                    _contextSinks[BusContextIndex.BroadcastPostProcessDefault]
-                );
-                foreach (
-                    HandlerCache<int, HandlerCache> entry in _scalarSinks[
-                        BusSinkIndex.TargetedPostProcessWithoutContext
-                    ]
-                )
+                count += SumTargetedSinks(_contextSinks[BusContextIndex.TargetedPostProcessDefault]);
+                count += SumTargetedSinks(_contextSinks[BusContextIndex.BroadcastPostProcessDefault]);
+                foreach (HandlerCache<int, HandlerCache> entry in _scalarSinks[BusSinkIndex.TargetedPostProcessWithoutContext])
                 {
                     count += entry?.handlers?.Count ?? 0;
                 }
-                foreach (
-                    HandlerCache<int, HandlerCache> entry in _scalarSinks[
-                        BusSinkIndex.BroadcastPostProcessWithoutContext
-                    ]
-                )
+                foreach (HandlerCache<int, HandlerCache> entry in _scalarSinks[BusSinkIndex.BroadcastPostProcessWithoutContext])
                 {
                     count += entry?.handlers?.Count ?? 0;
                 }
@@ -1132,8 +1008,7 @@ namespace DxMessaging.Core.MessageBus
         /// <summary>Keeps separate handler state distinct while public equality remains owner-based.</summary>
         private sealed class MessageHandlerReferenceComparer : IEqualityComparer<MessageHandler>
         {
-            public bool Equals(MessageHandler first, MessageHandler second) =>
-                ReferenceEquals(first, second);
+            public bool Equals(MessageHandler first, MessageHandler second) => ReferenceEquals(first, second);
 
             public int GetHashCode(MessageHandler handler) => RuntimeHelpers.GetHashCode(handler);
         }
@@ -1144,10 +1019,8 @@ namespace DxMessaging.Core.MessageBus
 
         private static readonly List<Expression> ArgumentExpressionsCache = new();
 
-        private const BindingFlags ReflectionHelperBindingFlags =
-            BindingFlags.Static | BindingFlags.NonPublic;
-        private const BindingFlags ReflexiveMethodBindingFlags =
-            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+        private const BindingFlags ReflectionHelperBindingFlags = BindingFlags.Static | BindingFlags.NonPublic;
+        private const BindingFlags ReflexiveMethodBindingFlags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
 
         private delegate void FastUntargetedBroadcast<T>(ref T message)
             where T : IUntargetedMessage;
@@ -1170,18 +1043,9 @@ namespace DxMessaging.Core.MessageBus
         }
 
         private static readonly object AotBridgeRegistryLock = new();
-        private static Dictionary<
-            Type,
-            Action<IMessageBus, IUntargetedMessage>
-        > _aotUntargetedBroadcastsByType = new();
-        private static Dictionary<
-            Type,
-            Action<IMessageBus, InstanceId, ITargetedMessage>
-        > _aotTargetedBroadcastsByType = new();
-        private static Dictionary<
-            Type,
-            Action<IMessageBus, InstanceId, IBroadcastMessage>
-        > _aotSourcedBroadcastsByType = new();
+        private static Dictionary<Type, Action<IMessageBus, IUntargetedMessage>> _aotUntargetedBroadcastsByType = new();
+        private static Dictionary<Type, Action<IMessageBus, InstanceId, ITargetedMessage>> _aotTargetedBroadcastsByType = new();
+        private static Dictionary<Type, Action<IMessageBus, InstanceId, IBroadcastMessage>> _aotSourcedBroadcastsByType = new();
 
         private static class AotBridgeState<T>
         {
@@ -1204,27 +1068,25 @@ namespace DxMessaging.Core.MessageBus
             the lifecycle of the typed sinks (cleared together in ResetState,
             touched together by the eviction layer).
         */
-        private readonly MessageCache<HandlerCache<int, HandlerCache>>[] _scalarSinks =
-            new MessageCache<HandlerCache<int, HandlerCache>>[BusSinkIndex.Length]
-            {
-                /* [0] UntargetedHandleDefault            */new(),
-                /* [1] BroadcastHandleWithoutContext      */new(),
-                /* [2] TargetedHandleWithoutContext       */new(),
-                /* [3] UntargetedPostProcessDefault       */new(),
-                /* [4] TargetedPostProcessWithoutContext  */new(),
-                /* [5] BroadcastPostProcessWithoutContext */new(),
-                /* [6] Reserved6                          */null,
-                /* [7] Reserved7                          */null,
-            };
+        private readonly MessageCache<HandlerCache<int, HandlerCache>>[] _scalarSinks = new MessageCache<HandlerCache<int, HandlerCache>>[BusSinkIndex.Length]
+        {
+            /* [0] UntargetedHandleDefault            */new(),
+            /* [1] BroadcastHandleWithoutContext      */new(),
+            /* [2] TargetedHandleWithoutContext       */new(),
+            /* [3] UntargetedPostProcessDefault       */new(),
+            /* [4] TargetedPostProcessWithoutContext  */new(),
+            /* [5] BroadcastPostProcessWithoutContext */new(),
+            /* [6] Reserved6                          */null,
+            /* [7] Reserved7                          */null,
+        };
 
-        private readonly MessageCache<ContextHandlerMap>[] _contextSinks =
-            new MessageCache<ContextHandlerMap>[BusContextIndex.Length]
-            {
-                /* [0] TargetedHandleDefault         */new(),
-                /* [1] BroadcastHandleDefault        */new(),
-                /* [2] TargetedPostProcessDefault    */new(),
-                /* [3] BroadcastPostProcessDefault   */new(),
-            };
+        private readonly MessageCache<ContextHandlerMap>[] _contextSinks = new MessageCache<ContextHandlerMap>[BusContextIndex.Length]
+        {
+            /* [0] TargetedHandleDefault         */new(),
+            /* [1] BroadcastHandleDefault        */new(),
+            /* [2] TargetedPostProcessDefault    */new(),
+            /* [3] BroadcastPostProcessDefault   */new(),
+        };
 
         private readonly BusGlobalSlot _globalSlots = new();
 
@@ -1260,8 +1122,7 @@ namespace DxMessaging.Core.MessageBus
         /// see the integration helpers under <c>Runtime/Unity/Integrations</c>.
         /// </summary>
         public MessageBus()
-            : this(StopwatchClock.Instance, DefaultIdleEvictionTicks, applyRuntimeSettings: true)
-        { }
+            : this(StopwatchClock.Instance, DefaultIdleEvictionTicks, applyRuntimeSettings: true) { }
 
         /// <summary>
         /// Internal factory used by integration assemblies to construct a
@@ -1290,17 +1151,9 @@ namespace DxMessaging.Core.MessageBus
             }
 
             long resolvedIdleEvictionTicks = idleEvictionTicks ?? DefaultIdleEvictionTicks;
-            bool applyRuntimeSettings =
-                idleEvictionTicks == null
-                && evictionTickIntervalSeconds == null
-                && idleEvictionEnabled == null
-                && trimApiEnabled == null;
+            bool applyRuntimeSettings = idleEvictionTicks == null && evictionTickIntervalSeconds == null && idleEvictionEnabled == null && trimApiEnabled == null;
 
-            MessageBus bus = new MessageBus(
-                clock,
-                resolvedIdleEvictionTicks,
-                applyRuntimeSettings: applyRuntimeSettings
-            );
+            MessageBus bus = new MessageBus(clock, resolvedIdleEvictionTicks, applyRuntimeSettings: applyRuntimeSettings);
 
             if (evictionTickIntervalSeconds.HasValue)
             {
@@ -1318,11 +1171,7 @@ namespace DxMessaging.Core.MessageBus
             return bus;
         }
 
-        private MessageBus(
-            IDxMessagingClock clock,
-            long idleEvictionTicks,
-            bool applyRuntimeSettings
-        )
+        private MessageBus(IDxMessagingClock clock, long idleEvictionTicks, bool applyRuntimeSettings)
         {
             _clock = clock ?? throw new ArgumentNullException(nameof(clock));
             _idleEvictionTicks = Math.Max(0, idleEvictionTicks);
@@ -1446,29 +1295,16 @@ namespace DxMessaging.Core.MessageBus
                     _ = _reflexiveDispatchStatePool.Trim(0);
                 }
             }
-            TrimReflexiveMethodCache(
-                _handlerCacheRetentionLimit,
-                releaseStorage: _handlerCacheRetentionLimit < previousRetentionLimit
-            );
+            TrimReflexiveMethodCache(_handlerCacheRetentionLimit, releaseStorage: _handlerCacheRetentionLimit < previousRetentionLimit);
             if (
                 _reflexiveDispatchDepth == 0
                 && _reflexiveDispatchState != null
-                && (
-                    _handlerCacheRetentionLimit == 0
-                    || _handlerCacheRetentionLimit < _reflexiveDispatchState.RetainedCapacity
-                )
+                && (_handlerCacheRetentionLimit == 0 || _handlerCacheRetentionLimit < _reflexiveDispatchState.RetainedCapacity)
             )
             {
                 _reflexiveDispatchState = null;
             }
-            if (
-                _recycledEmptyHandlerCache != null
-                && (
-                    _handlerCacheRetentionLimit == 0
-                    || _handlerCacheRetentionLimit
-                        < _recycledEmptyHandlerCache.highWaterDistinctHandlers
-                )
-            )
+            if (_recycledEmptyHandlerCache != null && (_handlerCacheRetentionLimit == 0 || _handlerCacheRetentionLimit < _recycledEmptyHandlerCache.highWaterDistinctHandlers))
             {
                 _recycledEmptyHandlerCache = null;
             }
@@ -1507,87 +1343,59 @@ namespace DxMessaging.Core.MessageBus
         {
             if (_scalarSinks.Length != BusSinkIndex.Length)
             {
-                throw new InvalidOperationException(
-                    $"_scalarSinks length is {_scalarSinks.Length} but BusSinkIndex.Length is {BusSinkIndex.Length}."
-                );
+                throw new InvalidOperationException($"_scalarSinks length is {_scalarSinks.Length} but BusSinkIndex.Length is {BusSinkIndex.Length}.");
             }
             if (_contextSinks.Length != BusContextIndex.Length)
             {
-                throw new InvalidOperationException(
-                    $"_contextSinks length is {_contextSinks.Length} but BusContextIndex.Length is {BusContextIndex.Length}."
-                );
+                throw new InvalidOperationException($"_contextSinks length is {_contextSinks.Length} but BusContextIndex.Length is {BusContextIndex.Length}.");
             }
             if (_scalarSinks[BusSinkIndex.Reserved6] != null)
             {
-                throw new InvalidOperationException(
-                    "_scalarSinks[Reserved6] is a permanent future-expansion stub and must be null."
-                );
+                throw new InvalidOperationException("_scalarSinks[Reserved6] is a permanent future-expansion stub and must be null.");
             }
             if (_scalarSinks[BusSinkIndex.Reserved7] != null)
             {
-                throw new InvalidOperationException(
-                    "_scalarSinks[Reserved7] is a permanent future-expansion stub and must be null."
-                );
+                throw new InvalidOperationException("_scalarSinks[Reserved7] is a permanent future-expansion stub and must be null.");
             }
             if (_scalarSinks[BusSinkIndex.UntargetedHandleDefault] == null)
             {
-                throw new InvalidOperationException(
-                    "_scalarSinks[UntargetedHandleDefault] must be non-null."
-                );
+                throw new InvalidOperationException("_scalarSinks[UntargetedHandleDefault] must be non-null.");
             }
             if (_scalarSinks[BusSinkIndex.BroadcastHandleWithoutContext] == null)
             {
-                throw new InvalidOperationException(
-                    "_scalarSinks[BroadcastHandleWithoutContext] must be non-null."
-                );
+                throw new InvalidOperationException("_scalarSinks[BroadcastHandleWithoutContext] must be non-null.");
             }
             if (_scalarSinks[BusSinkIndex.TargetedHandleWithoutContext] == null)
             {
-                throw new InvalidOperationException(
-                    "_scalarSinks[TargetedHandleWithoutContext] must be non-null."
-                );
+                throw new InvalidOperationException("_scalarSinks[TargetedHandleWithoutContext] must be non-null.");
             }
             if (_scalarSinks[BusSinkIndex.UntargetedPostProcessDefault] == null)
             {
-                throw new InvalidOperationException(
-                    "_scalarSinks[UntargetedPostProcessDefault] must be non-null."
-                );
+                throw new InvalidOperationException("_scalarSinks[UntargetedPostProcessDefault] must be non-null.");
             }
             if (_scalarSinks[BusSinkIndex.TargetedPostProcessWithoutContext] == null)
             {
-                throw new InvalidOperationException(
-                    "_scalarSinks[TargetedPostProcessWithoutContext] must be non-null."
-                );
+                throw new InvalidOperationException("_scalarSinks[TargetedPostProcessWithoutContext] must be non-null.");
             }
             if (_scalarSinks[BusSinkIndex.BroadcastPostProcessWithoutContext] == null)
             {
-                throw new InvalidOperationException(
-                    "_scalarSinks[BroadcastPostProcessWithoutContext] must be non-null."
-                );
+                throw new InvalidOperationException("_scalarSinks[BroadcastPostProcessWithoutContext] must be non-null.");
             }
             if (_contextSinks[BusContextIndex.TargetedHandleDefault] == null)
             {
-                throw new InvalidOperationException(
-                    "_contextSinks[TargetedHandleDefault] must be non-null."
-                );
+                throw new InvalidOperationException("_contextSinks[TargetedHandleDefault] must be non-null.");
             }
             if (_contextSinks[BusContextIndex.BroadcastHandleDefault] == null)
             {
-                throw new InvalidOperationException(
-                    "_contextSinks[BroadcastHandleDefault] must be non-null."
-                );
+                throw new InvalidOperationException("_contextSinks[BroadcastHandleDefault] must be non-null.");
             }
             if (_contextSinks[BusContextIndex.TargetedPostProcessDefault] == null)
             {
-                throw new InvalidOperationException(
-                    "_contextSinks[TargetedPostProcessDefault] must be non-null."
-                );
+                throw new InvalidOperationException("_contextSinks[TargetedPostProcessDefault] must be non-null.");
             }
             if (_contextSinks[BusContextIndex.BroadcastPostProcessDefault] == null)
             {
-                throw new InvalidOperationException(
-                    "_contextSinks[BroadcastPostProcessDefault] must be non-null."
-                );
+                throw new InvalidOperationException("_contextSinks[BroadcastPostProcessDefault] must be non-null.");
             }
         }
 
@@ -1614,27 +1422,14 @@ namespace DxMessaging.Core.MessageBus
         private readonly MessageCache<InterceptorCache<object>> _untargetedInterceptsByType = new();
         private readonly MessageCache<InterceptorCache<object>> _targetedInterceptsByType = new();
         private readonly MessageCache<InterceptorCache<object>> _broadcastInterceptsByType = new();
-        private readonly Dictionary<object, Dictionary<int, int>> _uniqueInterceptorsAndPriorities =
-            new();
+        private readonly Dictionary<object, Dictionary<int, int>> _uniqueInterceptorsAndPriorities = new();
 
-        private readonly Dictionary<
-            Type,
-            Action<IUntargetedMessage>
-        > _untargetedBroadcastMethodsByType = new();
-        private readonly Dictionary<
-            Type,
-            Action<InstanceId, ITargetedMessage>
-        > _targetedBroadcastMethodsByType = new();
-        private readonly Dictionary<
-            Type,
-            Action<InstanceId, IBroadcastMessage>
-        > _sourcedBroadcastMethodsByType = new();
+        private readonly Dictionary<Type, Action<IUntargetedMessage>> _untargetedBroadcastMethodsByType = new();
+        private readonly Dictionary<Type, Action<InstanceId, ITargetedMessage>> _targetedBroadcastMethodsByType = new();
+        private readonly Dictionary<Type, Action<InstanceId, IBroadcastMessage>> _sourcedBroadcastMethodsByType = new();
 
 #if UNITY_2021_3_OR_NEWER
-        private readonly Dictionary<
-            (Type componentType, MethodSignatureKey signature),
-            LinkedListNode<ReflexiveMethodEntry>
-        > _methodCache = new();
+        private readonly Dictionary<(Type componentType, MethodSignatureKey signature), LinkedListNode<ReflexiveMethodEntry>> _methodCache = new();
         private readonly LinkedList<ReflexiveMethodEntry> _methodCacheLru = new();
         private ReflexiveDispatchState _reflexiveDispatchState = new();
         private CollectionPool<ReflexiveDispatchState> _reflexiveDispatchStatePool;
@@ -1648,10 +1443,7 @@ namespace DxMessaging.Core.MessageBus
         private int _registrationLogCapacity = RegistrationLog.DefaultCapacity;
         private CyclicBuffer<MessageEmissionData> _emissionBufferBacking;
         private int _emissionBufferCapacity = GlobalMessageBufferSize;
-        internal CyclicBuffer<MessageEmissionData> _emissionBuffer =>
-            _emissionBufferBacking ??= new CyclicBuffer<MessageEmissionData>(
-                _emissionBufferCapacity
-            );
+        internal CyclicBuffer<MessageEmissionData> _emissionBuffer => _emissionBufferBacking ??= new CyclicBuffer<MessageEmissionData>(_emissionBufferCapacity);
 
         private bool _diagnosticsMode = ShouldEnableDiagnostics();
         private bool _loggedReflexiveWarning;
@@ -1672,9 +1464,7 @@ namespace DxMessaging.Core.MessageBus
         private readonly Dictionary<ContextHandlerMap, int> _contextMapHighWaterCounts = new();
         private readonly List<MessageHandler> _dirtyHandlers = new();
         private readonly HashSet<MessageHandler> _dirtyHandlerSet = new(HandlerReferenceComparer);
-        private readonly Dictionary<MessageHandler, long> _dirtyHandlerTicks = new(
-            HandlerReferenceComparer
-        );
+        private readonly Dictionary<MessageHandler, long> _dirtyHandlerTicks = new(HandlerReferenceComparer);
         private bool _globalSlotSweepCandidate;
         private long _globalSlotSweepGeneration;
         private int _lastContextTypeSlotsEvicted;
@@ -1820,10 +1610,7 @@ namespace DxMessaging.Core.MessageBus
             if (targetSet.Add(target))
             {
                 targets.Add(target);
-                _dirtyTargetHighWaterCounts[typeIndex] = Math.Max(
-                    GetDirtyTargetHighWaterCount(typeIndex),
-                    targets.Count
-                );
+                _dirtyTargetHighWaterCounts[typeIndex] = Math.Max(GetDirtyTargetHighWaterCount(typeIndex), targets.Count);
             }
         }
 
@@ -1971,9 +1758,7 @@ namespace DxMessaging.Core.MessageBus
                 PruneDirtySweepCandidates();
             }
             int pooledCollectionsEvicted = DxPools.TrimAll(force);
-            pooledCollectionsEvicted += ContextHandlerByTargetDicts.Trim(
-                force ? 0 : ContextHandlerByTargetDicts.MaxRetained
-            );
+            pooledCollectionsEvicted += ContextHandlerByTargetDicts.Trim(force ? 0 : ContextHandlerByTargetDicts.MaxRetained);
 #if UNITY_2021_3_OR_NEWER
             if (force)
             {
@@ -1990,17 +1775,10 @@ namespace DxMessaging.Core.MessageBus
             }
             if (_reflexiveDispatchStatePool != null)
             {
-                pooledCollectionsEvicted += _reflexiveDispatchStatePool.Trim(
-                    force ? 0 : _reflexiveDispatchStatePool.MaxRetained
-                );
+                pooledCollectionsEvicted += _reflexiveDispatchStatePool.Trim(force ? 0 : _reflexiveDispatchStatePool.MaxRetained);
             }
 #endif
-            if (
-                force
-                && _dispatchDepth == 0
-                && _postRouteSnapshotHistory != null
-                && _postRouteSnapshotHistory.Count == 0
-            )
+            if (force && _dispatchDepth == 0 && _postRouteSnapshotHistory != null && _postRouteSnapshotHistory.Count == 0)
             {
                 _postRouteSnapshotHistory = null;
                 pooledCollectionsEvicted++;
@@ -2017,12 +1795,7 @@ namespace DxMessaging.Core.MessageBus
             }
             _lastSweepSeconds = _clock.NowSeconds;
 
-            return new TrimResult(
-                typeSlotsEvicted,
-                targetSlotsEvicted,
-                pooledCollectionsEvicted,
-                OccupiedTypeSlots
-            );
+            return new TrimResult(typeSlotsEvicted, targetSlotsEvicted, pooledCollectionsEvicted, OccupiedTypeSlots);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -2063,10 +1836,7 @@ namespace DxMessaging.Core.MessageBus
                     MessageCache<HandlerCache<int, HandlerCache>> sink = _scalarSinks[sinkIndex];
                     if (
                         sink == null
-                        || !sink.TryGetValueAtIndex(
-                            typeIndex,
-                            out HandlerCache<int, HandlerCache> handlers
-                        )
+                        || !sink.TryGetValueAtIndex(typeIndex, out HandlerCache<int, HandlerCache> handlers)
                         || handlers.handlers.Count != 0
                         || HasActiveDispatchSnapshot(handlers.dispatchState)
                         || !IsIdleForSweep(handlers.lastTouchTicks, force)
@@ -2084,20 +1854,14 @@ namespace DxMessaging.Core.MessageBus
             return evicted;
         }
 
-        private int SweepDirtyInterceptorTypeSlots(
-            MessageCache<InterceptorCache<object>> interceptorsByType,
-            bool force
-        )
+        private int SweepDirtyInterceptorTypeSlots(MessageCache<InterceptorCache<object>> interceptorsByType, bool force)
         {
             int evicted = 0;
             for (int i = 0; i < _dirtyTypes.Count; ++i)
             {
                 int typeIndex = _dirtyTypes[i];
                 if (
-                    !interceptorsByType.TryGetValueAtIndex(
-                        typeIndex,
-                        out InterceptorCache<object> interceptors
-                    )
+                    !interceptorsByType.TryGetValueAtIndex(typeIndex, out InterceptorCache<object> interceptors)
                     || interceptors.handlers.Count != 0
                     || !IsIdleForSweep(interceptors.lastTouchTicks, force)
                 )
@@ -2123,13 +1887,7 @@ namespace DxMessaging.Core.MessageBus
                 for (int sinkIndex = 0; sinkIndex < _contextSinks.Length; ++sinkIndex)
                 {
                     MessageCache<ContextHandlerMap> sink = _contextSinks[sinkIndex];
-                    if (
-                        sink == null
-                        || !sink.TryGetValueAtIndex(
-                            typeIndex,
-                            out ContextHandlerMap handlersByTarget
-                        )
-                    )
+                    if (sink == null || !sink.TryGetValueAtIndex(typeIndex, out ContextHandlerMap handlersByTarget))
                     {
                         continue;
                     }
@@ -2138,10 +1896,7 @@ namespace DxMessaging.Core.MessageBus
                     {
                         InstanceId target = targets[targetIndex];
                         if (
-                            !handlersByTarget.TryGetValue(
-                                target,
-                                out HandlerCache<int, HandlerCache> handlers
-                            )
+                            !handlersByTarget.TryGetValue(target, out HandlerCache<int, HandlerCache> handlers)
                             || handlers.handlers.Count != 0
                             || HasActiveDispatchSnapshot(handlers.dispatchState)
                             || !IsIdleForSweep(handlers.lastTouchTicks, force)
@@ -2168,12 +1923,7 @@ namespace DxMessaging.Core.MessageBus
 
         private int SweepGlobalSlot(bool force)
         {
-            if (
-                !_globalSlotSweepCandidate
-                || !_globalSlots.IsEmpty
-                || HasActiveGlobalDispatchSnapshot()
-                || !IsIdleForSweep(_globalSlots.lastTouchTicks, force)
-            )
+            if (!_globalSlotSweepCandidate || !_globalSlots.IsEmpty || HasActiveGlobalDispatchSnapshot() || !IsIdleForSweep(_globalSlots.lastTouchTicks, force))
             {
                 return 0;
             }
@@ -2204,13 +1954,7 @@ namespace DxMessaging.Core.MessageBus
             for (int i = 0; i < count; ++i)
             {
                 MessageHandler handler = _dirtyHandlers[i];
-                if (
-                    !force
-                    && (
-                        !_dirtyHandlerTicks.TryGetValue(handler, out long lastTouchTicks)
-                        || !IsIdleForSweep(lastTouchTicks, force: false)
-                    )
-                )
+                if (!force && (!_dirtyHandlerTicks.TryGetValue(handler, out long lastTouchTicks) || !IsIdleForSweep(lastTouchTicks, force: false)))
                 {
                     _dirtyHandlers[write++] = handler;
                     continue;
@@ -2268,10 +2012,7 @@ namespace DxMessaging.Core.MessageBus
             for (int i = 0; i < _dirtyTypes.Count; ++i)
             {
                 int typeIndex = _dirtyTypes[i];
-                if (
-                    HasFreshEmptyScalarTypeCandidate(typeIndex)
-                    || HasFreshEmptyInterceptorTypeCandidate(typeIndex)
-                )
+                if (HasFreshEmptyScalarTypeCandidate(typeIndex) || HasFreshEmptyInterceptorTypeCandidate(typeIndex))
                 {
                     _dirtyTypes[write++] = typeIndex;
                     continue;
@@ -2293,15 +2034,9 @@ namespace DxMessaging.Core.MessageBus
                 MessageCache<HandlerCache<int, HandlerCache>> sink = _scalarSinks[sinkIndex];
                 if (
                     sink != null
-                    && sink.TryGetValueAtIndex(
-                        typeIndex,
-                        out HandlerCache<int, HandlerCache> handlers
-                    )
+                    && sink.TryGetValueAtIndex(typeIndex, out HandlerCache<int, HandlerCache> handlers)
                     && handlers.handlers.Count == 0
-                    && (
-                        HasActiveDispatchSnapshot(handlers.dispatchState)
-                        || !IsIdleForSweep(handlers.lastTouchTicks, force: false)
-                    )
+                    && (HasActiveDispatchSnapshot(handlers.dispatchState) || !IsIdleForSweep(handlers.lastTouchTicks, force: false))
                 )
                 {
                     return true;
@@ -2318,15 +2053,9 @@ namespace DxMessaging.Core.MessageBus
                 || HasFreshEmptyInterceptorTypeCandidate(_broadcastInterceptsByType, typeIndex);
         }
 
-        private bool HasFreshEmptyInterceptorTypeCandidate(
-            MessageCache<InterceptorCache<object>> interceptorsByType,
-            int typeIndex
-        )
+        private bool HasFreshEmptyInterceptorTypeCandidate(MessageCache<InterceptorCache<object>> interceptorsByType, int typeIndex)
         {
-            return interceptorsByType.TryGetValueAtIndex(
-                    typeIndex,
-                    out InterceptorCache<object> interceptors
-                )
+            return interceptorsByType.TryGetValueAtIndex(typeIndex, out InterceptorCache<object> interceptors)
                 && interceptors.handlers.Count == 0
                 && !IsIdleForSweep(interceptors.lastTouchTicks, force: false);
         }
@@ -2385,22 +2114,13 @@ namespace DxMessaging.Core.MessageBus
                 if (
                     sink == null
                     || !sink.TryGetValueAtIndex(typeIndex, out ContextHandlerMap handlersByTarget)
-                    || !handlersByTarget.TryGetValue(
-                        target,
-                        out HandlerCache<int, HandlerCache> handlers
-                    )
+                    || !handlersByTarget.TryGetValue(target, out HandlerCache<int, HandlerCache> handlers)
                 )
                 {
                     continue;
                 }
 
-                if (
-                    handlers.handlers.Count == 0
-                    && (
-                        HasActiveDispatchSnapshot(handlers.dispatchState)
-                        || !IsIdleForSweep(handlers.lastTouchTicks, force: false)
-                    )
-                )
+                if (handlers.handlers.Count == 0 && (HasActiveDispatchSnapshot(handlers.dispatchState) || !IsIdleForSweep(handlers.lastTouchTicks, force: false)))
                 {
                     return true;
                 }
@@ -2419,10 +2139,7 @@ namespace DxMessaging.Core.MessageBus
                     handler != null
                     && _dirtyHandlerSet.Contains(handler)
                     && _dirtyHandlerTicks.TryGetValue(handler, out long lastTouchTicks)
-                    && (
-                        0 < handler.CountEmptyTypedSlotsForSweep(this)
-                        || handler.HasPendingContextCleanup(this)
-                    )
+                    && (0 < handler.CountEmptyTypedSlotsForSweep(this) || handler.HasPendingContextCleanup(this))
                     && (0 < _dispatchDepth || !IsIdleForSweep(lastTouchTicks, force: false))
                 )
                 {
@@ -2535,11 +2252,7 @@ namespace DxMessaging.Core.MessageBus
             return handlersByTarget;
         }
 
-        private void RemoveAndReturnContextMap(
-            MessageCache<ContextHandlerMap> sink,
-            int typeIndex,
-            ContextHandlerMap handlersByTarget
-        )
+        private void RemoveAndReturnContextMap(MessageCache<ContextHandlerMap> sink, int typeIndex, ContextHandlerMap handlersByTarget)
         {
             sink.RemoveAtIndex(typeIndex);
             ReturnContextMap(handlersByTarget);
@@ -2579,12 +2292,7 @@ namespace DxMessaging.Core.MessageBus
             }
 
             handlersByTarget.Clear();
-            if (
-                ShouldDropOversizedPoolEntry(
-                    highWaterCount,
-                    ContextHandlerByTargetDicts.MaxRetained
-                )
-            )
+            if (ShouldDropOversizedPoolEntry(highWaterCount, ContextHandlerByTargetDicts.MaxRetained))
             {
                 return;
             }
@@ -2716,10 +2424,7 @@ namespace DxMessaging.Core.MessageBus
             }
 
             HashSet<PostRouteKey> compactionRoutes = _postRouteCompactionRoutes;
-            if (
-                compactionRoutes != null
-                && ContextHandlerByTargetDicts.MaxRetained < compactionRoutes.EnsureCapacity(0)
-            )
+            if (compactionRoutes != null && ContextHandlerByTargetDicts.MaxRetained < compactionRoutes.EnsureCapacity(0))
             {
                 _postRouteCompactionRoutes = null;
             }
@@ -2772,17 +2477,12 @@ namespace DxMessaging.Core.MessageBus
                 return;
             }
 
-            _contextMapHighWaterCounts[handlersByTarget] = Math.Max(
-                GetContextMapHighWaterCount(handlersByTarget),
-                handlersByTarget.Count
-            );
+            _contextMapHighWaterCounts[handlersByTarget] = Math.Max(GetContextMapHighWaterCount(handlersByTarget), handlersByTarget.Count);
         }
 
         private int GetContextMapHighWaterCount(ContextHandlerMap handlersByTarget)
         {
-            return _contextMapHighWaterCounts.TryGetValue(handlersByTarget, out int count)
-                ? count
-                : handlersByTarget?.Count ?? 0;
+            return _contextMapHighWaterCounts.TryGetValue(handlersByTarget, out int count) ? count : handlersByTarget?.Count ?? 0;
         }
 
         private static bool ShouldDropOversizedPoolEntry(int retainedEntryCount, int maxRetained)
@@ -2816,14 +2516,7 @@ namespace DxMessaging.Core.MessageBus
             for (int sinkIndex = 0; sinkIndex < _scalarSinks.Length; ++sinkIndex)
             {
                 MessageCache<HandlerCache<int, HandlerCache>> sink = _scalarSinks[sinkIndex];
-                if (
-                    sink != null
-                    && sink.TryGetValueAtIndex(
-                        typeIndex,
-                        out HandlerCache<int, HandlerCache> handlers
-                    )
-                    && handlers.handlers.Count == 0
-                )
+                if (sink != null && sink.TryGetValueAtIndex(typeIndex, out HandlerCache<int, HandlerCache> handlers) && handlers.handlers.Count == 0)
                 {
                     return true;
                 }
@@ -2834,16 +2527,9 @@ namespace DxMessaging.Core.MessageBus
                 || HasEmptyInterceptorTypeCandidate(_broadcastInterceptsByType, typeIndex);
         }
 
-        private static bool HasEmptyInterceptorTypeCandidate(
-            MessageCache<InterceptorCache<object>> interceptorsByType,
-            int typeIndex
-        )
+        private static bool HasEmptyInterceptorTypeCandidate(MessageCache<InterceptorCache<object>> interceptorsByType, int typeIndex)
         {
-            return interceptorsByType.TryGetValueAtIndex(
-                    typeIndex,
-                    out InterceptorCache<object> interceptors
-                )
-                && interceptors.handlers.Count == 0;
+            return interceptorsByType.TryGetValueAtIndex(typeIndex, out InterceptorCache<object> interceptors) && interceptors.handlers.Count == 0;
         }
 
         private void ClearDirtyTargetCandidatesWithoutEmptySlots()
@@ -2900,10 +2586,7 @@ namespace DxMessaging.Core.MessageBus
                 if (
                     sink != null
                     && sink.TryGetValueAtIndex(typeIndex, out ContextHandlerMap handlersByTarget)
-                    && handlersByTarget.TryGetValue(
-                        target,
-                        out HandlerCache<int, HandlerCache> handlers
-                    )
+                    && handlersByTarget.TryGetValue(target, out HandlerCache<int, HandlerCache> handlers)
                     && handlers.handlers.Count == 0
                 )
                 {
@@ -2920,14 +2603,7 @@ namespace DxMessaging.Core.MessageBus
             for (int i = 0; i < _dirtyHandlers.Count; ++i)
             {
                 MessageHandler handler = _dirtyHandlers[i];
-                if (
-                    handler != null
-                    && _dirtyHandlerSet.Contains(handler)
-                    && (
-                        0 < handler.CountEmptyTypedSlotsForSweep(this)
-                        || handler.HasPendingContextCleanup(this)
-                    )
-                )
+                if (handler != null && _dirtyHandlerSet.Contains(handler) && (0 < handler.CountEmptyTypedSlotsForSweep(this) || handler.HasPendingContextCleanup(this)))
                 {
                     _dirtyHandlers[write++] = handler;
                     continue;
@@ -2958,9 +2634,7 @@ namespace DxMessaging.Core.MessageBus
             return count;
         }
 
-        private static int CountOccupiedInterceptorTypeSlots(
-            MessageCache<InterceptorCache<object>> cache
-        )
+        private static int CountOccupiedInterceptorTypeSlots(MessageCache<InterceptorCache<object>> cache)
         {
             int count = 0;
             foreach (InterceptorCache<object> entry in cache)
@@ -3073,9 +2747,7 @@ namespace DxMessaging.Core.MessageBus
 
         private void ResetTypedSlotsForReferencedHandlers()
         {
-            HashSet<MessageHandler> handlers = new HashSet<MessageHandler>(
-                HandlerReferenceComparer
-            );
+            HashSet<MessageHandler> handlers = new HashSet<MessageHandler>(HandlerReferenceComparer);
             foreach (MessageHandler handler in _dirtyHandlers)
             {
                 handlers.Add(handler);
@@ -3116,9 +2788,7 @@ namespace DxMessaging.Core.MessageBus
             {
                 foreach (ContextHandlerMap handlersByContext in sink)
                 {
-                    foreach (
-                        HandlerCache<int, HandlerCache> handlersByPriority in handlersByContext
-                    )
+                    foreach (HandlerCache<int, HandlerCache> handlersByPriority in handlersByContext)
                     {
                         AddHandlersFromPriorityCache(handlersByPriority, handlers);
                     }
@@ -3126,10 +2796,7 @@ namespace DxMessaging.Core.MessageBus
             }
         }
 
-        private static void AddHandlersFromPriorityCache(
-            HandlerCache<int, HandlerCache> handlersByPriority,
-            HashSet<MessageHandler> handlers
-        )
+        private static void AddHandlersFromPriorityCache(HandlerCache<int, HandlerCache> handlersByPriority, HashSet<MessageHandler> handlers)
         {
             if (handlersByPriority == null)
             {
@@ -3146,87 +2813,43 @@ namespace DxMessaging.Core.MessageBus
         }
 
         /// <inheritdoc />
-        public MessageBusRegistration RegisterUntargeted<T>(
-            MessageHandler messageHandler,
-            int priority = 0
-        )
+        public MessageBusRegistration RegisterUntargeted<T>(MessageHandler messageHandler, int priority = 0)
             where T : IUntargetedMessage
         {
             EnsureAotUntargetedBridge<T>();
-            return InternalRegisterUntargeted<T>(
-                messageHandler,
-                _scalarSinks[BusSinkIndex.UntargetedHandleDefault],
-                RegistrationMethod.Untargeted,
-                priority
-            );
+            return InternalRegisterUntargeted<T>(messageHandler, _scalarSinks[BusSinkIndex.UntargetedHandleDefault], RegistrationMethod.Untargeted, priority);
         }
 
         /// <inheritdoc />
-        public MessageBusRegistration RegisterTargeted<T>(
-            InstanceId target,
-            MessageHandler messageHandler,
-            int priority = 0
-        )
+        public MessageBusRegistration RegisterTargeted<T>(InstanceId target, MessageHandler messageHandler, int priority = 0)
             where T : ITargetedMessage
         {
             EnsureAotTargetedBridge<T>();
-            return InternalRegisterWithContext<T>(
-                target,
-                messageHandler,
-                _contextSinks[BusContextIndex.TargetedHandleDefault],
-                RegistrationMethod.Targeted,
-                priority
-            );
+            return InternalRegisterWithContext<T>(target, messageHandler, _contextSinks[BusContextIndex.TargetedHandleDefault], RegistrationMethod.Targeted, priority);
         }
 
         /// <inheritdoc />
-        public MessageBusRegistration RegisterSourcedBroadcast<T>(
-            InstanceId source,
-            MessageHandler messageHandler,
-            int priority = 0
-        )
+        public MessageBusRegistration RegisterSourcedBroadcast<T>(InstanceId source, MessageHandler messageHandler, int priority = 0)
             where T : IBroadcastMessage
         {
             EnsureAotSourcedBridge<T>();
-            return InternalRegisterWithContext<T>(
-                source,
-                messageHandler,
-                _contextSinks[BusContextIndex.BroadcastHandleDefault],
-                RegistrationMethod.Broadcast,
-                priority
-            );
+            return InternalRegisterWithContext<T>(source, messageHandler, _contextSinks[BusContextIndex.BroadcastHandleDefault], RegistrationMethod.Broadcast, priority);
         }
 
         /// <inheritdoc />
-        public MessageBusRegistration RegisterSourcedBroadcastWithoutSource<T>(
-            MessageHandler messageHandler,
-            int priority = 0
-        )
+        public MessageBusRegistration RegisterSourcedBroadcastWithoutSource<T>(MessageHandler messageHandler, int priority = 0)
             where T : IBroadcastMessage
         {
             EnsureAotSourcedBridge<T>();
-            return InternalRegisterUntargeted<T>(
-                messageHandler,
-                _scalarSinks[BusSinkIndex.BroadcastHandleWithoutContext],
-                RegistrationMethod.BroadcastWithoutSource,
-                priority
-            );
+            return InternalRegisterUntargeted<T>(messageHandler, _scalarSinks[BusSinkIndex.BroadcastHandleWithoutContext], RegistrationMethod.BroadcastWithoutSource, priority);
         }
 
         /// <inheritdoc />
-        public MessageBusRegistration RegisterTargetedWithoutTargeting<T>(
-            MessageHandler messageHandler,
-            int priority = 0
-        )
+        public MessageBusRegistration RegisterTargetedWithoutTargeting<T>(MessageHandler messageHandler, int priority = 0)
             where T : ITargetedMessage
         {
             EnsureAotTargetedBridge<T>();
-            return InternalRegisterUntargeted<T>(
-                messageHandler,
-                _scalarSinks[BusSinkIndex.TargetedHandleWithoutContext],
-                RegistrationMethod.TargetedWithoutTargeting,
-                priority
-            );
+            return InternalRegisterUntargeted<T>(messageHandler, _scalarSinks[BusSinkIndex.TargetedHandleWithoutContext], RegistrationMethod.TargetedWithoutTargeting, priority);
         }
 
         /// <inheritdoc />
@@ -3250,30 +2873,11 @@ namespace DxMessaging.Core.MessageBus
             {
                 _globalSlots.liveCount++;
             }
-            _log?.Log(
-                new MessagingRegistration(
-                    messageHandler.owner,
-                    type,
-                    RegistrationType.Register,
-                    RegistrationMethod.GlobalAcceptAll
-                )
-            );
+            _log?.Log(new MessagingRegistration(messageHandler.owner, type, RegistrationType.Register, RegistrationMethod.GlobalAcceptAll));
 
-            StageGlobalDispatchSnapshot<IUntargetedMessage>(
-                this,
-                _globalSlots,
-                DispatchKind.Untargeted
-            );
-            StageGlobalDispatchSnapshot<ITargetedMessage>(
-                this,
-                _globalSlots,
-                DispatchKind.Targeted
-            );
-            StageGlobalDispatchSnapshot<IBroadcastMessage>(
-                this,
-                _globalSlots,
-                DispatchKind.Broadcast
-            );
+            StageGlobalDispatchSnapshot<IUntargetedMessage>(this, _globalSlots, DispatchKind.Untargeted);
+            StageGlobalDispatchSnapshot<ITargetedMessage>(this, _globalSlots, DispatchKind.Targeted);
+            StageGlobalDispatchSnapshot<IBroadcastMessage>(this, _globalSlots, DispatchKind.Broadcast);
             DebugAssertGlobalLiveCount();
 
             long capturedGeneration = _resetGeneration;
@@ -3303,10 +2907,7 @@ namespace DxMessaging.Core.MessageBus
                 Generation guard: see DeregisterScalarHandler. The global slot guards on BOTH the
                 reset generation and the global-slot sweep generation.
             */
-            if (
-                reg.generation != _resetGeneration
-                || reg.sweepGeneration != _globalSlotSweepGeneration
-            )
+            if (reg.generation != _resetGeneration || reg.sweepGeneration != _globalSlotSweepGeneration)
             {
                 return;
             }
@@ -3317,14 +2918,7 @@ namespace DxMessaging.Core.MessageBus
             long deregisterTouchTick = AdvanceTick();
             InvalidateDispatchPlans();
             _globalSlots.version++;
-            _log?.Log(
-                new MessagingRegistration(
-                    messageHandler.owner,
-                    type,
-                    RegistrationType.Deregister,
-                    RegistrationMethod.GlobalAcceptAll
-                )
-            );
+            _log?.Log(new MessagingRegistration(messageHandler.owner, type, RegistrationType.Deregister, RegistrationMethod.GlobalAcceptAll));
             if (!_globalSlots.sharedHandlers.TryGetValue(messageHandler, out int count))
             {
                 if (MessagingDebug.enabled)
@@ -3357,57 +2951,31 @@ namespace DxMessaging.Core.MessageBus
                 _globalSlots.sharedHandlers[messageHandler] = count - 1;
             }
 
-            StageGlobalDispatchSnapshot<IUntargetedMessage>(
-                this,
-                _globalSlots,
-                DispatchKind.Untargeted
-            );
-            StageGlobalDispatchSnapshot<ITargetedMessage>(
-                this,
-                _globalSlots,
-                DispatchKind.Targeted
-            );
-            StageGlobalDispatchSnapshot<IBroadcastMessage>(
-                this,
-                _globalSlots,
-                DispatchKind.Broadcast
-            );
+            StageGlobalDispatchSnapshot<IUntargetedMessage>(this, _globalSlots, DispatchKind.Untargeted);
+            StageGlobalDispatchSnapshot<ITargetedMessage>(this, _globalSlots, DispatchKind.Targeted);
+            StageGlobalDispatchSnapshot<IBroadcastMessage>(this, _globalSlots, DispatchKind.Broadcast);
             DebugAssertGlobalLiveCount();
         }
 
         /// <inheritdoc />
-        public MessageBusRegistration RegisterUntargetedInterceptor<T>(
-            UntargetedInterceptor<T> interceptor,
-            int priority = 0
-        )
+        public MessageBusRegistration RegisterUntargetedInterceptor<T>(UntargetedInterceptor<T> interceptor, int priority = 0)
             where T : IUntargetedMessage
         {
             EnsureAotUntargetedBridge<T>();
             long touchTick = AdvanceTick();
             InvalidateDispatchPlans();
-            InterceptorCache<object> prioritizedInterceptors =
-                _untargetedInterceptsByType.GetOrAdd<T>();
+            InterceptorCache<object> prioritizedInterceptors = _untargetedInterceptsByType.GetOrAdd<T>();
             InterceptorCache<object> capturedInterceptors = prioritizedInterceptors;
             prioritizedInterceptors.lastTouchTicks = _tickCounter;
             MarkDirtyType<T>();
 
-            if (
-                !_uniqueInterceptorsAndPriorities.TryGetValue(
-                    interceptor,
-                    out Dictionary<int, int> priorityCount
-                )
-            )
+            if (!_uniqueInterceptorsAndPriorities.TryGetValue(interceptor, out Dictionary<int, int> priorityCount))
             {
                 priorityCount = new Dictionary<int, int>();
                 _uniqueInterceptorsAndPriorities[interceptor] = priorityCount;
             }
 
-            if (
-                !prioritizedInterceptors.handlers.TryGetValue(
-                    priority,
-                    out List<object> interceptors
-                )
-            )
+            if (!prioritizedInterceptors.handlers.TryGetValue(priority, out List<object> interceptors))
             {
                 interceptors = new List<object>();
                 prioritizedInterceptors.handlers.Add(priority, interceptors);
@@ -3423,14 +2991,7 @@ namespace DxMessaging.Core.MessageBus
             priorityCount[priority] = count + 1;
 
             Type type = typeof(T);
-            _log?.Log(
-                new MessagingRegistration(
-                    InstanceId.EmptyId,
-                    type,
-                    RegistrationType.Register,
-                    RegistrationMethod.Interceptor
-                )
-            );
+            _log?.Log(new MessagingRegistration(InstanceId.EmptyId, type, RegistrationType.Register, RegistrationMethod.Interceptor));
 
             long capturedGeneration = _resetGeneration;
             return new MessageBusRegistration(
@@ -3449,38 +3010,24 @@ namespace DxMessaging.Core.MessageBus
         }
 
         /// <inheritdoc />
-        public MessageBusRegistration RegisterTargetedInterceptor<T>(
-            TargetedInterceptor<T> interceptor,
-            int priority = 0
-        )
+        public MessageBusRegistration RegisterTargetedInterceptor<T>(TargetedInterceptor<T> interceptor, int priority = 0)
             where T : ITargetedMessage
         {
             EnsureAotTargetedBridge<T>();
             long touchTick = AdvanceTick();
             InvalidateDispatchPlans();
-            InterceptorCache<object> prioritizedInterceptors =
-                _targetedInterceptsByType.GetOrAdd<T>();
+            InterceptorCache<object> prioritizedInterceptors = _targetedInterceptsByType.GetOrAdd<T>();
             InterceptorCache<object> capturedInterceptors = prioritizedInterceptors;
             prioritizedInterceptors.lastTouchTicks = _tickCounter;
             MarkDirtyType<T>();
 
-            if (
-                !_uniqueInterceptorsAndPriorities.TryGetValue(
-                    interceptor,
-                    out Dictionary<int, int> priorityCount
-                )
-            )
+            if (!_uniqueInterceptorsAndPriorities.TryGetValue(interceptor, out Dictionary<int, int> priorityCount))
             {
                 priorityCount = new Dictionary<int, int>();
                 _uniqueInterceptorsAndPriorities[interceptor] = priorityCount;
             }
 
-            if (
-                !prioritizedInterceptors.handlers.TryGetValue(
-                    priority,
-                    out List<object> interceptors
-                )
-            )
+            if (!prioritizedInterceptors.handlers.TryGetValue(priority, out List<object> interceptors))
             {
                 interceptors = new List<object>();
                 prioritizedInterceptors.handlers.Add(priority, interceptors);
@@ -3496,14 +3043,7 @@ namespace DxMessaging.Core.MessageBus
             priorityCount[priority] = count + 1;
 
             Type type = typeof(T);
-            _log?.Log(
-                new MessagingRegistration(
-                    InstanceId.EmptyId,
-                    type,
-                    RegistrationType.Register,
-                    RegistrationMethod.Interceptor
-                )
-            );
+            _log?.Log(new MessagingRegistration(InstanceId.EmptyId, type, RegistrationType.Register, RegistrationMethod.Interceptor));
 
             long capturedGeneration = _resetGeneration;
             return new MessageBusRegistration(
@@ -3522,38 +3062,24 @@ namespace DxMessaging.Core.MessageBus
         }
 
         /// <inheritdoc />
-        public MessageBusRegistration RegisterBroadcastInterceptor<T>(
-            BroadcastInterceptor<T> interceptor,
-            int priority = 0
-        )
+        public MessageBusRegistration RegisterBroadcastInterceptor<T>(BroadcastInterceptor<T> interceptor, int priority = 0)
             where T : IBroadcastMessage
         {
             EnsureAotSourcedBridge<T>();
             long touchTick = AdvanceTick();
             InvalidateDispatchPlans();
-            InterceptorCache<object> prioritizedInterceptors =
-                _broadcastInterceptsByType.GetOrAdd<T>();
+            InterceptorCache<object> prioritizedInterceptors = _broadcastInterceptsByType.GetOrAdd<T>();
             InterceptorCache<object> capturedInterceptors = prioritizedInterceptors;
             prioritizedInterceptors.lastTouchTicks = _tickCounter;
             MarkDirtyType<T>();
 
-            if (
-                !_uniqueInterceptorsAndPriorities.TryGetValue(
-                    interceptor,
-                    out Dictionary<int, int> priorityCount
-                )
-            )
+            if (!_uniqueInterceptorsAndPriorities.TryGetValue(interceptor, out Dictionary<int, int> priorityCount))
             {
                 priorityCount = new Dictionary<int, int>();
                 _uniqueInterceptorsAndPriorities[interceptor] = priorityCount;
             }
 
-            if (
-                !prioritizedInterceptors.handlers.TryGetValue(
-                    priority,
-                    out List<object> interceptors
-                )
-            )
+            if (!prioritizedInterceptors.handlers.TryGetValue(priority, out List<object> interceptors))
             {
                 interceptors = new List<object>();
                 prioritizedInterceptors.handlers.Add(priority, interceptors);
@@ -3569,14 +3095,7 @@ namespace DxMessaging.Core.MessageBus
             priorityCount[priority] = count + 1;
 
             Type type = typeof(T);
-            _log?.Log(
-                new MessagingRegistration(
-                    InstanceId.EmptyId,
-                    type,
-                    RegistrationType.Register,
-                    RegistrationMethod.Interceptor
-                )
-            );
+            _log?.Log(new MessagingRegistration(InstanceId.EmptyId, type, RegistrationType.Register, RegistrationMethod.Interceptor));
 
             long capturedGeneration = _resetGeneration;
             return new MessageBusRegistration(
@@ -3594,39 +3113,22 @@ namespace DxMessaging.Core.MessageBus
             );
         }
 
-        private bool IsStaleInterceptorDeregisterAfterSweep<T>(
-            MessageCache<InterceptorCache<object>> interceptorsByType,
-            InterceptorCache<object> capturedInterceptors
-        )
+        private bool IsStaleInterceptorDeregisterAfterSweep<T>(MessageCache<InterceptorCache<object>> interceptorsByType, InterceptorCache<object> capturedInterceptors)
             where T : IMessage
         {
-            return !interceptorsByType.TryGetValue<T>(
-                    out InterceptorCache<object> currentInterceptors
-                ) || !ReferenceEquals(currentInterceptors, capturedInterceptors);
+            return !interceptorsByType.TryGetValue<T>(out InterceptorCache<object> currentInterceptors) || !ReferenceEquals(currentInterceptors, capturedInterceptors);
         }
 
         /// <inheritdoc />
-        public MessageBusRegistration RegisterUntargetedPostProcessor<T>(
-            MessageHandler messageHandler,
-            int priority = 0
-        )
+        public MessageBusRegistration RegisterUntargetedPostProcessor<T>(MessageHandler messageHandler, int priority = 0)
             where T : IUntargetedMessage
         {
             EnsureAotUntargetedBridge<T>();
-            return InternalRegisterUntargeted<T>(
-                messageHandler,
-                _scalarSinks[BusSinkIndex.UntargetedPostProcessDefault],
-                RegistrationMethod.UntargetedPostProcessor,
-                priority
-            );
+            return InternalRegisterUntargeted<T>(messageHandler, _scalarSinks[BusSinkIndex.UntargetedPostProcessDefault], RegistrationMethod.UntargetedPostProcessor, priority);
         }
 
         /// <inheritdoc />
-        public MessageBusRegistration RegisterTargetedPostProcessor<T>(
-            InstanceId target,
-            MessageHandler messageHandler,
-            int priority = 0
-        )
+        public MessageBusRegistration RegisterTargetedPostProcessor<T>(InstanceId target, MessageHandler messageHandler, int priority = 0)
             where T : ITargetedMessage
         {
             EnsureAotTargetedBridge<T>();
@@ -3640,10 +3142,7 @@ namespace DxMessaging.Core.MessageBus
         }
 
         /// <inheritdoc />
-        public MessageBusRegistration RegisterTargetedWithoutTargetingPostProcessor<T>(
-            MessageHandler messageHandler,
-            int priority = 0
-        )
+        public MessageBusRegistration RegisterTargetedWithoutTargetingPostProcessor<T>(MessageHandler messageHandler, int priority = 0)
             where T : ITargetedMessage
         {
             EnsureAotTargetedBridge<T>();
@@ -3656,11 +3155,7 @@ namespace DxMessaging.Core.MessageBus
         }
 
         /// <inheritdoc />
-        public MessageBusRegistration RegisterBroadcastPostProcessor<T>(
-            InstanceId source,
-            MessageHandler messageHandler,
-            int priority = 0
-        )
+        public MessageBusRegistration RegisterBroadcastPostProcessor<T>(InstanceId source, MessageHandler messageHandler, int priority = 0)
             where T : IBroadcastMessage
         {
             EnsureAotSourcedBridge<T>();
@@ -3674,10 +3169,7 @@ namespace DxMessaging.Core.MessageBus
         }
 
         /// <inheritdoc />
-        public MessageBusRegistration RegisterBroadcastWithoutSourcePostProcessor<T>(
-            MessageHandler messageHandler,
-            int priority = 0
-        )
+        public MessageBusRegistration RegisterBroadcastWithoutSourcePostProcessor<T>(MessageHandler messageHandler, int priority = 0)
             where T : IBroadcastMessage
         {
             EnsureAotSourcedBridge<T>();
@@ -3697,11 +3189,7 @@ namespace DxMessaging.Core.MessageBus
             Type messageType = typedMessage.MessageType;
             if (RequiresAotUntypedDispatch)
             {
-                if (
-                    Volatile
-                        .Read(ref _aotUntargetedBroadcastsByType)
-                        .TryGetValue(messageType, out var bridge)
-                )
+                if (Volatile.Read(ref _aotUntargetedBroadcastsByType).TryGetValue(messageType, out var bridge))
                 {
                     bridge(this, typedMessage);
                     return;
@@ -3711,12 +3199,7 @@ namespace DxMessaging.Core.MessageBus
                 return;
             }
 
-            if (
-                !_untargetedBroadcastMethodsByType.TryGetValue(
-                    messageType,
-                    out Action<IUntargetedMessage> broadcast
-                )
-            )
+            if (!_untargetedBroadcastMethodsByType.TryGetValue(messageType, out Action<IUntargetedMessage> broadcast))
             {
                 broadcast = CreateUntargetedBroadcastDelegate(messageType);
                 _untargetedBroadcastMethodsByType[messageType] = broadcast;
@@ -3790,20 +3273,12 @@ namespace DxMessaging.Core.MessageBus
                     int handleEntryCount = plan.handleEntryCount;
                     if (handleEntries == null)
                     {
-                        DispatchSnapshot fastSnapshot = AcquireDispatchSnapshotFast<TMessage>(
-                            this,
-                            fastHandlers,
-                            UntargetedHandleSlot,
-                            emissionId,
-                            default
-                        );
+                        DispatchSnapshot fastSnapshot = AcquireDispatchSnapshotFast<TMessage>(this, fastHandlers, UntargetedHandleSlot, emissionId, default);
                         FlatDispatchArray flatBase = fastSnapshot.flat;
                         if (flatBase != null)
                         {
                             DebugAssertFlatShape<FlatDispatch<TMessage>>(flatBase);
-                            FlatDispatch<TMessage> flat = DxUnsafe.As<FlatDispatch<TMessage>>(
-                                flatBase
-                            );
+                            FlatDispatch<TMessage> flat = DxUnsafe.As<FlatDispatch<TMessage>>(flatBase);
                             handleEntries = flat.entries;
                             handleEntryCount = flat.count;
 
@@ -3831,21 +3306,13 @@ namespace DxMessaging.Core.MessageBus
 
                     if (handleEntries != null)
                     {
-                        fastFound = DispatchCachedUntargetedEntries(
-                            handleEntries,
-                            handleEntryCount,
-                            ref typedMessage
-                        );
+                        fastFound = DispatchCachedUntargetedEntries(handleEntries, handleEntryCount, ref typedMessage);
                     }
                 }
 
                 if (!fastFound && MessagingDebug.enabled)
                 {
-                    MessagingDebug.Log(
-                        LogLevel.Info,
-                        "Could not find a matching untargeted broadcast handler for Message: {0}.",
-                        typedMessage
-                    );
+                    MessagingDebug.Log(LogLevel.Info, "Could not find a matching untargeted broadcast handler for Message: {0}.", typedMessage);
                 }
 
                 return;
@@ -3869,20 +3336,11 @@ namespace DxMessaging.Core.MessageBus
             if (untargetedPostHandlers != null && 0 < untargetedPostHandlers.handlers.Count)
             {
                 Touch(untargetedPostHandlers, touchTick);
-                untargetedPostSnapshot = AcquireDispatchSnapshotFast<TMessage>(
-                    this,
-                    untargetedPostHandlers,
-                    UntargetedPostSlot,
-                    emissionId,
-                    default
-                );
+                untargetedPostSnapshot = AcquireDispatchSnapshotFast<TMessage>(this, untargetedPostHandlers, UntargetedPostSlot, emissionId, default);
             }
 
             InterceptorCache<object> untargetedInterceptors = plan.interceptorCache;
-            if (
-                untargetedInterceptors != null
-                && !RunUntargetedInterceptors(ref typedMessage, untargetedInterceptors)
-            )
+            if (untargetedInterceptors != null && !RunUntargetedInterceptors(ref typedMessage, untargetedInterceptors))
             {
                 return;
             }
@@ -3907,24 +3365,14 @@ namespace DxMessaging.Core.MessageBus
                     ? DispatchUntargetedHandlePhase(plan.scalarHandle, ref typedMessage, emissionId)
                     : InternalUntargetedBroadcast(ref typedMessage, emissionId);
 
-            if (
-                RunUntargetedPostPhase<TMessage>(
-                    ref typedMessage,
-                    untargetedPostSnapshot,
-                    emissionResetGeneration
-                )
-            )
+            if (RunUntargetedPostPhase<TMessage>(ref typedMessage, untargetedPostSnapshot, emissionResetGeneration))
             {
                 foundAnyHandlers = true;
             }
 
             if (!foundAnyHandlers && MessagingDebug.enabled)
             {
-                MessagingDebug.Log(
-                    LogLevel.Info,
-                    "Could not find a matching untargeted broadcast handler for Message: {0}.",
-                    typedMessage
-                );
+                MessagingDebug.Log(LogLevel.Info, "Could not find a matching untargeted broadcast handler for Message: {0}.", typedMessage);
             }
         }
 
@@ -3936,16 +3384,10 @@ namespace DxMessaging.Core.MessageBus
         /// added to an already populated sink.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool RunUntargetedPostPhase<TMessage>(
-            ref TMessage typedMessage,
-            DispatchSnapshot prefrozenSnapshot,
-            long emissionResetGeneration
-        )
+        private bool RunUntargetedPostPhase<TMessage>(ref TMessage typedMessage, DispatchSnapshot prefrozenSnapshot, long emissionResetGeneration)
             where TMessage : IUntargetedMessage
         {
-            return emissionResetGeneration == _resetGeneration
-                && prefrozenSnapshot.IsInitialized
-                && DispatchFlatSnapshot(prefrozenSnapshot, ref typedMessage);
+            return emissionResetGeneration == _resetGeneration && prefrozenSnapshot.IsInitialized && DispatchFlatSnapshot(prefrozenSnapshot, ref typedMessage);
         }
 
         /// <summary>
@@ -3963,17 +3405,13 @@ namespace DxMessaging.Core.MessageBus
                 here, then repopulate it only AFTER that acquisition settles.
             */
             plan.ClearCachedRoute();
-            _ = _scalarSinks[BusSinkIndex.UntargetedHandleDefault]
-                .TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> handle);
-            _ = _scalarSinks[BusSinkIndex.UntargetedPostProcessDefault]
-                .TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> post);
+            _ = _scalarSinks[BusSinkIndex.UntargetedHandleDefault].TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> handle);
+            _ = _scalarSinks[BusSinkIndex.UntargetedPostProcessDefault].TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> post);
             plan.scalarHandle = handle;
             plan.scalarPost = post;
             plan.contextHandle = null;
             plan.contextPost = null;
-            _ = _untargetedInterceptsByType.TryGetValue<TMessage>(
-                out InterceptorCache<object> interceptors
-            );
+            _ = _untargetedInterceptsByType.TryGetValue<TMessage>(out InterceptorCache<object> interceptors);
             bool hasInterceptors = RefreshInterceptorPlan(plan, interceptors);
             bool hasGlobal = 0 < _globalSlots.sharedHandlers.Count;
             bool hasPost = post != null && 0 < post.handlers.Count;
@@ -3990,10 +3428,7 @@ namespace DxMessaging.Core.MessageBus
         /// view and force a reallocation.
         /// </summary>
         /// <returns><c>true</c> when at least one interceptor is registered.</returns>
-        private static bool RefreshInterceptorPlan(
-            DispatchPlan plan,
-            InterceptorCache<object> interceptors
-        )
+        private static bool RefreshInterceptorPlan(DispatchPlan plan, InterceptorCache<object> interceptors)
         {
             if (interceptors == null || interceptors.handlers.Count == 0)
             {
@@ -4011,11 +3446,7 @@ namespace DxMessaging.Core.MessageBus
             Type messageType = typedMessage.MessageType;
             if (RequiresAotUntypedDispatch)
             {
-                if (
-                    Volatile
-                        .Read(ref _aotTargetedBroadcastsByType)
-                        .TryGetValue(messageType, out var bridge)
-                )
+                if (Volatile.Read(ref _aotTargetedBroadcastsByType).TryGetValue(messageType, out var bridge))
                 {
                     bridge(this, target, typedMessage);
                     return;
@@ -4025,12 +3456,7 @@ namespace DxMessaging.Core.MessageBus
                 return;
             }
 
-            if (
-                !_targetedBroadcastMethodsByType.TryGetValue(
-                    messageType,
-                    out Action<InstanceId, ITargetedMessage> broadcast
-                )
-            )
+            if (!_targetedBroadcastMethodsByType.TryGetValue(messageType, out Action<InstanceId, ITargetedMessage> broadcast))
             {
                 broadcast = CreateTargetedBroadcastDelegate(messageType);
                 _targetedBroadcastMethodsByType[messageType] = broadcast;
@@ -4088,23 +3514,10 @@ namespace DxMessaging.Core.MessageBus
             {
                 bool fastFound = false;
                 ContextHandlerMap fastTargeted = plan.contextHandle;
-                if (
-                    fastTargeted != null
-                    && fastTargeted.TryGetValue(
-                        target,
-                        out HandlerCache<int, HandlerCache> fastSorted
-                    )
-                    && 0 < fastSorted.handlers.Count
-                )
+                if (fastTargeted != null && fastTargeted.TryGetValue(target, out HandlerCache<int, HandlerCache> fastSorted) && 0 < fastSorted.handlers.Count)
                 {
                     Touch(fastSorted, touchTick);
-                    DispatchSnapshot fastSnapshot = AcquireDispatchSnapshotFast<TMessage>(
-                        this,
-                        fastSorted,
-                        TargetedHandleSlot,
-                        emissionId,
-                        target
-                    );
+                    DispatchSnapshot fastSnapshot = AcquireDispatchSnapshotFast<TMessage>(this, fastSorted, TargetedHandleSlot, emissionId, target);
                     if (DispatchFlatSnapshot(fastSnapshot, ref typedMessage))
                     {
                         fastFound = true;
@@ -4128,40 +3541,21 @@ namespace DxMessaging.Core.MessageBus
                     HandlerCache<int, HandlerCache> fastTwt = plan.scalarHandle;
                     if (fastTwt != null && fastTwt.handlers.Count != 0)
                     {
-                        DispatchSnapshot twtSnapshot = AcquireDispatchSnapshotFast<TMessage>(
-                            this,
-                            fastTwt,
-                            TargetedWithoutContextHandleSlot,
-                            emissionId,
-                            default
-                        );
+                        DispatchSnapshot twtSnapshot = AcquireDispatchSnapshotFast<TMessage>(this, fastTwt, TargetedWithoutContextHandleSlot, emissionId, default);
                         if (DispatchContextFlatSnapshot(twtSnapshot, ref target, ref typedMessage))
                         {
                             fastFound = true;
                         }
                     }
                 }
-                else if (
-                    DispatchTargetedWithoutTargetingPhase(
-                        null,
-                        false,
-                        ref target,
-                        ref typedMessage,
-                        emissionId
-                    )
-                )
+                else if (DispatchTargetedWithoutTargetingPhase(null, false, ref target, ref typedMessage, emissionId))
                 {
                     fastFound = true;
                 }
 
                 if (!fastFound && MessagingDebug.enabled)
                 {
-                    MessagingDebug.Log(
-                        LogLevel.Info,
-                        "Could not find a matching targeted broadcast handler for Id: {0}, Message: {1}.",
-                        target,
-                        typedMessage
-                    );
+                    MessagingDebug.Log(LogLevel.Info, "Could not find a matching targeted broadcast handler for Id: {0}, Message: {1}.", target, typedMessage);
                 }
 
                 return;
@@ -4183,27 +3577,15 @@ namespace DxMessaging.Core.MessageBus
             ContextHandlerMap targetedPostHandlers = plan.contextPost;
             if (
                 targetedPostHandlers != null
-                && targetedPostHandlers.TryGetValue(
-                    target,
-                    out HandlerCache<int, HandlerCache> targetedPostByPriority
-                )
+                && targetedPostHandlers.TryGetValue(target, out HandlerCache<int, HandlerCache> targetedPostByPriority)
                 && 0 < targetedPostByPriority.handlers.Count
             )
             {
                 Touch(targetedPostByPriority, touchTick);
-                targetedPostSnapshot = AcquireDispatchSnapshotFast<TMessage>(
-                    this,
-                    targetedPostByPriority,
-                    TargetedPostSlot,
-                    emissionId,
-                    target
-                );
+                targetedPostSnapshot = AcquireDispatchSnapshotFast<TMessage>(this, targetedPostByPriority, TargetedPostSlot, emissionId, target);
             }
             HandlerCache<int, HandlerCache> targetedWithoutTargetingHandlers = plan.scalarPost;
-            if (
-                targetedWithoutTargetingHandlers != null
-                && 0 < targetedWithoutTargetingHandlers.handlers.Count
-            )
+            if (targetedWithoutTargetingHandlers != null && 0 < targetedWithoutTargetingHandlers.handlers.Count)
             {
                 Touch(targetedWithoutTargetingHandlers, touchTick);
                 targetedWithoutTargetingPostSnapshot = AcquireDispatchSnapshotFast<TMessage>(
@@ -4221,10 +3603,7 @@ namespace DxMessaging.Core.MessageBus
             */
             InstanceId preInterceptorTarget = target;
             InterceptorCache<object> targetedInterceptors = plan.interceptorCache;
-            if (
-                targetedInterceptors != null
-                && !RunTargetedInterceptors(ref typedMessage, ref target, targetedInterceptors)
-            )
+            if (targetedInterceptors != null && !RunTargetedInterceptors(ref typedMessage, ref target, targetedInterceptors))
             {
                 return;
             }
@@ -4259,9 +3638,7 @@ namespace DxMessaging.Core.MessageBus
                     }
                 }
 #if UNITY_2021_3_OR_NEWER
-                ref ReflexiveMessage reflexiveMessage = ref DxUnsafe.As<TMessage, ReflexiveMessage>(
-                    ref typedMessage
-                );
+                ref ReflexiveMessage reflexiveMessage = ref DxUnsafe.As<TMessage, ReflexiveMessage>(ref typedMessage);
 
                 GameObject go;
                 bool found;
@@ -4305,11 +3682,7 @@ namespace DxMessaging.Core.MessageBus
                     bool preserveNativeSemantics =
                         !onlyActive
                         && reflexiveMessage.parameters.Length <= 1
-                        && (
-                            sendMode == ReflexiveSendMode.Flat
-                            || sendMode == ReflexiveSendMode.Upwards
-                            || sendMode == ReflexiveSendMode.Downwards
-                        );
+                        && (sendMode == ReflexiveSendMode.Flat || sendMode == ReflexiveSendMode.Upwards || sendMode == ReflexiveSendMode.Downwards);
                     if (sendMode.HasFlagNoAlloc(ReflexiveSendMode.Upwards))
                     {
                         sentInADirection = true;
@@ -4317,15 +3690,7 @@ namespace DxMessaging.Core.MessageBus
                         do
                         {
                             Transform next = current.parent;
-                            if (
-                                !SendMessage(
-                                    current.gameObject,
-                                    ref reflexiveMessage,
-                                    onlyActive,
-                                    preserveNativeSemantics,
-                                    emissionResetGeneration
-                                )
-                            )
+                            if (!SendMessage(current.gameObject, ref reflexiveMessage, onlyActive, preserveNativeSemantics, emissionResetGeneration))
                             {
                                 return;
                             }
@@ -4346,15 +3711,7 @@ namespace DxMessaging.Core.MessageBus
                                 {
                                     continue;
                                 }
-                                if (
-                                    !SendMessage(
-                                        current.gameObject,
-                                        ref reflexiveMessage,
-                                        onlyActive,
-                                        preserveNativeSemantics,
-                                        emissionResetGeneration
-                                    )
-                                )
+                                if (!SendMessage(current.gameObject, ref reflexiveMessage, onlyActive, preserveNativeSemantics, emissionResetGeneration))
                                 {
                                     return;
                                 }
@@ -4364,23 +3721,14 @@ namespace DxMessaging.Core.MessageBus
                     else if (
                         !sentInADirection
                         && sendMode.HasFlagNoAlloc(ReflexiveSendMode.Flat)
-                        && !SendMessage(
-                            go,
-                            ref reflexiveMessage,
-                            onlyActive,
-                            preserveNativeSemantics,
-                            emissionResetGeneration
-                        )
+                        && !SendMessage(go, ref reflexiveMessage, onlyActive, preserveNativeSemantics, emissionResetGeneration)
                     )
                     {
                         return;
                     }
                 }
 #else
-                MessagingDebug.Log(
-                    LogLevel.Error,
-                    "Reflexive messages are not supported in this build."
-                );
+                MessagingDebug.Log(LogLevel.Error, "Reflexive messages are not supported in this build.");
                 if (emissionResetGeneration != _resetGeneration)
                 {
                     return;
@@ -4402,27 +3750,13 @@ namespace DxMessaging.Core.MessageBus
             }
             else
             {
-                _ = _contextSinks[BusContextIndex.TargetedHandleDefault]
-                    .TryGetValue<TMessage>(out targetedHandlers);
+                _ = _contextSinks[BusContextIndex.TargetedHandleDefault].TryGetValue<TMessage>(out targetedHandlers);
             }
 
-            if (
-                targetedHandlers != null
-                && targetedHandlers.TryGetValue(
-                    target,
-                    out HandlerCache<int, HandlerCache> sortedHandlers
-                )
-                && 0 < sortedHandlers.handlers.Count
-            )
+            if (targetedHandlers != null && targetedHandlers.TryGetValue(target, out HandlerCache<int, HandlerCache> sortedHandlers) && 0 < sortedHandlers.handlers.Count)
             {
                 Touch(sortedHandlers, touchTick);
-                DispatchSnapshot snapshot = AcquireDispatchSnapshotFast<TMessage>(
-                    this,
-                    sortedHandlers,
-                    TargetedHandleSlot,
-                    emissionId,
-                    target
-                );
+                DispatchSnapshot snapshot = AcquireDispatchSnapshotFast<TMessage>(this, sortedHandlers, TargetedHandleSlot, emissionId, target);
                 /*
                     Flat dispatch; see DispatchFlatSnapshot for the
                     frozen-array semantics that replace the legacy
@@ -4446,15 +3780,7 @@ namespace DxMessaging.Core.MessageBus
                 this replaces would have observed it.
             */
             bool planValidAfterHandlers = planVersion == _dispatchPlanVersion;
-            if (
-                DispatchTargetedWithoutTargetingPhase(
-                    planValidAfterHandlers ? plan.scalarHandle : null,
-                    planValidAfterHandlers,
-                    ref target,
-                    ref typedMessage,
-                    emissionId
-                )
-            )
+            if (DispatchTargetedWithoutTargetingPhase(planValidAfterHandlers ? plan.scalarHandle : null, planValidAfterHandlers, ref target, ref typedMessage, emissionId))
             {
                 foundAnyHandlers = true;
             }
@@ -4477,12 +3803,7 @@ namespace DxMessaging.Core.MessageBus
 
             if (!foundAnyHandlers && MessagingDebug.enabled)
             {
-                MessagingDebug.Log(
-                    LogLevel.Info,
-                    "Could not find a matching targeted broadcast handler for Id: {0}, Message: {1}.",
-                    target,
-                    typedMessage
-                );
+                MessagingDebug.Log(LogLevel.Info, "Could not find a matching targeted broadcast handler for Id: {0}, Message: {1}.", target, typedMessage);
             }
         }
 
@@ -4515,10 +3836,7 @@ namespace DxMessaging.Core.MessageBus
 
             if (target == preInterceptorTarget)
             {
-                if (
-                    targetedPostSnapshot.IsInitialized
-                    && DispatchFlatSnapshot(targetedPostSnapshot, ref typedMessage)
-                )
+                if (targetedPostSnapshot.IsInitialized && DispatchFlatSnapshot(targetedPostSnapshot, ref typedMessage))
                 {
                     foundAnyHandlers = true;
                 }
@@ -4528,14 +3846,7 @@ namespace DxMessaging.Core.MessageBus
                     return foundAnyHandlers;
                 }
 
-                if (
-                    targetedWithoutTargetingPostSnapshot.IsInitialized
-                    && DispatchContextFlatSnapshot(
-                        targetedWithoutTargetingPostSnapshot,
-                        ref target,
-                        ref typedMessage
-                    )
-                )
+                if (targetedWithoutTargetingPostSnapshot.IsInitialized && DispatchContextFlatSnapshot(targetedWithoutTargetingPostSnapshot, ref target, ref typedMessage))
                 {
                     foundAnyHandlers = true;
                 }
@@ -4544,34 +3855,16 @@ namespace DxMessaging.Core.MessageBus
             }
 
             DispatchSnapshot snapshot;
-            if (
-                !TryGetContextPostRouteAtEmissionStart<TMessage>(
-                    TargetedPostSlot,
-                    target,
-                    emissionStartTick,
-                    emissionResetGeneration,
-                    out snapshot
-                )
-            )
+            if (!TryGetContextPostRouteAtEmissionStart<TMessage>(TargetedPostSlot, target, emissionStartTick, emissionResetGeneration, out snapshot))
             {
                 snapshot = DispatchSnapshot.Empty;
                 if (
-                    _contextSinks[BusContextIndex.TargetedPostProcessDefault]
-                        .TryGetValue<TMessage>(out ContextHandlerMap targetedHandlers)
-                    && targetedHandlers.TryGetValue(
-                        target,
-                        out HandlerCache<int, HandlerCache> sortedHandlers
-                    )
+                    _contextSinks[BusContextIndex.TargetedPostProcessDefault].TryGetValue<TMessage>(out ContextHandlerMap targetedHandlers)
+                    && targetedHandlers.TryGetValue(target, out HandlerCache<int, HandlerCache> sortedHandlers)
                     && 0 < sortedHandlers.handlers.Count
                 )
                 {
-                    snapshot = AcquireDispatchSnapshotFast<TMessage>(
-                        this,
-                        sortedHandlers,
-                        TargetedPostSlot,
-                        emissionId,
-                        target
-                    );
+                    snapshot = AcquireDispatchSnapshotFast<TMessage>(this, sortedHandlers, TargetedPostSlot, emissionId, target);
                 }
             }
 
@@ -4585,14 +3878,7 @@ namespace DxMessaging.Core.MessageBus
                 return foundAnyHandlers;
             }
 
-            if (
-                targetedWithoutTargetingPostSnapshot.IsInitialized
-                && DispatchContextFlatSnapshot(
-                    targetedWithoutTargetingPostSnapshot,
-                    ref target,
-                    ref typedMessage
-                )
-            )
+            if (targetedWithoutTargetingPostSnapshot.IsInitialized && DispatchContextFlatSnapshot(targetedWithoutTargetingPostSnapshot, ref target, ref typedMessage))
             {
                 foundAnyHandlers = true;
             }
@@ -4611,26 +3897,18 @@ namespace DxMessaging.Core.MessageBus
         private void RefreshTargetedDispatchPlan<TMessage>(DispatchPlan plan)
             where TMessage : ITargetedMessage
         {
-            _ = _contextSinks[BusContextIndex.TargetedHandleDefault]
-                .TryGetValue<TMessage>(out ContextHandlerMap contextHandle);
-            _ = _contextSinks[BusContextIndex.TargetedPostProcessDefault]
-                .TryGetValue<TMessage>(out ContextHandlerMap contextPost);
-            _ = _scalarSinks[BusSinkIndex.TargetedHandleWithoutContext]
-                .TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> scalarHandle);
-            _ = _scalarSinks[BusSinkIndex.TargetedPostProcessWithoutContext]
-                .TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> scalarPost);
+            _ = _contextSinks[BusContextIndex.TargetedHandleDefault].TryGetValue<TMessage>(out ContextHandlerMap contextHandle);
+            _ = _contextSinks[BusContextIndex.TargetedPostProcessDefault].TryGetValue<TMessage>(out ContextHandlerMap contextPost);
+            _ = _scalarSinks[BusSinkIndex.TargetedHandleWithoutContext].TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> scalarHandle);
+            _ = _scalarSinks[BusSinkIndex.TargetedPostProcessWithoutContext].TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> scalarPost);
             plan.contextHandle = contextHandle;
             plan.contextPost = contextPost;
             plan.scalarHandle = scalarHandle;
             plan.scalarPost = scalarPost;
-            _ = _targetedInterceptsByType.TryGetValue<TMessage>(
-                out InterceptorCache<object> interceptors
-            );
+            _ = _targetedInterceptsByType.TryGetValue<TMessage>(out InterceptorCache<object> interceptors);
             bool hasInterceptors = RefreshInterceptorPlan(plan, interceptors);
             bool hasGlobal = 0 < _globalSlots.sharedHandlers.Count;
-            bool hasPost =
-                (contextPost != null && 0 < contextPost.Count)
-                || (scalarPost != null && 0 < scalarPost.handlers.Count);
+            bool hasPost = (contextPost != null && 0 < contextPost.Count) || (scalarPost != null && 0 < scalarPost.handlers.Count);
             plan.fastPath = !hasInterceptors && !hasGlobal && !hasPost;
             plan.version = _dispatchPlanVersion;
         }
@@ -4641,11 +3919,7 @@ namespace DxMessaging.Core.MessageBus
             Type messageType = typedMessage.MessageType;
             if (RequiresAotUntypedDispatch)
             {
-                if (
-                    Volatile
-                        .Read(ref _aotSourcedBroadcastsByType)
-                        .TryGetValue(messageType, out var bridge)
-                )
+                if (Volatile.Read(ref _aotSourcedBroadcastsByType).TryGetValue(messageType, out var bridge))
                 {
                     bridge(this, source, typedMessage);
                     return;
@@ -4655,12 +3929,7 @@ namespace DxMessaging.Core.MessageBus
                 return;
             }
 
-            if (
-                !_sourcedBroadcastMethodsByType.TryGetValue(
-                    messageType,
-                    out Action<InstanceId, IBroadcastMessage> broadcast
-                )
-            )
+            if (!_sourcedBroadcastMethodsByType.TryGetValue(messageType, out Action<InstanceId, IBroadcastMessage> broadcast))
             {
                 broadcast = CreateSourcedBroadcastDelegate(messageType);
                 _sourcedBroadcastMethodsByType[messageType] = broadcast;
@@ -4727,25 +3996,12 @@ namespace DxMessaging.Core.MessageBus
                 HandlerCache<int, HandlerCache> fastBws = plan.scalarHandle;
                 if (fastBws != null && 0 < fastBws.handlers.Count)
                 {
-                    fastBwsSnapshot = AcquireDispatchSnapshotFast<TMessage>(
-                        this,
-                        fastBws,
-                        BroadcastWithoutContextHandleSlot,
-                        emissionId,
-                        default
-                    );
+                    fastBwsSnapshot = AcquireDispatchSnapshotFast<TMessage>(this, fastBws, BroadcastWithoutContextHandleSlot, emissionId, default);
                 }
 
                 bool fastFound = false;
                 ContextHandlerMap fastBroadcast = plan.contextHandle;
-                if (
-                    fastBroadcast != null
-                    && fastBroadcast.TryGetValue(
-                        source,
-                        out HandlerCache<int, HandlerCache> fastSorted
-                    )
-                    && 0 < fastSorted.handlers.Count
-                )
+                if (fastBroadcast != null && fastBroadcast.TryGetValue(source, out HandlerCache<int, HandlerCache> fastSorted) && 0 < fastSorted.handlers.Count)
                 {
                     Touch(fastSorted, touchTick);
                     /*
@@ -4753,13 +4009,7 @@ namespace DxMessaging.Core.MessageBus
                         passing counts as "found".
                     */
                     fastFound = true;
-                    DispatchSnapshot fastSnapshot = AcquireDispatchSnapshotFast<TMessage>(
-                        this,
-                        fastSorted,
-                        BroadcastHandleSlot,
-                        emissionId,
-                        source
-                    );
+                    DispatchSnapshot fastSnapshot = AcquireDispatchSnapshotFast<TMessage>(this, fastSorted, BroadcastHandleSlot, emissionId, source);
                     _ = DispatchFlatSnapshot(fastSnapshot, ref typedMessage);
                 }
 
@@ -4783,11 +4033,7 @@ namespace DxMessaging.Core.MessageBus
                     fastBwsFound = false;
                     if (fastBws != null && fastBws.handlers.Count != 0)
                     {
-                        _ = DispatchContextFlatSnapshot(
-                            fastBwsSnapshot,
-                            ref source,
-                            ref typedMessage
-                        );
+                        _ = DispatchContextFlatSnapshot(fastBwsSnapshot, ref source, ref typedMessage);
                         /*
                             Legacy reporting: the live-sink gate passing counts
                             as "found".
@@ -4797,12 +4043,7 @@ namespace DxMessaging.Core.MessageBus
                 }
                 else
                 {
-                    fastBwsFound = InternalBroadcastWithoutSource(
-                        fastBwsSnapshot,
-                        ref source,
-                        ref typedMessage,
-                        emissionId
-                    );
+                    fastBwsFound = InternalBroadcastWithoutSource(fastBwsSnapshot, ref source, ref typedMessage, emissionId);
                 }
 
                 /*
@@ -4814,12 +4055,7 @@ namespace DxMessaging.Core.MessageBus
                 */
                 if (!(fastFound || fastBwsFound) && MessagingDebug.enabled)
                 {
-                    MessagingDebug.Log(
-                        LogLevel.Info,
-                        "Could not find a matching sourced broadcast handler for Id: {0}, Message: {1}.",
-                        source,
-                        typedMessage
-                    );
+                    MessagingDebug.Log(LogLevel.Info, "Could not find a matching sourced broadcast handler for Id: {0}, Message: {1}.", source, typedMessage);
                 }
 
                 return;
@@ -4841,27 +4077,15 @@ namespace DxMessaging.Core.MessageBus
             ContextHandlerMap broadcastPostHandlers = plan.contextPost;
             if (
                 broadcastPostHandlers != null
-                && broadcastPostHandlers.TryGetValue(
-                    source,
-                    out HandlerCache<int, HandlerCache> broadcastPostByPriority
-                )
+                && broadcastPostHandlers.TryGetValue(source, out HandlerCache<int, HandlerCache> broadcastPostByPriority)
                 && 0 < broadcastPostByPriority.handlers.Count
             )
             {
                 Touch(broadcastPostByPriority, touchTick);
-                broadcastPostSnapshot = AcquireDispatchSnapshotFast<TMessage>(
-                    this,
-                    broadcastPostByPriority,
-                    BroadcastPostSlot,
-                    emissionId,
-                    source
-                );
+                broadcastPostSnapshot = AcquireDispatchSnapshotFast<TMessage>(this, broadcastPostByPriority, BroadcastPostSlot, emissionId, source);
             }
             HandlerCache<int, HandlerCache> broadcastWithoutSourceHandlers = plan.scalarPost;
-            if (
-                broadcastWithoutSourceHandlers != null
-                && 0 < broadcastWithoutSourceHandlers.handlers.Count
-            )
+            if (broadcastWithoutSourceHandlers != null && 0 < broadcastWithoutSourceHandlers.handlers.Count)
             {
                 Touch(broadcastWithoutSourceHandlers, touchTick);
                 broadcastWithoutSourcePostSnapshot = AcquireDispatchSnapshotFast<TMessage>(
@@ -4879,10 +4103,7 @@ namespace DxMessaging.Core.MessageBus
             */
             InstanceId preInterceptorSource = source;
             InterceptorCache<object> broadcastInterceptors = plan.interceptorCache;
-            if (
-                broadcastInterceptors != null
-                && !RunBroadcastInterceptors(ref typedMessage, ref source, broadcastInterceptors)
-            )
+            if (broadcastInterceptors != null && !RunBroadcastInterceptors(ref typedMessage, ref source, broadcastInterceptors))
             {
                 return;
             }
@@ -4919,34 +4140,19 @@ namespace DxMessaging.Core.MessageBus
             }
             else
             {
-                _ = _scalarSinks[BusSinkIndex.BroadcastHandleWithoutContext]
-                    .TryGetValue<TMessage>(out bwsHandlers);
-                _ = _contextSinks[BusContextIndex.BroadcastHandleDefault]
-                    .TryGetValue<TMessage>(out broadcastHandlers);
+                _ = _scalarSinks[BusSinkIndex.BroadcastHandleWithoutContext].TryGetValue<TMessage>(out bwsHandlers);
+                _ = _contextSinks[BusContextIndex.BroadcastHandleDefault].TryGetValue<TMessage>(out broadcastHandlers);
             }
 
             DispatchSnapshot broadcastWithoutSourceHandleSnapshot = DispatchSnapshot.Empty;
             if (bwsHandlers != null && 0 < bwsHandlers.handlers.Count)
             {
                 Touch(bwsHandlers, touchTick);
-                broadcastWithoutSourceHandleSnapshot = AcquireDispatchSnapshotFast<TMessage>(
-                    this,
-                    bwsHandlers,
-                    BroadcastWithoutContextHandleSlot,
-                    emissionId,
-                    default
-                );
+                broadcastWithoutSourceHandleSnapshot = AcquireDispatchSnapshotFast<TMessage>(this, bwsHandlers, BroadcastWithoutContextHandleSlot, emissionId, default);
             }
 
             bool foundAnyHandlers = false;
-            if (
-                broadcastHandlers != null
-                && broadcastHandlers.TryGetValue(
-                    source,
-                    out HandlerCache<int, HandlerCache> sortedHandlers
-                )
-                && 0 < sortedHandlers.handlers.Count
-            )
+            if (broadcastHandlers != null && broadcastHandlers.TryGetValue(source, out HandlerCache<int, HandlerCache> sortedHandlers) && 0 < sortedHandlers.handlers.Count)
             {
                 Touch(sortedHandlers, touchTick);
                 /*
@@ -4955,13 +4161,7 @@ namespace DxMessaging.Core.MessageBus
                     fire below.
                 */
                 foundAnyHandlers = true;
-                DispatchSnapshot snapshot = AcquireDispatchSnapshotFast<TMessage>(
-                    this,
-                    sortedHandlers,
-                    BroadcastHandleSlot,
-                    emissionId,
-                    source
-                );
+                DispatchSnapshot snapshot = AcquireDispatchSnapshotFast<TMessage>(this, sortedHandlers, BroadcastHandleSlot, emissionId, source);
                 /*
                     Flat dispatch; see DispatchFlatSnapshot for the
                     frozen-array semantics that replace the legacy
@@ -4976,12 +4176,7 @@ namespace DxMessaging.Core.MessageBus
                 return;
             }
 
-            bool bwsFound = InternalBroadcastWithoutSource(
-                broadcastWithoutSourceHandleSnapshot,
-                ref source,
-                ref typedMessage,
-                emissionId
-            );
+            bool bwsFound = InternalBroadcastWithoutSource(broadcastWithoutSourceHandleSnapshot, ref source, ref typedMessage, emissionId);
 
             if (emissionResetGeneration != _resetGeneration)
             {
@@ -4995,26 +4190,13 @@ namespace DxMessaging.Core.MessageBus
             */
             if (
                 source != preInterceptorSource
-                && !TryGetContextPostRouteAtEmissionStart<TMessage>(
-                    BroadcastPostSlot,
-                    source,
-                    touchTick,
-                    emissionResetGeneration,
-                    out broadcastPostSnapshot
-                )
-                && _contextSinks[BusContextIndex.BroadcastPostProcessDefault]
-                    .TryGetValue<TMessage>(out broadcastPostHandlers)
+                && !TryGetContextPostRouteAtEmissionStart<TMessage>(BroadcastPostSlot, source, touchTick, emissionResetGeneration, out broadcastPostSnapshot)
+                && _contextSinks[BusContextIndex.BroadcastPostProcessDefault].TryGetValue<TMessage>(out broadcastPostHandlers)
                 && broadcastPostHandlers.TryGetValue(source, out broadcastPostByPriority)
                 && 0 < broadcastPostByPriority.handlers.Count
             )
             {
-                broadcastPostSnapshot = AcquireDispatchSnapshotFast<TMessage>(
-                    this,
-                    broadcastPostByPriority,
-                    BroadcastPostSlot,
-                    emissionId,
-                    source
-                );
+                broadcastPostSnapshot = AcquireDispatchSnapshotFast<TMessage>(this, broadcastPostByPriority, BroadcastPostSlot, emissionId, source);
             }
 
             if (broadcastPostSnapshot.IsInitialized)
@@ -5032,26 +4214,14 @@ namespace DxMessaging.Core.MessageBus
                 return;
             }
 
-            if (
-                broadcastWithoutSourcePostSnapshot.IsInitialized
-                && DispatchContextFlatSnapshot(
-                    broadcastWithoutSourcePostSnapshot,
-                    ref source,
-                    ref typedMessage
-                )
-            )
+            if (broadcastWithoutSourcePostSnapshot.IsInitialized && DispatchContextFlatSnapshot(broadcastWithoutSourcePostSnapshot, ref source, ref typedMessage))
             {
                 bwsFound = true;
             }
 
             if (!(foundAnyHandlers || bwsFound) && MessagingDebug.enabled)
             {
-                MessagingDebug.Log(
-                    LogLevel.Info,
-                    "Could not find a matching sourced broadcast handler for Id: {0}, Message: {1}.",
-                    source,
-                    typedMessage
-                );
+                MessagingDebug.Log(LogLevel.Info, "Could not find a matching sourced broadcast handler for Id: {0}, Message: {1}.", source, typedMessage);
             }
         }
 
@@ -5064,26 +4234,18 @@ namespace DxMessaging.Core.MessageBus
         private void RefreshBroadcastDispatchPlan<TMessage>(DispatchPlan plan)
             where TMessage : IBroadcastMessage
         {
-            _ = _contextSinks[BusContextIndex.BroadcastHandleDefault]
-                .TryGetValue<TMessage>(out ContextHandlerMap contextHandle);
-            _ = _contextSinks[BusContextIndex.BroadcastPostProcessDefault]
-                .TryGetValue<TMessage>(out ContextHandlerMap contextPost);
-            _ = _scalarSinks[BusSinkIndex.BroadcastHandleWithoutContext]
-                .TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> scalarHandle);
-            _ = _scalarSinks[BusSinkIndex.BroadcastPostProcessWithoutContext]
-                .TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> scalarPost);
+            _ = _contextSinks[BusContextIndex.BroadcastHandleDefault].TryGetValue<TMessage>(out ContextHandlerMap contextHandle);
+            _ = _contextSinks[BusContextIndex.BroadcastPostProcessDefault].TryGetValue<TMessage>(out ContextHandlerMap contextPost);
+            _ = _scalarSinks[BusSinkIndex.BroadcastHandleWithoutContext].TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> scalarHandle);
+            _ = _scalarSinks[BusSinkIndex.BroadcastPostProcessWithoutContext].TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> scalarPost);
             plan.contextHandle = contextHandle;
             plan.contextPost = contextPost;
             plan.scalarHandle = scalarHandle;
             plan.scalarPost = scalarPost;
-            _ = _broadcastInterceptsByType.TryGetValue<TMessage>(
-                out InterceptorCache<object> interceptors
-            );
+            _ = _broadcastInterceptsByType.TryGetValue<TMessage>(out InterceptorCache<object> interceptors);
             bool hasInterceptors = RefreshInterceptorPlan(plan, interceptors);
             bool hasGlobal = 0 < _globalSlots.sharedHandlers.Count;
-            bool hasPost =
-                (contextPost != null && 0 < contextPost.Count)
-                || (scalarPost != null && 0 < scalarPost.handlers.Count);
+            bool hasPost = (contextPost != null && 0 < contextPost.Count) || (scalarPost != null && 0 < scalarPost.handlers.Count);
             plan.fastPath = !hasInterceptors && !hasGlobal && !hasPost;
             plan.version = _dispatchPlanVersion;
         }
@@ -5099,12 +4261,7 @@ namespace DxMessaging.Core.MessageBus
         private void BroadcastGlobalUntargeted(ref IUntargetedMessage message, long emissionId)
         {
             long resetGeneration = _resetGeneration;
-            DispatchSnapshot snapshot = AcquireGlobalDispatchSnapshot<IUntargetedMessage>(
-                this,
-                _globalSlots,
-                DispatchKind.Untargeted,
-                emissionId
-            );
+            DispatchSnapshot snapshot = AcquireGlobalDispatchSnapshot<IUntargetedMessage>(this, _globalSlots, DispatchKind.Untargeted, emissionId);
             DispatchBucket[] buckets = snapshot.buckets;
             int bucketCount = snapshot.bucketCount;
             if (bucketCount == 0)
@@ -5208,13 +4365,7 @@ namespace DxMessaging.Core.MessageBus
 
                 for (int entryIndex = 0; entryIndex < entryCount; ++entryIndex)
                 {
-                    if (
-                        !InvokeGlobalUntargetedEntry(
-                            ref message,
-                            entries[entryIndex],
-                            resetGeneration
-                        )
-                    )
+                    if (!InvokeGlobalUntargetedEntry(ref message, entries[entryIndex], resetGeneration))
                     {
                         return;
                     }
@@ -5225,19 +4376,10 @@ namespace DxMessaging.Core.MessageBus
         // IL2CPP check elision: see BroadcastGlobalUntargeted.
         [Il2CppSetOption(Option.NullChecks, false)]
         [Il2CppSetOption(Option.ArrayBoundsChecks, false)]
-        private void BroadcastGlobalTargeted(
-            ref InstanceId target,
-            ref ITargetedMessage message,
-            long emissionId
-        )
+        private void BroadcastGlobalTargeted(ref InstanceId target, ref ITargetedMessage message, long emissionId)
         {
             long resetGeneration = _resetGeneration;
-            DispatchSnapshot snapshot = AcquireGlobalDispatchSnapshot<ITargetedMessage>(
-                this,
-                _globalSlots,
-                DispatchKind.Targeted,
-                emissionId
-            );
+            DispatchSnapshot snapshot = AcquireGlobalDispatchSnapshot<ITargetedMessage>(this, _globalSlots, DispatchKind.Targeted, emissionId);
             DispatchBucket[] buckets = snapshot.buckets;
             int bucketCount = snapshot.bucketCount;
             if (bucketCount == 0)
@@ -5259,14 +4401,7 @@ namespace DxMessaging.Core.MessageBus
                 {
                     case 1:
                     {
-                        if (
-                            !InvokeGlobalTargetedEntry(
-                                ref target,
-                                ref message,
-                                entries[0],
-                                resetGeneration
-                            )
-                        )
+                        if (!InvokeGlobalTargetedEntry(ref target, ref message, entries[0], resetGeneration))
                         {
                             return;
                         }
@@ -5274,25 +4409,11 @@ namespace DxMessaging.Core.MessageBus
                     }
                     case 2:
                     {
-                        if (
-                            !InvokeGlobalTargetedEntry(
-                                ref target,
-                                ref message,
-                                entries[0],
-                                resetGeneration
-                            )
-                        )
+                        if (!InvokeGlobalTargetedEntry(ref target, ref message, entries[0], resetGeneration))
                         {
                             return;
                         }
-                        if (
-                            !InvokeGlobalTargetedEntry(
-                                ref target,
-                                ref message,
-                                entries[1],
-                                resetGeneration
-                            )
-                        )
+                        if (!InvokeGlobalTargetedEntry(ref target, ref message, entries[1], resetGeneration))
                         {
                             return;
                         }
@@ -5300,36 +4421,15 @@ namespace DxMessaging.Core.MessageBus
                     }
                     case 3:
                     {
-                        if (
-                            !InvokeGlobalTargetedEntry(
-                                ref target,
-                                ref message,
-                                entries[0],
-                                resetGeneration
-                            )
-                        )
+                        if (!InvokeGlobalTargetedEntry(ref target, ref message, entries[0], resetGeneration))
                         {
                             return;
                         }
-                        if (
-                            !InvokeGlobalTargetedEntry(
-                                ref target,
-                                ref message,
-                                entries[1],
-                                resetGeneration
-                            )
-                        )
+                        if (!InvokeGlobalTargetedEntry(ref target, ref message, entries[1], resetGeneration))
                         {
                             return;
                         }
-                        if (
-                            !InvokeGlobalTargetedEntry(
-                                ref target,
-                                ref message,
-                                entries[2],
-                                resetGeneration
-                            )
-                        )
+                        if (!InvokeGlobalTargetedEntry(ref target, ref message, entries[2], resetGeneration))
                         {
                             return;
                         }
@@ -5337,47 +4437,19 @@ namespace DxMessaging.Core.MessageBus
                     }
                     case 4:
                     {
-                        if (
-                            !InvokeGlobalTargetedEntry(
-                                ref target,
-                                ref message,
-                                entries[0],
-                                resetGeneration
-                            )
-                        )
+                        if (!InvokeGlobalTargetedEntry(ref target, ref message, entries[0], resetGeneration))
                         {
                             return;
                         }
-                        if (
-                            !InvokeGlobalTargetedEntry(
-                                ref target,
-                                ref message,
-                                entries[1],
-                                resetGeneration
-                            )
-                        )
+                        if (!InvokeGlobalTargetedEntry(ref target, ref message, entries[1], resetGeneration))
                         {
                             return;
                         }
-                        if (
-                            !InvokeGlobalTargetedEntry(
-                                ref target,
-                                ref message,
-                                entries[2],
-                                resetGeneration
-                            )
-                        )
+                        if (!InvokeGlobalTargetedEntry(ref target, ref message, entries[2], resetGeneration))
                         {
                             return;
                         }
-                        if (
-                            !InvokeGlobalTargetedEntry(
-                                ref target,
-                                ref message,
-                                entries[3],
-                                resetGeneration
-                            )
-                        )
+                        if (!InvokeGlobalTargetedEntry(ref target, ref message, entries[3], resetGeneration))
                         {
                             return;
                         }
@@ -5385,58 +4457,23 @@ namespace DxMessaging.Core.MessageBus
                     }
                     case 5:
                     {
-                        if (
-                            !InvokeGlobalTargetedEntry(
-                                ref target,
-                                ref message,
-                                entries[0],
-                                resetGeneration
-                            )
-                        )
+                        if (!InvokeGlobalTargetedEntry(ref target, ref message, entries[0], resetGeneration))
                         {
                             return;
                         }
-                        if (
-                            !InvokeGlobalTargetedEntry(
-                                ref target,
-                                ref message,
-                                entries[1],
-                                resetGeneration
-                            )
-                        )
+                        if (!InvokeGlobalTargetedEntry(ref target, ref message, entries[1], resetGeneration))
                         {
                             return;
                         }
-                        if (
-                            !InvokeGlobalTargetedEntry(
-                                ref target,
-                                ref message,
-                                entries[2],
-                                resetGeneration
-                            )
-                        )
+                        if (!InvokeGlobalTargetedEntry(ref target, ref message, entries[2], resetGeneration))
                         {
                             return;
                         }
-                        if (
-                            !InvokeGlobalTargetedEntry(
-                                ref target,
-                                ref message,
-                                entries[3],
-                                resetGeneration
-                            )
-                        )
+                        if (!InvokeGlobalTargetedEntry(ref target, ref message, entries[3], resetGeneration))
                         {
                             return;
                         }
-                        if (
-                            !InvokeGlobalTargetedEntry(
-                                ref target,
-                                ref message,
-                                entries[4],
-                                resetGeneration
-                            )
-                        )
+                        if (!InvokeGlobalTargetedEntry(ref target, ref message, entries[4], resetGeneration))
                         {
                             return;
                         }
@@ -5446,14 +4483,7 @@ namespace DxMessaging.Core.MessageBus
 
                 for (int entryIndex = 0; entryIndex < entryCount; ++entryIndex)
                 {
-                    if (
-                        !InvokeGlobalTargetedEntry(
-                            ref target,
-                            ref message,
-                            entries[entryIndex],
-                            resetGeneration
-                        )
-                    )
+                    if (!InvokeGlobalTargetedEntry(ref target, ref message, entries[entryIndex], resetGeneration))
                     {
                         return;
                     }
@@ -5464,19 +4494,10 @@ namespace DxMessaging.Core.MessageBus
         // IL2CPP check elision: see BroadcastGlobalUntargeted.
         [Il2CppSetOption(Option.NullChecks, false)]
         [Il2CppSetOption(Option.ArrayBoundsChecks, false)]
-        private void BroadcastGlobalSourcedBroadcast(
-            ref InstanceId source,
-            ref IBroadcastMessage message,
-            long emissionId
-        )
+        private void BroadcastGlobalSourcedBroadcast(ref InstanceId source, ref IBroadcastMessage message, long emissionId)
         {
             long resetGeneration = _resetGeneration;
-            DispatchSnapshot snapshot = AcquireGlobalDispatchSnapshot<IBroadcastMessage>(
-                this,
-                _globalSlots,
-                DispatchKind.Broadcast,
-                emissionId
-            );
+            DispatchSnapshot snapshot = AcquireGlobalDispatchSnapshot<IBroadcastMessage>(this, _globalSlots, DispatchKind.Broadcast, emissionId);
             DispatchBucket[] buckets = snapshot.buckets;
             int bucketCount = snapshot.bucketCount;
             if (bucketCount == 0)
@@ -5498,14 +4519,7 @@ namespace DxMessaging.Core.MessageBus
                 {
                     case 1:
                     {
-                        if (
-                            !InvokeGlobalBroadcastEntry(
-                                ref source,
-                                ref message,
-                                entries[0],
-                                resetGeneration
-                            )
-                        )
+                        if (!InvokeGlobalBroadcastEntry(ref source, ref message, entries[0], resetGeneration))
                         {
                             return;
                         }
@@ -5513,25 +4527,11 @@ namespace DxMessaging.Core.MessageBus
                     }
                     case 2:
                     {
-                        if (
-                            !InvokeGlobalBroadcastEntry(
-                                ref source,
-                                ref message,
-                                entries[0],
-                                resetGeneration
-                            )
-                        )
+                        if (!InvokeGlobalBroadcastEntry(ref source, ref message, entries[0], resetGeneration))
                         {
                             return;
                         }
-                        if (
-                            !InvokeGlobalBroadcastEntry(
-                                ref source,
-                                ref message,
-                                entries[1],
-                                resetGeneration
-                            )
-                        )
+                        if (!InvokeGlobalBroadcastEntry(ref source, ref message, entries[1], resetGeneration))
                         {
                             return;
                         }
@@ -5539,36 +4539,15 @@ namespace DxMessaging.Core.MessageBus
                     }
                     case 3:
                     {
-                        if (
-                            !InvokeGlobalBroadcastEntry(
-                                ref source,
-                                ref message,
-                                entries[0],
-                                resetGeneration
-                            )
-                        )
+                        if (!InvokeGlobalBroadcastEntry(ref source, ref message, entries[0], resetGeneration))
                         {
                             return;
                         }
-                        if (
-                            !InvokeGlobalBroadcastEntry(
-                                ref source,
-                                ref message,
-                                entries[1],
-                                resetGeneration
-                            )
-                        )
+                        if (!InvokeGlobalBroadcastEntry(ref source, ref message, entries[1], resetGeneration))
                         {
                             return;
                         }
-                        if (
-                            !InvokeGlobalBroadcastEntry(
-                                ref source,
-                                ref message,
-                                entries[2],
-                                resetGeneration
-                            )
-                        )
+                        if (!InvokeGlobalBroadcastEntry(ref source, ref message, entries[2], resetGeneration))
                         {
                             return;
                         }
@@ -5576,47 +4555,19 @@ namespace DxMessaging.Core.MessageBus
                     }
                     case 4:
                     {
-                        if (
-                            !InvokeGlobalBroadcastEntry(
-                                ref source,
-                                ref message,
-                                entries[0],
-                                resetGeneration
-                            )
-                        )
+                        if (!InvokeGlobalBroadcastEntry(ref source, ref message, entries[0], resetGeneration))
                         {
                             return;
                         }
-                        if (
-                            !InvokeGlobalBroadcastEntry(
-                                ref source,
-                                ref message,
-                                entries[1],
-                                resetGeneration
-                            )
-                        )
+                        if (!InvokeGlobalBroadcastEntry(ref source, ref message, entries[1], resetGeneration))
                         {
                             return;
                         }
-                        if (
-                            !InvokeGlobalBroadcastEntry(
-                                ref source,
-                                ref message,
-                                entries[2],
-                                resetGeneration
-                            )
-                        )
+                        if (!InvokeGlobalBroadcastEntry(ref source, ref message, entries[2], resetGeneration))
                         {
                             return;
                         }
-                        if (
-                            !InvokeGlobalBroadcastEntry(
-                                ref source,
-                                ref message,
-                                entries[3],
-                                resetGeneration
-                            )
-                        )
+                        if (!InvokeGlobalBroadcastEntry(ref source, ref message, entries[3], resetGeneration))
                         {
                             return;
                         }
@@ -5624,58 +4575,23 @@ namespace DxMessaging.Core.MessageBus
                     }
                     case 5:
                     {
-                        if (
-                            !InvokeGlobalBroadcastEntry(
-                                ref source,
-                                ref message,
-                                entries[0],
-                                resetGeneration
-                            )
-                        )
+                        if (!InvokeGlobalBroadcastEntry(ref source, ref message, entries[0], resetGeneration))
                         {
                             return;
                         }
-                        if (
-                            !InvokeGlobalBroadcastEntry(
-                                ref source,
-                                ref message,
-                                entries[1],
-                                resetGeneration
-                            )
-                        )
+                        if (!InvokeGlobalBroadcastEntry(ref source, ref message, entries[1], resetGeneration))
                         {
                             return;
                         }
-                        if (
-                            !InvokeGlobalBroadcastEntry(
-                                ref source,
-                                ref message,
-                                entries[2],
-                                resetGeneration
-                            )
-                        )
+                        if (!InvokeGlobalBroadcastEntry(ref source, ref message, entries[2], resetGeneration))
                         {
                             return;
                         }
-                        if (
-                            !InvokeGlobalBroadcastEntry(
-                                ref source,
-                                ref message,
-                                entries[3],
-                                resetGeneration
-                            )
-                        )
+                        if (!InvokeGlobalBroadcastEntry(ref source, ref message, entries[3], resetGeneration))
                         {
                             return;
                         }
-                        if (
-                            !InvokeGlobalBroadcastEntry(
-                                ref source,
-                                ref message,
-                                entries[4],
-                                resetGeneration
-                            )
-                        )
+                        if (!InvokeGlobalBroadcastEntry(ref source, ref message, entries[4], resetGeneration))
                         {
                             return;
                         }
@@ -5685,14 +4601,7 @@ namespace DxMessaging.Core.MessageBus
 
                 for (int entryIndex = 0; entryIndex < entryCount; ++entryIndex)
                 {
-                    if (
-                        !InvokeGlobalBroadcastEntry(
-                            ref source,
-                            ref message,
-                            entries[entryIndex],
-                            resetGeneration
-                        )
-                    )
+                    if (!InvokeGlobalBroadcastEntry(ref source, ref message, entries[entryIndex], resetGeneration))
                     {
                         return;
                     }
@@ -5728,9 +4637,7 @@ namespace DxMessaging.Core.MessageBus
             long resetGeneration = _resetGeneration;
             for (int index = 0; index < count; ++index)
             {
-                UntargetedInterceptor<T> typedTransformer = DxUnsafe.As<UntargetedInterceptor<T>>(
-                    interceptors[index]
-                );
+                UntargetedInterceptor<T> typedTransformer = DxUnsafe.As<UntargetedInterceptor<T>>(interceptors[index]);
                 if (!typedTransformer(ref message) || _resetGeneration != resetGeneration)
                 {
                     return false;
@@ -5747,24 +4654,15 @@ namespace DxMessaging.Core.MessageBus
         /// </summary>
         [Il2CppSetOption(Option.NullChecks, false)]
         [Il2CppSetOption(Option.ArrayBoundsChecks, false)]
-        private bool RunTargetedInterceptors<T>(
-            ref T message,
-            ref InstanceId target,
-            InterceptorCache<object> cache
-        )
+        private bool RunTargetedInterceptors<T>(ref T message, ref InstanceId target, InterceptorCache<object> cache)
             where T : ITargetedMessage
         {
             object[] interceptors = cache.EnsureFlat(out int count);
             long resetGeneration = _resetGeneration;
             for (int index = 0; index < count; ++index)
             {
-                TargetedInterceptor<T> typedTransformer = DxUnsafe.As<TargetedInterceptor<T>>(
-                    interceptors[index]
-                );
-                if (
-                    !typedTransformer(ref target, ref message)
-                    || _resetGeneration != resetGeneration
-                )
+                TargetedInterceptor<T> typedTransformer = DxUnsafe.As<TargetedInterceptor<T>>(interceptors[index]);
+                if (!typedTransformer(ref target, ref message) || _resetGeneration != resetGeneration)
                 {
                     return false;
                 }
@@ -5780,24 +4678,15 @@ namespace DxMessaging.Core.MessageBus
         /// </summary>
         [Il2CppSetOption(Option.NullChecks, false)]
         [Il2CppSetOption(Option.ArrayBoundsChecks, false)]
-        private bool RunBroadcastInterceptors<T>(
-            ref T message,
-            ref InstanceId source,
-            InterceptorCache<object> cache
-        )
+        private bool RunBroadcastInterceptors<T>(ref T message, ref InstanceId source, InterceptorCache<object> cache)
             where T : IBroadcastMessage
         {
             object[] interceptors = cache.EnsureFlat(out int count);
             long resetGeneration = _resetGeneration;
             for (int index = 0; index < count; ++index)
             {
-                BroadcastInterceptor<T> typedTransformer = DxUnsafe.As<BroadcastInterceptor<T>>(
-                    interceptors[index]
-                );
-                if (
-                    !typedTransformer(ref source, ref message)
-                    || _resetGeneration != resetGeneration
-                )
+                BroadcastInterceptor<T> typedTransformer = DxUnsafe.As<BroadcastInterceptor<T>>(interceptors[index]);
+                if (!typedTransformer(ref source, ref message) || _resetGeneration != resetGeneration)
                 {
                     return false;
                 }
@@ -5809,8 +4698,7 @@ namespace DxMessaging.Core.MessageBus
         private bool InternalUntargetedBroadcast<TMessage>(ref TMessage message, long emissionId)
             where TMessage : IUntargetedMessage
         {
-            _ = _scalarSinks[BusSinkIndex.UntargetedHandleDefault]
-                .TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> sortedHandlers);
+            _ = _scalarSinks[BusSinkIndex.UntargetedHandleDefault].TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> sortedHandlers);
             return DispatchUntargetedHandlePhase(sortedHandlers, ref message, emissionId);
         }
 
@@ -5821,11 +4709,7 @@ namespace DxMessaging.Core.MessageBus
         /// the sink first (see <see cref="InternalUntargetedBroadcast{TMessage}"/>).
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool DispatchUntargetedHandlePhase<TMessage>(
-            HandlerCache<int, HandlerCache> sortedHandlers,
-            ref TMessage message,
-            long emissionId
-        )
+        private bool DispatchUntargetedHandlePhase<TMessage>(HandlerCache<int, HandlerCache> sortedHandlers, ref TMessage message, long emissionId)
             where TMessage : IUntargetedMessage
         {
             if (sortedHandlers == null || sortedHandlers.handlers.Count == 0)
@@ -5833,13 +4717,7 @@ namespace DxMessaging.Core.MessageBus
                 return false;
             }
 
-            DispatchSnapshot snapshot = AcquireDispatchSnapshotFast<TMessage>(
-                this,
-                sortedHandlers,
-                UntargetedHandleSlot,
-                emissionId,
-                default
-            );
+            DispatchSnapshot snapshot = AcquireDispatchSnapshotFast<TMessage>(this, sortedHandlers, UntargetedHandleSlot, emissionId, default);
 
             /*
                 Flat dispatch; see DispatchFlatSnapshot for the frozen-array
@@ -5870,8 +4748,7 @@ namespace DxMessaging.Core.MessageBus
         {
             if (!sinkResolved)
             {
-                _ = _scalarSinks[BusSinkIndex.TargetedHandleWithoutContext]
-                    .TryGetValue<TMessage>(out sortedHandlers);
+                _ = _scalarSinks[BusSinkIndex.TargetedHandleWithoutContext].TryGetValue<TMessage>(out sortedHandlers);
             }
 
             if (sortedHandlers == null || sortedHandlers.handlers.Count == 0)
@@ -5879,13 +4756,7 @@ namespace DxMessaging.Core.MessageBus
                 return false;
             }
 
-            DispatchSnapshot snapshot = AcquireDispatchSnapshotFast<TMessage>(
-                this,
-                sortedHandlers,
-                TargetedWithoutContextHandleSlot,
-                emissionId,
-                default
-            );
+            DispatchSnapshot snapshot = AcquireDispatchSnapshotFast<TMessage>(this, sortedHandlers, TargetedWithoutContextHandleSlot, emissionId, default);
 
             /*
                 Flat dispatch; see DispatchContextFlatSnapshot for the
@@ -5896,17 +4767,11 @@ namespace DxMessaging.Core.MessageBus
             return DispatchContextFlatSnapshot(snapshot, ref target, ref message);
         }
 
-        private bool InternalBroadcastWithoutSource<TMessage>(
-            DispatchSnapshot prefrozenSnapshot,
-            ref InstanceId source,
-            ref TMessage message,
-            long emissionId
-        )
+        private bool InternalBroadcastWithoutSource<TMessage>(DispatchSnapshot prefrozenSnapshot, ref InstanceId source, ref TMessage message, long emissionId)
             where TMessage : IBroadcastMessage
         {
             if (
-                !_scalarSinks[BusSinkIndex.BroadcastHandleWithoutContext]
-                    .TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> sortedHandlers)
+                !_scalarSinks[BusSinkIndex.BroadcastHandleWithoutContext].TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> sortedHandlers)
                 || sortedHandlers.handlers.Count == 0
             )
             {
@@ -5925,13 +4790,7 @@ namespace DxMessaging.Core.MessageBus
                 earlier in this emission into a previously-empty sink fires.
             */
             DispatchSnapshot snapshot = !prefrozenSnapshot.IsInitialized
-                ? AcquireDispatchSnapshotFast<TMessage>(
-                    this,
-                    sortedHandlers,
-                    BroadcastWithoutContextHandleSlot,
-                    emissionId,
-                    default
-                )
+                ? AcquireDispatchSnapshotFast<TMessage>(this, sortedHandlers, BroadcastWithoutContextHandleSlot, emissionId, default)
                 : prefrozenSnapshot;
             _ = DispatchContextFlatSnapshot(snapshot, ref source, ref message);
             /*
@@ -5990,21 +4849,11 @@ namespace DxMessaging.Core.MessageBus
                     NOT move it.
                 */
                 cache.insertionOrder.Add(messageHandler);
-                cache.highWaterDistinctHandlers = Math.Max(
-                    cache.highWaterDistinctHandlers,
-                    cache.insertionOrder.Count
-                );
+                cache.highWaterDistinctHandlers = Math.Max(cache.highWaterDistinctHandlers, cache.insertionOrder.Count);
             }
             StageDispatchSnapshot<T>(this, capturedHandlers, slotKey);
             Type type = typeof(T);
-            _log?.Log(
-                new MessagingRegistration(
-                    handlerOwnerId,
-                    type,
-                    RegistrationType.Register,
-                    registrationMethod
-                )
-            );
+            _log?.Log(new MessagingRegistration(handlerOwnerId, type, RegistrationType.Register, registrationMethod));
 
             long capturedGeneration = _resetGeneration;
             return new MessageBusRegistration(
@@ -6041,8 +4890,7 @@ namespace DxMessaging.Core.MessageBus
             }
 
             MessageHandler messageHandler = (MessageHandler)reg.payload;
-            HandlerCache<int, HandlerCache> capturedHandlers =
-                (HandlerCache<int, HandlerCache>)reg.capturedPrimary;
+            HandlerCache<int, HandlerCache> capturedHandlers = (HandlerCache<int, HandlerCache>)reg.capturedPrimary;
             int priority = reg.priority;
             RegistrationMethod registrationMethod = reg.method;
             SlotKey slotKey = RegistrationMethodAxes.GetSlotKey(registrationMethod);
@@ -6066,19 +4914,9 @@ namespace DxMessaging.Core.MessageBus
                 below can invoke message formatting and the configured debug log receiver. The
                 caller still owns exception handling for its IMessageBus.Deregister boundary.
             */
-            if (
-                capturedHandlers.handlers.TryGetValue(priority, out HandlerCache cache)
-                && cache.handlers.TryGetValue(messageHandler, out int count)
-            )
+            if (capturedHandlers.handlers.TryGetValue(priority, out HandlerCache cache) && cache.handlers.TryGetValue(messageHandler, out int count))
             {
-                _log?.Log(
-                    new MessagingRegistration(
-                        handlerOwnerId,
-                        type,
-                        RegistrationType.Deregister,
-                        registrationMethod
-                    )
-                );
+                _log?.Log(new MessagingRegistration(handlerOwnerId, type, RegistrationType.Deregister, registrationMethod));
                 Touch(capturedHandlers, deregisterTouchTick);
                 capturedHandlers.version++;
                 cache.version++;
@@ -6134,14 +4972,9 @@ namespace DxMessaging.Core.MessageBus
                 silent stale-after-sweep no-op versus a genuine over-deregistration. Rare path; not
                 on the steady deregistration cost.
             */
-            MessageCache<HandlerCache<int, HandlerCache>> sinks = ScalarSinkForMethod(
-                registrationMethod
-            );
+            MessageCache<HandlerCache<int, HandlerCache>> sinks = ScalarSinkForMethod(registrationMethod);
             _ = sinks.TryGetValue<T>(out HandlerCache<int, HandlerCache> handlers);
-            if (
-                capturedHandlers.handlers.Count == 0
-                && !ReferenceEquals(handlers, capturedHandlers)
-            )
+            if (capturedHandlers.handlers.Count == 0 && !ReferenceEquals(handlers, capturedHandlers))
             {
                 return;
             }
@@ -6176,12 +5009,7 @@ namespace DxMessaging.Core.MessageBus
             ContextHandlerMap broadcastHandlers = GetOrRentContextMap<T>(sinks);
             SlotKey slotKey = RegistrationMethodAxes.GetSlotKey(registrationMethod);
 
-            if (
-                !broadcastHandlers.TryGetValue(
-                    context,
-                    out HandlerCache<int, HandlerCache> handlers
-                )
-            )
+            if (!broadcastHandlers.TryGetValue(context, out HandlerCache<int, HandlerCache> handlers))
             {
                 handlers = new HandlerCache<int, HandlerCache>();
                 broadcastHandlers[context] = handlers;
@@ -6219,21 +5047,11 @@ namespace DxMessaging.Core.MessageBus
                     NOT move it.
                 */
                 cache.insertionOrder.Add(messageHandler);
-                cache.highWaterDistinctHandlers = Math.Max(
-                    cache.highWaterDistinctHandlers,
-                    cache.insertionOrder.Count
-                );
+                cache.highWaterDistinctHandlers = Math.Max(cache.highWaterDistinctHandlers, cache.insertionOrder.Count);
             }
 
             Type type = typeof(T);
-            _log?.Log(
-                new MessagingRegistration(
-                    context,
-                    type,
-                    RegistrationType.Register,
-                    registrationMethod
-                )
-            );
+            _log?.Log(new MessagingRegistration(context, type, RegistrationType.Register, registrationMethod));
             StageDispatchSnapshot<T>(this, handlers, slotKey);
 
             long capturedGeneration = _resetGeneration;
@@ -6270,8 +5088,7 @@ namespace DxMessaging.Core.MessageBus
             }
 
             MessageHandler messageHandler = (MessageHandler)reg.payload;
-            HandlerCache<int, HandlerCache> capturedHandlers =
-                (HandlerCache<int, HandlerCache>)reg.capturedPrimary;
+            HandlerCache<int, HandlerCache> capturedHandlers = (HandlerCache<int, HandlerCache>)reg.capturedPrimary;
             InstanceId context = reg.context;
             int priority = reg.priority;
             RegistrationMethod registrationMethod = reg.method;
@@ -6289,25 +5106,10 @@ namespace DxMessaging.Core.MessageBus
                 EMPTY caches, so a found handler is never in a swept/detached cache). Throw-safe:
                 no user callback runs here.
             */
-            if (
-                capturedHandlers.handlers.TryGetValue(priority, out HandlerCache cache)
-                && cache.handlers.TryGetValue(messageHandler, out int count)
-            )
+            if (capturedHandlers.handlers.TryGetValue(priority, out HandlerCache cache) && cache.handlers.TryGetValue(messageHandler, out int count))
             {
-                CaptureContextPostRouteBeforeMutation<T>(
-                    capturedHandlers,
-                    slotKey,
-                    context,
-                    deregisterTouchTick
-                );
-                _log?.Log(
-                    new MessagingRegistration(
-                        context,
-                        type,
-                        RegistrationType.Deregister,
-                        registrationMethod
-                    )
-                );
+                CaptureContextPostRouteBeforeMutation<T>(capturedHandlers, slotKey, context, deregisterTouchTick);
+                _log?.Log(new MessagingRegistration(context, type, RegistrationType.Deregister, registrationMethod));
                 Touch(capturedHandlers, deregisterTouchTick);
                 cache.version++;
                 Dictionary<MessageHandler, int> handler = cache.handlers;
@@ -6436,8 +5238,7 @@ namespace DxMessaging.Core.MessageBus
                 return;
             }
 
-            InterceptorCache<object> capturedInterceptors =
-                (InterceptorCache<object>)reg.capturedPrimary;
+            InterceptorCache<object> capturedInterceptors = (InterceptorCache<object>)reg.capturedPrimary;
             object interceptor = reg.payload;
             int priority = reg.priority;
 
@@ -6450,21 +5251,9 @@ namespace DxMessaging.Core.MessageBus
             InvalidateDispatchPlans();
             capturedInterceptors.lastTouchTicks = _tickCounter;
             MarkDirtyType<T>();
-            _log?.Log(
-                new MessagingRegistration(
-                    InstanceId.EmptyId,
-                    typeof(T),
-                    RegistrationType.Deregister,
-                    RegistrationMethod.Interceptor
-                )
-            );
+            _log?.Log(new MessagingRegistration(InstanceId.EmptyId, typeof(T), RegistrationType.Deregister, RegistrationMethod.Interceptor));
             bool removed = false;
-            if (
-                _uniqueInterceptorsAndPriorities.TryGetValue(
-                    interceptor,
-                    out Dictionary<int, int> priorityCount
-                )
-            )
+            if (_uniqueInterceptorsAndPriorities.TryGetValue(interceptor, out Dictionary<int, int> priorityCount))
             {
                 if (priorityCount.TryGetValue(priority, out int count))
                 {
@@ -6494,19 +5283,9 @@ namespace DxMessaging.Core.MessageBus
             }
 
             bool complete = false;
-            if (
-                removed
-                && interceptsByType.TryGetValue<T>(
-                    out InterceptorCache<object> prioritizedInterceptors
-                )
-            )
+            if (removed && interceptsByType.TryGetValue<T>(out InterceptorCache<object> prioritizedInterceptors))
             {
-                if (
-                    prioritizedInterceptors.handlers.TryGetValue(
-                        priority,
-                        out List<object> interceptors
-                    )
-                )
+                if (prioritizedInterceptors.handlers.TryGetValue(priority, out List<object> interceptors))
                 {
                     complete = interceptors.Remove(interceptor);
                     if (interceptors.Count == 0)
@@ -6541,10 +5320,7 @@ namespace DxMessaging.Core.MessageBus
         private static bool IsContextMethod(RegistrationMethod method) =>
             method switch
             {
-                RegistrationMethod.Targeted
-                or RegistrationMethod.Broadcast
-                or RegistrationMethod.TargetedPostProcessor
-                or RegistrationMethod.BroadcastPostProcessor => true,
+                RegistrationMethod.Targeted or RegistrationMethod.Broadcast or RegistrationMethod.TargetedPostProcessor or RegistrationMethod.BroadcastPostProcessor => true,
                 _ => false,
             };
 
@@ -6553,32 +5329,16 @@ namespace DxMessaging.Core.MessageBus
         /// <c>_scalarSinks[BusSinkIndex.UntargetedHandleDefault]</c>): maps a scalar handler method
         /// back to its sink so <see cref="DeregisterScalarHandler{T}"/> can re-resolve it.
         /// </summary>
-        private MessageCache<HandlerCache<int, HandlerCache>> ScalarSinkForMethod(
-            RegistrationMethod method
-        ) =>
+        private MessageCache<HandlerCache<int, HandlerCache>> ScalarSinkForMethod(RegistrationMethod method) =>
             method switch
             {
                 RegistrationMethod.Untargeted => _scalarSinks[BusSinkIndex.UntargetedHandleDefault],
-                RegistrationMethod.BroadcastWithoutSource => _scalarSinks[
-                    BusSinkIndex.BroadcastHandleWithoutContext
-                ],
-                RegistrationMethod.TargetedWithoutTargeting => _scalarSinks[
-                    BusSinkIndex.TargetedHandleWithoutContext
-                ],
-                RegistrationMethod.UntargetedPostProcessor => _scalarSinks[
-                    BusSinkIndex.UntargetedPostProcessDefault
-                ],
-                RegistrationMethod.TargetedWithoutTargetingPostProcessor => _scalarSinks[
-                    BusSinkIndex.TargetedPostProcessWithoutContext
-                ],
-                RegistrationMethod.BroadcastWithoutSourcePostProcessor => _scalarSinks[
-                    BusSinkIndex.BroadcastPostProcessWithoutContext
-                ],
-                _ => throw new ArgumentOutOfRangeException(
-                    nameof(method),
-                    method,
-                    "Not a scalar handler registration method."
-                ),
+                RegistrationMethod.BroadcastWithoutSource => _scalarSinks[BusSinkIndex.BroadcastHandleWithoutContext],
+                RegistrationMethod.TargetedWithoutTargeting => _scalarSinks[BusSinkIndex.TargetedHandleWithoutContext],
+                RegistrationMethod.UntargetedPostProcessor => _scalarSinks[BusSinkIndex.UntargetedPostProcessDefault],
+                RegistrationMethod.TargetedWithoutTargetingPostProcessor => _scalarSinks[BusSinkIndex.TargetedPostProcessWithoutContext],
+                RegistrationMethod.BroadcastWithoutSourcePostProcessor => _scalarSinks[BusSinkIndex.BroadcastPostProcessWithoutContext],
+                _ => throw new ArgumentOutOfRangeException(nameof(method), method, "Not a scalar handler registration method."),
             };
 
         /// <summary>
@@ -6589,75 +5349,39 @@ namespace DxMessaging.Core.MessageBus
             method switch
             {
                 RegistrationMethod.Targeted => _contextSinks[BusContextIndex.TargetedHandleDefault],
-                RegistrationMethod.Broadcast => _contextSinks[
-                    BusContextIndex.BroadcastHandleDefault
-                ],
-                RegistrationMethod.TargetedPostProcessor => _contextSinks[
-                    BusContextIndex.TargetedPostProcessDefault
-                ],
-                RegistrationMethod.BroadcastPostProcessor => _contextSinks[
-                    BusContextIndex.BroadcastPostProcessDefault
-                ],
-                _ => throw new ArgumentOutOfRangeException(
-                    nameof(method),
-                    method,
-                    "Not a context handler registration method."
-                ),
+                RegistrationMethod.Broadcast => _contextSinks[BusContextIndex.BroadcastHandleDefault],
+                RegistrationMethod.TargetedPostProcessor => _contextSinks[BusContextIndex.TargetedPostProcessDefault],
+                RegistrationMethod.BroadcastPostProcessor => _contextSinks[BusContextIndex.BroadcastPostProcessDefault],
+                _ => throw new ArgumentOutOfRangeException(nameof(method), method, "Not a context handler registration method."),
             };
 
-        private static bool IsStaleContextDeregisterAfterSweep<T>(
-            MessageCache<ContextHandlerMap> sinks,
-            InstanceId context,
-            HandlerCache<int, HandlerCache> capturedHandlers
-        )
+        private static bool IsStaleContextDeregisterAfterSweep<T>(MessageCache<ContextHandlerMap> sinks, InstanceId context, HandlerCache<int, HandlerCache> capturedHandlers)
             where T : IMessage
         {
             return capturedHandlers.handlers.Count == 0
                 && (
                     !sinks.TryGetValue<T>(out ContextHandlerMap currentByContext)
-                    || !currentByContext.TryGetValue(
-                        context,
-                        out HandlerCache<int, HandlerCache> currentHandlers
-                    )
+                    || !currentByContext.TryGetValue(context, out HandlerCache<int, HandlerCache> currentHandlers)
                     || !ReferenceEquals(currentHandlers, capturedHandlers)
                 );
         }
 
-        private void CaptureContextPostRouteBeforeMutation<TMessage>(
-            HandlerCache<int, HandlerCache> handlers,
-            SlotKey slotKey,
-            InstanceId context,
-            long mutationTick
-        )
+        private void CaptureContextPostRouteBeforeMutation<TMessage>(HandlerCache<int, HandlerCache> handlers, SlotKey slotKey, InstanceId context, long mutationTick)
             where TMessage : IMessage
         {
-            if (
-                _dispatchDepth == 0
-                || slotKey == SlotKey.None
-                || slotKey.Phase != DispatchPhase.PostProcess
-                || slotKey.Variant != DispatchVariant.Default
-            )
+            if (_dispatchDepth == 0 || slotKey == SlotKey.None || slotKey.Phase != DispatchPhase.PostProcess || slotKey.Variant != DispatchVariant.Default)
             {
                 return;
             }
 
-            List<PostRouteSnapshotHistoryEntry> history = _postRouteSnapshotHistory ??=
-                new List<PostRouteSnapshotHistoryEntry>();
+            List<PostRouteSnapshotHistoryEntry> history = _postRouteSnapshotHistory ??= new List<PostRouteSnapshotHistoryEntry>();
             int messageTypeIndex = MessageHelperIndexer<TMessage>.SequentialId;
             for (int i = history.Count - 1; 0 <= i; --i)
             {
                 PostRouteSnapshotHistoryEntry entry = history[i];
-                if (
-                    entry.resetGeneration == _resetGeneration
-                    && entry.messageTypeIndex == messageTypeIndex
-                    && entry.slotKey == slotKey
-                    && entry.context == context
-                )
+                if (entry.resetGeneration == _resetGeneration && entry.messageTypeIndex == messageTypeIndex && entry.slotKey == slotKey && entry.context == context)
                 {
-                    if (
-                        entry.captureEmissionId == _scopedEmissionId
-                        && entry.captureDispatchDepth == _dispatchDepth
-                    )
+                    if (entry.captureEmissionId == _scopedEmissionId && entry.captureDispatchDepth == _dispatchDepth)
                     {
                         return;
                     }
@@ -6676,12 +5400,7 @@ namespace DxMessaging.Core.MessageBus
             history.Add(default);
             try
             {
-                DispatchSnapshot snapshot = BuildDispatchSnapshot<TMessage>(
-                    this,
-                    handlers,
-                    slotKey,
-                    context
-                );
+                DispatchSnapshot snapshot = BuildDispatchSnapshot<TMessage>(this, handlers, slotKey, context);
                 history[entryIndex] = new PostRouteSnapshotHistoryEntry(
                     _resetGeneration,
                     messageTypeIndex,
@@ -6748,10 +5467,7 @@ namespace DxMessaging.Core.MessageBus
             return false;
         }
 
-        private void CompactPostRouteSnapshotHistoryForParent(
-            long parentEmissionId,
-            int parentDispatchDepth
-        )
+        private void CompactPostRouteSnapshotHistoryForParent(long parentEmissionId, int parentDispatchDepth)
         {
             List<PostRouteSnapshotHistoryEntry> history = _postRouteSnapshotHistory;
             int count = history.Count;
@@ -6791,15 +5507,8 @@ namespace DxMessaging.Core.MessageBus
                         continue;
                     }
 
-                    PostRouteKey route = new PostRouteKey(
-                        entry.messageTypeIndex,
-                        entry.slotKey,
-                        entry.context
-                    );
-                    if (
-                        entry.captureDispatchDepth == parentDispatchDepth
-                        && entry.captureEmissionId == parentEmissionId
-                    )
+                    PostRouteKey route = new PostRouteKey(entry.messageTypeIndex, entry.slotKey, entry.context);
+                    if (entry.captureDispatchDepth == parentDispatchDepth && entry.captureEmissionId == parentEmissionId)
                     {
                         if (parentRoutes.Add(route))
                         {
@@ -6819,10 +5528,7 @@ namespace DxMessaging.Core.MessageBus
                         continue;
                     }
 
-                    history[retainedCount++] = entry.ReassignCapture(
-                        parentEmissionId,
-                        parentDispatchDepth
-                    );
+                    history[retainedCount++] = entry.ReassignCapture(parentEmissionId, parentDispatchDepth);
                 }
 
                 if (retainedCount < count)
@@ -6837,11 +5543,7 @@ namespace DxMessaging.Core.MessageBus
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static void StageDispatchSnapshot<TMessage>(
-            MessageBus messageBus,
-            HandlerCache<int, HandlerCache> handlers,
-            SlotKey slotKey
-        )
+        private static void StageDispatchSnapshot<TMessage>(MessageBus messageBus, HandlerCache<int, HandlerCache> handlers, SlotKey slotKey)
             where TMessage : IMessage
         {
             if (handlers == null || slotKey == SlotKey.None)
@@ -6868,11 +5570,7 @@ namespace DxMessaging.Core.MessageBus
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static void StageGlobalDispatchSnapshot<TMessage>(
-            MessageBus messageBus,
-            BusGlobalSlot handlers,
-            DispatchKind kind
-        )
+        private static void StageGlobalDispatchSnapshot<TMessage>(MessageBus messageBus, BusGlobalSlot handlers, DispatchKind kind)
             where TMessage : IMessage
         {
             /*
@@ -6899,10 +5597,7 @@ namespace DxMessaging.Core.MessageBus
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static ref DispatchState SelectGlobalDispatchState(
-            BusGlobalSlot slot,
-            DispatchKind kind
-        )
+        private static ref DispatchState SelectGlobalDispatchState(BusGlobalSlot slot, DispatchKind kind)
         {
             switch (kind)
             {
@@ -6913,11 +5608,7 @@ namespace DxMessaging.Core.MessageBus
                 case DispatchKind.Broadcast:
                     return ref slot.broadcastDispatchState;
                 default:
-                    throw new ArgumentOutOfRangeException(
-                        nameof(kind),
-                        kind,
-                        "SelectGlobalDispatchState only supports Untargeted, Targeted, Broadcast."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(kind), kind, "SelectGlobalDispatchState only supports Untargeted, Targeted, Broadcast.");
             }
         }
 
@@ -6965,13 +5656,7 @@ namespace DxMessaging.Core.MessageBus
                 return state.active;
             }
 
-            return AcquireDispatchSnapshot<TMessage>(
-                messageBus,
-                handlers,
-                slotKey,
-                emissionId,
-                context
-            );
+            return AcquireDispatchSnapshot<TMessage>(messageBus, handlers, slotKey, emissionId, context);
         }
 
         /*
@@ -6980,14 +5665,11 @@ namespace DxMessaging.Core.MessageBus
             DXMESSAGING_INTERNAL_CHECKS define is set (rig/diagnostic builds).
         */
         [Conditional("DXMESSAGING_INTERNAL_CHECKS")]
-        private static void DebugAssertAcquireFastPrecondition(
-            HandlerCache<int, HandlerCache> handlers
-        )
+        private static void DebugAssertAcquireFastPrecondition(HandlerCache<int, HandlerCache> handlers)
         {
             System.Diagnostics.Debug.Assert(
                 handlers != null && 0 < handlers.handlers.Count,
-                "AcquireDispatchSnapshotFast requires a non-empty live sink; the empty-sink "
-                    + "displacement branch of the full acquire must run otherwise."
+                "AcquireDispatchSnapshotFast requires a non-empty live sink; the empty-sink " + "displacement branch of the full acquire must run otherwise."
             );
         }
 
@@ -7021,9 +5703,7 @@ namespace DxMessaging.Core.MessageBus
                 if (state.pendingDirty || (hasHandlers && !state.pending.IsInitialized))
                 {
                     ReleaseSnapshot(ref state.pending);
-                    state.pending = hasHandlers
-                        ? BuildDispatchSnapshot<TMessage>(messageBus, handlers, slotKey, context)
-                        : DispatchSnapshot.Empty;
+                    state.pending = hasHandlers ? BuildDispatchSnapshot<TMessage>(messageBus, handlers, slotKey, context) : DispatchSnapshot.Empty;
 
                     state.pendingDirty = false;
                 }
@@ -7031,12 +5711,7 @@ namespace DxMessaging.Core.MessageBus
             else if (!state.active.IsInitialized && hasHandlers)
             {
                 ReleaseSnapshot(ref state.pending);
-                state.pending = BuildDispatchSnapshot<TMessage>(
-                    messageBus,
-                    handlers,
-                    slotKey,
-                    context
-                );
+                state.pending = BuildDispatchSnapshot<TMessage>(messageBus, handlers, slotKey, context);
                 state.hasPending = true;
                 state.pendingDirty = false;
             }
@@ -7056,14 +5731,7 @@ namespace DxMessaging.Core.MessageBus
                     if (state.pendingDirty || (hasHandlers && !state.pending.IsInitialized))
                     {
                         ReleaseSnapshot(ref state.pending);
-                        state.pending = hasHandlers
-                            ? BuildDispatchSnapshot<TMessage>(
-                                messageBus,
-                                handlers,
-                                slotKey,
-                                context
-                            )
-                            : DispatchSnapshot.Empty;
+                        state.pending = hasHandlers ? BuildDispatchSnapshot<TMessage>(messageBus, handlers, slotKey, context) : DispatchSnapshot.Empty;
 
                         state.pendingDirty = false;
                     }
@@ -7084,12 +5752,7 @@ namespace DxMessaging.Core.MessageBus
             return state.active;
         }
 
-        private static DispatchSnapshot BuildDispatchSnapshot<TMessage>(
-            MessageBus messageBus,
-            HandlerCache<int, HandlerCache> handlers,
-            SlotKey slotKey,
-            InstanceId context
-        )
+        private static DispatchSnapshot BuildDispatchSnapshot<TMessage>(MessageBus messageBus, HandlerCache<int, HandlerCache> handlers, SlotKey slotKey, InstanceId context)
             where TMessage : IMessage
         {
             if (handlers == null || handlers.order.Count == 0)
@@ -7097,12 +5760,7 @@ namespace DxMessaging.Core.MessageBus
                 return DispatchSnapshot.Empty;
             }
 
-            FlatDispatchArray flat = BuildFlatDispatch<TMessage>(
-                messageBus,
-                handlers,
-                slotKey,
-                context
-            );
+            FlatDispatchArray flat = BuildFlatDispatch<TMessage>(messageBus, handlers, slotKey, context);
             return new DispatchSnapshot(flat, hasRegistrations: true);
         }
 
@@ -7118,12 +5776,7 @@ namespace DxMessaging.Core.MessageBus
         /// they resolve into <see cref="ContextFlatDispatch{TMessage}"/>
         /// entries instead).
         /// </summary>
-        private static FlatDispatchArray BuildFlatDispatch<TMessage>(
-            MessageBus messageBus,
-            HandlerCache<int, HandlerCache> handlers,
-            SlotKey slotKey,
-            InstanceId context
-        )
+        private static FlatDispatchArray BuildFlatDispatch<TMessage>(MessageBus messageBus, HandlerCache<int, HandlerCache> handlers, SlotKey slotKey, InstanceId context)
             where TMessage : IMessage
         {
             bool postProcessing = slotKey.Phase == DispatchPhase.PostProcess;
@@ -7134,73 +5787,37 @@ namespace DxMessaging.Core.MessageBus
             {
                 if (kind == DispatchKind.Targeted)
                 {
-                    fastIndex = postProcessing
-                        ? TypedSlotIndex.TargetedPostProcessWithoutContextFast
-                        : TypedSlotIndex.TargetedHandleWithoutContextFast;
-                    defaultIndex = postProcessing
-                        ? TypedSlotIndex.TargetedPostProcessWithoutContext
-                        : TypedSlotIndex.TargetedHandleWithoutContext;
+                    fastIndex = postProcessing ? TypedSlotIndex.TargetedPostProcessWithoutContextFast : TypedSlotIndex.TargetedHandleWithoutContextFast;
+                    defaultIndex = postProcessing ? TypedSlotIndex.TargetedPostProcessWithoutContext : TypedSlotIndex.TargetedHandleWithoutContext;
                 }
                 else
                 {
-                    fastIndex = postProcessing
-                        ? TypedSlotIndex.BroadcastPostProcessWithoutContextFast
-                        : TypedSlotIndex.BroadcastHandleWithoutContextFast;
-                    defaultIndex = postProcessing
-                        ? TypedSlotIndex.BroadcastPostProcessWithoutContext
-                        : TypedSlotIndex.BroadcastHandleWithoutContext;
+                    fastIndex = postProcessing ? TypedSlotIndex.BroadcastPostProcessWithoutContextFast : TypedSlotIndex.BroadcastHandleWithoutContextFast;
+                    defaultIndex = postProcessing ? TypedSlotIndex.BroadcastPostProcessWithoutContext : TypedSlotIndex.BroadcastHandleWithoutContext;
                 }
 
-                return BuildWithContextFlatDispatch<TMessage>(
-                    messageBus,
-                    handlers,
-                    fastIndex,
-                    defaultIndex
-                );
+                return BuildWithContextFlatDispatch<TMessage>(messageBus, handlers, fastIndex, defaultIndex);
             }
 
             if (kind == DispatchKind.Untargeted)
             {
-                fastIndex = postProcessing
-                    ? TypedSlotIndex.UntargetedPostProcessFast
-                    : TypedSlotIndex.UntargetedHandleFast;
-                defaultIndex = postProcessing
-                    ? TypedSlotIndex.UntargetedPostProcessDefault
-                    : TypedSlotIndex.UntargetedHandleDefault;
-                return BuildMessageFlatDispatch<TMessage>(
-                    messageBus,
-                    handlers,
-                    fastIndex,
-                    defaultIndex
-                );
+                fastIndex = postProcessing ? TypedSlotIndex.UntargetedPostProcessFast : TypedSlotIndex.UntargetedHandleFast;
+                defaultIndex = postProcessing ? TypedSlotIndex.UntargetedPostProcessDefault : TypedSlotIndex.UntargetedHandleDefault;
+                return BuildMessageFlatDispatch<TMessage>(messageBus, handlers, fastIndex, defaultIndex);
             }
 
             if (kind == DispatchKind.Targeted)
             {
-                fastIndex = postProcessing
-                    ? TypedSlotIndex.TargetedPostProcessFast
-                    : TypedSlotIndex.TargetedHandleFast;
-                defaultIndex = postProcessing
-                    ? TypedSlotIndex.TargetedPostProcessDefault
-                    : TypedSlotIndex.TargetedHandleDefault;
+                fastIndex = postProcessing ? TypedSlotIndex.TargetedPostProcessFast : TypedSlotIndex.TargetedHandleFast;
+                defaultIndex = postProcessing ? TypedSlotIndex.TargetedPostProcessDefault : TypedSlotIndex.TargetedHandleDefault;
             }
             else
             {
-                fastIndex = postProcessing
-                    ? TypedSlotIndex.BroadcastPostProcessFast
-                    : TypedSlotIndex.BroadcastHandleFast;
-                defaultIndex = postProcessing
-                    ? TypedSlotIndex.BroadcastPostProcessDefault
-                    : TypedSlotIndex.BroadcastHandleDefault;
+                fastIndex = postProcessing ? TypedSlotIndex.BroadcastPostProcessFast : TypedSlotIndex.BroadcastHandleFast;
+                defaultIndex = postProcessing ? TypedSlotIndex.BroadcastPostProcessDefault : TypedSlotIndex.BroadcastHandleDefault;
             }
 
-            return BuildContextFlatDispatch<TMessage>(
-                messageBus,
-                handlers,
-                context,
-                fastIndex,
-                defaultIndex
-            );
+            return BuildContextFlatDispatch<TMessage>(messageBus, handlers, context, fastIndex, defaultIndex);
         }
 
         /// <summary>
@@ -7218,12 +5835,7 @@ namespace DxMessaging.Core.MessageBus
         /// closures: default Action handlers were adapted to FastHandler form
         /// once at registration time (HandlerActionCache.Entry.flatInvoker).
         /// </summary>
-        private static FlatDispatchArray BuildMessageFlatDispatch<TMessage>(
-            MessageBus messageBus,
-            HandlerCache<int, HandlerCache> handlers,
-            int fastIndex,
-            int defaultIndex
-        )
+        private static FlatDispatchArray BuildMessageFlatDispatch<TMessage>(MessageBus messageBus, HandlerCache<int, HandlerCache> handlers, int fastIndex, int defaultIndex)
             where TMessage : IMessage
         {
             List<int> orderedPriorities = handlers.order;
@@ -7232,10 +5844,7 @@ namespace DxMessaging.Core.MessageBus
             for (int i = 0; i < priorityCount; ++i)
             {
                 int priority = orderedPriorities[i];
-                if (
-                    !handlers.handlers.TryGetValue(priority, out HandlerCache cache)
-                    || cache == null
-                )
+                if (!handlers.handlers.TryGetValue(priority, out HandlerCache cache) || cache == null)
                 {
                     continue;
                 }
@@ -7245,8 +5854,7 @@ namespace DxMessaging.Core.MessageBus
                 int orderedCount = ordered.Count;
                 for (int j = 0; j < orderedCount; ++j)
                 {
-                    total += ordered[j]
-                        .CountFlatHandlers<TMessage>(messageBus, priority, fastIndex, defaultIndex);
+                    total += ordered[j].CountFlatHandlers<TMessage>(messageBus, priority, fastIndex, defaultIndex);
                 }
             }
 
@@ -7261,10 +5869,7 @@ namespace DxMessaging.Core.MessageBus
             for (int i = 0; i < priorityCount; ++i)
             {
                 int priority = orderedPriorities[i];
-                if (
-                    !handlers.handlers.TryGetValue(priority, out HandlerCache cache)
-                    || cache == null
-                )
+                if (!handlers.handlers.TryGetValue(priority, out HandlerCache cache) || cache == null)
                 {
                     continue;
                 }
@@ -7273,15 +5878,7 @@ namespace DxMessaging.Core.MessageBus
                 int orderedCount = ordered.Count;
                 for (int j = 0; j < orderedCount; ++j)
                 {
-                    write = ordered[j]
-                        .FillFlatHandlers<TMessage>(
-                            messageBus,
-                            priority,
-                            fastIndex,
-                            defaultIndex,
-                            flatEntries,
-                            write
-                        );
+                    write = ordered[j].FillFlatHandlers<TMessage>(messageBus, priority, fastIndex, defaultIndex, flatEntries, write);
                 }
             }
 
@@ -7314,10 +5911,7 @@ namespace DxMessaging.Core.MessageBus
             for (int i = 0; i < priorityCount; ++i)
             {
                 int priority = orderedPriorities[i];
-                if (
-                    !handlers.handlers.TryGetValue(priority, out HandlerCache cache)
-                    || cache == null
-                )
+                if (!handlers.handlers.TryGetValue(priority, out HandlerCache cache) || cache == null)
                 {
                     continue;
                 }
@@ -7327,14 +5921,7 @@ namespace DxMessaging.Core.MessageBus
                 int orderedCount = ordered.Count;
                 for (int j = 0; j < orderedCount; ++j)
                 {
-                    total += ordered[j]
-                        .CountContextFlatHandlers<TMessage>(
-                            messageBus,
-                            context,
-                            priority,
-                            fastIndex,
-                            defaultIndex
-                        );
+                    total += ordered[j].CountContextFlatHandlers<TMessage>(messageBus, context, priority, fastIndex, defaultIndex);
                 }
             }
 
@@ -7349,10 +5936,7 @@ namespace DxMessaging.Core.MessageBus
             for (int i = 0; i < priorityCount; ++i)
             {
                 int priority = orderedPriorities[i];
-                if (
-                    !handlers.handlers.TryGetValue(priority, out HandlerCache cache)
-                    || cache == null
-                )
+                if (!handlers.handlers.TryGetValue(priority, out HandlerCache cache) || cache == null)
                 {
                     continue;
                 }
@@ -7361,16 +5945,7 @@ namespace DxMessaging.Core.MessageBus
                 int orderedCount = ordered.Count;
                 for (int j = 0; j < orderedCount; ++j)
                 {
-                    write = ordered[j]
-                        .FillContextFlatHandlers<TMessage>(
-                            messageBus,
-                            context,
-                            priority,
-                            fastIndex,
-                            defaultIndex,
-                            flatEntries,
-                            write
-                        );
+                    write = ordered[j].FillContextFlatHandlers<TMessage>(messageBus, context, priority, fastIndex, defaultIndex, flatEntries, write);
                 }
             }
 
@@ -7387,12 +5962,7 @@ namespace DxMessaging.Core.MessageBus
         /// registrations via the registration-time adapter). Same ordering
         /// and zero-closure guarantees.
         /// </summary>
-        private static FlatDispatchArray BuildWithContextFlatDispatch<TMessage>(
-            MessageBus messageBus,
-            HandlerCache<int, HandlerCache> handlers,
-            int fastIndex,
-            int defaultIndex
-        )
+        private static FlatDispatchArray BuildWithContextFlatDispatch<TMessage>(MessageBus messageBus, HandlerCache<int, HandlerCache> handlers, int fastIndex, int defaultIndex)
             where TMessage : IMessage
         {
             List<int> orderedPriorities = handlers.order;
@@ -7401,10 +5971,7 @@ namespace DxMessaging.Core.MessageBus
             for (int i = 0; i < priorityCount; ++i)
             {
                 int priority = orderedPriorities[i];
-                if (
-                    !handlers.handlers.TryGetValue(priority, out HandlerCache cache)
-                    || cache == null
-                )
+                if (!handlers.handlers.TryGetValue(priority, out HandlerCache cache) || cache == null)
                 {
                     continue;
                 }
@@ -7414,13 +5981,7 @@ namespace DxMessaging.Core.MessageBus
                 int orderedCount = ordered.Count;
                 for (int j = 0; j < orderedCount; ++j)
                 {
-                    total += ordered[j]
-                        .CountWithContextFlatHandlers<TMessage>(
-                            messageBus,
-                            priority,
-                            fastIndex,
-                            defaultIndex
-                        );
+                    total += ordered[j].CountWithContextFlatHandlers<TMessage>(messageBus, priority, fastIndex, defaultIndex);
                 }
             }
 
@@ -7435,10 +5996,7 @@ namespace DxMessaging.Core.MessageBus
             for (int i = 0; i < priorityCount; ++i)
             {
                 int priority = orderedPriorities[i];
-                if (
-                    !handlers.handlers.TryGetValue(priority, out HandlerCache cache)
-                    || cache == null
-                )
+                if (!handlers.handlers.TryGetValue(priority, out HandlerCache cache) || cache == null)
                 {
                     continue;
                 }
@@ -7447,15 +6005,7 @@ namespace DxMessaging.Core.MessageBus
                 int orderedCount = ordered.Count;
                 for (int j = 0; j < orderedCount; ++j)
                 {
-                    write = ordered[j]
-                        .FillWithContextFlatHandlers<TMessage>(
-                            messageBus,
-                            priority,
-                            fastIndex,
-                            defaultIndex,
-                            flatEntries,
-                            write
-                        );
+                    write = ordered[j].FillWithContextFlatHandlers<TMessage>(messageBus, priority, fastIndex, defaultIndex, flatEntries, write);
                 }
             }
 
@@ -7541,17 +6091,11 @@ namespace DxMessaging.Core.MessageBus
         [Il2CppSetOption(Option.NullChecks, false)]
         [Il2CppSetOption(Option.ArrayBoundsChecks, false)]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool DispatchCachedUntargetedEntries<TMessage>(
-            object entriesObject,
-            int count,
-            ref TMessage message
-        )
+        private bool DispatchCachedUntargetedEntries<TMessage>(object entriesObject, int count, ref TMessage message)
             where TMessage : IUntargetedMessage
         {
             DebugAssertCachedUntargetedRoute<TMessage>(entriesObject, count);
-            FlatDispatchEntry<TMessage>[] entries = DxUnsafe.As<FlatDispatchEntry<TMessage>[]>(
-                entriesObject
-            );
+            FlatDispatchEntry<TMessage>[] entries = DxUnsafe.As<FlatDispatchEntry<TMessage>[]>(entriesObject);
             long resetGeneration = _resetGeneration;
             for (int i = 0; i < count; ++i)
             {
@@ -7570,26 +6114,15 @@ namespace DxMessaging.Core.MessageBus
         }
 
         [Conditional("DXMESSAGING_INTERNAL_CHECKS")]
-        private static void DebugAssertCachedUntargetedRoute<TMessage>(
-            object entriesObject,
-            int count
-        )
+        private static void DebugAssertCachedUntargetedRoute<TMessage>(object entriesObject, int count)
             where TMessage : IUntargetedMessage
         {
-            if (
-                entriesObject is FlatDispatchEntry<TMessage>[] entries
-                && 0 <= count
-                && count <= entries.Length
-            )
+            if (entriesObject is FlatDispatchEntry<TMessage>[] entries && 0 <= count && count <= entries.Length)
             {
                 return;
             }
 
-            System.Diagnostics.Debug.Assert(
-                false,
-                "Cached untargeted route must contain the expected closed entry-array type "
-                    + "with a count inside its physical bounds."
-            );
+            System.Diagnostics.Debug.Assert(false, "Cached untargeted route must contain the expected closed entry-array type " + "with a count inside its physical bounds.");
         }
 
         /// <summary>
@@ -7603,11 +6136,7 @@ namespace DxMessaging.Core.MessageBus
         [Il2CppSetOption(Option.NullChecks, false)]
         [Il2CppSetOption(Option.ArrayBoundsChecks, false)]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool DispatchContextFlatSnapshot<TMessage>(
-            DispatchSnapshot snapshot,
-            ref InstanceId context,
-            ref TMessage message
-        )
+        private bool DispatchContextFlatSnapshot<TMessage>(DispatchSnapshot snapshot, ref InstanceId context, ref TMessage message)
             where TMessage : IMessage
         {
             FlatDispatchArray flatBase = snapshot.flat;
@@ -7617,9 +6146,7 @@ namespace DxMessaging.Core.MessageBus
             }
 
             DebugAssertFlatShape<ContextFlatDispatch<TMessage>>(flatBase);
-            ContextFlatDispatch<TMessage> flat = DxUnsafe.As<ContextFlatDispatch<TMessage>>(
-                flatBase
-            );
+            ContextFlatDispatch<TMessage> flat = DxUnsafe.As<ContextFlatDispatch<TMessage>>(flatBase);
             ContextFlatDispatchEntry<TMessage>[] entries = flat.entries;
             int count = flat.count;
             long resetGeneration = _resetGeneration;
@@ -7710,12 +6237,7 @@ namespace DxMessaging.Core.MessageBus
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static DispatchSnapshot AcquireGlobalDispatchSnapshot<TMessage>(
-            MessageBus messageBus,
-            BusGlobalSlot handlers,
-            DispatchKind kind,
-            long emissionId
-        )
+        private static DispatchSnapshot AcquireGlobalDispatchSnapshot<TMessage>(MessageBus messageBus, BusGlobalSlot handlers, DispatchKind kind, long emissionId)
             where TMessage : IMessage
         {
             if (handlers == null)
@@ -7736,11 +6258,7 @@ namespace DxMessaging.Core.MessageBus
                     ReleaseSnapshot(ref state.pending);
                     if (hasHandlers)
                     {
-                        state.pending = BuildGlobalDispatchSnapshot<TMessage>(
-                            messageBus,
-                            handlers,
-                            kind
-                        );
+                        state.pending = BuildGlobalDispatchSnapshot<TMessage>(messageBus, handlers, kind);
                     }
                     else
                     {
@@ -7771,9 +6289,7 @@ namespace DxMessaging.Core.MessageBus
                     if (state.pendingDirty || (hasHandlers && !state.pending.IsInitialized))
                     {
                         ReleaseSnapshot(ref state.pending);
-                        state.pending = hasHandlers
-                            ? BuildGlobalDispatchSnapshot<TMessage>(messageBus, handlers, kind)
-                            : DispatchSnapshot.Empty;
+                        state.pending = hasHandlers ? BuildGlobalDispatchSnapshot<TMessage>(messageBus, handlers, kind) : DispatchSnapshot.Empty;
 
                         state.pendingDirty = false;
                     }
@@ -7794,11 +6310,7 @@ namespace DxMessaging.Core.MessageBus
             return state.active;
         }
 
-        private static DispatchSnapshot BuildGlobalDispatchSnapshot<TMessage>(
-            MessageBus messageBus,
-            BusGlobalSlot handlers,
-            DispatchKind kind
-        )
+        private static DispatchSnapshot BuildGlobalDispatchSnapshot<TMessage>(MessageBus messageBus, BusGlobalSlot handlers, DispatchKind kind)
             where TMessage : IMessage
         {
             if (handlers == null || handlers.sharedHandlers.Count == 0)
@@ -7817,22 +6329,12 @@ namespace DxMessaging.Core.MessageBus
             }
 
             buckets[0] = new DispatchBucket(0, entries, entryCount, pooledEntries: true);
-            return new DispatchSnapshot(
-                buckets,
-                1,
-                entryCount,
-                hasRegistrations: true,
-                pooled: true
-            );
+            return new DispatchSnapshot(buckets, 1, entryCount, hasRegistrations: true, pooled: true);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         [Il2CppSetOption(Option.NullChecks, false)]
-        private bool InvokeGlobalUntargetedEntry<TMessage>(
-            ref TMessage message,
-            DispatchEntry entry,
-            long resetGeneration
-        )
+        private bool InvokeGlobalUntargetedEntry<TMessage>(ref TMessage message, DispatchEntry entry, long resetGeneration)
             where TMessage : IUntargetedMessage
         {
             MessageHandler handler = entry.handler;
@@ -7843,21 +6345,14 @@ namespace DxMessaging.Core.MessageBus
                 return true;
             }
 
-            ref IUntargetedMessage interfaceMessage = ref DxUnsafe.As<TMessage, IUntargetedMessage>(
-                ref message
-            );
+            ref IUntargetedMessage interfaceMessage = ref DxUnsafe.As<TMessage, IUntargetedMessage>(ref message);
             handler.HandleGlobalUntargetedMessage(ref interfaceMessage, this);
             return _resetGeneration == resetGeneration;
         }
 
         [Il2CppSetOption(Option.NullChecks, false)]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool InvokeGlobalTargetedEntry<TMessage>(
-            ref InstanceId target,
-            ref TMessage message,
-            DispatchEntry entry,
-            long resetGeneration
-        )
+        private bool InvokeGlobalTargetedEntry<TMessage>(ref InstanceId target, ref TMessage message, DispatchEntry entry, long resetGeneration)
             where TMessage : ITargetedMessage
         {
             MessageHandler handler = entry.handler;
@@ -7868,21 +6363,14 @@ namespace DxMessaging.Core.MessageBus
                 return true;
             }
 
-            ref ITargetedMessage interfaceMessage = ref DxUnsafe.As<TMessage, ITargetedMessage>(
-                ref message
-            );
+            ref ITargetedMessage interfaceMessage = ref DxUnsafe.As<TMessage, ITargetedMessage>(ref message);
             handler.HandleGlobalTargetedMessage(ref target, ref interfaceMessage, this);
             return _resetGeneration == resetGeneration;
         }
 
         [Il2CppSetOption(Option.NullChecks, false)]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool InvokeGlobalBroadcastEntry<TMessage>(
-            ref InstanceId source,
-            ref TMessage message,
-            DispatchEntry entry,
-            long resetGeneration
-        )
+        private bool InvokeGlobalBroadcastEntry<TMessage>(ref InstanceId source, ref TMessage message, DispatchEntry entry, long resetGeneration)
             where TMessage : IBroadcastMessage
         {
             MessageHandler handler = entry.handler;
@@ -7893,9 +6381,7 @@ namespace DxMessaging.Core.MessageBus
                 return true;
             }
 
-            ref IBroadcastMessage interfaceMessage = ref DxUnsafe.As<TMessage, IBroadcastMessage>(
-                ref message
-            );
+            ref IBroadcastMessage interfaceMessage = ref DxUnsafe.As<TMessage, IBroadcastMessage>(ref message);
             handler.HandleGlobalSourcedBroadcastMessage(ref source, ref interfaceMessage, this);
             return _resetGeneration == resetGeneration;
         }
@@ -7909,10 +6395,7 @@ namespace DxMessaging.Core.MessageBus
                 return;
             }
 
-            RegisterAotUntargetedBridge(
-                typeof(T),
-                (Action<IMessageBus, IUntargetedMessage>)AotUntargetedBroadcast<T>
-            );
+            RegisterAotUntargetedBridge(typeof(T), (Action<IMessageBus, IUntargetedMessage>)AotUntargetedBroadcast<T>);
             AotBridgeState<T>.UntargetedRegistered = true;
         }
 
@@ -7925,10 +6408,7 @@ namespace DxMessaging.Core.MessageBus
                 return;
             }
 
-            RegisterAotTargetedBridge(
-                typeof(T),
-                (Action<IMessageBus, InstanceId, ITargetedMessage>)AotTargetedBroadcast<T>
-            );
+            RegisterAotTargetedBridge(typeof(T), (Action<IMessageBus, InstanceId, ITargetedMessage>)AotTargetedBroadcast<T>);
             AotBridgeState<T>.TargetedRegistered = true;
         }
 
@@ -7941,10 +6421,7 @@ namespace DxMessaging.Core.MessageBus
                 return;
             }
 
-            RegisterAotSourcedBridge(
-                typeof(T),
-                (Action<IMessageBus, InstanceId, IBroadcastMessage>)AotSourcedBroadcast<T>
-            );
+            RegisterAotSourcedBridge(typeof(T), (Action<IMessageBus, InstanceId, IBroadcastMessage>)AotSourcedBroadcast<T>);
             AotBridgeState<T>.SourcedRegistered = true;
         }
 
@@ -7960,31 +6437,17 @@ namespace DxMessaging.Core.MessageBus
 
             if (bridge is not Action<IMessageBus, IUntargetedMessage> typedBridge)
             {
-                throw new ArgumentException(
-                    "AOT untargeted bridge must be Action<IMessageBus, IUntargetedMessage>.",
-                    nameof(bridge)
-                );
+                throw new ArgumentException("AOT untargeted bridge must be Action<IMessageBus, IUntargetedMessage>.", nameof(bridge));
             }
 
             lock (AotBridgeRegistryLock)
             {
-                if (
-                    _aotUntargetedBroadcastsByType.TryGetValue(
-                        messageType,
-                        out Action<IMessageBus, IUntargetedMessage> existing
-                    )
-                    && existing == typedBridge
-                )
+                if (_aotUntargetedBroadcastsByType.TryGetValue(messageType, out Action<IMessageBus, IUntargetedMessage> existing) && existing == typedBridge)
                 {
                     return;
                 }
 
-                var updated = new Dictionary<Type, Action<IMessageBus, IUntargetedMessage>>(
-                    _aotUntargetedBroadcastsByType
-                )
-                {
-                    [messageType] = typedBridge,
-                };
+                var updated = new Dictionary<Type, Action<IMessageBus, IUntargetedMessage>>(_aotUntargetedBroadcastsByType) { [messageType] = typedBridge };
                 Volatile.Write(ref _aotUntargetedBroadcastsByType, updated);
             }
         }
@@ -8001,32 +6464,17 @@ namespace DxMessaging.Core.MessageBus
 
             if (bridge is not Action<IMessageBus, InstanceId, ITargetedMessage> typedBridge)
             {
-                throw new ArgumentException(
-                    "AOT targeted bridge must be Action<IMessageBus, InstanceId, ITargetedMessage>.",
-                    nameof(bridge)
-                );
+                throw new ArgumentException("AOT targeted bridge must be Action<IMessageBus, InstanceId, ITargetedMessage>.", nameof(bridge));
             }
 
             lock (AotBridgeRegistryLock)
             {
-                if (
-                    _aotTargetedBroadcastsByType.TryGetValue(
-                        messageType,
-                        out Action<IMessageBus, InstanceId, ITargetedMessage> existing
-                    )
-                    && existing == typedBridge
-                )
+                if (_aotTargetedBroadcastsByType.TryGetValue(messageType, out Action<IMessageBus, InstanceId, ITargetedMessage> existing) && existing == typedBridge)
                 {
                     return;
                 }
 
-                var updated = new Dictionary<
-                    Type,
-                    Action<IMessageBus, InstanceId, ITargetedMessage>
-                >(_aotTargetedBroadcastsByType)
-                {
-                    [messageType] = typedBridge,
-                };
+                var updated = new Dictionary<Type, Action<IMessageBus, InstanceId, ITargetedMessage>>(_aotTargetedBroadcastsByType) { [messageType] = typedBridge };
                 Volatile.Write(ref _aotTargetedBroadcastsByType, updated);
             }
         }
@@ -8043,40 +6491,22 @@ namespace DxMessaging.Core.MessageBus
 
             if (bridge is not Action<IMessageBus, InstanceId, IBroadcastMessage> typedBridge)
             {
-                throw new ArgumentException(
-                    "AOT sourced bridge must be Action<IMessageBus, InstanceId, IBroadcastMessage>.",
-                    nameof(bridge)
-                );
+                throw new ArgumentException("AOT sourced bridge must be Action<IMessageBus, InstanceId, IBroadcastMessage>.", nameof(bridge));
             }
 
             lock (AotBridgeRegistryLock)
             {
-                if (
-                    _aotSourcedBroadcastsByType.TryGetValue(
-                        messageType,
-                        out Action<IMessageBus, InstanceId, IBroadcastMessage> existing
-                    )
-                    && existing == typedBridge
-                )
+                if (_aotSourcedBroadcastsByType.TryGetValue(messageType, out Action<IMessageBus, InstanceId, IBroadcastMessage> existing) && existing == typedBridge)
                 {
                     return;
                 }
 
-                var updated = new Dictionary<
-                    Type,
-                    Action<IMessageBus, InstanceId, IBroadcastMessage>
-                >(_aotSourcedBroadcastsByType)
-                {
-                    [messageType] = typedBridge,
-                };
+                var updated = new Dictionary<Type, Action<IMessageBus, InstanceId, IBroadcastMessage>>(_aotSourcedBroadcastsByType) { [messageType] = typedBridge };
                 Volatile.Write(ref _aotSourcedBroadcastsByType, updated);
             }
         }
 
-        private static void AotUntargetedBroadcast<T>(
-            IMessageBus messageBus,
-            IUntargetedMessage message
-        )
+        private static void AotUntargetedBroadcast<T>(IMessageBus messageBus, IUntargetedMessage message)
             where T : IUntargetedMessage
         {
             T typedMessage = (T)message;
@@ -8094,11 +6524,7 @@ namespace DxMessaging.Core.MessageBus
             }
         }
 
-        private static void AotTargetedBroadcast<T>(
-            IMessageBus messageBus,
-            InstanceId target,
-            ITargetedMessage message
-        )
+        private static void AotTargetedBroadcast<T>(IMessageBus messageBus, InstanceId target, ITargetedMessage message)
             where T : ITargetedMessage
         {
             T typedMessage = (T)message;
@@ -8116,11 +6542,7 @@ namespace DxMessaging.Core.MessageBus
             }
         }
 
-        private static void AotSourcedBroadcast<T>(
-            IMessageBus messageBus,
-            InstanceId source,
-            IBroadcastMessage message
-        )
+        private static void AotSourcedBroadcast<T>(IMessageBus messageBus, InstanceId source, IBroadcastMessage message)
             where T : IBroadcastMessage
         {
             T typedMessage = (T)message;
@@ -8154,69 +6576,38 @@ namespace DxMessaging.Core.MessageBus
         private Action<IUntargetedMessage> CreateUntargetedBroadcastDelegate(Type messageType)
         {
             // ReSharper disable once PossibleNullReferenceException
-            MethodInfo broadcastMethod = MessageBusType
-                .GetMethod(nameof(UntargetedBroadcast))
-                .MakeGenericMethod(messageType);
+            MethodInfo broadcastMethod = MessageBusType.GetMethod(nameof(UntargetedBroadcast)).MakeGenericMethod(messageType);
             // ReSharper disable once PossibleNullReferenceException
-            MethodInfo helperMethod = MessageBusType
-                .GetMethod(
-                    nameof(UntargetedBroadcastReflectionHelper),
-                    ReflectionHelperBindingFlags
-                )
-                .MakeGenericMethod(messageType);
+            MethodInfo helperMethod = MessageBusType.GetMethod(nameof(UntargetedBroadcastReflectionHelper), ReflectionHelperBindingFlags).MakeGenericMethod(messageType);
 
-            return (Action<IUntargetedMessage>)
-                helperMethod.Invoke(null, new object[] { this, broadcastMethod });
+            return (Action<IUntargetedMessage>)helperMethod.Invoke(null, new object[] { this, broadcastMethod });
         }
 
-        private Action<InstanceId, ITargetedMessage> CreateTargetedBroadcastDelegate(
-            Type messageType
-        )
+        private Action<InstanceId, ITargetedMessage> CreateTargetedBroadcastDelegate(Type messageType)
         {
             // ReSharper disable once PossibleNullReferenceException
-            MethodInfo broadcastMethod = MessageBusType
-                .GetMethod(nameof(TargetedBroadcast))
-                .MakeGenericMethod(messageType);
+            MethodInfo broadcastMethod = MessageBusType.GetMethod(nameof(TargetedBroadcast)).MakeGenericMethod(messageType);
             // ReSharper disable once PossibleNullReferenceException
-            MethodInfo helperMethod = MessageBusType
-                .GetMethod(nameof(TargetedBroadcastReflectionHelper), ReflectionHelperBindingFlags)
-                .MakeGenericMethod(messageType);
+            MethodInfo helperMethod = MessageBusType.GetMethod(nameof(TargetedBroadcastReflectionHelper), ReflectionHelperBindingFlags).MakeGenericMethod(messageType);
 
-            return (Action<InstanceId, ITargetedMessage>)
-                helperMethod.Invoke(null, new object[] { this, broadcastMethod });
+            return (Action<InstanceId, ITargetedMessage>)helperMethod.Invoke(null, new object[] { this, broadcastMethod });
         }
 
-        private Action<InstanceId, IBroadcastMessage> CreateSourcedBroadcastDelegate(
-            Type messageType
-        )
+        private Action<InstanceId, IBroadcastMessage> CreateSourcedBroadcastDelegate(Type messageType)
         {
             // ReSharper disable once PossibleNullReferenceException
-            MethodInfo broadcastMethod = MessageBusType
-                .GetMethod(nameof(SourcedBroadcast))
-                .MakeGenericMethod(messageType);
+            MethodInfo broadcastMethod = MessageBusType.GetMethod(nameof(SourcedBroadcast)).MakeGenericMethod(messageType);
             // ReSharper disable once PossibleNullReferenceException
-            MethodInfo helperMethod = MessageBusType
-                .GetMethod(nameof(SourcedBroadcastReflectionHelper), ReflectionHelperBindingFlags)
-                .MakeGenericMethod(messageType);
+            MethodInfo helperMethod = MessageBusType.GetMethod(nameof(SourcedBroadcastReflectionHelper), ReflectionHelperBindingFlags).MakeGenericMethod(messageType);
 
-            return (Action<InstanceId, IBroadcastMessage>)
-                helperMethod.Invoke(null, new object[] { this, broadcastMethod });
+            return (Action<InstanceId, IBroadcastMessage>)helperMethod.Invoke(null, new object[] { this, broadcastMethod });
         }
 
         // https://blogs.msmvps.com/jonskeet/2008/08/09/making-reflection-fly-and-exploring-delegates/
-        private static Action<IUntargetedMessage> UntargetedBroadcastReflectionHelper<T>(
-            IMessageBus messageBus,
-            MethodInfo methodInfo
-        )
+        private static Action<IUntargetedMessage> UntargetedBroadcastReflectionHelper<T>(IMessageBus messageBus, MethodInfo methodInfo)
             where T : IUntargetedMessage
         {
-            FastUntargetedBroadcast<T> untargetedBroadcast =
-                (FastUntargetedBroadcast<T>)
-                    Delegate.CreateDelegate(
-                        typeof(FastUntargetedBroadcast<T>),
-                        messageBus,
-                        methodInfo
-                    );
+            FastUntargetedBroadcast<T> untargetedBroadcast = (FastUntargetedBroadcast<T>)Delegate.CreateDelegate(typeof(FastUntargetedBroadcast<T>), messageBus, methodInfo);
 
             return UntypedBroadcast;
 
@@ -8227,19 +6618,10 @@ namespace DxMessaging.Core.MessageBus
             }
         }
 
-        private static Action<InstanceId, ITargetedMessage> TargetedBroadcastReflectionHelper<T>(
-            IMessageBus messageBus,
-            MethodInfo methodInfo
-        )
+        private static Action<InstanceId, ITargetedMessage> TargetedBroadcastReflectionHelper<T>(IMessageBus messageBus, MethodInfo methodInfo)
             where T : ITargetedMessage
         {
-            FastTargetedBroadcast<T> targetedBroadcast =
-                (FastTargetedBroadcast<T>)
-                    Delegate.CreateDelegate(
-                        typeof(FastTargetedBroadcast<T>),
-                        messageBus,
-                        methodInfo
-                    );
+            FastTargetedBroadcast<T> targetedBroadcast = (FastTargetedBroadcast<T>)Delegate.CreateDelegate(typeof(FastTargetedBroadcast<T>), messageBus, methodInfo);
 
             return UntypedBroadcast;
 
@@ -8250,19 +6632,10 @@ namespace DxMessaging.Core.MessageBus
             }
         }
 
-        private static Action<InstanceId, IBroadcastMessage> SourcedBroadcastReflectionHelper<T>(
-            IMessageBus messageBus,
-            MethodInfo methodInfo
-        )
+        private static Action<InstanceId, IBroadcastMessage> SourcedBroadcastReflectionHelper<T>(IMessageBus messageBus, MethodInfo methodInfo)
             where T : IBroadcastMessage
         {
-            FastSourcedBroadcast<T> sourcedBroadcast =
-                (FastSourcedBroadcast<T>)
-                    Delegate.CreateDelegate(
-                        typeof(FastSourcedBroadcast<T>),
-                        messageBus,
-                        methodInfo
-                    );
+            FastSourcedBroadcast<T> sourcedBroadcast = (FastSourcedBroadcast<T>)Delegate.CreateDelegate(typeof(FastSourcedBroadcast<T>), messageBus, methodInfo);
 
             return UntypedBroadcast;
 
@@ -8276,51 +6649,28 @@ namespace DxMessaging.Core.MessageBus
 #if UNITY_2021_3_OR_NEWER
         private static Action<MonoBehaviour, object[]> CompileMethodAction(MethodInfo methodInfo)
         {
-            ParameterExpression componentParameter = Expression.Parameter(
-                typeof(MonoBehaviour),
-                "targetComponent"
-            );
+            ParameterExpression componentParameter = Expression.Parameter(typeof(MonoBehaviour), "targetComponent");
             ParameterExpression argsParameter = Expression.Parameter(typeof(object[]), "args");
             ParameterInfo[] methodParams = methodInfo.GetParameters();
 
             ArgumentExpressionsCache.Clear();
             for (int i = 0; i < methodParams.Length; ++i)
             {
-                Expression indexAccess = Expression.ArrayIndex(
-                    argsParameter,
-                    Expression.Constant(i)
-                );
-                Expression convertedArg = Expression.Convert(
-                    indexAccess,
-                    methodParams[i].ParameterType
-                );
+                Expression indexAccess = Expression.ArrayIndex(argsParameter, Expression.Constant(i));
+                Expression convertedArg = Expression.Convert(indexAccess, methodParams[i].ParameterType);
                 ArgumentExpressionsCache.Add(convertedArg);
             }
 
             // ReSharper disable once AssignNullToNotNullAttribute
-            Expression instanceExpression = methodInfo.IsStatic
-                ? null
-                : Expression.Convert(componentParameter, methodInfo.DeclaringType);
-            MethodCallExpression callExpression = Expression.Call(
-                instanceExpression,
-                methodInfo,
-                ArgumentExpressionsCache
-            );
-            Expression<Action<MonoBehaviour, object[]>> lambda = Expression.Lambda<
-                Action<MonoBehaviour, object[]>
-            >(callExpression, componentParameter, argsParameter);
+            Expression instanceExpression = methodInfo.IsStatic ? null : Expression.Convert(componentParameter, methodInfo.DeclaringType);
+            MethodCallExpression callExpression = Expression.Call(instanceExpression, methodInfo, ArgumentExpressionsCache);
+            Expression<Action<MonoBehaviour, object[]>> lambda = Expression.Lambda<Action<MonoBehaviour, object[]>>(callExpression, componentParameter, argsParameter);
 
             return lambda.Compile();
         }
 
         /// <summary>Invokes one GameObject while preserving native single-argument compatibility.</summary>
-        private bool SendMessage(
-            GameObject recipient,
-            ref ReflexiveMessage message,
-            bool onlyActive,
-            bool preserveNativeSemantics,
-            long resetGeneration
-        )
+        private bool SendMessage(GameObject recipient, ref ReflexiveMessage message, bool onlyActive, bool preserveNativeSemantics, long resetGeneration)
         {
             if (resetGeneration != _resetGeneration)
             {
@@ -8340,11 +6690,7 @@ namespace DxMessaging.Core.MessageBus
                 }
                 else
                 {
-                    recipient.SendMessage(
-                        message.method,
-                        message.parameters[0],
-                        SendMessageOptions.DontRequireReceiver
-                    );
+                    recipient.SendMessage(message.method, message.parameters[0], SendMessageOptions.DontRequireReceiver);
                 }
 
                 return resetGeneration == _resetGeneration;
@@ -8366,12 +6712,7 @@ namespace DxMessaging.Core.MessageBus
             return true;
         }
 
-        private void SendMessage(
-            MonoBehaviour recipient,
-            ref ReflexiveMessage message,
-            bool onlyActive,
-            long resetGeneration
-        )
+        private void SendMessage(MonoBehaviour recipient, ref ReflexiveMessage message, bool onlyActive, long resetGeneration)
         {
             if (recipient == null)
             {
@@ -8388,11 +6729,7 @@ namespace DxMessaging.Core.MessageBus
                 return;
             }
 
-            Action<MonoBehaviour, object[]> method = ResolveReflexiveMethod(
-                recipient.GetType(),
-                ref message,
-                resetGeneration
-            );
+            Action<MonoBehaviour, object[]> method = ResolveReflexiveMethod(recipient.GetType(), ref message, resetGeneration);
             if (resetGeneration == _resetGeneration)
             {
                 method?.Invoke(recipient, message.parameters);
@@ -8400,18 +6737,11 @@ namespace DxMessaging.Core.MessageBus
         }
 
         /// <summary>Resolves a dispatcher and caches only successful lookups under a global LRU bound.</summary>
-        private Action<MonoBehaviour, object[]> ResolveReflexiveMethod(
-            Type componentType,
-            ref ReflexiveMessage message,
-            long resetGeneration
-        )
+        private Action<MonoBehaviour, object[]> ResolveReflexiveMethod(Type componentType, ref ReflexiveMessage message, long resetGeneration)
         {
             (Type, MethodSignatureKey) lookupKey = (componentType, message.signatureKey);
             Action<MonoBehaviour, object[]> method;
-            bool hasCachedMethod = _methodCache.TryGetValue(
-                lookupKey,
-                out LinkedListNode<ReflexiveMethodEntry> cached
-            );
+            bool hasCachedMethod = _methodCache.TryGetValue(lookupKey, out LinkedListNode<ReflexiveMethodEntry> cached);
             if (resetGeneration != _resetGeneration)
             {
                 return null;
@@ -8428,14 +6758,7 @@ namespace DxMessaging.Core.MessageBus
                 MethodInfo methodInfo = null;
                 try
                 {
-                    methodInfo = componentType.GetMethod(
-                        message.method,
-                        0,
-                        ReflexiveMethodBindingFlags,
-                        null,
-                        message.signatureKey.CapturedParameterTypes,
-                        null
-                    );
+                    methodInfo = componentType.GetMethod(message.method, 0, ReflexiveMethodBindingFlags, null, message.signatureKey.CapturedParameterTypes, null);
                 }
                 catch (AmbiguousMatchException)
                 {
@@ -8443,9 +6766,7 @@ namespace DxMessaging.Core.MessageBus
                     {
                         return null;
                     }
-                    MethodInfo[] matchingMethods = componentType.GetMethods(
-                        ReflexiveMethodBindingFlags
-                    );
+                    MethodInfo[] matchingMethods = componentType.GetMethods(ReflexiveMethodBindingFlags);
                     Span<MethodInfo> span = matchingMethods.AsSpan();
                     for (int i = 0; i < span.Length; ++i)
                     {
@@ -8455,16 +6776,9 @@ namespace DxMessaging.Core.MessageBus
                         }
                         MethodInfo matchingMethod = span[i];
                         if (
-                            !string.Equals(
-                                matchingMethod.Name,
-                                message.method,
-                                StringComparison.Ordinal
-                            )
+                            !string.Equals(matchingMethod.Name, message.method, StringComparison.Ordinal)
                             || matchingMethod.ContainsGenericParameters
-                            || !ParameterTypesMatch(
-                                matchingMethod.GetParameters(),
-                                message.signatureKey.CapturedParameterTypes
-                            )
+                            || !ParameterTypesMatch(matchingMethod.GetParameters(), message.signatureKey.CapturedParameterTypes)
                         )
                         {
                             continue;
@@ -8496,10 +6810,7 @@ namespace DxMessaging.Core.MessageBus
                          * Metadata resolution can emit recursively and publish this key.
                          * Reuse its node so dictionary and LRU ownership stay aligned.
                          */
-                        bool publishedDuringResolution = _methodCache.TryGetValue(
-                            lookupKey,
-                            out cached
-                        );
+                        bool publishedDuringResolution = _methodCache.TryGetValue(lookupKey, out cached);
                         if (resetGeneration != _resetGeneration)
                         {
                             return null;
@@ -8513,9 +6824,7 @@ namespace DxMessaging.Core.MessageBus
                         else
                         {
                             TrimReflexiveMethodCache(_handlerCacheRetentionLimit - 1);
-                            LinkedListNode<ReflexiveMethodEntry> entry = new(
-                                new ReflexiveMethodEntry(lookupKey, method)
-                            );
+                            LinkedListNode<ReflexiveMethodEntry> entry = new(new ReflexiveMethodEntry(lookupKey, method));
                             _methodCache.Add(lookupKey, entry);
                             _methodCacheLru.AddFirst(entry);
                         }

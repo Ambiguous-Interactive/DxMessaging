@@ -31,9 +31,7 @@ namespace DxMessaging.Tests.Runtime.Core
             foreach (string pair in pairs)
             {
                 string[] parts = pair.Split(',');
-                yield return new TestCaseData(parts[0], parts[1], bool.Parse(parts[2])).SetName(
-                    $"SignatureEquality_{parts[0]}_{parts[1]}"
-                );
+                yield return new TestCaseData(parts[0], parts[1], bool.Parse(parts[2])).SetName($"SignatureEquality_{parts[0]}_{parts[1]}");
             }
         }
 
@@ -61,11 +59,7 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [TestCaseSource(nameof(EqualityCases))]
-        public void EqualityHandlesDefaultAndOrderedSignatures(
-            string leftShape,
-            string rightShape,
-            bool expected
-        )
+        public void EqualityHandlesDefaultAndOrderedSignatures(string leftShape, string rightShape, bool expected)
         {
             MethodSignatureKey left = Key(leftShape);
             MethodSignatureKey right = Key(rightShape);
@@ -89,20 +83,14 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     foreach (bool insertedFirst in new[] { false, true })
                     {
-                        yield return new TestCaseData(count, position, insertedFirst).SetName(
-                            $"SignatureSnapshot_Count{count}_Position{position}_InsertedFirst{insertedFirst}"
-                        );
+                        yield return new TestCaseData(count, position, insertedFirst).SetName($"SignatureSnapshot_Count{count}_Position{position}_InsertedFirst{insertedFirst}");
                     }
                 }
             }
         }
 
         [TestCaseSource(nameof(MutationCases))]
-        public void CallerMutationPreservesEqualityAndDictionaryLookup(
-            int count,
-            int position,
-            bool insertedFirst
-        )
+        public void CallerMutationPreservesEqualityAndDictionaryLookup(int count, int position, bool insertedFirst)
         {
             Type[] types = new Type[count];
             Array.Fill(types, typeof(int));
@@ -123,16 +111,8 @@ namespace DxMessaging.Tests.Runtime.Core
             bool equalsOriginal = key.Equals(original);
             bool foundOriginal = dictionary.TryGetValue(original, out int value);
             bool equalsMutated = key.Equals(mutated);
-            Assert.That(
-                equalsOriginal,
-                Is.True,
-                $"Captured equality={equalsOriginal}; independent lookup={foundOriginal}, value={value}."
-            );
-            Assert.That(
-                foundOriginal,
-                Is.True,
-                "Lookup runs independently of equality assertions."
-            );
+            Assert.That(equalsOriginal, Is.True, $"Captured equality={equalsOriginal}; independent lookup={foundOriginal}, value={value}.");
+            Assert.That(foundOriginal, Is.True, "Lookup runs independently of equality assertions.");
             Assert.That(value, Is.EqualTo(17));
             Assert.That(equalsMutated, Is.False, "Later metadata is a distinct signature.");
             Assert.That(key.GetHashCode(), Is.EqualTo(originalHash));
@@ -152,12 +132,7 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             object[] arguments = { 1, 2 };
             ReflexiveMessage message = explicitTypes
-                ? new ReflexiveMessage(
-                    "Receive",
-                    ReflexiveSendMode.Flat,
-                    arguments,
-                    new[] { typeof(int), typeof(int) }
-                )
+                ? new ReflexiveMessage("Receive", ReflexiveSendMode.Flat, arguments, new[] { typeof(int), typeof(int) })
                 : new ReflexiveMessage("Receive", ReflexiveSendMode.Flat, arguments);
             MethodSignatureKey original = new("Receive", new[] { typeof(int), typeof(int) });
             message.parameterTypes[0] = typeof(object);
@@ -167,9 +142,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void NullMethodNameKeepsArgumentValidation()
         {
-            ArgumentNullException exception = Assert.Throws<ArgumentNullException>(() =>
-                new MethodSignatureKey(null, Type.EmptyTypes)
-            );
+            ArgumentNullException exception = Assert.Throws<ArgumentNullException>(() => new MethodSignatureKey(null, Type.EmptyTypes));
             Assert.That(exception.ParamName, Is.EqualTo("methodName"));
         }
     }

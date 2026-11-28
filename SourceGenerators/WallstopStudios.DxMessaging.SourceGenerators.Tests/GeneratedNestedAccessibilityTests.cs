@@ -28,38 +28,21 @@ internal sealed class GeneratedNestedAccessibilityTests
         string? message
     )
     {
-        string context =
-            $"container={containerAccess}; target={targetAccess}; referenceType={referenceType}; message={message ?? "none"}";
+        string context = $"container={containerAccess}; target={targetAccess}; referenceType={referenceType}; message={message ?? "none"}";
         AssertCompilationExecutes(
-            CreateCompilation(
-                CreateSource(containerAccess, targetAccess, referenceType, message, true)
-            ),
+            CreateCompilation(CreateSource(containerAccess, targetAccess, referenceType, message, true)),
             containerVisibility,
             targetVisibility,
             "Handwritten oracle: " + context
         );
-        CSharpCompilation input = CreateCompilation(
-            CreateSource(containerAccess, targetAccess, referenceType, message, false)
-        );
-        GeneratorDriver driver = CSharpGeneratorDriver.Create(
-            new ISourceGenerator[] { new DxAutoConstructorGenerator(), new DxMessageIdGenerator() },
-            parseOptions: ParseOptions
-        );
-        driver = driver.RunGeneratorsAndUpdateCompilation(
-            input,
-            out Compilation generated,
-            out ImmutableArray<Diagnostic> diagnostics
-        );
+        CSharpCompilation input = CreateCompilation(CreateSource(containerAccess, targetAccess, referenceType, message, false));
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(new ISourceGenerator[] { new DxAutoConstructorGenerator(), new DxMessageIdGenerator() }, parseOptions: ParseOptions);
+        driver = driver.RunGeneratorsAndUpdateCompilation(input, out Compilation generated, out ImmutableArray<Diagnostic> diagnostics);
         GeneratorDriverRunResult result = driver.GetRunResult();
         Assert.That(result.Results.Select(run => run.Exception), Has.All.Null, context);
         Assert.That(diagnostics, Is.Empty, context + "\n" + string.Join("\n", diagnostics));
         Assert.That(result.GeneratedTrees, Has.Length.EqualTo(message == null ? 1 : 2), context);
-        AssertCompilationExecutes(
-            generated,
-            containerVisibility,
-            targetVisibility,
-            "Generated caller: " + context
-        );
+        AssertCompilationExecutes(generated, containerVisibility, targetVisibility, "Generated caller: " + context);
     }
 
     private static IEnumerable<TestCaseData> AccessibilityCases()
@@ -70,18 +53,9 @@ internal sealed class GeneratedNestedAccessibilityTests
             {
                 foreach (bool referenceType in new[] { false, true })
                 {
-                    foreach (
-                        string? message in new[] { null, "Untargeted", "Targeted", "Broadcast" }
-                    )
+                    foreach (string? message in new[] { null, "Untargeted", "Targeted", "Broadcast" })
                     {
-                        yield return new TestCaseData(
-                            containerAccess,
-                            containerVisibility,
-                            targetAccess,
-                            targetVisibility,
-                            referenceType,
-                            message
-                        ).SetName(
+                        yield return new TestCaseData(containerAccess, containerVisibility, targetAccess, targetVisibility, referenceType, message).SetName(
                             $"GeneratedDeclarationsPreserveNestedAccessibility({containerAccess},{targetAccess},{referenceType},{message ?? "none"})"
                         );
                     }
@@ -101,30 +75,17 @@ internal sealed class GeneratedNestedAccessibilityTests
         yield return ("private protected", (TypeAttributes)6);
     }
 
-    private static string CreateSource(
-        string containerAccess,
-        string targetAccess,
-        bool referenceType,
-        string? message,
-        bool manual
-    )
+    private static string CreateSource(string containerAccess, string targetAccess, bool referenceType, string? message, bool manual)
     {
         string declaration = referenceType ? "partial class" : "readonly partial struct";
-        string attributes = manual
-            ? ""
-            : "[DxMessaging.Core.Attributes.DxAutoConstructor]"
-                + (message == null ? "" : $"[DxMessaging.Core.Attributes.Dx{message}Message]");
-        string contract =
-            manual && message != null ? $" : DxMessaging.Core.Messages.I{message}Message" : "";
+        string attributes = manual ? "" : "[DxMessaging.Core.Attributes.DxAutoConstructor]" + (message == null ? "" : $"[DxMessaging.Core.Attributes.Dx{message}Message]");
+        string contract = manual && message != null ? $" : DxMessaging.Core.Messages.I{message}Message" : "";
         string members = manual ? "public Packet(int value) { Value = value; }" : "";
         if (manual && message != null)
         {
             members += "public System.Type MessageType => typeof(Packet);";
         }
-        string identity =
-            message == null
-                ? ""
-                : $" && ((DxMessaging.Core.Messages.I{message}Message)packet).MessageType == typeof(Packet)";
+        string identity = message == null ? "" : $" && ((DxMessaging.Core.Messages.I{message}Message)packet).MessageType == typeof(Packet)";
         return $$"""
 namespace ConsumerExample
 {
@@ -154,10 +115,7 @@ namespace ConsumerExample
             "NestedAccessibilityConsumer",
             ShippedContracts.Add(CSharpSyntaxTree.ParseText(source, ParseOptions, "Consumer.cs")),
             GeneratorTestUtilities.CompilationReferences,
-            new CSharpCompilationOptions(
-                OutputKind.DynamicallyLinkedLibrary,
-                generalDiagnosticOption: ReportDiagnostic.Error
-            )
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, generalDiagnosticOption: ReportDiagnostic.Error)
         );
 
     private static ImmutableArray<SyntaxTree> ReadShippedContracts()
@@ -169,9 +127,7 @@ namespace ConsumerExample
         }
         if (root == null)
         {
-            throw new DirectoryNotFoundException(
-                "Find the repository containing the real messaging contracts."
-            );
+            throw new DirectoryNotFoundException("Find the repository containing the real messaging contracts.");
         }
         string[] paths =
         {
@@ -194,19 +150,10 @@ namespace ConsumerExample
             .ToImmutableArray<SyntaxTree>();
     }
 
-    private static void AssertCompilationExecutes(
-        Compilation compilation,
-        TypeAttributes containerVisibility,
-        TypeAttributes targetVisibility,
-        string context
-    )
+    private static void AssertCompilationExecutes(Compilation compilation, TypeAttributes containerVisibility, TypeAttributes targetVisibility, string context)
     {
         Diagnostic[] diagnostics = compilation.GetDiagnostics().ToArray();
-        Assert.That(
-            diagnostics,
-            Is.Empty,
-            context + "\n" + string.Join("\n", diagnostics.AsEnumerable())
-        );
+        Assert.That(diagnostics, Is.Empty, context + "\n" + string.Join("\n", diagnostics.AsEnumerable()));
         using MemoryStream image = new();
         EmitResult emit = compilation.Emit(image);
         Assert.That(emit.Success, Is.True, context + "\n" + string.Join("\n", emit.Diagnostics));
@@ -217,31 +164,13 @@ namespace ConsumerExample
             Assembly assembly = load.LoadFromStream(image);
             Type? envelope = assembly.GetType("ConsumerExample.Outer+Envelope");
             Assert.That(envelope, Is.Not.Null, "The containing type must be emitted: " + context);
-            Assert.That(
-                envelope!.Attributes & TypeAttributes.VisibilityMask,
-                Is.EqualTo(containerVisibility),
-                "Container visibility: " + context
-            );
-            Type? packet = envelope.GetNestedType(
-                "Packet",
-                BindingFlags.Public | BindingFlags.NonPublic
-            );
+            Assert.That(envelope!.Attributes & TypeAttributes.VisibilityMask, Is.EqualTo(containerVisibility), "Container visibility: " + context);
+            Type? packet = envelope.GetNestedType("Packet", BindingFlags.Public | BindingFlags.NonPublic);
             Assert.That(packet, Is.Not.Null, "The target must be emitted: " + context);
-            Assert.That(
-                packet!.Attributes & TypeAttributes.VisibilityMask,
-                Is.EqualTo(targetVisibility),
-                "Target visibility: " + context
-            );
-            MethodInfo? verify = envelope.GetMethod(
-                "Verify",
-                BindingFlags.Public | BindingFlags.Static
-            );
+            Assert.That(packet!.Attributes & TypeAttributes.VisibilityMask, Is.EqualTo(targetVisibility), "Target visibility: " + context);
+            MethodInfo? verify = envelope.GetMethod("Verify", BindingFlags.Public | BindingFlags.Static);
             Assert.That(verify, Is.Not.Null, "The in-scope caller must be emitted: " + context);
-            Assert.That(
-                verify!.Invoke(null, null),
-                Is.EqualTo(true),
-                "Field and identity: " + context
-            );
+            Assert.That(verify!.Invoke(null, null), Is.EqualTo(true), "Field and identity: " + context);
         }
         finally
         {

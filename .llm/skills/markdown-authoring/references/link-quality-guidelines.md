@@ -4,7 +4,8 @@
 
 ## Overview
 
-Links in documentation serve two purposes: navigation and context. Poor link quality -- whether through cryptic text, incorrect URLs, or broken references -- damages user trust and wastes developer time investigating CI failures.
+Links in documentation serve two purposes: navigation and context. Poor link quality -- whether through cryptic text, incorrect URLs, or broken references -- damages user trust and
+wastes developer time investigating CI failures.
 
 This skill covers:
 

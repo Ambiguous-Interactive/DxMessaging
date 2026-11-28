@@ -61,18 +61,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         private static IWorkload Create(bool sticky, bool referencePayload, bool observe) =>
             referencePayload
-                ? new Workload<ReferenceMessage<First>, ReferenceMessage<Second>>(
-                    sticky,
-                    new ReferenceMessage<First>(7),
-                    new ReferenceMessage<Second>(11),
-                    observe
-                )
-                : new Workload<ValueMessage<First>, ValueMessage<Second>>(
-                    sticky,
-                    new ValueMessage<First>(7),
-                    new ValueMessage<Second>(11),
-                    observe
-                );
+                ? new Workload<ReferenceMessage<First>, ReferenceMessage<Second>>(sticky, new ReferenceMessage<First>(7), new ReferenceMessage<Second>(11), observe)
+                : new Workload<ValueMessage<First>, ValueMessage<Second>>(sticky, new ValueMessage<First>(7), new ValueMessage<Second>(11), observe);
 
         private interface IWorkload : IDisposable
         {
@@ -158,8 +148,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             public void Verify(long expected)
             {
-                string context =
-                    $"sticky={_sticky}, first={typeof(TFirst)}, second={typeof(TSecond)}, operations={expected}";
+                string context = $"sticky={_sticky}, first={typeof(TFirst)}, second={typeof(TSecond)}, operations={expected}";
                 Assert.That(_initialEmissionId, Is.EqualTo(2), context);
                 Assert.That(Emissions, Is.EqualTo(expected), context);
                 Assert.That(_nextIsFirst, Is.EqualTo((expected & 1) == 0), context);
@@ -168,11 +157,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     Assert.That(_observed.Count, Is.EqualTo(expected), context);
                     for (int index = 0; index < _observed.Count; ++index)
                     {
-                        Assert.That(
-                            _observed[index],
-                            Is.SameAs((index & 1) == 0 ? typeof(TFirst) : typeof(TSecond)),
-                            context
-                        );
+                        Assert.That(_observed[index], Is.SameAs((index & 1) == 0 ? typeof(TFirst) : typeof(TSecond)), context);
                     }
                 }
                 Assert.That(_bus.TryGetLatest(out TFirst first), Is.True, context);
@@ -202,16 +187,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     {
                         _bus.ClearLatest<TFirst>();
                         _bus.ClearLatest<TSecond>();
-                        Assert.That(
-                            _bus.TryGetLatest(out TFirst _),
-                            Is.False,
-                            $"Clear must remove {typeof(TFirst)}."
-                        );
-                        Assert.That(
-                            _bus.TryGetLatest(out TSecond _),
-                            Is.False,
-                            $"Clear must remove {typeof(TSecond)}."
-                        );
+                        Assert.That(_bus.TryGetLatest(out TFirst _), Is.False, $"Clear must remove {typeof(TFirst)}.");
+                        Assert.That(_bus.TryGetLatest(out TSecond _), Is.False, $"Clear must remove {typeof(TSecond)}.");
                     }
                     finally
                     {
@@ -234,8 +211,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             public int Value { get; }
         }
 
-        private sealed class ReferenceMessage<TMarker>
-            : IUntargetedMessage<ReferenceMessage<TMarker>>
+        private sealed class ReferenceMessage<TMarker> : IUntargetedMessage<ReferenceMessage<TMarker>>
         {
             internal ReferenceMessage(int value) => Value = value;
 
@@ -250,39 +226,19 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         [TestCase(false, true)]
         [TestCase(true, false)]
         [TestCase(true, true)]
-        public void AlternatingWorkloadPreservesEveryPublicationAcrossOddBatchBoundaries(
-            bool sticky,
-            bool referencePayload
-        )
+        public void AlternatingWorkloadPreservesEveryPublicationAcrossOddBatchBoundaries(bool sticky, bool referencePayload)
         {
-            long emissions = StickyAlternatingTypeBenchmarks.RunContract(
-                sticky,
-                referencePayload,
-                3,
-                7
-            );
-            Assert.That(
-                emissions,
-                Is.EqualTo(10),
-                $"sticky={sticky}, reference={referencePayload}"
-            );
+            long emissions = StickyAlternatingTypeBenchmarks.RunContract(sticky, referencePayload, 3, 7);
+            Assert.That(emissions, Is.EqualTo(10), $"sticky={sticky}, reference={referencePayload}");
         }
 
         [TestCase(false, false)]
         [TestCase(false, true)]
         [TestCase(true, false)]
         [TestCase(true, true)]
-        public void AlternatingWorkloadHandlesEmptyAndSingleOperationBatches(
-            bool sticky,
-            bool referencePayload
-        )
+        public void AlternatingWorkloadHandlesEmptyAndSingleOperationBatches(bool sticky, bool referencePayload)
         {
-            long emissions = StickyAlternatingTypeBenchmarks.RunContract(
-                sticky,
-                referencePayload,
-                0,
-                1
-            );
+            long emissions = StickyAlternatingTypeBenchmarks.RunContract(sticky, referencePayload, 0, 1);
             Assert.That(emissions, Is.EqualTo(1), $"sticky={sticky}, reference={referencePayload}");
         }
 
@@ -290,10 +246,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         [TestCase(false, true)]
         [TestCase(true, false)]
         [TestCase(true, true)]
-        public void AlternatingWorkloadRejectsNegativeCountsWithoutPublishing(
-            bool sticky,
-            bool referencePayload
-        )
+        public void AlternatingWorkloadRejectsNegativeCountsWithoutPublishing(bool sticky, bool referencePayload)
         {
             Assert.Throws<ArgumentOutOfRangeException>(
                 () => StickyAlternatingTypeBenchmarks.RunContract(sticky, referencePayload, -1, 0),

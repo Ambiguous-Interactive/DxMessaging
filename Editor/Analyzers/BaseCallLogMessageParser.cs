@@ -31,13 +31,7 @@ namespace DxMessaging.Editor.Analyzers
 
         public int Line { get; }
 
-        public ParsedEntry(
-            string diagnosticId,
-            string typeFullName,
-            string methodName,
-            string filePath,
-            int line
-        )
+        public ParsedEntry(string diagnosticId, string typeFullName, string methodName, string filePath, int line)
         {
             DiagnosticId = diagnosticId;
             TypeFullName = typeFullName;
@@ -108,8 +102,7 @@ namespace DxMessaging.Editor.Analyzers
             same prefix regex serve all five diagnostics (DXMSG006/007/008/009/010). The trailing
             `: ` is consumed so the diagnostic-specific regexes only see the message body.
         */
-        private const RegexOptions SharedOptions =
-            RegexOptions.Compiled | RegexOptions.CultureInvariant;
+        private const RegexOptions SharedOptions = RegexOptions.Compiled | RegexOptions.CultureInvariant;
 
         private static readonly Regex PrefixRegex = new(
             @"^(?<path>[^()\r\n]+?)\((?<line>\d+),(?<col>\d+)\)\s*:\s*(?:warning|error|info|hidden|message)\s+DXMSG0(?:0[6789]|10)\s*:\s*",
@@ -146,10 +139,7 @@ namespace DxMessaging.Editor.Analyzers
               '{type}' is excluded from the DxMessaging base-call check ({source}).
             No method name in the message; MethodName is returned as the empty string.
         */
-        private static readonly Regex Dxmsg008Regex = new(
-            @"^'(?<type>[^']+)'\s+is\s+excluded\s+from\s+the\s+DxMessaging\s+base-call\s+check\s+\([^)]*\)\.",
-            SharedOptions
-        );
+        private static readonly Regex Dxmsg008Regex = new(@"^'(?<type>[^']+)'\s+is\s+excluded\s+from\s+the\s+DxMessaging\s+base-call\s+check\s+\([^)]*\)\.", SharedOptions);
 
         /*
             DXMSG009 format:
@@ -158,10 +148,7 @@ namespace DxMessaging.Editor.Analyzers
             We anchor on the head of the message and stop after the modifier-tokens phrase so future
             wording tweaks to the trailing remediation text don't break the parser.
         */
-        private static readonly Regex Dxmsg009Regex = new(
-            @"^'(?<type>[^']+)'\s+declares\s+(?<method>[A-Za-z_][A-Za-z0-9_]*)\s+without\s+'override'\s+or\s+'new'",
-            SharedOptions
-        );
+        private static readonly Regex Dxmsg009Regex = new(@"^'(?<type>[^']+)'\s+declares\s+(?<method>[A-Za-z_][A-Za-z0-9_]*)\s+without\s+'override'\s+or\s+'new'", SharedOptions);
 
         /*
             DXMSG010 format:
@@ -185,10 +172,7 @@ namespace DxMessaging.Editor.Analyzers
             }
 
             // A source path can start with an apostrophe, so check the diagnostic ID first.
-            if (
-                0 <= logLine.IndexOf("DXMSG0", StringComparison.Ordinal)
-                && PrefixRegex.IsMatch(logLine)
-            )
+            if (0 <= logLine.IndexOf("DXMSG0", StringComparison.Ordinal) && PrefixRegex.IsMatch(logLine))
             {
                 return true;
             }
@@ -221,9 +205,7 @@ namespace DxMessaging.Editor.Analyzers
 
         private static bool StartsWithWord(ReadOnlySpan<char> body, string word)
         {
-            return word.Length < body.Length
-                && char.IsWhiteSpace(body[word.Length])
-                && body.StartsWith(word.AsSpan());
+            return word.Length < body.Length && char.IsWhiteSpace(body[word.Length]) && body.StartsWith(word.AsSpan());
         }
 
         /// <summary>
@@ -250,14 +232,7 @@ namespace DxMessaging.Editor.Analyzers
             if (prefixMatch.Success)
             {
                 filePath = prefixMatch.Groups["path"].Value;
-                if (
-                    !int.TryParse(
-                        prefixMatch.Groups["line"].Value,
-                        NumberStyles.Integer,
-                        CultureInfo.InvariantCulture,
-                        out line
-                    )
-                )
+                if (!int.TryParse(prefixMatch.Groups["line"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out line))
                 {
                     line = 0;
                 }
@@ -349,10 +324,7 @@ namespace DxMessaging.Editor.Analyzers
             return result;
         }
 
-        internal static void AddEntry(
-            Dictionary<string, ParsedTypeReport> result,
-            ParsedEntry entry
-        )
+        internal static void AddEntry(Dictionary<string, ParsedTypeReport> result, ParsedEntry entry)
         {
             if (!result.TryGetValue(entry.TypeFullName, out ParsedTypeReport? report))
             {

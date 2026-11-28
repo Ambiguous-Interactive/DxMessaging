@@ -1,6 +1,7 @@
 # Readonly Struct with Cached Hash for Dictionary Keys
 
-> **One-line summary**: Pre-compute hash codes at construction time for value types used as dictionary keys, eliminating repeated hash calculations and enabling hash-based early-out in equality checks.
+> **One-line summary**: Pre-compute hash codes at construction time for value types used as dictionary keys, eliminating repeated hash calculations and enabling hash-based
+> early-out in equality checks.
 
 ## Overview
 

@@ -45,13 +45,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         public const int PairedMinimumCycleActiveMilliseconds = 625;
         public const double PairedMaterialityBandPercent = 3d;
 
-        public static readonly TimeSpan MeasurementWindow = TimeSpan.FromSeconds(
-            MeasurementSeconds
-        );
+        public static readonly TimeSpan MeasurementWindow = TimeSpan.FromSeconds(MeasurementSeconds);
 
-        private static readonly long MeasurementWindowTicks = (long)(
-            Stopwatch.Frequency * MeasurementWindow.TotalSeconds
-        );
+        private static readonly long MeasurementWindowTicks = (long)(Stopwatch.Frequency * MeasurementWindow.TotalSeconds);
 
         /// <summary>
         /// Isolates benchmarks hosted by dependent test assemblies from the process-wide idle
@@ -111,23 +107,14 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 timed-window-only. See ComparisonHarness for the canonical reconciliation.
             */
             long allocationProbeOperations = 0;
-            AllocationProbe.AllocationSample allocationSample = AllocationProbe.MeasureWithBytes(
-                () =>
-                {
-                    allocationProbeOperations += emitBatch();
-                }
-            );
+            AllocationProbe.AllocationSample allocationSample = AllocationProbe.MeasureWithBytes(() =>
+            {
+                allocationProbeOperations += emitBatch();
+            });
 
             double elapsedSeconds = (endTimestamp - startTimestamp) / (double)Stopwatch.Frequency;
             double operationsPerSecond = totalOperations / Math.Max(elapsedSeconds, double.Epsilon);
-            return new BenchmarkMeasurement(
-                totalOperations,
-                elapsedSeconds,
-                operationsPerSecond,
-                allocationSample.Allocations,
-                allocationSample.Bytes,
-                allocationProbeOperations
-            );
+            return new BenchmarkMeasurement(totalOperations, elapsedSeconds, operationsPerSecond, allocationSample.Allocations, allocationSample.Bytes, allocationProbeOperations);
         }
 
         /// <summary>
@@ -136,21 +123,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         /// active time. Both workloads therefore occupy every position while the unchanged control
         /// stays milliseconds away from the workload it normalizes.
         /// </summary>
-        public static PairedBenchmarkMeasurement MeasurePaired(
-            Action firstWarmup,
-            Func<int> firstBatch,
-            Action secondWarmup,
-            Func<int> secondBatch
-        )
+        public static PairedBenchmarkMeasurement MeasurePaired(Action firstWarmup, Func<int> firstBatch, Action secondWarmup, Func<int> secondBatch)
         {
-            return MeasurePaired(
-                firstWarmup,
-                firstBatch,
-                secondWarmup,
-                secondBatch,
-                PairedMeasurementCycles,
-                TimeSpan.FromMilliseconds(PairedMinimumCycleActiveMilliseconds)
-            );
+            return MeasurePaired(firstWarmup, firstBatch, secondWarmup, secondBatch, PairedMeasurementCycles, TimeSpan.FromMilliseconds(PairedMinimumCycleActiveMilliseconds));
         }
 
         /// <summary>
@@ -166,15 +141,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             TimeSpan minimumCycleActiveDuration
         )
         {
-            return MeasurePaired(
-                firstWarmup,
-                firstBatch,
-                secondWarmup,
-                secondBatch,
-                cycles,
-                minimumCycleActiveDuration,
-                complementaryOrder: false
-            );
+            return MeasurePaired(firstWarmup, firstBatch, secondWarmup, secondBatch, cycles, minimumCycleActiveDuration, complementaryOrder: false);
         }
 
         /// <summary>
@@ -203,11 +170,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             if (cycles <= 0)
             {
-                throw new ArgumentOutOfRangeException(
-                    nameof(cycles),
-                    cycles,
-                    "Paired measurement cycle count must be positive."
-                );
+                throw new ArgumentOutOfRangeException(nameof(cycles), cycles, "Paired measurement cycle count must be positive.");
             }
 
             if (minimumCycleActiveDuration <= TimeSpan.Zero)
@@ -219,13 +182,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 );
             }
 
-            double requestedCycleTicks =
-                Stopwatch.Frequency * minimumCycleActiveDuration.TotalSeconds;
-            if (
-                double.IsNaN(requestedCycleTicks)
-                || double.IsInfinity(requestedCycleTicks)
-                || long.MaxValue <= requestedCycleTicks
-            )
+            double requestedCycleTicks = Stopwatch.Frequency * minimumCycleActiveDuration.TotalSeconds;
+            if (double.IsNaN(requestedCycleTicks) || double.IsInfinity(requestedCycleTicks) || long.MaxValue <= requestedCycleTicks)
             {
                 throw new ArgumentOutOfRangeException(
                     nameof(minimumCycleActiveDuration),
@@ -254,12 +212,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 {
                     for (int position = 0; position < 8; position++)
                     {
-                        bool firstWorkload =
-                            (position == 0 || position == 3 || position == 5 || position == 6)
-                            != complementaryOrder;
-                        PairedBatchMeasurement batchMeasurement = MeasurePairedBatch(
-                            firstWorkload ? firstBatch : secondBatch
-                        );
+                        bool firstWorkload = (position == 0 || position == 3 || position == 5 || position == 6) != complementaryOrder;
+                        PairedBatchMeasurement batchMeasurement = MeasurePairedBatch(firstWorkload ? firstBatch : secondBatch);
                         if (firstWorkload)
                         {
                             firstCycleOperations += batchMeasurement.Operations;
@@ -271,30 +225,17 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                             secondCycleTicks += batchMeasurement.ElapsedTicks;
                         }
                     }
-                } while (
-                    firstCycleTicks < minimumCycleTicks || secondCycleTicks < minimumCycleTicks
-                );
+                } while (firstCycleTicks < minimumCycleTicks || secondCycleTicks < minimumCycleTicks);
 
                 firstTotalOperations += firstCycleOperations;
                 firstTotalTicks += firstCycleTicks;
                 secondTotalOperations += secondCycleOperations;
                 secondTotalTicks += secondCycleTicks;
-                cycleMeasurements[cycle] = PairedCycleMeasurement.FromTicks(
-                    firstCycleOperations,
-                    firstCycleTicks,
-                    secondCycleOperations,
-                    secondCycleTicks
-                );
+                cycleMeasurements[cycle] = PairedCycleMeasurement.FromTicks(firstCycleOperations, firstCycleTicks, secondCycleOperations, secondCycleTicks);
             }
 
-            PairedWorkloadMeasurement first = PairedWorkloadMeasurement.FromTicks(
-                firstTotalOperations,
-                firstTotalTicks
-            );
-            PairedWorkloadMeasurement second = PairedWorkloadMeasurement.FromTicks(
-                secondTotalOperations,
-                secondTotalTicks
-            );
+            PairedWorkloadMeasurement first = PairedWorkloadMeasurement.FromTicks(firstTotalOperations, firstTotalTicks);
+            PairedWorkloadMeasurement second = PairedWorkloadMeasurement.FromTicks(secondTotalOperations, secondTotalTicks);
             return new PairedBenchmarkMeasurement(first, second, cycleMeasurements);
         }
 
@@ -305,9 +246,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             long endTimestamp = Stopwatch.GetTimestamp();
             if (operations <= 0)
             {
-                throw new InvalidOperationException(
-                    $"Paired benchmark batches must report a positive operation count; observed {operations}."
-                );
+                throw new InvalidOperationException($"Paired benchmark batches must report a positive operation count; observed {operations}.");
             }
 
             return new PairedBatchMeasurement(operations, endTimestamp - startTimestamp);
@@ -353,20 +292,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         /// <param name="setUpTrial">Builds fresh state for trial <c>i</c> (UNTIMED). Use <c>i</c> to pick a distinct closed type.</param>
         /// <param name="timedOperation">The ONE operation timed per trial.</param>
         /// <param name="tearDownTrial">Disposes the trial's state (UNTIMED).</param>
-        public static ColdLatencyMeasurement MeasureColdLatency<TState>(
-            int trials,
-            Func<int, TState> setUpTrial,
-            Action<TState> timedOperation,
-            Action<TState> tearDownTrial
-        )
+        public static ColdLatencyMeasurement MeasureColdLatency<TState>(int trials, Func<int, TState> setUpTrial, Action<TState> timedOperation, Action<TState> tearDownTrial)
         {
             if (trials <= 0)
             {
-                throw new ArgumentOutOfRangeException(
-                    nameof(trials),
-                    trials,
-                    "Cold-latency trial count must be positive."
-                );
+                throw new ArgumentOutOfRangeException(nameof(trials), trials, "Cold-latency trial count must be positive.");
             }
 
             if (setUpTrial == null)
@@ -405,8 +335,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     timedOperation(state);
                     long endTimestamp = Stopwatch.GetTimestamp();
                     AllocationProbe.AllocationSample sample = window.SampleBoth();
-                    wallClockSamples[index] =
-                        (endTimestamp - startTimestamp) / (double)Stopwatch.Frequency * 1000d;
+                    wallClockSamples[index] = (endTimestamp - startTimestamp) / (double)Stopwatch.Frequency * 1000d;
                     allocatedSamples[index] = sample.Allocations;
                     allocatedByteSamples[index] = sample.Bytes;
                 }
@@ -419,20 +348,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             ColdLatencyTrial[] rawTrials = new ColdLatencyTrial[trials];
             for (int index = 0; index < trials; ++index)
             {
-                rawTrials[index] = new ColdLatencyTrial(
-                    index,
-                    wallClockSamples[index],
-                    allocatedSamples[index],
-                    allocatedByteSamples[index]
-                );
+                rawTrials[index] = new ColdLatencyTrial(index, wallClockSamples[index], allocatedSamples[index], allocatedByteSamples[index]);
             }
-            return new ColdLatencyMeasurement(
-                Median(wallClockSamples),
-                Median(allocatedSamples),
-                MedianOfMeasured(allocatedByteSamples),
-                trials,
-                rawTrials
-            );
+            return new ColdLatencyMeasurement(Median(wallClockSamples), Median(allocatedSamples), MedianOfMeasured(allocatedByteSamples), trials, rawTrials);
         }
 
         /// <summary>
@@ -566,15 +484,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         /// operations; non-integral remainders stay visible because they signal
         /// inconsistent fan-out within one logical operation.
         /// </summary>
-        public static string DescribeInvocationDelta(
-            long deltaInvocations,
-            long invocationsPerOperation
-        )
+        public static string DescribeInvocationDelta(long deltaInvocations, long invocationsPerOperation)
         {
             if (invocationsPerOperation <= 0)
             {
-                return $"{deltaInvocations} invocations "
-                    + $"(invocationsPerOperation={invocationsPerOperation})";
+                return $"{deltaInvocations} invocations " + $"(invocationsPerOperation={invocationsPerOperation})";
             }
 
             long deltaOperations = deltaInvocations / invocationsPerOperation;
@@ -584,8 +498,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 return $"{deltaInvocations} invocations = {deltaOperations} ops";
             }
 
-            string remainderText =
-                0 < remainder ? $"+ {remainder} leftover" : $"- {-remainder} leftover";
+            string remainderText = 0 < remainder ? $"+ {remainder} leftover" : $"- {-remainder} leftover";
             return $"{deltaInvocations} invocations = {deltaOperations} ops {remainderText} "
                 + "(NON-INTEGRAL fan-out: a partial operation's worth of invocations, i.e. the "
                 + "library fanned out inconsistently across emits -- a real correctness defect)";
@@ -665,11 +578,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
     /// <summary>Aggregated active time and work for one side of a paired measurement.</summary>
     public readonly struct PairedWorkloadMeasurement
     {
-        private PairedWorkloadMeasurement(
-            long totalOperations,
-            double elapsedSeconds,
-            double operationsPerSecond
-        )
+        private PairedWorkloadMeasurement(long totalOperations, double elapsedSeconds, double operationsPerSecond)
         {
             TotalOperations = totalOperations;
             ElapsedSeconds = elapsedSeconds;
@@ -685,21 +594,14 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         internal static PairedWorkloadMeasurement FromTicks(long totalOperations, long elapsedTicks)
         {
             double elapsedSeconds = elapsedTicks / (double)Stopwatch.Frequency;
-            return new PairedWorkloadMeasurement(
-                totalOperations,
-                elapsedSeconds,
-                totalOperations / Math.Max(elapsedSeconds, double.Epsilon)
-            );
+            return new PairedWorkloadMeasurement(totalOperations, elapsedSeconds, totalOperations / Math.Max(elapsedSeconds, double.Epsilon));
         }
     }
 
     /// <summary>Retained work, active time, and rate ratio for one paired cycle.</summary>
     public readonly struct PairedCycleMeasurement
     {
-        private PairedCycleMeasurement(
-            PairedWorkloadMeasurement first,
-            PairedWorkloadMeasurement second
-        )
+        private PairedCycleMeasurement(PairedWorkloadMeasurement first, PairedWorkloadMeasurement second)
         {
             First = first;
             Second = second;
@@ -712,17 +614,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         public double FirstToSecondRatio { get; }
 
-        internal static PairedCycleMeasurement FromTicks(
-            long firstOperations,
-            long firstTicks,
-            long secondOperations,
-            long secondTicks
-        )
+        internal static PairedCycleMeasurement FromTicks(long firstOperations, long firstTicks, long secondOperations, long secondTicks)
         {
-            return new PairedCycleMeasurement(
-                PairedWorkloadMeasurement.FromTicks(firstOperations, firstTicks),
-                PairedWorkloadMeasurement.FromTicks(secondOperations, secondTicks)
-            );
+            return new PairedCycleMeasurement(PairedWorkloadMeasurement.FromTicks(firstOperations, firstTicks), PairedWorkloadMeasurement.FromTicks(secondOperations, secondTicks));
         }
     }
 
@@ -733,11 +627,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
     /// </summary>
     public readonly struct PairedBenchmarkMeasurement
     {
-        internal PairedBenchmarkMeasurement(
-            PairedWorkloadMeasurement first,
-            PairedWorkloadMeasurement second,
-            PairedCycleMeasurement[] cycles
-        )
+        internal PairedBenchmarkMeasurement(PairedWorkloadMeasurement first, PairedWorkloadMeasurement second, PairedCycleMeasurement[] cycles)
         {
             if (cycles == null)
             {
@@ -746,10 +636,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             if (cycles.Length == 0)
             {
-                throw new ArgumentException(
-                    "Paired measurement must retain at least one cycle.",
-                    nameof(cycles)
-                );
+                throw new ArgumentException("Paired measurement must retain at least one cycle.", nameof(cycles));
             }
 
             First = first;
@@ -768,17 +655,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             double logRatioSum = 0d;
             for (int index = 0; index < cycleRatios.Length; index++)
             {
-                if (
-                    cycleRatios[index] <= 0d
-                    || double.IsNaN(cycleRatios[index])
-                    || double.IsInfinity(cycleRatios[index])
-                )
+                if (cycleRatios[index] <= 0d || double.IsNaN(cycleRatios[index]) || double.IsInfinity(cycleRatios[index]))
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(cycleRatios),
-                        cycleRatios[index],
-                        $"Paired cycle ratio at index {index} must be positive and finite."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(cycleRatios), cycleRatios[index], $"Paired cycle ratio at index {index} must be positive and finite.");
                 }
 
                 minimum = Math.Min(minimum, cycleRatios[index]);
@@ -814,27 +693,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
     /// </summary>
     public readonly struct ColdLatencyMeasurement
     {
-        public ColdLatencyMeasurement(
-            double medianWallClockMs,
-            long medianGcAllocations,
-            long medianGcAllocatedBytes,
-            int trials
-        )
-            : this(
-                medianWallClockMs,
-                medianGcAllocations,
-                medianGcAllocatedBytes,
-                trials,
-                Array.Empty<ColdLatencyTrial>()
-            ) { }
+        public ColdLatencyMeasurement(double medianWallClockMs, long medianGcAllocations, long medianGcAllocatedBytes, int trials)
+            : this(medianWallClockMs, medianGcAllocations, medianGcAllocatedBytes, trials, Array.Empty<ColdLatencyTrial>()) { }
 
-        internal ColdLatencyMeasurement(
-            double medianWallClockMs,
-            long medianGcAllocations,
-            long medianGcAllocatedBytes,
-            int trials,
-            ColdLatencyTrial[] rawTrials
-        )
+        internal ColdLatencyMeasurement(double medianWallClockMs, long medianGcAllocations, long medianGcAllocatedBytes, int trials, ColdLatencyTrial[] rawTrials)
         {
             MedianWallClockMs = medianWallClockMs;
             MedianGcAllocations = medianGcAllocations;
@@ -874,12 +736,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
     /// <summary>One retained single-shot observation, including unavailable allocation sentinels.</summary>
     public readonly struct ColdLatencyTrial
     {
-        internal ColdLatencyTrial(
-            int index,
-            double wallClockMs,
-            long gcAllocations,
-            long gcAllocatedBytes
-        )
+        internal ColdLatencyTrial(int index, double wallClockMs, long gcAllocations, long gcAllocatedBytes)
         {
             Index = index;
             WallClockMs = wallClockMs;
@@ -902,8 +759,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
     /// </summary>
     public static class DispatchBenchmarkScenarios
     {
-        public static readonly DispatchBenchmarkScenario[] All = (DispatchBenchmarkScenario[])
-            Enum.GetValues(typeof(DispatchBenchmarkScenario));
+        public static readonly DispatchBenchmarkScenario[] All = (DispatchBenchmarkScenario[])Enum.GetValues(typeof(DispatchBenchmarkScenario));
 
         /// <summary>
         /// Per-scenario warm-up emit count. Every scenario keeps the shared
@@ -951,75 +807,43 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 DispatchBenchmarkScenario.EmptyBusDispatch => "EmptyBus_Dispatch",
                 DispatchBenchmarkScenario.UntargetedFloodOneHandler => "UntargetedFlood_OneHandler",
-                DispatchBenchmarkScenario.UntargetedFloodOneDirectHandler =>
-                    "UntargetedFlood_OneDirectHandler",
-                DispatchBenchmarkScenario.UntargetedFloodTwoHandlersOnePriority =>
-                    "UntargetedFlood_TwoHandlers_OnePriority",
-                DispatchBenchmarkScenario.UntargetedFloodThreeHandlersOnePriority =>
-                    "UntargetedFlood_ThreeHandlers_OnePriority",
-                DispatchBenchmarkScenario.UntargetedFloodFourHandlersOnePriority =>
-                    "UntargetedFlood_FourHandlers_OnePriority",
-                DispatchBenchmarkScenario.UntargetedFloodFourHandlersFourPriorities =>
-                    "UntargetedFlood_FourHandlers_FourPriorities",
-                DispatchBenchmarkScenario.UntargetedFloodSixteenHandlersOnePriority =>
-                    "UntargetedFlood_SixteenHandlers_OnePriority",
-                DispatchBenchmarkScenario.UntargetedFloodOneInactiveHandler =>
-                    "UntargetedFlood_OneInactiveHandler",
-                DispatchBenchmarkScenario.TargetedFloodNoMatchingTarget =>
-                    "TargetedFlood_NoMatchingTarget",
+                DispatchBenchmarkScenario.UntargetedFloodOneDirectHandler => "UntargetedFlood_OneDirectHandler",
+                DispatchBenchmarkScenario.UntargetedFloodTwoHandlersOnePriority => "UntargetedFlood_TwoHandlers_OnePriority",
+                DispatchBenchmarkScenario.UntargetedFloodThreeHandlersOnePriority => "UntargetedFlood_ThreeHandlers_OnePriority",
+                DispatchBenchmarkScenario.UntargetedFloodFourHandlersOnePriority => "UntargetedFlood_FourHandlers_OnePriority",
+                DispatchBenchmarkScenario.UntargetedFloodFourHandlersFourPriorities => "UntargetedFlood_FourHandlers_FourPriorities",
+                DispatchBenchmarkScenario.UntargetedFloodSixteenHandlersOnePriority => "UntargetedFlood_SixteenHandlers_OnePriority",
+                DispatchBenchmarkScenario.UntargetedFloodOneInactiveHandler => "UntargetedFlood_OneInactiveHandler",
+                DispatchBenchmarkScenario.TargetedFloodNoMatchingTarget => "TargetedFlood_NoMatchingTarget",
                 DispatchBenchmarkScenario.TargetedFloodOneListener => "TargetedFlood_OneListener",
-                DispatchBenchmarkScenario.TargetedFloodSixteenListeners =>
-                    "TargetedFlood_SixteenListeners",
+                DispatchBenchmarkScenario.TargetedFloodSixteenListeners => "TargetedFlood_SixteenListeners",
                 DispatchBenchmarkScenario.BroadcastFloodOneHandler => "BroadcastFlood_OneHandler",
-                DispatchBenchmarkScenario.TargetedFloodOneWithoutTargetingActionHandler =>
-                    "TargetedFlood_OneWithoutTargeting_ActionHandler",
-                DispatchBenchmarkScenario.TargetedFloodOneWithoutTargetingFastHandler =>
-                    "TargetedFlood_OneWithoutTargeting_FastHandler",
-                DispatchBenchmarkScenario.BroadcastFloodOneWithoutSourceActionHandler =>
-                    "BroadcastFlood_OneWithoutSource_ActionHandler",
-                DispatchBenchmarkScenario.BroadcastFloodOneWithoutSourceFastHandler =>
-                    "BroadcastFlood_OneWithoutSource_FastHandler",
-                DispatchBenchmarkScenario.GlobalAcceptAllUntargetedClassOneActionHandler =>
-                    "GlobalAcceptAll_UntargetedClass_OneActionHandler",
-                DispatchBenchmarkScenario.GlobalAcceptAllUntargetedClassOneFastHandler =>
-                    "GlobalAcceptAll_UntargetedClass_OneFastHandler",
+                DispatchBenchmarkScenario.TargetedFloodOneWithoutTargetingActionHandler => "TargetedFlood_OneWithoutTargeting_ActionHandler",
+                DispatchBenchmarkScenario.TargetedFloodOneWithoutTargetingFastHandler => "TargetedFlood_OneWithoutTargeting_FastHandler",
+                DispatchBenchmarkScenario.BroadcastFloodOneWithoutSourceActionHandler => "BroadcastFlood_OneWithoutSource_ActionHandler",
+                DispatchBenchmarkScenario.BroadcastFloodOneWithoutSourceFastHandler => "BroadcastFlood_OneWithoutSource_FastHandler",
+                DispatchBenchmarkScenario.GlobalAcceptAllUntargetedClassOneActionHandler => "GlobalAcceptAll_UntargetedClass_OneActionHandler",
+                DispatchBenchmarkScenario.GlobalAcceptAllUntargetedClassOneFastHandler => "GlobalAcceptAll_UntargetedClass_OneFastHandler",
                 DispatchBenchmarkScenario.TargetedPostStableRoute => "TargetedPost_StableRoute",
-                DispatchBenchmarkScenario.TargetedPostRewrittenEmptyFinalRoute =>
-                    "TargetedPost_Rewritten_EmptyFinalRoute",
-                DispatchBenchmarkScenario.TargetedPostRewrittenPopulatedFinalRoute =>
-                    "TargetedPost_Rewritten_PopulatedFinalRoute",
+                DispatchBenchmarkScenario.TargetedPostRewrittenEmptyFinalRoute => "TargetedPost_Rewritten_EmptyFinalRoute",
+                DispatchBenchmarkScenario.TargetedPostRewrittenPopulatedFinalRoute => "TargetedPost_Rewritten_PopulatedFinalRoute",
                 DispatchBenchmarkScenario.BroadcastPostStableRoute => "BroadcastPost_StableRoute",
-                DispatchBenchmarkScenario.BroadcastPostRewrittenEmptyFinalRoute =>
-                    "BroadcastPost_Rewritten_EmptyFinalRoute",
-                DispatchBenchmarkScenario.BroadcastPostRewrittenPopulatedFinalRoute =>
-                    "BroadcastPost_Rewritten_PopulatedFinalRoute",
-                DispatchBenchmarkScenario.InterceptorHeavyFourInterceptors =>
-                    "InterceptorHeavy_FourInterceptors",
-                DispatchBenchmarkScenario.PostProcessingHeavyFourPostProcessors =>
-                    "PostProcessingHeavy_FourPostProcessors",
-                DispatchBenchmarkScenario.MessageBusConstruction1000 =>
-                    "MessageBusConstruction_1000",
-                DispatchBenchmarkScenario.MessageRegistrationTokenConstruction1000 =>
-                    "MessageRegistrationTokenConstruction_1000_PrebuiltHandlerAndBus",
-                DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus =>
-                    "RegistrationFlood_1000Types_FromColdBus",
-                DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit =>
-                    "RegistrationFlood_1000Types_WarmJit",
-                DispatchBenchmarkScenario.UntargetedRegistrationMarginal =>
-                    "UntargetedRegistration_Marginal",
-                DispatchBenchmarkScenario.TargetedRegistrationMarginal =>
-                    "TargetedRegistration_Marginal",
-                DispatchBenchmarkScenario.BroadcastRegistrationMarginal =>
-                    "BroadcastRegistration_Marginal",
-                DispatchBenchmarkScenario.DeregistrationFlood1000TypesCold =>
-                    "DeregistrationFlood_1000Types_Cold",
-                DispatchBenchmarkScenario.DeregistrationFlood1000TypesWarmJit =>
-                    "DeregistrationFlood_1000Types_WarmJit",
-                DispatchBenchmarkScenario.UntargetedFirstDispatchCold =>
-                    "UntargetedFirstDispatch_Cold",
+                DispatchBenchmarkScenario.BroadcastPostRewrittenEmptyFinalRoute => "BroadcastPost_Rewritten_EmptyFinalRoute",
+                DispatchBenchmarkScenario.BroadcastPostRewrittenPopulatedFinalRoute => "BroadcastPost_Rewritten_PopulatedFinalRoute",
+                DispatchBenchmarkScenario.InterceptorHeavyFourInterceptors => "InterceptorHeavy_FourInterceptors",
+                DispatchBenchmarkScenario.PostProcessingHeavyFourPostProcessors => "PostProcessingHeavy_FourPostProcessors",
+                DispatchBenchmarkScenario.MessageBusConstruction1000 => "MessageBusConstruction_1000",
+                DispatchBenchmarkScenario.MessageRegistrationTokenConstruction1000 => "MessageRegistrationTokenConstruction_1000_PrebuiltHandlerAndBus",
+                DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus => "RegistrationFlood_1000Types_FromColdBus",
+                DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit => "RegistrationFlood_1000Types_WarmJit",
+                DispatchBenchmarkScenario.UntargetedRegistrationMarginal => "UntargetedRegistration_Marginal",
+                DispatchBenchmarkScenario.TargetedRegistrationMarginal => "TargetedRegistration_Marginal",
+                DispatchBenchmarkScenario.BroadcastRegistrationMarginal => "BroadcastRegistration_Marginal",
+                DispatchBenchmarkScenario.DeregistrationFlood1000TypesCold => "DeregistrationFlood_1000Types_Cold",
+                DispatchBenchmarkScenario.DeregistrationFlood1000TypesWarmJit => "DeregistrationFlood_1000Types_WarmJit",
+                DispatchBenchmarkScenario.UntargetedFirstDispatchCold => "UntargetedFirstDispatch_Cold",
                 DispatchBenchmarkScenario.TargetedFirstDispatchCold => "TargetedFirstDispatch_Cold",
-                DispatchBenchmarkScenario.BroadcastFirstDispatchCold =>
-                    "BroadcastFirstDispatch_Cold",
+                DispatchBenchmarkScenario.BroadcastFirstDispatchCold => "BroadcastFirstDispatch_Cold",
                 _ => throw new ArgumentOutOfRangeException(nameof(scenario), scenario, null),
             };
         }
@@ -1029,81 +853,44 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             return scenario switch
             {
                 DispatchBenchmarkScenario.EmptyBusDispatch => "Empty Bus Dispatch",
-                DispatchBenchmarkScenario.UntargetedFloodOneHandler =>
-                    "Untargeted Flood (One Handler)",
-                DispatchBenchmarkScenario.UntargetedFloodOneDirectHandler =>
-                    "Untargeted Flood (One Direct Handler)",
-                DispatchBenchmarkScenario.UntargetedFloodTwoHandlersOnePriority =>
-                    "Untargeted Flood (Two Handlers, One Priority)",
-                DispatchBenchmarkScenario.UntargetedFloodThreeHandlersOnePriority =>
-                    "Untargeted Flood (Three Handlers, One Priority)",
-                DispatchBenchmarkScenario.UntargetedFloodFourHandlersOnePriority =>
-                    "Untargeted Flood (Four Handlers, One Priority)",
-                DispatchBenchmarkScenario.UntargetedFloodFourHandlersFourPriorities =>
-                    "Untargeted Flood (Four Handlers, Four Priorities)",
-                DispatchBenchmarkScenario.UntargetedFloodSixteenHandlersOnePriority =>
-                    "Untargeted Flood (Sixteen Handlers, One Priority)",
-                DispatchBenchmarkScenario.UntargetedFloodOneInactiveHandler =>
-                    "Untargeted Flood (One Inactive Handler)",
-                DispatchBenchmarkScenario.TargetedFloodNoMatchingTarget =>
-                    "Targeted Flood (No Matching Target)",
-                DispatchBenchmarkScenario.TargetedFloodOneListener =>
-                    "Targeted Flood (One Listener)",
-                DispatchBenchmarkScenario.TargetedFloodSixteenListeners =>
-                    "Targeted Flood (Sixteen Listeners)",
-                DispatchBenchmarkScenario.BroadcastFloodOneHandler =>
-                    "Broadcast Flood (One Handler)",
-                DispatchBenchmarkScenario.TargetedFloodOneWithoutTargetingActionHandler =>
-                    "Targeted Flood (One Without-Targeting Action Handler)",
-                DispatchBenchmarkScenario.TargetedFloodOneWithoutTargetingFastHandler =>
-                    "Targeted Flood (One Without-Targeting Fast Handler)",
-                DispatchBenchmarkScenario.BroadcastFloodOneWithoutSourceActionHandler =>
-                    "Broadcast Flood (One Without-Source Action Handler)",
-                DispatchBenchmarkScenario.BroadcastFloodOneWithoutSourceFastHandler =>
-                    "Broadcast Flood (One Without-Source Fast Handler)",
-                DispatchBenchmarkScenario.GlobalAcceptAllUntargetedClassOneActionHandler =>
-                    "Global Accept-All (Untargeted Class, One Action Handler)",
-                DispatchBenchmarkScenario.GlobalAcceptAllUntargetedClassOneFastHandler =>
-                    "Global Accept-All (Untargeted Class, One Fast Handler)",
+                DispatchBenchmarkScenario.UntargetedFloodOneHandler => "Untargeted Flood (One Handler)",
+                DispatchBenchmarkScenario.UntargetedFloodOneDirectHandler => "Untargeted Flood (One Direct Handler)",
+                DispatchBenchmarkScenario.UntargetedFloodTwoHandlersOnePriority => "Untargeted Flood (Two Handlers, One Priority)",
+                DispatchBenchmarkScenario.UntargetedFloodThreeHandlersOnePriority => "Untargeted Flood (Three Handlers, One Priority)",
+                DispatchBenchmarkScenario.UntargetedFloodFourHandlersOnePriority => "Untargeted Flood (Four Handlers, One Priority)",
+                DispatchBenchmarkScenario.UntargetedFloodFourHandlersFourPriorities => "Untargeted Flood (Four Handlers, Four Priorities)",
+                DispatchBenchmarkScenario.UntargetedFloodSixteenHandlersOnePriority => "Untargeted Flood (Sixteen Handlers, One Priority)",
+                DispatchBenchmarkScenario.UntargetedFloodOneInactiveHandler => "Untargeted Flood (One Inactive Handler)",
+                DispatchBenchmarkScenario.TargetedFloodNoMatchingTarget => "Targeted Flood (No Matching Target)",
+                DispatchBenchmarkScenario.TargetedFloodOneListener => "Targeted Flood (One Listener)",
+                DispatchBenchmarkScenario.TargetedFloodSixteenListeners => "Targeted Flood (Sixteen Listeners)",
+                DispatchBenchmarkScenario.BroadcastFloodOneHandler => "Broadcast Flood (One Handler)",
+                DispatchBenchmarkScenario.TargetedFloodOneWithoutTargetingActionHandler => "Targeted Flood (One Without-Targeting Action Handler)",
+                DispatchBenchmarkScenario.TargetedFloodOneWithoutTargetingFastHandler => "Targeted Flood (One Without-Targeting Fast Handler)",
+                DispatchBenchmarkScenario.BroadcastFloodOneWithoutSourceActionHandler => "Broadcast Flood (One Without-Source Action Handler)",
+                DispatchBenchmarkScenario.BroadcastFloodOneWithoutSourceFastHandler => "Broadcast Flood (One Without-Source Fast Handler)",
+                DispatchBenchmarkScenario.GlobalAcceptAllUntargetedClassOneActionHandler => "Global Accept-All (Untargeted Class, One Action Handler)",
+                DispatchBenchmarkScenario.GlobalAcceptAllUntargetedClassOneFastHandler => "Global Accept-All (Untargeted Class, One Fast Handler)",
                 DispatchBenchmarkScenario.TargetedPostStableRoute => "Targeted Post Route (Stable)",
-                DispatchBenchmarkScenario.TargetedPostRewrittenEmptyFinalRoute =>
-                    "Targeted Post Route (Rewritten, Empty Final Route)",
-                DispatchBenchmarkScenario.TargetedPostRewrittenPopulatedFinalRoute =>
-                    "Targeted Post Route (Rewritten, Populated Final Route)",
-                DispatchBenchmarkScenario.BroadcastPostStableRoute =>
-                    "Broadcast Post Route (Stable)",
-                DispatchBenchmarkScenario.BroadcastPostRewrittenEmptyFinalRoute =>
-                    "Broadcast Post Route (Rewritten, Empty Final Route)",
-                DispatchBenchmarkScenario.BroadcastPostRewrittenPopulatedFinalRoute =>
-                    "Broadcast Post Route (Rewritten, Populated Final Route)",
-                DispatchBenchmarkScenario.InterceptorHeavyFourInterceptors =>
-                    "Interceptor Heavy (Four Interceptors)",
-                DispatchBenchmarkScenario.PostProcessingHeavyFourPostProcessors =>
-                    "Post-Processing Heavy (Four Post-Processors)",
-                DispatchBenchmarkScenario.MessageBusConstruction1000 =>
-                    "Message Bus Construction (1000)",
-                DispatchBenchmarkScenario.MessageRegistrationTokenConstruction1000 =>
-                    "Registration Token Construction (1000, Prebuilt Handler + Bus)",
-                DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus =>
-                    "Registration Flood (1000 Types, Cold Bus)",
-                DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit =>
-                    "Registration Flood (1000 Types, Warm JIT)",
-                DispatchBenchmarkScenario.UntargetedRegistrationMarginal =>
-                    "Untargeted Registration (Marginal, 1000 Same-Type)",
-                DispatchBenchmarkScenario.TargetedRegistrationMarginal =>
-                    "Targeted Registration (Marginal, 1000 Same-Type)",
-                DispatchBenchmarkScenario.BroadcastRegistrationMarginal =>
-                    "Broadcast Registration (Marginal, 1000 Same-Type)",
-                DispatchBenchmarkScenario.DeregistrationFlood1000TypesCold =>
-                    "Deregistration Flood (1000 Types, Cold)",
-                DispatchBenchmarkScenario.DeregistrationFlood1000TypesWarmJit =>
-                    "Deregistration Flood (1000 Types, Warm JIT)",
-                DispatchBenchmarkScenario.UntargetedFirstDispatchCold =>
-                    "Untargeted First Dispatch (Cold, Distinct Types)",
-                DispatchBenchmarkScenario.TargetedFirstDispatchCold =>
-                    "Targeted First Dispatch (Cold, Distinct Types)",
-                DispatchBenchmarkScenario.BroadcastFirstDispatchCold =>
-                    "Broadcast First Dispatch (Cold, Distinct Types)",
+                DispatchBenchmarkScenario.TargetedPostRewrittenEmptyFinalRoute => "Targeted Post Route (Rewritten, Empty Final Route)",
+                DispatchBenchmarkScenario.TargetedPostRewrittenPopulatedFinalRoute => "Targeted Post Route (Rewritten, Populated Final Route)",
+                DispatchBenchmarkScenario.BroadcastPostStableRoute => "Broadcast Post Route (Stable)",
+                DispatchBenchmarkScenario.BroadcastPostRewrittenEmptyFinalRoute => "Broadcast Post Route (Rewritten, Empty Final Route)",
+                DispatchBenchmarkScenario.BroadcastPostRewrittenPopulatedFinalRoute => "Broadcast Post Route (Rewritten, Populated Final Route)",
+                DispatchBenchmarkScenario.InterceptorHeavyFourInterceptors => "Interceptor Heavy (Four Interceptors)",
+                DispatchBenchmarkScenario.PostProcessingHeavyFourPostProcessors => "Post-Processing Heavy (Four Post-Processors)",
+                DispatchBenchmarkScenario.MessageBusConstruction1000 => "Message Bus Construction (1000)",
+                DispatchBenchmarkScenario.MessageRegistrationTokenConstruction1000 => "Registration Token Construction (1000, Prebuilt Handler + Bus)",
+                DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus => "Registration Flood (1000 Types, Cold Bus)",
+                DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit => "Registration Flood (1000 Types, Warm JIT)",
+                DispatchBenchmarkScenario.UntargetedRegistrationMarginal => "Untargeted Registration (Marginal, 1000 Same-Type)",
+                DispatchBenchmarkScenario.TargetedRegistrationMarginal => "Targeted Registration (Marginal, 1000 Same-Type)",
+                DispatchBenchmarkScenario.BroadcastRegistrationMarginal => "Broadcast Registration (Marginal, 1000 Same-Type)",
+                DispatchBenchmarkScenario.DeregistrationFlood1000TypesCold => "Deregistration Flood (1000 Types, Cold)",
+                DispatchBenchmarkScenario.DeregistrationFlood1000TypesWarmJit => "Deregistration Flood (1000 Types, Warm JIT)",
+                DispatchBenchmarkScenario.UntargetedFirstDispatchCold => "Untargeted First Dispatch (Cold, Distinct Types)",
+                DispatchBenchmarkScenario.TargetedFirstDispatchCold => "Targeted First Dispatch (Cold, Distinct Types)",
+                DispatchBenchmarkScenario.BroadcastFirstDispatchCold => "Broadcast First Dispatch (Cold, Distinct Types)",
                 _ => throw new ArgumentOutOfRangeException(nameof(scenario), scenario, null),
             };
         }

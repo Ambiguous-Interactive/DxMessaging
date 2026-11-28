@@ -36,11 +36,7 @@ namespace DxMessaging.Tests.Editor
             Assert.AreEqual(3, recorder.ObservedCount);
             Assert.AreEqual(0, recorder.MissedCount);
             Assert.AreEqual(3, recorder.Cursor);
-            CollectionAssert.AreEqual(
-                new[] { "A", "B", "C" },
-                MessageTypeNames(recorder),
-                "Rows are kept oldest first."
-            );
+            CollectionAssert.AreEqual(new[] { "A", "B", "C" }, MessageTypeNames(recorder), "Rows are kept oldest first.");
         }
 
         [Test]
@@ -80,11 +76,7 @@ namespace DxMessaging.Tests.Editor
 
             Assert.IsFalse(recorder.Ingest(Bus(Entry(1, "A"))));
 
-            Assert.AreEqual(
-                revision,
-                recorder.Revision,
-                "An idle poll must not bump the revision."
-            );
+            Assert.AreEqual(revision, recorder.Revision, "An idle poll must not bump the revision.");
             Assert.AreEqual(1, recorder.ObservedCount);
         }
 
@@ -179,11 +171,7 @@ namespace DxMessaging.Tests.Editor
             Assert.AreEqual(0, recorder.Entries.Count);
             Assert.AreEqual(0, recorder.ObservedCount);
             Assert.AreEqual(0, recorder.MissedCount);
-            Assert.AreEqual(
-                9,
-                recorder.Cursor,
-                "The cursor survives, or the next drain would re-ingest what was just cleared."
-            );
+            Assert.AreEqual(9, recorder.Cursor, "The cursor survives, or the next drain would re-ingest what was just cleared.");
             Assert.Greater(recorder.Revision, revision);
         }
 
@@ -195,19 +183,12 @@ namespace DxMessaging.Tests.Editor
                 Clear would make the log visibly refill itself within one poll.
             */
             MessageMonitorLiveRecorder recorder = CreateRecorder();
-            IReadOnlyList<MessageMonitorEntry> busBuffer = Bus(
-                Entry(1, "A"),
-                Entry(2, "B"),
-                Entry(3, "C")
-            );
+            IReadOnlyList<MessageMonitorEntry> busBuffer = Bus(Entry(1, "A"), Entry(2, "B"), Entry(3, "C"));
             recorder.Ingest(busBuffer);
 
             recorder.Clear();
 
-            Assert.IsFalse(
-                recorder.Ingest(busBuffer),
-                "Re-reading the same bus buffer after a clear must find nothing new."
-            );
+            Assert.IsFalse(recorder.Ingest(busBuffer), "Re-reading the same bus buffer after a clear must find nothing new.");
             Assert.AreEqual(0, recorder.Entries.Count);
             Assert.AreEqual(0, recorder.ObservedCount);
         }
@@ -245,14 +226,8 @@ namespace DxMessaging.Tests.Editor
 
             recorder.Clear();
 
-            Assert.IsTrue(
-                recorder.Ingest(Bus(Entry(1, "EditMode"), Entry(2, "Awake"), Entry(3, "Start")))
-            );
-            CollectionAssert.AreEqual(
-                new[] { "Awake", "Start" },
-                MessageTypeNames(recorder),
-                "The startup traffic is what the live log exists to show."
-            );
+            Assert.IsTrue(recorder.Ingest(Bus(Entry(1, "EditMode"), Entry(2, "Awake"), Entry(3, "Start"))));
+            CollectionAssert.AreEqual(new[] { "Awake", "Start" }, MessageTypeNames(recorder), "The startup traffic is what the live log exists to show.");
             Assert.AreEqual(0, recorder.MissedCount);
         }
 
@@ -301,11 +276,7 @@ namespace DxMessaging.Tests.Editor
 
             Assert.AreEqual(2, recorder.Cursor);
             Assert.AreEqual(0, recorder.MissedCount, "A reset is not dropped data.");
-            CollectionAssert.AreEqual(
-                new[] { "C", "D" },
-                MessageTypeNames(recorder),
-                "Rows from the old run are dropped: their #N labels would collide with the new run."
-            );
+            CollectionAssert.AreEqual(new[] { "C", "D" }, MessageTypeNames(recorder), "Rows from the old run are dropped: their #N labels would collide with the new run.");
         }
 
         [Test]
@@ -320,11 +291,7 @@ namespace DxMessaging.Tests.Editor
             Assert.AreEqual(3, row.Count);
             Assert.AreEqual(1, row.FirstTraceId);
             Assert.AreEqual(3, row.LastTraceId);
-            Assert.AreEqual(
-                3,
-                recorder.ObservedCount,
-                "Coalescing is a display concern; every emission is still counted."
-            );
+            Assert.AreEqual(3, recorder.ObservedCount, "Coalescing is a display concern; every emission is still counted.");
         }
 
         [Test]
@@ -342,33 +309,9 @@ namespace DxMessaging.Tests.Editor
             Assert.AreEqual(2, recorder.Entries[0].LastObservedSeconds);
         }
 
-        [TestCase(
-            "A",
-            "Context: 1",
-            "Untargeted",
-            "A",
-            "Context: 2",
-            "Untargeted",
-            TestName = "different context"
-        )]
-        [TestCase(
-            "A",
-            "Context: 1",
-            "Untargeted",
-            "B",
-            "Context: 1",
-            "Untargeted",
-            TestName = "different message type"
-        )]
-        [TestCase(
-            "A",
-            "Context: 1",
-            "Untargeted",
-            "A",
-            "Context: 1",
-            "Broadcast",
-            TestName = "different route kind"
-        )]
+        [TestCase("A", "Context: 1", "Untargeted", "A", "Context: 2", "Untargeted", TestName = "different context")]
+        [TestCase("A", "Context: 1", "Untargeted", "B", "Context: 1", "Untargeted", TestName = "different message type")]
+        [TestCase("A", "Context: 1", "Untargeted", "A", "Context: 1", "Broadcast", TestName = "different route kind")]
         public void RowsOnlyCoalesceWhenEveryRenderedFieldMatches(
             string firstType,
             string firstContext,
@@ -380,12 +323,7 @@ namespace DxMessaging.Tests.Editor
         {
             MessageMonitorLiveRecorder recorder = CreateRecorder();
 
-            recorder.Ingest(
-                Bus(
-                    Entry(1, firstType, firstContext, firstRouteKind),
-                    Entry(2, secondType, secondContext, secondRouteKind)
-                )
-            );
+            recorder.Ingest(Bus(Entry(1, firstType, firstContext, firstRouteKind), Entry(2, secondType, secondContext, secondRouteKind)));
 
             Assert.AreEqual(2, recorder.Entries.Count);
         }
@@ -410,11 +348,7 @@ namespace DxMessaging.Tests.Editor
 
             Assert.AreEqual(3, recorder.Entries.Count);
             CollectionAssert.AreEqual(new[] { "B", "C", "D" }, MessageTypeNames(recorder));
-            Assert.AreEqual(
-                4,
-                recorder.ObservedCount,
-                "Aging a row out of the retained window is not the same as never seeing it."
-            );
+            Assert.AreEqual(4, recorder.ObservedCount, "Aging a row out of the retained window is not the same as never seeing it.");
             Assert.AreEqual(0, recorder.MissedCount);
         }
 
@@ -442,9 +376,7 @@ namespace DxMessaging.Tests.Editor
         [TestCase(-1)]
         public void ANonPositiveCapacityIsRejected(int capacity)
         {
-            Assert.Throws<ArgumentOutOfRangeException>(() =>
-                new MessageMonitorLiveRecorder(capacity)
-            );
+            Assert.Throws<ArgumentOutOfRangeException>(() => new MessageMonitorLiveRecorder(capacity));
         }
 
         /// <summary>
@@ -460,17 +392,11 @@ namespace DxMessaging.Tests.Editor
             messageBus.UntargetedBroadcast(ref message);
             messageBus.UntargetedBroadcast(ref message);
 
-            MessageMonitorSnapshot snapshot = DxMessagingMessageMonitorWindow.CaptureSnapshot(
-                messageBus
-            );
+            MessageMonitorSnapshot snapshot = DxMessagingMessageMonitorWindow.CaptureSnapshot(messageBus);
             Assert.AreEqual(2, snapshot.Entries.Count);
             foreach (MessageMonitorEntry entry in snapshot.Entries)
             {
-                Assert.Greater(
-                    entry.TraceId,
-                    0,
-                    "Bus-side emission records must carry their dispatch sequence number."
-                );
+                Assert.Greater(entry.TraceId, 0, "Bus-side emission records must carry their dispatch sequence number.");
             }
 
             MessageMonitorLiveRecorder recorder = CreateRecorder();
@@ -478,21 +404,10 @@ namespace DxMessaging.Tests.Editor
 
             Assert.AreEqual(2, recorder.ObservedCount);
             Assert.AreEqual(0, recorder.MissedCount);
-            Assert.AreEqual(
-                1,
-                recorder.Entries.Count,
-                "Two identical emissions coalesce into one counted row."
-            );
+            Assert.AreEqual(1, recorder.Entries.Count, "Two identical emissions coalesce into one counted row.");
             Assert.AreEqual(2, recorder.Entries[0].Count);
-            Assert.AreEqual(
-                nameof(RecorderProbeMessage),
-                recorder.Entries[0].Entry.MessageTypeName
-            );
-            Assert.Less(
-                recorder.Entries[0].FirstTraceId,
-                recorder.Entries[0].LastTraceId,
-                "The row spans the dispatch range it stands for."
-            );
+            Assert.AreEqual(nameof(RecorderProbeMessage), recorder.Entries[0].Entry.MessageTypeName);
+            Assert.Less(recorder.Entries[0].FirstTraceId, recorder.Entries[0].LastTraceId, "The row spans the dispatch range it stands for.");
 
             // A second drain of the same snapshot must be inert: this is what every poll does.
             Assert.IsFalse(recorder.Ingest(snapshot.Entries));
@@ -520,9 +435,7 @@ namespace DxMessaging.Tests.Editor
 
         private readonly struct RecorderProbeMessage : IUntargetedMessage<RecorderProbeMessage> { }
 
-        private MessageMonitorLiveRecorder CreateRecorder(
-            int capacity = MessageMonitorLiveRecorder.DefaultCapacity
-        )
+        private MessageMonitorLiveRecorder CreateRecorder(int capacity = MessageMonitorLiveRecorder.DefaultCapacity)
         {
             return new MessageMonitorLiveRecorder(capacity, () => _clock);
         }

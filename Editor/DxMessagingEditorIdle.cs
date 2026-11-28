@@ -19,11 +19,7 @@ namespace DxMessaging.Editor
             ScheduleAssetDatabaseMutation(work, ScheduleDelayCall, CanMutateAssetDatabase);
         }
 
-        internal static void ScheduleAssetDatabaseMutation(
-            Action work,
-            Action<Action> scheduler,
-            Func<bool> canMutateAssetDatabase
-        )
+        internal static void ScheduleAssetDatabaseMutation(Action work, Action<Action> scheduler, Func<bool> canMutateAssetDatabase)
         {
             if (work == null)
             {
@@ -33,16 +29,10 @@ namespace DxMessaging.Editor
             Action<Action> effectiveScheduler = scheduler ?? ScheduleDelayCall;
             Func<bool> effectiveCanMutate = canMutateAssetDatabase ?? CanMutateAssetDatabase;
 
-            effectiveScheduler(() =>
-                RunAssetDatabaseMutationWhenIdle(work, effectiveScheduler, effectiveCanMutate)
-            );
+            effectiveScheduler(() => RunAssetDatabaseMutationWhenIdle(work, effectiveScheduler, effectiveCanMutate));
         }
 
-        private static void RunAssetDatabaseMutationWhenIdle(
-            Action work,
-            Action<Action> scheduler,
-            Func<bool> canMutateAssetDatabase
-        )
+        private static void RunAssetDatabaseMutationWhenIdle(Action work, Action<Action> scheduler, Func<bool> canMutateAssetDatabase)
         {
             if (!canMutateAssetDatabase())
             {

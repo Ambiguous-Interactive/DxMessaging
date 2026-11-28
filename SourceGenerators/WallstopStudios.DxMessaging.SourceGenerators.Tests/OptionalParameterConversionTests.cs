@@ -16,16 +16,9 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Tests;
 internal sealed class OptionalParameterConversionTests
 {
     [TestCaseSource(nameof(ConversionCases))]
-    public void OptionalDefaultsFollowConstantExpressionConversions(
-        string fieldType,
-        string expression,
-        bool valid,
-        bool namedExpression
-    )
+    public void OptionalDefaultsFollowConstantExpressionConversions(string fieldType, string expression, bool valid, bool namedExpression)
     {
-        string argument = namedExpression
-            ? "Expression = " + SyntaxFactory.Literal(expression)
-            : expression;
+        string argument = namedExpression ? "Expression = " + SyntaxFactory.Literal(expression) : expression;
         string source = $$"""
 using DxMessaging.Core.Attributes;
 public enum Choice { None, Other }
@@ -49,47 +42,20 @@ public static class Consumer
             generators: new ISourceGenerator[] { new DxAutoConstructorGenerator() },
             parseOptions: new CSharpParseOptions(LanguageVersion.CSharp9)
         );
-        driver = driver.RunGeneratorsAndUpdateCompilation(
-            compilation,
-            out Compilation generatedCompilation,
-            out ImmutableArray<Diagnostic> generatorDiagnostics
-        );
-        Assert.That(
-            driver.GetRunResult().Results.Single().Exception,
-            Is.Null,
-            "The real generator must complete: " + context
-        );
-        Assert.That(
-            driver.GetRunResult().GeneratedTrees,
-            Has.Length.EqualTo(1),
-            "The attributed packet must produce one constructor: " + context
-        );
+        driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out Compilation generatedCompilation, out ImmutableArray<Diagnostic> generatorDiagnostics);
+        Assert.That(driver.GetRunResult().Results.Single().Exception, Is.Null, "The real generator must complete: " + context);
+        Assert.That(driver.GetRunResult().GeneratedTrees, Has.Length.EqualTo(1), "The attributed packet must produce one constructor: " + context);
         Diagnostic[] diagnostics = generatedCompilation.GetDiagnostics().ToArray();
         Diagnostic[] defaults = generatorDiagnostics.Where(d => d.Id == "DXMSG005").ToArray();
         if (!valid)
         {
             Assert.That(defaults, Has.Length.EqualTo(1), "Reject invalid default: " + context);
-            Assert.That(
-                defaults[0].Location.SourceTree,
-                Is.EqualTo(compilation.SyntaxTrees.Last()),
-                "Report the invalid field attribute in user source: " + context
-            );
-            Assert.That(
-                diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error),
-                Is.True,
-                "The independent compiler must also reject the default: " + context
-            );
+            Assert.That(defaults[0].Location.SourceTree, Is.EqualTo(compilation.SyntaxTrees.Last()), "Report the invalid field attribute in user source: " + context);
+            Assert.That(diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error), Is.True, "The independent compiler must also reject the default: " + context);
             return;
         }
 
-        Assert.That(
-            diagnostics,
-            Is.Empty,
-            "The consumer must compile with C#9 and fatal warnings: "
-                + context
-                + "\n"
-                + string.Join("\n", diagnostics.Select(d => d.ToString()))
-        );
+        Assert.That(diagnostics, Is.Empty, "The consumer must compile with C#9 and fatal warnings: " + context + "\n" + string.Join("\n", diagnostics.Select(d => d.ToString())));
         Assert.That(generatorDiagnostics, Is.Empty, "Accept compiler-valid default: " + context);
         using MemoryStream stream = new();
         EmitResult emit = generatedCompilation.Emit(stream);
@@ -99,34 +65,12 @@ public static class Consumer
         try
         {
             Assembly assembly = loadContext.LoadFromStream(stream);
-            object? actual = assembly
-                .GetType("Consumer")!
-                .GetMethod("ReadDefault")!
-                .Invoke(null, null);
-            Assert.That(
-                actual,
-                Is.Not.Null,
-                "The omitted argument must supply its value: " + context
-            );
-            object? expected = assembly
-                .GetType("Consumer")!
-                .GetMethod("ReadExplicit")!
-                .Invoke(null, null);
-            Assert.That(
-                actual,
-                Is.EqualTo(expected),
-                "Use the original expression's value: " + context
-            );
-            ParameterInfo parameter = assembly
-                .GetType("Packet")!
-                .GetConstructors()
-                .Single()
-                .GetParameters()[1];
-            Assert.That(
-                actual,
-                Is.EqualTo(parameter.DefaultValue),
-                "The consumer must receive the emitted optional default: " + context
-            );
+            object? actual = assembly.GetType("Consumer")!.GetMethod("ReadDefault")!.Invoke(null, null);
+            Assert.That(actual, Is.Not.Null, "The omitted argument must supply its value: " + context);
+            object? expected = assembly.GetType("Consumer")!.GetMethod("ReadExplicit")!.Invoke(null, null);
+            Assert.That(actual, Is.EqualTo(expected), "Use the original expression's value: " + context);
+            ParameterInfo parameter = assembly.GetType("Packet")!.GetConstructors().Single().GetParameters()[1];
+            Assert.That(actual, Is.EqualTo(parameter.DefaultValue), "The consumer must receive the emitted optional default: " + context);
         }
         finally
         {
@@ -135,12 +79,7 @@ public static class Consumer
     }
 
     [TestCaseSource(nameof(TypedConversionCases))]
-    public void TypedAttributeDefaultsPreserveTheirOriginalConstantType(
-        string fieldType,
-        string expression,
-        bool valid,
-        bool namedExpression
-    )
+    public void TypedAttributeDefaultsPreserveTheirOriginalConstantType(string fieldType, string expression, bool valid, bool namedExpression)
     {
         string oracleSource = $$"""
 public enum Choice { None, Other }
@@ -154,14 +93,9 @@ public static class Oracle
         Assert.That(
             oracle.Any(d => d.Severity == DiagnosticSeverity.Error),
             Is.EqualTo(!valid),
-            "The handwritten default determines conversion validity: "
-                + context
-                + "\n"
-                + string.Join("\n", oracle.Select(d => d.ToString()))
+            "The handwritten default determines conversion validity: " + context + "\n" + string.Join("\n", oracle.Select(d => d.ToString()))
         );
-        string argument = namedExpression
-            ? "Expression = " + SyntaxFactory.Literal(expression)
-            : expression;
+        string argument = namedExpression ? "Expression = " + SyntaxFactory.Literal(expression) : expression;
         string source = $$"""
 using DxMessaging.Core.Attributes;
 public enum Choice { None, Other }
@@ -178,43 +112,18 @@ public readonly partial struct Packet
             generators: new ISourceGenerator[] { new DxAutoConstructorGenerator() },
             parseOptions: new CSharpParseOptions(LanguageVersion.CSharp9)
         );
-        driver = driver.RunGeneratorsAndUpdateCompilation(
-            input,
-            out Compilation output,
-            out ImmutableArray<Diagnostic> diagnostics
-        );
-        Assert.That(
-            driver.GetRunResult().Results.Single().Exception,
-            Is.Null,
-            "Complete generation for the typed constant: " + context
-        );
-        Assert.That(
-            diagnostics,
-            Has.Length.EqualTo(valid ? 0 : 1),
-            "Report exactly one invalid default or no diagnostic: " + context
-        );
-        Assert.That(
-            diagnostics.All(d => d.Id == "DXMSG005"),
-            Is.True,
-            "Validate the original expression type before literal rendering: " + context
-        );
+        driver = driver.RunGeneratorsAndUpdateCompilation(input, out Compilation output, out ImmutableArray<Diagnostic> diagnostics);
+        Assert.That(driver.GetRunResult().Results.Single().Exception, Is.Null, "Complete generation for the typed constant: " + context);
+        Assert.That(diagnostics, Has.Length.EqualTo(valid ? 0 : 1), "Report exactly one invalid default or no diagnostic: " + context);
+        Assert.That(diagnostics.All(d => d.Id == "DXMSG005"), Is.True, "Validate the original expression type before literal rendering: " + context);
         if (valid)
         {
-            Assert.That(
-                output.GetDiagnostics(),
-                Is.Empty,
-                "Compile accepted typed defaults: " + context
-            );
+            Assert.That(output.GetDiagnostics(), Is.Empty, "Compile accepted typed defaults: " + context);
         }
     }
 
     [TestCaseSource(nameof(FloatingCases))]
-    public void FloatingDefaultsPreserveCompilerValidityAndValueBits(
-        string fieldType,
-        string expression,
-        bool valid,
-        bool namedExpression
-    )
+    public void FloatingDefaultsPreserveCompilerValidityAndValueBits(string fieldType, string expression, bool valid, bool namedExpression)
     {
         string context = $"{fieldType}, {expression}, namedExpression={namedExpression}";
         string oracleSource = $$"""
@@ -225,14 +134,8 @@ public static class Oracle
 """;
         CSharpCompilation oracleCompilation = CreateCompilation(oracleSource);
         Diagnostic[] oracle = oracleCompilation.GetDiagnostics().ToArray();
-        Assert.That(
-            oracle.Any(d => d.Severity == DiagnosticSeverity.Error),
-            Is.EqualTo(!valid),
-            "The compiler must establish floating-default validity: " + context
-        );
-        string argument = namedExpression
-            ? "Expression = " + SyntaxFactory.Literal(expression)
-            : expression;
+        Assert.That(oracle.Any(d => d.Severity == DiagnosticSeverity.Error), Is.EqualTo(!valid), "The compiler must establish floating-default validity: " + context);
+        string argument = namedExpression ? "Expression = " + SyntaxFactory.Literal(expression) : expression;
         string source = $$"""
 using DxMessaging.Core.Attributes;
 [DxAutoConstructor]
@@ -252,67 +155,25 @@ public static class Consumer
             generators: new ISourceGenerator[] { new DxAutoConstructorGenerator() },
             parseOptions: new CSharpParseOptions(LanguageVersion.CSharp9)
         );
-        driver = driver.RunGeneratorsAndUpdateCompilation(
-            CreateCompilation(source),
-            out Compilation output,
-            out ImmutableArray<Diagnostic> generatorDiagnostics
-        );
-        Assert.That(
-            driver.GetRunResult().Results.Single().Exception,
-            Is.Null,
-            "Complete floating-default generation: " + context
-        );
+        driver = driver.RunGeneratorsAndUpdateCompilation(CreateCompilation(source), out Compilation output, out ImmutableArray<Diagnostic> generatorDiagnostics);
+        Assert.That(driver.GetRunResult().Results.Single().Exception, Is.Null, "Complete floating-default generation: " + context);
         if (!valid)
         {
-            Assert.That(
-                generatorDiagnostics,
-                Has.Length.EqualTo(1),
-                "Reject the forbidden floating conversion: " + context
-            );
-            Assert.That(
-                generatorDiagnostics[0].Id,
-                Is.EqualTo("DXMSG005"),
-                "Report a default conversion error: " + context
-            );
+            Assert.That(generatorDiagnostics, Has.Length.EqualTo(1), "Reject the forbidden floating conversion: " + context);
+            Assert.That(generatorDiagnostics[0].Id, Is.EqualTo("DXMSG005"), "Report a default conversion error: " + context);
             return;
         }
         Diagnostic[] diagnostics = output.GetDiagnostics().ToArray();
         Assert.That(
             diagnostics,
             Is.Empty,
-            "Emit compiler-valid floating defaults: "
-                + context
-                + "\n"
-                + string.Join(
-                    "\n",
-                    diagnostics.Concat(generatorDiagnostics).Select(d => d.ToString())
-                )
+            "Emit compiler-valid floating defaults: " + context + "\n" + string.Join("\n", diagnostics.Concat(generatorDiagnostics).Select(d => d.ToString()))
         );
-        Assert.That(
-            generatorDiagnostics,
-            Is.Empty,
-            "Accept the compiler-valid floating default: " + context
-        );
-        IParameterSymbol expectedDefault = oracleCompilation
-            .GetTypeByMetadataName("Oracle")!
-            .GetMembers("Read")
-            .OfType<IMethodSymbol>()
-            .Single()
-            .Parameters.Single();
-        IParameterSymbol actualDefault = output
-            .GetTypeByMetadataName("Packet")!
-            .InstanceConstructors.Single(constructor => constructor.Parameters.Length == 2)
-            .Parameters[1];
-        Assert.That(
-            actualDefault.HasExplicitDefaultValue,
-            Is.True,
-            "Expose a compiled optional default: " + context
-        );
-        Assert.That(
-            FloatingDefaultBits(actualDefault),
-            Is.EqualTo(FloatingDefaultBits(expectedDefault)),
-            "Preserve the handwritten compiler's default metadata bits: " + context
-        );
+        Assert.That(generatorDiagnostics, Is.Empty, "Accept the compiler-valid floating default: " + context);
+        IParameterSymbol expectedDefault = oracleCompilation.GetTypeByMetadataName("Oracle")!.GetMembers("Read").OfType<IMethodSymbol>().Single().Parameters.Single();
+        IParameterSymbol actualDefault = output.GetTypeByMetadataName("Packet")!.InstanceConstructors.Single(constructor => constructor.Parameters.Length == 2).Parameters[1];
+        Assert.That(actualDefault.HasExplicitDefaultValue, Is.True, "Expose a compiled optional default: " + context);
+        Assert.That(FloatingDefaultBits(actualDefault), Is.EqualTo(FloatingDefaultBits(expectedDefault)), "Preserve the handwritten compiler's default metadata bits: " + context);
         using MemoryStream stream = new();
         EmitResult emit = output.Emit(stream);
         Assert.That(emit.Success, Is.True, "Emit the floating consumer: " + context);
@@ -339,9 +200,7 @@ public static class Consumer
         {
             float value => BitConverter.GetBytes(value),
             double value => BitConverter.GetBytes(value),
-            _ => throw new InvalidOperationException(
-                $"Expected a floating default for {parameter.ToDisplayString()}."
-            ),
+            _ => throw new InvalidOperationException($"Expected a floating default for {parameter.ToDisplayString()}."),
         };
 
     private static IEnumerable<TestCaseData> FloatingCases()
@@ -379,9 +238,7 @@ public static class Consumer
             yield return new TestCaseData(type, expression, valid, false).SetName(
                 $"FloatingDefaultsPreserveCompilerValidityAndValueBits(\"{type}\",\"{expression}\",{valid},False)"
             );
-            yield return new TestCaseData(type, expression, valid, true).SetName(
-                $"FloatingDefaultsPreserveCompilerValidityAndValueBits(\"{type}\",\"{expression}\",{valid},True)"
-            );
+            yield return new TestCaseData(type, expression, valid, true).SetName($"FloatingDefaultsPreserveCompilerValidityAndValueBits(\"{type}\",\"{expression}\",{valid},True)");
         }
     }
 

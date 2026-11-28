@@ -81,20 +81,14 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
         )
         {
             Validate(path, batch, rounds, scalar, vector);
-            if (
-                path == VectorBatchPath.JobScalar
-                || path == VectorBatchPath.JobVector
-                || path == VectorBatchPath.JobPointerVector
-            )
+            if (path == VectorBatchPath.JobScalar || path == VectorBatchPath.JobVector || path == VectorBatchPath.JobPointerVector)
             {
                 Schedule(path, batch, rounds, vector);
                 Complete();
                 return;
             }
             bool scalarPointer = path == VectorBatchPath.PointerScalarBatch;
-            bool vectorPointer =
-                path == VectorBatchPath.PointerVectorBatch
-                || path == VectorBatchPath.PointerVectorOne;
+            bool vectorPointer = path == VectorBatchPath.PointerVectorBatch || path == VectorBatchPath.PointerVectorOne;
             if (scalarPointer && scalarInvoke == null || vectorPointer && vectorInvoke == null)
                 throw new ArgumentNullException(nameof(vectorInvoke));
             NativeNumericPayload* input = (NativeNumericPayload*)Input.GetUnsafeReadOnlyPtr();
@@ -108,78 +102,33 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                 switch (path)
                 {
                     case VectorBatchPath.ManagedScalar:
-                        VectorPureKernels.Scalar(
-                            count,
-                            input + offset + 1,
-                            output + offset + 1,
-                            record,
-                            rounds
-                        );
+                        VectorPureKernels.Scalar(count, input + offset + 1, output + offset + 1, record, rounds);
                         break;
                     case VectorBatchPath.ManagedVector:
-                        VectorPureKernels.Vector(
-                            count,
-                            input + offset + 1,
-                            output + offset + 1,
-                            record,
-                            rounds
-                        );
+                        VectorPureKernels.Vector(count, input + offset + 1, output + offset + 1, record, rounds);
                         break;
                     case VectorBatchPath.BurstScalar:
-                        VectorPureKernels.ScalarDirect(
-                            count,
-                            input + offset + 1,
-                            output + offset + 1,
-                            record,
-                            rounds
-                        );
+                        VectorPureKernels.ScalarDirect(count, input + offset + 1, output + offset + 1, record, rounds);
                         break;
                     case VectorBatchPath.BurstVector:
-                        VectorPureKernels.VectorDirect(
-                            count,
-                            input + offset + 1,
-                            output + offset + 1,
-                            record,
-                            rounds
-                        );
+                        VectorPureKernels.VectorDirect(count, input + offset + 1, output + offset + 1, record, rounds);
                         break;
                     case VectorBatchPath.PointerScalarBatch:
-                        scalarInvoke(
-                            count,
-                            input + offset + 1,
-                            output + offset + 1,
-                            record,
-                            rounds
-                        );
+                        scalarInvoke(count, input + offset + 1, output + offset + 1, record, rounds);
                         break;
                     case VectorBatchPath.PointerVectorBatch:
                     case VectorBatchPath.PointerVectorOne:
-                        vectorInvoke(
-                            count,
-                            input + offset + 1,
-                            output + offset + 1,
-                            record,
-                            rounds
-                        );
+                        vectorInvoke(count, input + offset + 1, output + offset + 1, record, rounds);
                         break;
                 }
                 ++Entries;
             }
         }
 
-        internal void Schedule(
-            VectorBatchPath path,
-            int batch,
-            int rounds,
-            FunctionPointer<VectorBatchDelegate> vector
-        )
+        internal void Schedule(VectorBatchPath path, int batch, int rounds, FunctionPointer<VectorBatchDelegate> vector)
         {
             Validate(path, batch, rounds, default, vector);
-            if (
-                path != VectorBatchPath.JobScalar
-                && path != VectorBatchPath.JobVector
-                && path != VectorBatchPath.JobPointerVector
-            )
+            if (path != VectorBatchPath.JobScalar && path != VectorBatchPath.JobVector && path != VectorBatchPath.JobPointerVector)
                 throw new ArgumentException("Only a job path can be scheduled.");
             _pending = new VectorPureJob
             {
@@ -241,13 +190,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
             _disposed = true;
         }
 
-        private void Validate(
-            VectorBatchPath path,
-            int batch,
-            int rounds,
-            FunctionPointer<VectorBatchDelegate> scalar,
-            FunctionPointer<VectorBatchDelegate> vector
-        )
+        private void Validate(VectorBatchPath path, int batch, int rounds, FunctionPointer<VectorBatchDelegate> scalar, FunctionPointer<VectorBatchDelegate> vector)
         {
             RequireIdle();
             if (
@@ -272,13 +215,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                 throw new ArgumentOutOfRangeException(nameof(batch));
             if (path == VectorBatchPath.PointerScalarBatch && !scalar.IsCreated)
                 throw new ArgumentException("Scalar function pointer is missing.");
-            if (
-                (
-                    path == VectorBatchPath.PointerVectorBatch
-                    || path == VectorBatchPath.PointerVectorOne
-                    || path == VectorBatchPath.JobPointerVector
-                ) && !vector.IsCreated
-            )
+            if ((path == VectorBatchPath.PointerVectorBatch || path == VectorBatchPath.PointerVectorOne || path == VectorBatchPath.JobPointerVector) && !vector.IsCreated)
                 throw new ArgumentException("Vector function pointer is missing.");
         }
 
@@ -288,17 +225,13 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
             if (_disposed)
                 throw new ObjectDisposedException(nameof(VectorBufferOwner));
             if (HasPending)
-                throw new InvalidOperationException(
-                    "Complete the known job before reset or pointer access."
-                );
+                throw new InvalidOperationException("Complete the known job before reset or pointer access.");
         }
 
         private void RequireThread()
         {
             if (Thread.CurrentThread.ManagedThreadId != _thread)
-                throw new InvalidOperationException(
-                    "Owner operations are confined to the creating main thread."
-                );
+                throw new InvalidOperationException("Owner operations are confined to the creating main thread.");
         }
     }
 }

@@ -54,15 +54,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
 
         public void Execute(int index)
         {
-            PureParallelOperation.Process(
-                index,
-                Rounds,
-                ThreadIndex,
-                Input,
-                Output,
-                Modes,
-                Threads
-            );
+            PureParallelOperation.Process(index, Rounds, ThreadIndex, Input, Output, Modes, Threads);
         }
     }
 
@@ -89,15 +81,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
         {
             for (int index = startIndex; index < startIndex + count; ++index)
             {
-                PureParallelOperation.Process(
-                    index,
-                    Rounds,
-                    ThreadIndex,
-                    Input,
-                    Output,
-                    Modes,
-                    Threads
-                );
+                PureParallelOperation.Process(index, Rounds, ThreadIndex, Input, Output, Modes, Threads);
             }
         }
     }
@@ -125,15 +109,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
         {
             for (int index = 0; index < Input.Length; ++index)
             {
-                PureParallelOperation.Process(
-                    index,
-                    Rounds,
-                    ThreadIndex,
-                    Input,
-                    Output,
-                    Modes,
-                    Threads
-                );
+                PureParallelOperation.Process(index, Rounds, ThreadIndex, Input, Output, Modes, Threads);
             }
         }
     }
@@ -291,9 +267,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
             }
             if (HasPending)
             {
-                throw new InvalidOperationException(
-                    "Complete the known job before reading, reset or reuse."
-                );
+                throw new InvalidOperationException("Complete the known job before reading, reset or reuse.");
             }
         }
 

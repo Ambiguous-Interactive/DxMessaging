@@ -35,21 +35,11 @@ internal sealed class GeneratedConstructorSemanticsTests
         [Values(false, true)] bool separatePartial
     )
     {
-        string source = CreateSource(
-            declaration.Kind,
-            separatePartial,
-            emptyParameters: false,
-            fields: true
-        );
+        string source = CreateSource(declaration.Kind, separatePartial, emptyParameters: false, fields: true);
         CSharpCompilation input = CreateCompilation(source, declaration.Version);
         string context = $"{declaration}, separatePartial={separatePartial}";
         Assert.That(input.GetDiagnostics(), Is.Empty, "Legal input: " + context);
-        GeneratorDriver driver = CreateDriver(declaration.Version)
-            .RunGeneratorsAndUpdateCompilation(
-                input,
-                out Compilation output,
-                out ImmutableArray<Diagnostic> diagnostics
-            );
+        GeneratorDriver driver = CreateDriver(declaration.Version).RunGeneratorsAndUpdateCompilation(input, out Compilation output, out ImmutableArray<Diagnostic> diagnostics);
         GeneratorDriverRunResult result = driver.GetRunResult();
         Assert.That(result.Results.Select(run => run.Exception), Has.All.Null, context);
         Assert.That(diagnostics, Has.Length.EqualTo(1), context);
@@ -57,24 +47,9 @@ internal sealed class GeneratedConstructorSemanticsTests
         Assert.That(diagnostic.Id, Is.EqualTo("DXMSG012"), context);
         Assert.That(diagnostic.Severity, Is.EqualTo(DiagnosticSeverity.Error), context);
         Assert.That(diagnostic.Location.SourceTree, Is.EqualTo(input.SyntaxTrees.Last()), context);
-        Assert.That(
-            source.Substring(
-                diagnostic.Location.SourceSpan.Start,
-                diagnostic.Location.SourceSpan.Length
-            ),
-            Is.EqualTo("Packet"),
-            context
-        );
-        Assert.That(
-            diagnostic.GetMessage(CultureInfo.InvariantCulture),
-            Does.Contain("remove DxAutoConstructor").And.Contain("this(...)"),
-            context
-        );
-        Assert.That(
-            result.GeneratedTrees,
-            Is.Empty,
-            "Do not emit an invalid secondary constructor: " + context
-        );
+        Assert.That(source.Substring(diagnostic.Location.SourceSpan.Start, diagnostic.Location.SourceSpan.Length), Is.EqualTo("Packet"), context);
+        Assert.That(diagnostic.GetMessage(CultureInfo.InvariantCulture), Does.Contain("remove DxAutoConstructor").And.Contain("this(...)"), context);
+        Assert.That(result.GeneratedTrees, Is.Empty, "Do not emit an invalid secondary constructor: " + context);
         Assert.That(output.GetDiagnostics(), Is.Empty, "No generated compiler errors: " + context);
     }
 
@@ -91,11 +66,7 @@ internal sealed class GeneratedConstructorSemanticsTests
             CreateSource(declaration.Kind, separatePartial, emptyParameters: true, fields: true)
             + "public static class Consumer { public static bool Verify() { Packet packet = new Packet(42); return packet.Extra == 42 && packet.Stamp == 14 && Packet.Initializations == 1; } }";
         GeneratorDriver driver = CreateDriver(declaration.Version)
-            .RunGeneratorsAndUpdateCompilation(
-                CreateCompilation(source, declaration.Version),
-                out Compilation output,
-                out ImmutableArray<Diagnostic> diagnostics
-            );
+            .RunGeneratorsAndUpdateCompilation(CreateCompilation(source, declaration.Version), out Compilation output, out ImmutableArray<Diagnostic> diagnostics);
         string context = $"{declaration}, separatePartial={separatePartial}";
         Assert.That(diagnostics, Is.Empty, context);
         Assert.That(driver.GetRunResult().GeneratedTrees, Has.Length.EqualTo(1), context);
@@ -111,18 +82,9 @@ internal sealed class GeneratedConstructorSemanticsTests
         [Values(false, true)] bool separatePartial
     )
     {
-        string source = CreateSource(
-            declaration.Kind,
-            separatePartial,
-            emptyParameters: false,
-            fields: false
-        );
+        string source = CreateSource(declaration.Kind, separatePartial, emptyParameters: false, fields: false);
         GeneratorDriver driver = CreateDriver(declaration.Version)
-            .RunGeneratorsAndUpdateCompilation(
-                CreateCompilation(source, declaration.Version),
-                out Compilation output,
-                out ImmutableArray<Diagnostic> diagnostics
-            );
+            .RunGeneratorsAndUpdateCompilation(CreateCompilation(source, declaration.Version), out Compilation output, out ImmutableArray<Diagnostic> diagnostics);
         Assert.That(diagnostics, Is.Empty, declaration.ToString());
         Assert.That(driver.GetRunResult().GeneratedTrees, Is.Empty, declaration.ToString());
         Assert.That(output.GetDiagnostics(), Is.Empty, declaration.ToString());
@@ -137,17 +99,8 @@ internal sealed class GeneratedConstructorSemanticsTests
         [Values(false, true)] bool emptyParameters
     )
     {
-        string source = CreateSource(
-                declaration.Kind,
-                separatePartial: true,
-                emptyParameters,
-                fields: true
-            )
-            .Replace(
-                "[DxMessaging.Core.Attributes.DxAutoConstructor]",
-                "",
-                StringComparison.Ordinal
-            )
+        string source = CreateSource(declaration.Kind, separatePartial: true, emptyParameters, fields: true)
+            .Replace("[DxMessaging.Core.Attributes.DxAutoConstructor]", "", StringComparison.Ordinal)
             .Replace(
                 "public readonly int Extra = 0;",
                 "public readonly int Extra = 0; public Packet("
@@ -157,28 +110,20 @@ internal sealed class GeneratedConstructorSemanticsTests
                     + ") { Extra = extra; }",
                 StringComparison.Ordinal
             );
-        string primaryCheck =
-            declaration.Kind.StartsWith("record", StringComparison.Ordinal) && !emptyParameters
-                ? " && packet.Primary == 7 && packet.Name == \"primary\""
-                : "";
+        string primaryCheck = declaration.Kind.StartsWith("record", StringComparison.Ordinal) && !emptyParameters ? " && packet.Primary == 7 && packet.Name == \"primary\"" : "";
         source +=
             "public static class Consumer { public static bool Verify() { Packet packet = new Packet("
             + (emptyParameters ? "" : "7, \"primary\", ")
             + "42); return packet.Extra == 42 && packet.Stamp == 14 && Packet.Initializations == 1"
             + primaryCheck
             + "; } }";
-        AssertCompilationExecutes(
-            CreateCompilation(source, declaration.Version),
-            declaration.ToString()
-        );
+        AssertCompilationExecutes(CreateCompilation(source, declaration.Version), declaration.ToString());
     }
 
     /// <summary>Allows generated field constructors inside containers with primary constructors.</summary>
     /// <param name="declaration">The target declaration kind and supported language version.</param>
     [Test]
-    public void PrimaryConstructorOnContainerDoesNotBlockNestedFieldConstructor(
-        [ValueSource(nameof(Declarations))] (string Kind, LanguageVersion Version) declaration
-    )
+    public void PrimaryConstructorOnContainerDoesNotBlockNestedFieldConstructor([ValueSource(nameof(Declarations))] (string Kind, LanguageVersion Version) declaration)
     {
         string source = $$"""
 public partial {{declaration.Kind}} Envelope(int Primary, string Name)
@@ -193,17 +138,9 @@ public static class Consumer
 }
 """;
         GeneratorDriver driver = CreateDriver(declaration.Version)
-            .RunGeneratorsAndUpdateCompilation(
-                CreateCompilation(source, declaration.Version),
-                out Compilation output,
-                out ImmutableArray<Diagnostic> diagnostics
-            );
+            .RunGeneratorsAndUpdateCompilation(CreateCompilation(source, declaration.Version), out Compilation output, out ImmutableArray<Diagnostic> diagnostics);
         Assert.That(diagnostics, Is.Empty, declaration.ToString());
-        Assert.That(
-            driver.GetRunResult().GeneratedTrees,
-            Has.Length.EqualTo(1),
-            declaration.ToString()
-        );
+        Assert.That(driver.GetRunResult().GeneratedTrees, Has.Length.EqualTo(1), declaration.ToString());
         AssertCompilationExecutes(output, declaration.ToString());
     }
 
@@ -225,43 +162,18 @@ public static class Consumer
         string name = generic ? "Packet<T>" : "Packet";
         string modifier = sealedRecord ? "sealed " : "";
         string attribute = "[DxMessaging.Core.Attributes.DxAutoConstructor]";
-        string declaration =
-            $"public {modifier}partial record {name}{(emptyPrimary ? "()" : "")} {{ public readonly {name}{(nullable ? "?" : "")} Next = null!; }}";
-        string source =
-            "#nullable enable\n"
-            + (
-                separatePartial
-                    ? declaration + attribute + $" public partial record {name} {{ }}"
-                    : attribute + declaration
-            );
-        string context =
-            $"sealed={sealedRecord}, generic={generic}, nullable={nullable}, partial={separatePartial}, primary={emptyPrimary}";
+        string declaration = $"public {modifier}partial record {name}{(emptyPrimary ? "()" : "")} {{ public readonly {name}{(nullable ? "?" : "")} Next = null!; }}";
+        string source = "#nullable enable\n" + (separatePartial ? declaration + attribute + $" public partial record {name} {{ }}" : attribute + declaration);
+        string context = $"sealed={sealedRecord}, generic={generic}, nullable={nullable}, partial={separatePartial}, primary={emptyPrimary}";
         CSharpCompilation input = CreateCompilation(source, LanguageVersion.CSharp9);
         Assert.That(input.GetDiagnostics(), Is.Empty, "Legal input: " + context);
-        GeneratorDriver driver = CreateDriver(LanguageVersion.CSharp9)
-            .RunGeneratorsAndUpdateCompilation(
-                input,
-                out Compilation output,
-                out ImmutableArray<Diagnostic> diagnostics
-            );
-        Assert.That(
-            driver.GetRunResult().Results.Select(run => run.Exception),
-            Has.All.Null,
-            context
-        );
+        GeneratorDriver driver = CreateDriver(LanguageVersion.CSharp9).RunGeneratorsAndUpdateCompilation(input, out Compilation output, out ImmutableArray<Diagnostic> diagnostics);
+        Assert.That(driver.GetRunResult().Results.Select(run => run.Exception), Has.All.Null, context);
         Assert.That(diagnostics, Has.Length.EqualTo(1), context);
         Assert.That(diagnostics.Single().Id, Is.EqualTo("DXMSG013"), context);
         Assert.That(diagnostics.Single().Severity, Is.EqualTo(DiagnosticSeverity.Error), context);
-        Assert.That(
-            diagnostics.Single().GetMessage(CultureInfo.InvariantCulture),
-            Does.Contain("copy constructor").And.Contain("different signature"),
-            context
-        );
-        Assert.That(
-            driver.GetRunResult().GeneratedTrees,
-            Is.Empty,
-            "Keep compiler-owned copying: " + context
-        );
+        Assert.That(diagnostics.Single().GetMessage(CultureInfo.InvariantCulture), Does.Contain("copy constructor").And.Contain("different signature"), context);
+        Assert.That(driver.GetRunResult().GeneratedTrees, Is.Empty, "Keep compiler-owned copying: " + context);
         Assert.That(output.GetDiagnostics(), Is.Empty, context);
     }
 
@@ -269,10 +181,7 @@ public static class Consumer
     /// <param name="sealedRecord">Whether the record is sealed.</param>
     /// <param name="generic">Whether the record has a type parameter.</param>
     [Test]
-    public void RecordPropertyRemedyPreservesWithCopyState(
-        [Values(false, true)] bool sealedRecord,
-        [Values(false, true)] bool generic
-    )
+    public void RecordPropertyRemedyPreservesWithCopyState([Values(false, true)] bool sealedRecord, [Values(false, true)] bool generic)
     {
         string name = generic ? "Packet<T>" : "Packet";
         string closed = generic ? "Packet<int>" : "Packet";
@@ -293,10 +202,7 @@ public static class Consumer
     }
 }
 """;
-        AssertCompilationExecutes(
-            CreateCompilation(source, LanguageVersion.CSharp9),
-            $"sealed={sealedRecord}, generic={generic}"
-        );
+        AssertCompilationExecutes(CreateCompilation(source, LanguageVersion.CSharp9), $"sealed={sealedRecord}, generic={generic}");
     }
 
     /// <summary>Keeps ordinary classes and compatible record field constructors usable.</summary>
@@ -304,14 +210,7 @@ public static class Consumer
     /// <param name="generic">Whether the target has a type parameter.</param>
     [Test]
     public void NeighboringFieldSignaturesPreserveConstructionAndCopying(
-        [Values(
-            "ClassSelf",
-            "RecordObject",
-            "RecordArray",
-            "RecordMultiple",
-            "RecordOtherConstruction"
-        )]
-            string shape,
+        [Values("ClassSelf", "RecordObject", "RecordArray", "RecordMultiple", "RecordOtherConstruction")] string shape,
         [Values(false, true)] bool generic
     )
     {
@@ -330,16 +229,11 @@ public static class Consumer
         string marker = shape switch
         {
             "RecordObject" => "object marker = new object();",
-            "RecordOtherConstruction" => generic
-                ? "Packet<string> marker = new Packet<string>(null);"
-                : "object marker = new object();",
+            "RecordOtherConstruction" => generic ? "Packet<string> marker = new Packet<string>(null);" : "object marker = new object();",
             "RecordArray" => $"{closed}[] marker = new {closed}[0];",
             _ => $"{closed} marker = new {closed}(null{(shape == "RecordMultiple" ? ", 7" : "")});",
         };
-        string copy =
-            shape == "ClassSelf"
-                ? "PacketPlaceholder copy = root;"
-                : "PacketPlaceholder copy = root with { };";
+        string copy = shape == "ClassSelf" ? "PacketPlaceholder copy = root;" : "PacketPlaceholder copy = root with { };";
         string valueCheck = shape == "RecordMultiple" ? " && copy.Value == 42" : "";
         string source = $$"""
 #nullable enable
@@ -357,23 +251,14 @@ public static class Consumer
 }
 """;
         GeneratorDriver driver = CreateDriver(LanguageVersion.CSharp9)
-            .RunGeneratorsAndUpdateCompilation(
-                CreateCompilation(source, LanguageVersion.CSharp9),
-                out Compilation output,
-                out ImmutableArray<Diagnostic> diagnostics
-            );
+            .RunGeneratorsAndUpdateCompilation(CreateCompilation(source, LanguageVersion.CSharp9), out Compilation output, out ImmutableArray<Diagnostic> diagnostics);
         Assert.That(diagnostics, Is.Empty, $"shape={shape}, generic={generic}");
         Assert.That(driver.GetRunResult().GeneratedTrees, Has.Length.EqualTo(1), shape);
         AssertCompilationExecutes(output, $"shape={shape}, generic={generic}");
     }
 
     /// <summary>Builds annotated declarations with observable initializer state.</summary>
-    private static string CreateSource(
-        string kind,
-        bool separatePartial,
-        bool emptyParameters,
-        bool fields
-    )
+    private static string CreateSource(string kind, bool separatePartial, bool emptyParameters, bool fields)
     {
         string parameters = emptyParameters ? "" : "int Primary, string Name";
         string stamp = emptyParameters ? "14" : "Primary + Name.Length";
@@ -388,24 +273,14 @@ public static class Consumer
 
     /// <summary>Creates the production generator driver for the requested language version.</summary>
     private static CSharpGeneratorDriver CreateDriver(LanguageVersion version) =>
-        CSharpGeneratorDriver.Create(
-            generators: new ISourceGenerator[] { new DxAutoConstructorGenerator() },
-            parseOptions: new CSharpParseOptions(version)
-        );
+        CSharpGeneratorDriver.Create(generators: new ISourceGenerator[] { new DxAutoConstructorGenerator() }, parseOptions: new CSharpParseOptions(version));
 
     /// <summary>Creates a compilation that treats warnings as errors and uses shipped attributes.</summary>
     private static CSharpCompilation CreateCompilation(string source, LanguageVersion version)
     {
-        CSharpCompilation compilation =
-            GeneratorTestUtilities.CreateAutoConstructorCompilationFromShippedAttributes(source);
+        CSharpCompilation compilation = GeneratorTestUtilities.CreateAutoConstructorCompilationFromShippedAttributes(source);
         CSharpParseOptions options = new(version);
-        return compilation
-            .RemoveAllSyntaxTrees()
-            .AddSyntaxTrees(
-                compilation.SyntaxTrees.Select(tree =>
-                    CSharpSyntaxTree.ParseText(tree.GetText(), options, tree.FilePath)
-                )
-            );
+        return compilation.RemoveAllSyntaxTrees().AddSyntaxTrees(compilation.SyntaxTrees.Select(tree => CSharpSyntaxTree.ParseText(tree.GetText(), options, tree.FilePath)));
     }
 
     /// <summary>Emits and executes the consumer to check its resulting state.</summary>
@@ -414,11 +289,7 @@ public static class Consumer
         Assert.That(compilation.GetDiagnostics(), Is.Empty, context);
         using MemoryStream image = new();
         EmitResult result = compilation.Emit(image);
-        Assert.That(
-            result.Success,
-            Is.True,
-            context + "\n" + string.Join("\n", result.Diagnostics)
-        );
+        Assert.That(result.Success, Is.True, context + "\n" + string.Join("\n", result.Diagnostics));
         image.Position = 0;
         AssemblyLoadContext load = new("PrimaryConstructorConsumer", isCollectible: true);
         try

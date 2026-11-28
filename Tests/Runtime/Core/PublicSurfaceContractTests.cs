@@ -30,11 +30,7 @@ namespace DxMessaging.Tests.Runtime.Core
         private const string CoreNamespacePrefix = "DxMessaging.Core";
         private const string UnityNamespacePrefix = "DxMessaging.Unity";
 
-        private static readonly string[] EffectivelyPublicNamespacePrefixes =
-        {
-            CoreNamespacePrefix,
-            UnityNamespacePrefix,
-        };
+        private static readonly string[] EffectivelyPublicNamespacePrefixes = { CoreNamespacePrefix, UnityNamespacePrefix };
 
         /// <summary>
         /// Enumerates every <c>public</c> type in the
@@ -87,23 +83,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 return;
             }
 
-            HashSet<string> storedSet = new HashSet<string>(
-                stored.Split('\n', StringSplitOptions.RemoveEmptyEntries),
-                StringComparer.Ordinal
-            );
-            HashSet<string> actualSet = new HashSet<string>(
-                actual.Split('\n', StringSplitOptions.RemoveEmptyEntries),
-                StringComparer.Ordinal
-            );
+            HashSet<string> storedSet = new HashSet<string>(stored.Split('\n', StringSplitOptions.RemoveEmptyEntries), StringComparer.Ordinal);
+            HashSet<string> actualSet = new HashSet<string>(actual.Split('\n', StringSplitOptions.RemoveEmptyEntries), StringComparer.Ordinal);
 
-            List<string> added = actualSet
-                .Except(storedSet)
-                .OrderBy(n => n, StringComparer.Ordinal)
-                .ToList();
-            List<string> removed = storedSet
-                .Except(actualSet)
-                .OrderBy(n => n, StringComparer.Ordinal)
-                .ToList();
+            List<string> added = actualSet.Except(storedSet).OrderBy(n => n, StringComparer.Ordinal).ToList();
+            List<string> removed = storedSet.Except(actualSet).OrderBy(n => n, StringComparer.Ordinal).ToList();
 
             string addedTxt = added.Count == 0 ? "(none)" : string.Join("\n  ", added);
             string removedTxt = removed.Count == 0 ? "(none)" : string.Join("\n  ", removed);
@@ -193,22 +177,13 @@ namespace DxMessaging.Tests.Runtime.Core
         public void IsEffectivelyPublicCorrectlyDetectsKnownPatterns()
         {
             // Top-level public type from the BCL.
-            Assert.IsTrue(
-                IsEffectivelyPublic(typeof(string)),
-                "string is a top-level public BCL type and must be effectively public."
-            );
+            Assert.IsTrue(IsEffectivelyPublic(typeof(string)), "string is a top-level public BCL type and must be effectively public.");
 
             // Top-level internal type declared in this assembly.
-            Assert.IsFalse(
-                IsEffectivelyPublic(typeof(SomeInternalClass)),
-                "SomeInternalClass is a top-level internal type and must NOT be effectively public."
-            );
+            Assert.IsFalse(IsEffectivelyPublic(typeof(SomeInternalClass)), "SomeInternalClass is a top-level internal type and must NOT be effectively public.");
 
             // Nested public inside nested public inside top-level public => public.
-            Assert.IsTrue(
-                IsEffectivelyPublic(typeof(SyntheticOuterPublic.SyntheticInnerPublic)),
-                "Nested public inside top-level public must be effectively public."
-            );
+            Assert.IsTrue(IsEffectivelyPublic(typeof(SyntheticOuterPublic.SyntheticInnerPublic)), "Nested public inside top-level public must be effectively public.");
 
             /*
                 Nested public inside top-level internal outer => NOT public.
@@ -225,9 +200,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 => NOT public. This exercises the loop's mid-chain break.
             */
             Assert.IsFalse(
-                IsEffectivelyPublic(
-                    typeof(SyntheticOuterPublicLevel1.SyntheticMiddleInternal.SyntheticInnerPublic)
-                ),
+                IsEffectivelyPublic(typeof(SyntheticOuterPublicLevel1.SyntheticMiddleInternal.SyntheticInnerPublic)),
                 "A 3-level chain where any middle rung is non-public must NOT be effectively public."
             );
         }
@@ -256,12 +229,7 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             HashSet<string> methodNames = new HashSet<string>(
                 typeof(IMessageBus)
-                    .GetMethods(
-                        BindingFlags.Public
-                            | BindingFlags.Instance
-                            | BindingFlags.DeclaredOnly
-                            | BindingFlags.Static
-                    )
+                    .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly | BindingFlags.Static)
                     .Where(m => !m.IsSpecialName)
                     .Select(m => m.Name),
                 StringComparer.Ordinal
@@ -275,9 +243,7 @@ namespace DxMessaging.Tests.Runtime.Core
             List<string> searchRoots = ResolveTestSourceRoots();
             if (searchRoots.Count == 0)
             {
-                Assert.Inconclusive(
-                    "Could not resolve any test source root for IMessageBus method coverage check."
-                );
+                Assert.Inconclusive("Could not resolve any test source root for IMessageBus method coverage check.");
                 return;
             }
 
@@ -289,13 +255,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     continue;
                 }
 
-                foreach (
-                    string file in Directory.EnumerateFiles(
-                        root,
-                        "*.cs",
-                        SearchOption.AllDirectories
-                    )
-                )
+                foreach (string file in Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories))
                 {
                     string text;
                     try
@@ -322,10 +282,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
             }
 
-            List<string> missing = methodNames
-                .Except(covered)
-                .OrderBy(n => n, StringComparer.Ordinal)
-                .ToList();
+            List<string> missing = methodNames.Except(covered).OrderBy(n => n, StringComparer.Ordinal).ToList();
             Assert.That(
                 missing,
                 Is.Empty,
@@ -342,25 +299,12 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void EveryCanonicalMessageKindAppearsInAllKinds()
         {
-            HashSet<MessageKind> covered = new HashSet<MessageKind>(
-                MessageScenarios.AllKinds.Select(scenario => scenario.Kind)
-            );
+            HashSet<MessageKind> covered = new HashSet<MessageKind>(MessageScenarios.AllKinds.Select(scenario => scenario.Kind));
 
-            MessageKind[] canonicalKinds =
-            {
-                MessageKind.Untargeted,
-                MessageKind.Targeted,
-                MessageKind.Broadcast,
-            };
+            MessageKind[] canonicalKinds = { MessageKind.Untargeted, MessageKind.Targeted, MessageKind.Broadcast };
 
-            List<string> missing = canonicalKinds
-                .Where(kind => !covered.Contains(kind))
-                .Select(kind => kind.ToString())
-                .ToList();
-            List<string> unexpected = covered
-                .Except(canonicalKinds)
-                .Select(kind => kind.ToString())
-                .ToList();
+            List<string> missing = canonicalKinds.Where(kind => !covered.Contains(kind)).Select(kind => kind.ToString()).ToList();
+            List<string> unexpected = covered.Except(canonicalKinds).Select(kind => kind.ToString()).ToList();
 
             Assert.That(
                 missing,
@@ -386,23 +330,14 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void EveryMessageKindAppearsInAllKindsIncludingWithoutContext()
         {
-            HashSet<MessageKind> covered = new HashSet<MessageKind>(
-                MessageScenarios.AllKindsIncludingWithoutContext.Select(scenario => scenario.Kind)
-            );
+            HashSet<MessageKind> covered = new HashSet<MessageKind>(MessageScenarios.AllKindsIncludingWithoutContext.Select(scenario => scenario.Kind));
 
-            List<string> missing = Enum.GetValues(typeof(MessageKind))
-                .Cast<MessageKind>()
-                .Where(kind => !covered.Contains(kind))
-                .Select(kind => kind.ToString())
-                .ToList();
+            List<string> missing = Enum.GetValues(typeof(MessageKind)).Cast<MessageKind>().Where(kind => !covered.Contains(kind)).Select(kind => kind.ToString()).ToList();
 
             Assert.That(
                 missing,
                 Is.Empty,
-                "MessageScenarios.AllKindsIncludingWithoutContext must yield every MessageKind. Missing: "
-                    + string.Join(", ", missing)
-                    + ". Actual: "
-                    + string.Join(", ", covered)
+                "MessageScenarios.AllKindsIncludingWithoutContext must yield every MessageKind. Missing: " + string.Join(", ", missing) + ". Actual: " + string.Join(", ", covered)
             );
         }
 
@@ -492,10 +427,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     continue;
                 }
 
-                if (
-                    !type.Namespace.Equals(namespacePrefix, StringComparison.Ordinal)
-                    && !type.Namespace.StartsWith(prefixWithDot, StringComparison.Ordinal)
-                )
+                if (!type.Namespace.Equals(namespacePrefix, StringComparison.Ordinal) && !type.Namespace.StartsWith(prefixWithDot, StringComparison.Ordinal))
                 {
                     continue;
                 }
@@ -555,10 +487,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
 
                 current = current.DeclaringType;
-                Debug.Assert(
-                    current != null,
-                    "A nested type must have a declaring type in a correct CLR; this is unreachable."
-                );
+                Debug.Assert(current != null, "A nested type must have a declaring type in a correct CLR; this is unreachable.");
             }
 
             return current.IsPublic;
@@ -588,23 +517,8 @@ namespace DxMessaging.Tests.Runtime.Core
                     SnapshotResourceFolderName,
                     PublicSurfaceSnapshotFileName
                 ),
-                Path.Combine(
-                    Application.dataPath,
-                    "..",
-                    "Tests",
-                    "Runtime",
-                    "Core",
-                    SnapshotResourceFolderName,
-                    PublicSurfaceSnapshotFileName
-                ),
-                Path.Combine(
-                    Directory.GetCurrentDirectory(),
-                    "Tests",
-                    "Runtime",
-                    "Core",
-                    SnapshotResourceFolderName,
-                    PublicSurfaceSnapshotFileName
-                ),
+                Path.Combine(Application.dataPath, "..", "Tests", "Runtime", "Core", SnapshotResourceFolderName, PublicSurfaceSnapshotFileName),
+                Path.Combine(Directory.GetCurrentDirectory(), "Tests", "Runtime", "Core", SnapshotResourceFolderName, PublicSurfaceSnapshotFileName),
             };
 
             foreach (string candidate in candidates)
@@ -627,14 +541,7 @@ namespace DxMessaging.Tests.Runtime.Core
             List<string> roots = new List<string>();
             string[] candidates =
             {
-                Path.Combine(
-                    Application.dataPath,
-                    "..",
-                    "Packages",
-                    "com.wallstop-studios.dxmessaging",
-                    "Tests",
-                    "Runtime"
-                ),
+                Path.Combine(Application.dataPath, "..", "Packages", "com.wallstop-studios.dxmessaging", "Tests", "Runtime"),
                 Path.Combine(Application.dataPath, "..", "Tests", "Runtime"),
                 Path.Combine(Directory.GetCurrentDirectory(), "Tests", "Runtime"),
             };

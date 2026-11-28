@@ -10,7 +10,8 @@ Before committing documentation or skill files:
 
 - [ ] All link text is human-readable (no raw file names)
 - [ ] Repository URLs in frontmatter match `git remote get-url origin`
-- [ ] External URLs are correct and resolve in a browser (a CI 403/429 does not mean broken; external liveness is verified by the scheduled advisory scan, not gated as a hard PR check)
+- [ ] External URLs are correct and resolve in a browser (a CI 403/429 does not mean broken; external liveness is verified by the scheduled advisory scan, not gated as a hard PR
+      check)
 - [ ] No broken internal/relative links and every in-repo `#anchor` matches a heading (this IS the hard PR gate, validated offline)
 - [ ] External URL fragments have been verified to scroll to the correct section
 - [ ] GitHub Action versions are consistent across all workflows

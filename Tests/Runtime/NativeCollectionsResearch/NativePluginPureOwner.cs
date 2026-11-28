@@ -24,15 +24,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
         private delegate int LayoutDelegate(int field);
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        private delegate int ProcessDelegate(
-            int count,
-            NativeNumericPayload* input,
-            long* output,
-            int* mode,
-            int rounds,
-            int inputCapacity,
-            int outputCapacity
-        );
+        private delegate int ProcessDelegate(int count, NativeNumericPayload* input, long* output, int* mode, int rounds, int inputCapacity, int outputCapacity);
 
         [DllImport("/usr/lib/libSystem.B.dylib", CallingConvention = CallingConvention.Cdecl)]
         private static extern IntPtr dlopen(string path, int flags);
@@ -54,8 +46,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
         internal int CloseCount { get; private set; }
         internal int LastCloseStatus { get; private set; } = -1;
         internal bool Ready => !_disposed && _process != null;
-        internal bool RootsCleared =>
-            _handle == IntPtr.Zero && _abi == null && _layout == null && _process == null;
+        internal bool RootsCleared => _handle == IntPtr.Zero && _abi == null && _layout == null && _process == null;
 
         internal void Load(string path)
         {
@@ -72,16 +63,8 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                 _abi = Resolve<AbiDelegate>("dxm_plugin_abi");
                 _layout = Resolve<LayoutDelegate>("dxm_plugin_layout");
                 _process = Resolve<ProcessDelegate>("dxm_plugin_process");
-                if (
-                    _abi() != 38801
-                    || _layout(0) != 16
-                    || _layout(1) != 0
-                    || _layout(2) != 4
-                    || _layout(3) != 8
-                )
-                    throw new InvalidOperationException(
-                        "Unsupported native ABI or payload layout."
-                    );
+                if (_abi() != 38801 || _layout(0) != 16 || _layout(1) != 0 || _layout(2) != 4 || _layout(3) != 8)
+                    throw new InvalidOperationException("Unsupported native ABI or payload layout.");
             }
             catch
             {
@@ -105,15 +88,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
             return _layout(field);
         }
 
-        internal int Invoke(
-            int count,
-            NativeNumericPayload* input,
-            long* output,
-            int* mode,
-            int rounds,
-            int inputCapacity,
-            int outputCapacity
-        )
+        internal int Invoke(int count, NativeNumericPayload* input, long* output, int* mode, int rounds, int inputCapacity, int outputCapacity)
         {
             RequireReady();
             return _process(count, input, output, mode, rounds, inputCapacity, outputCapacity);
@@ -229,11 +204,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
             RequireLive();
             if (Entries != 0)
                 throw new InvalidOperationException("Reset completed buffers before reuse.");
-            if (
-                path != NativePluginPath.Managed
-                && path != NativePluginPath.NativeBatch
-                && path != NativePluginPath.NativeScalar
-            )
+            if (path != NativePluginPath.Managed && path != NativePluginPath.NativeBatch && path != NativePluginPath.NativeScalar)
                 throw new ArgumentOutOfRangeException(nameof(path));
             if (batch < 1 || 256 < batch)
                 throw new ArgumentOutOfRangeException(nameof(batch));
@@ -247,27 +218,9 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
             {
                 int count = Math.Min(width, Count - offset);
                 if (path == NativePluginPath.Managed)
-                    PureBatchKernels.Managed(
-                        count,
-                        input + 1 + offset,
-                        output + 1 + offset,
-                        modes + 1 + Entries,
-                        rounds
-                    );
-                else if (
-                    Library.Invoke(
-                        count,
-                        input + 1 + offset,
-                        output + 1 + offset,
-                        modes + 1 + Entries,
-                        rounds,
-                        count,
-                        count
-                    ) != 0
-                )
-                    throw new InvalidOperationException(
-                        "Native processing rejected valid owned buffers."
-                    );
+                    PureBatchKernels.Managed(count, input + 1 + offset, output + 1 + offset, modes + 1 + Entries, rounds);
+                else if (Library.Invoke(count, input + 1 + offset, output + 1 + offset, modes + 1 + Entries, rounds, count, count) != 0)
+                    throw new InvalidOperationException("Native processing rejected valid owned buffers.");
                 ++Entries;
             }
         }

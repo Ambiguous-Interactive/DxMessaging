@@ -13,17 +13,10 @@ namespace WallstopStudios.DxMessaging.Docs.Tests;
 internal sealed class DocumentationImportTests
 {
     private static readonly int[] NoOwnedCallbacks = { 0, 0 };
-    private static readonly CSharpParseOptions ProviderOptions = new(
-        LanguageVersion.CSharp9,
-        preprocessorSymbols: new[] { "UNITY_2021_3_OR_NEWER" }
-    );
+    private static readonly CSharpParseOptions ProviderOptions = new(LanguageVersion.CSharp9, preprocessorSymbols: new[] { "UNITY_2021_3_OR_NEWER" });
 
-    private static readonly Lazy<byte[]> PortableRuntimeImage = new(() =>
-        RuntimeHashCompilationTests.CompilePortableRuntimeImage(false)
-    );
-    private static readonly Lazy<MetadataReference> PortableRuntime = new(() =>
-        MetadataReference.CreateFromImage(PortableRuntimeImage.Value)
-    );
+    private static readonly Lazy<byte[]> PortableRuntimeImage = new(() => RuntimeHashCompilationTests.CompilePortableRuntimeImage(false));
+    private static readonly Lazy<MetadataReference> PortableRuntime = new(() => MetadataReference.CreateFromImage(PortableRuntimeImage.Value));
 
     /// <summary>Runs both published readiness forms against the actual runtime, preserving pending edits.</summary>
     [Test]
@@ -33,18 +26,9 @@ internal sealed class DocumentationImportTests
         [Values(false, true)] bool pendingEdit
     )
     {
-        string path = Path.Combine(
-            DocsSnippetCompilationTests.ResolveRepoRoot(),
-            "docs",
-            "guides",
-            "sticky-messages.md"
-        );
+        string path = Path.Combine(DocsSnippetCompilationTests.ResolveRepoRoot(), "docs", "guides", "sticky-messages.md");
         string[] examples = DocsSnippetCompilationTests.ExtractCodeBlocks(path, "csharp").ToArray();
-        Assert.That(
-            examples,
-            Has.Length.EqualTo(3),
-            "Bind the actual publisher and both readiness forms."
-        );
+        Assert.That(examples, Has.Length.EqualTo(3), "Bind the actual publisher and both readiness forms.");
         string probe = """
             using System;
             using DxMessaging.Core;
@@ -92,21 +76,16 @@ internal sealed class DocumentationImportTests
                 }
             }
             """;
-        string publication = after
-            ? "SettingsPublication.Publish(bus, settings);"
-            : "SettingsReady message = new SettingsReady(settings); bus.UntargetedBroadcast(ref message);";
+        string publication = after ? "SettingsPublication.Publish(bus, settings);" : "SettingsReady message = new SettingsReady(settings); bus.UntargetedBroadcast(ref message);";
         probe = probe
             .Replace("PUBLISH", publication, StringComparison.Ordinal)
             .Replace(
                 "VIEW_CREATION",
-                after
-                    ? "ReadySettingsView view = new ReadySettingsView(token);"
-                    : "ReadySettingsView view = new ReadySettingsView(token, published ? settings : null);",
+                after ? "ReadySettingsView view = new ReadySettingsView(token);" : "ReadySettingsView view = new ReadySettingsView(token, published ? settings : null);",
                 StringComparison.Ordinal
             );
         CSharpParseOptions options = new(LanguageVersion.CSharp9);
-        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
-            ?? throw new InvalidOperationException("Runtime references are unavailable.");
+        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") ?? throw new InvalidOperationException("Runtime references are unavailable.");
         CSharpCompilation compilation = CSharpCompilation.Create(
             "StickyReadinessGuide",
             new[]
@@ -115,38 +94,20 @@ internal sealed class DocumentationImportTests
                 CSharpSyntaxTree.ParseText(examples[after ? 2 : 1], options, path + ":view"),
                 CSharpSyntaxTree.ParseText(probe, options, "StickyGuideProbe.cs"),
             },
-            references
-                .Split(Path.PathSeparator)
-                .Select(file => MetadataReference.CreateFromFile(file))
-                .Append(PortableRuntime.Value),
-            new CSharpCompilationOptions(
-                OutputKind.DynamicallyLinkedLibrary,
-                generalDiagnosticOption: ReportDiagnostic.Error
-            )
+            references.Split(Path.PathSeparator).Select(file => MetadataReference.CreateFromFile(file)).Append(PortableRuntime.Value),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, generalDiagnosticOption: ReportDiagnostic.Error)
         );
         using MemoryStream image = new();
         Microsoft.CodeAnalysis.Emit.EmitResult emitted = compilation.Emit(image);
-        Assert.That(
-            emitted.Success,
-            Is.True,
-            "Compile unchanged published fences against actual APIs:\n"
-                + string.Join("\n", emitted.Diagnostics)
-        );
-        System.Runtime.Loader.AssemblyLoadContext context = new(
-            "StickyReadinessGuide",
-            isCollectible: true
-        );
+        Assert.That(emitted.Success, Is.True, "Compile unchanged published fences against actual APIs:\n" + string.Join("\n", emitted.Diagnostics));
+        System.Runtime.Loader.AssemblyLoadContext context = new("StickyReadinessGuide", isCollectible: true);
         try
         {
             using MemoryStream runtime = new(PortableRuntimeImage.Value);
             _ = context.LoadFromStream(runtime);
             image.Position = 0;
             System.Reflection.Assembly assembly = context.LoadFromStream(image);
-            int[]? result =
-                assembly
-                    .GetType("StickyGuideProbe", throwOnError: true)!
-                    .GetMethod("Run")!
-                    .Invoke(null, new object[] { published, pendingEdit, after }) as int[];
+            int[]? result = assembly.GetType("StickyGuideProbe", throwOnError: true)!.GetMethod("Run")!.Invoke(null, new object[] { published, pendingEdit, after }) as int[];
             int volume = pendingEdit ? 31 : 17;
             Assert.That(
                 result,
@@ -165,10 +126,7 @@ internal sealed class DocumentationImportTests
     [TestCase("group", false)]
     [TestCase("source", false)]
     [TestCase("state", false)]
-    public void SubscriptionOwnershipGuideUsesActualRuntimeContracts(
-        string shape,
-        bool expectedSuccess
-    )
+    public void SubscriptionOwnershipGuideUsesActualRuntimeContracts(string shape, bool expectedSuccess)
     {
         DirectoryInfo? root = new(TestContext.CurrentContext.TestDirectory);
         while (root != null && !File.Exists(Path.Combine(root.FullName, "package.json")))
@@ -177,28 +135,18 @@ internal sealed class DocumentationImportTests
         }
         Assert.That(root, Is.Not.Null, "Locate the subscription ownership guide.");
         string path = Path.Combine(root!.FullName, "docs", "guides", "subscription-ownership.md");
-        Match[] examples = Regex
-            .Matches(File.ReadAllText(path), @"```csharp\s*\r?\n(?<code>[\s\S]*?)```")
-            .ToArray();
+        Match[] examples = Regex.Matches(File.ReadAllText(path), @"```csharp\s*\r?\n(?<code>[\s\S]*?)```").ToArray();
         Assert.That(examples, Has.Length.EqualTo(1), path + ": one complete ownership example");
         string source = examples[0].Groups["code"].Value;
         string marker = string.Empty;
         if (shape == "group")
         {
-            source = source.Replace(
-                ".CreateGroup()",
-                ".CreateMissingGroup()",
-                StringComparison.Ordinal
-            );
+            source = source.Replace(".CreateGroup()", ".CreateMissingGroup()", StringComparison.Ordinal);
             marker = "CreateMissingGroup";
         }
         else if (shape == "source")
         {
-            source = source.Replace(
-                ".RetargetSource(",
-                ".RetargetMissingSource(",
-                StringComparison.Ordinal
-            );
+            source = source.Replace(".RetargetSource(", ".RetargetMissingSource(", StringComparison.Ordinal);
             marker = "RetargetMissingSource";
         }
         else if (shape == "state")
@@ -214,40 +162,23 @@ internal sealed class DocumentationImportTests
         {
             Assert.That(shape, Is.EqualTo("published"), path + ": known control shape");
         }
-        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
-            ?? throw new InvalidOperationException("Runtime references are unavailable.");
-        SyntaxTree tree = CSharpSyntaxTree.ParseText(
-            source,
-            new CSharpParseOptions(LanguageVersion.CSharp9),
-            path
-        );
+        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") ?? throw new InvalidOperationException("Runtime references are unavailable.");
+        SyntaxTree tree = CSharpSyntaxTree.ParseText(source, new CSharpParseOptions(LanguageVersion.CSharp9), path);
         CSharpCompilation compilation = CSharpCompilation.Create(
             "SubscriptionOwnershipGuide",
             new[] { tree },
-            references
-                .Split(Path.PathSeparator)
-                .Select(file => MetadataReference.CreateFromFile(file))
-                .Append(PortableRuntime.Value),
-            new CSharpCompilationOptions(
-                OutputKind.DynamicallyLinkedLibrary,
-                generalDiagnosticOption: ReportDiagnostic.Error
-            )
+            references.Split(Path.PathSeparator).Select(file => MetadataReference.CreateFromFile(file)).Append(PortableRuntime.Value),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, generalDiagnosticOption: ReportDiagnostic.Error)
         );
         using MemoryStream image = new();
         Microsoft.CodeAnalysis.Emit.EmitResult emitted = compilation.Emit(image);
-        Assert.That(
-            emitted.Success,
-            Is.EqualTo(expectedSuccess),
-            $"{path}; shape={shape}:\n" + string.Join("\n", emitted.Diagnostics)
-        );
+        Assert.That(emitted.Success, Is.EqualTo(expectedSuccess), $"{path}; shape={shape}:\n" + string.Join("\n", emitted.Diagnostics));
         if (!expectedSuccess)
         {
             Assert.That(
                 emitted.Diagnostics.Any(diagnostic =>
                     diagnostic.Severity == DiagnosticSeverity.Error
-                    && diagnostic
-                        .GetMessage(System.Globalization.CultureInfo.InvariantCulture)
-                        .Contains(marker, StringComparison.Ordinal)
+                    && diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture).Contains(marker, StringComparison.Ordinal)
                 ),
                 Is.True,
                 $"{path}; shape={shape}: actual API binding must reject {marker}"
@@ -261,10 +192,7 @@ internal sealed class DocumentationImportTests
     [TestCase(2, false)]
     [TestCase(1, true)]
     [TestCase(2, true)]
-    public void SubscriptionOwnershipGuideDefersDisposalUntilEnrollmentCompletes(
-        int disposeAt,
-        bool cleanupFailure
-    )
+    public void SubscriptionOwnershipGuideDefersDisposalUntilEnrollmentCompletes(int disposeAt, bool cleanupFailure)
     {
         string probe = """
             namespace SubscriptionOwnershipExample
@@ -354,11 +282,7 @@ internal sealed class DocumentationImportTests
                 }
             }
             """;
-        AssertOwnershipGuideProbe(
-            probe,
-            new object[] { disposeAt, cleanupFailure },
-            $"registration={disposeAt}, cleanupFailure={cleanupFailure}"
-        );
+        AssertOwnershipGuideProbe(probe, new object[] { disposeAt, cleanupFailure }, $"registration={disposeAt}, cleanupFailure={cleanupFailure}");
     }
 
     /// <summary>Executes persistent owner-disposal callbacks while cleanup succeeds or needs a retry.</summary>
@@ -441,11 +365,7 @@ internal sealed class DocumentationImportTests
                 }
             }
             """;
-        AssertOwnershipGuideProbe(
-            probe,
-            new object[] { cleanupFailure },
-            $"persistent disposal callback, cleanupFailure={cleanupFailure}"
-        );
+        AssertOwnershipGuideProbe(probe, new object[] { cleanupFailure }, $"persistent disposal callback, cleanupFailure={cleanupFailure}");
     }
 
     /// <summary>Runs an unchanged published guide fence against the real runtime and cleanup helpers.</summary>
@@ -458,79 +378,39 @@ internal sealed class DocumentationImportTests
         }
         Assert.That(root, Is.Not.Null, "Locate the actual ownership guide and bus helpers.");
         string path = Path.Combine(root!.FullName, "docs", "guides", "subscription-ownership.md");
-        Match[] examples = Regex
-            .Matches(File.ReadAllText(path), @"```csharp\s*\r?\n(?<code>[\s\S]*?)```")
-            .ToArray();
+        Match[] examples = Regex.Matches(File.ReadAllText(path), @"```csharp\s*\r?\n(?<code>[\s\S]*?)```").ToArray();
         Assert.That(examples, Has.Length.EqualTo(1));
 
-        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
-            ?? throw new InvalidOperationException("Runtime references are unavailable.");
+        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") ?? throw new InvalidOperationException("Runtime references are unavailable.");
         string helperRoot = Path.Combine(root.FullName, "Tests", "Runtime", "TestUtilities");
         CSharpParseOptions options = new(LanguageVersion.CSharp9);
         SyntaxTree[] trees =
         {
             CSharpSyntaxTree.ParseText(examples[0].Groups["code"].Value, options, path),
-            CSharpSyntaxTree.ParseText(
-                File.ReadAllText(Path.Combine(helperRoot, "DelegatingMessageBus.cs")),
-                options,
-                "ActualDelegatingMessageBus.cs"
-            ),
-            CSharpSyntaxTree.ParseText(
-                File.ReadAllText(Path.Combine(helperRoot, "LeakWatcher.cs")),
-                options,
-                "ActualLeakWatcher.cs"
-            ),
-            CSharpSyntaxTree.ParseText(
-                File.ReadAllText(Path.Combine(helperRoot, "EntryStorageInspection.cs")),
-                options,
-                "ActualEntryStorageInspection.cs"
-            ),
-            CSharpSyntaxTree.ParseText(
-                File.ReadAllText(Path.Combine(helperRoot, "MessageBusInspection.cs")),
-                options,
-                "ActualMessageBusInspection.cs"
-            ),
+            CSharpSyntaxTree.ParseText(File.ReadAllText(Path.Combine(helperRoot, "DelegatingMessageBus.cs")), options, "ActualDelegatingMessageBus.cs"),
+            CSharpSyntaxTree.ParseText(File.ReadAllText(Path.Combine(helperRoot, "LeakWatcher.cs")), options, "ActualLeakWatcher.cs"),
+            CSharpSyntaxTree.ParseText(File.ReadAllText(Path.Combine(helperRoot, "EntryStorageInspection.cs")), options, "ActualEntryStorageInspection.cs"),
+            CSharpSyntaxTree.ParseText(File.ReadAllText(Path.Combine(helperRoot, "MessageBusInspection.cs")), options, "ActualMessageBusInspection.cs"),
             CSharpSyntaxTree.ParseText(probe, options, "GuideReentryProbe.cs"),
         };
         CSharpCompilation compilation = CSharpCompilation.Create(
             "WallstopStudios.DxMessaging.Tests.Runtime",
             trees,
-            references
-                .Split(Path.PathSeparator)
-                .Select(file => MetadataReference.CreateFromFile(file))
-                .Append(PortableRuntime.Value),
-            new CSharpCompilationOptions(
-                OutputKind.DynamicallyLinkedLibrary,
-                generalDiagnosticOption: ReportDiagnostic.Error
-            )
+            references.Split(Path.PathSeparator).Select(file => MetadataReference.CreateFromFile(file)).Append(PortableRuntime.Value),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, generalDiagnosticOption: ReportDiagnostic.Error)
         );
         using MemoryStream image = new();
         Microsoft.CodeAnalysis.Emit.EmitResult emitted = compilation.Emit(image);
-        Assert.That(
-            emitted.Success,
-            Is.True,
-            "Compile the actual guide and actual bus helpers:\n"
-                + string.Join("\n", emitted.Diagnostics)
-        );
-        System.Runtime.Loader.AssemblyLoadContext context = new(
-            "GuideOwnership_" + Guid.NewGuid().ToString("N"),
-            isCollectible: true
-        );
+        Assert.That(emitted.Success, Is.True, "Compile the actual guide and actual bus helpers:\n" + string.Join("\n", emitted.Diagnostics));
+        System.Runtime.Loader.AssemblyLoadContext context = new("GuideOwnership_" + Guid.NewGuid().ToString("N"), isCollectible: true);
         try
         {
             using MemoryStream runtime = new(PortableRuntimeImage.Value);
             _ = context.LoadFromStream(runtime);
             image.Position = 0;
             System.Reflection.Assembly assembly = context.LoadFromStream(image);
-            object? result = assembly
-                .GetType("SubscriptionOwnershipExample.ReentryProbe", throwOnError: true)!
-                .GetMethod("Run")!
-                .Invoke(null, arguments);
-            Assert.That(
-                result,
-                Is.EqualTo(NoOwnedCallbacks),
-                label + ": disposed subscriptions must never deliver or replay."
-            );
+            object? result = assembly.GetType("SubscriptionOwnershipExample.ReentryProbe", throwOnError: true)!.GetMethod("Run")!.Invoke(null, arguments);
+            Assert.That(result, Is.EqualTo(NoOwnedCallbacks), label + ": disposed subscriptions must never deliver or replay.");
         }
         finally
         {
@@ -552,31 +432,16 @@ internal sealed class DocumentationImportTests
         string page = Path.Combine(root!.FullName, "docs", "integrations", "zenject.md");
         CompilationUnitSyntax example = Regex
             .Matches(File.ReadAllText(page), @"```csharp\s*\r?\n(?<code>[\s\S]*?)```")
-            .Select(match =>
-                CSharpSyntaxTree.ParseText(match.Groups["code"].Value).GetCompilationUnitRoot()
-            )
-            .Single(unit =>
-                unit.DescendantNodes()
-                    .OfType<ClassDeclarationSyntax>()
-                    .Any(type => type.Identifier.ValueText == "ZenjectAwareComponent")
-            );
+            .Select(match => CSharpSyntaxTree.ParseText(match.Groups["code"].Value).GetCompilationUnitRoot())
+            .Single(unit => unit.DescendantNodes().OfType<ClassDeclarationSyntax>().Any(type => type.Identifier.ValueText == "ZenjectAwareComponent"));
         InvocationExpressionSyntax call = example
             .DescendantNodes()
             .OfType<InvocationExpressionSyntax>()
-            .Single(invocation =>
-                invocation.ArgumentList.Arguments.Any(argument =>
-                    argument.Expression.ToString() == "MessageBusRebindMode.RebindActive"
-                )
-            );
+            .Single(invocation => invocation.ArgumentList.Arguments.Any(argument => argument.Expression.ToString() == "MessageBusRebindMode.RebindActive"));
         IdentifierNameSyntax? calledMethod = call.Expression as IdentifierNameSyntax;
         Assert.That(calledMethod, Is.Not.Null, page + ": inherited method call");
         SyntaxNode production = CSharpSyntaxTree
-            .ParseText(
-                File.ReadAllText(
-                    Path.Combine(root.FullName, "Runtime", "Unity", "MessageAwareComponent.cs")
-                ),
-                ProviderOptions
-            )
+            .ParseText(File.ReadAllText(Path.Combine(root.FullName, "Runtime", "Unity", "MessageAwareComponent.cs")), ProviderOptions)
             .GetRoot();
         MethodDeclarationSyntax declaration = production
             .DescendantNodes()
@@ -587,11 +452,7 @@ internal sealed class DocumentationImportTests
                 && method.ParameterList.Parameters[0].Type?.ToString() == "IMessageBus"
                 && method.ParameterList.Parameters[1].Type?.ToString() == "MessageBusRebindMode"
             );
-        Assert.That(
-            calledMethod!.Identifier.ValueText,
-            Is.EqualTo(declaration.Identifier.ValueText),
-            page + ": use the actual inherited IMessageBus configuration API"
-        );
+        Assert.That(calledMethod!.Identifier.ValueText, Is.EqualTo(declaration.Identifier.ValueText), page + ": use the actual inherited IMessageBus configuration API");
     }
 
     /// <summary>Resolve bridge message attributes through the imports printed with the example.</summary>
@@ -600,10 +461,7 @@ internal sealed class DocumentationImportTests
     [TestCase("DxUntargetedMessage", true)]
     [TestCase("DxAutoConstructor", false)]
     [TestCase("DxAutoConstructor", true)]
-    public void ZenjectBridgeAttributesResolveFromDocumentedImports(
-        string attributeName,
-        bool qualifyName
-    )
+    public void ZenjectBridgeAttributesResolveFromDocumentedImports(string attributeName, bool qualifyName)
     {
         DirectoryInfo? root = new(TestContext.CurrentContext.TestDirectory);
         while (root != null && !File.Exists(Path.Combine(root.FullName, "package.json")))
@@ -615,27 +473,15 @@ internal sealed class DocumentationImportTests
         string[] examples = Regex
             .Matches(File.ReadAllText(path), @"```csharp\s*\r?\n(?<code>[\s\S]*?)```")
             .Select(match => match.Groups["code"].Value)
-            .Where(code =>
-                code.Contains("public sealed class DxToSignalBridge", StringComparison.Ordinal)
-            )
+            .Where(code => code.Contains("public sealed class DxToSignalBridge", StringComparison.Ordinal))
             .ToArray();
         Assert.That(examples, Has.Length.EqualTo(1), path + ": complete bridge example");
-        CompilationUnitSyntax published = CSharpSyntaxTree
-            .ParseText(examples[0], ProviderOptions)
-            .GetCompilationUnitRoot();
-        AttributeSyntax printed = published
-            .DescendantNodes()
-            .OfType<AttributeSyntax>()
-            .Single(attribute => attribute.Name.ToString() == attributeName);
+        CompilationUnitSyntax published = CSharpSyntaxTree.ParseText(examples[0], ProviderOptions).GetCompilationUnitRoot();
+        AttributeSyntax printed = published.DescendantNodes().OfType<AttributeSyntax>().Single(attribute => attribute.Name.ToString() == attributeName);
         string expectedType = "DxMessaging.Core.Attributes." + attributeName + "Attribute";
         string imports = string.Join(
             "\n",
-            published
-                .Usings.Where(import =>
-                    import.Name?.ToString().StartsWith("DxMessaging.", StringComparison.Ordinal)
-                    == true
-                )
-                .Select(import => import.ToFullString())
+            published.Usings.Where(import => import.Name?.ToString().StartsWith("DxMessaging.", StringComparison.Ordinal) == true).Select(import => import.ToFullString())
         );
         string name = qualifyName ? "global::" + expectedType : printed.Name.ToString();
         SyntaxTree tree = CSharpSyntaxTree.ParseText(
@@ -643,34 +489,18 @@ internal sealed class DocumentationImportTests
             ProviderOptions,
             "DocumentedBridgeMessage.cs"
         );
-        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
-            ?? throw new InvalidOperationException("Runtime references are unavailable.");
+        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") ?? throw new InvalidOperationException("Runtime references are unavailable.");
         CSharpCompilation compilation = CSharpCompilation.Create(
             "BridgeAttributeImports",
             new[] { tree },
-            references
-                .Split(Path.PathSeparator)
-                .Select(file => MetadataReference.CreateFromFile(file))
-                .Append(PortableRuntime.Value),
-            new CSharpCompilationOptions(
-                OutputKind.DynamicallyLinkedLibrary,
-                generalDiagnosticOption: ReportDiagnostic.Error
-            )
+            references.Split(Path.PathSeparator).Select(file => MetadataReference.CreateFromFile(file)).Append(PortableRuntime.Value),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, generalDiagnosticOption: ReportDiagnostic.Error)
         );
         using MemoryStream image = new();
         Microsoft.CodeAnalysis.Emit.EmitResult emitted = compilation.Emit(image);
-        Assert.That(
-            emitted.Success,
-            Is.True,
-            $"{attributeName}; qualified control={qualifyName}: \n"
-                + string.Join("\n", emitted.Diagnostics)
-        );
-        AttributeSyntax compiled = tree.GetRoot()
-            .DescendantNodes()
-            .OfType<AttributeSyntax>()
-            .Single();
-        IMethodSymbol? constructor =
-            compilation.GetSemanticModel(tree).GetSymbolInfo(compiled).Symbol as IMethodSymbol;
+        Assert.That(emitted.Success, Is.True, $"{attributeName}; qualified control={qualifyName}: \n" + string.Join("\n", emitted.Diagnostics));
+        AttributeSyntax compiled = tree.GetRoot().DescendantNodes().OfType<AttributeSyntax>().Single();
+        IMethodSymbol? constructor = compilation.GetSemanticModel(tree).GetSymbolInfo(compiled).Symbol as IMethodSymbol;
         Assert.That(constructor?.ContainingType.ToDisplayString(), Is.EqualTo(expectedType), path);
     }
 
@@ -680,10 +510,7 @@ internal sealed class DocumentationImportTests
     [TestCase(1, true)]
     [TestCase(2, false)]
     [TestCase(2, true)]
-    public void VContainerExamplesRegisterBuilderWithoutConsumerSymbol(
-        int exampleIndex,
-        bool explicitConsumerSymbol
-    )
+    public void VContainerExamplesRegisterBuilderWithoutConsumerSymbol(int exampleIndex, bool explicitConsumerSymbol)
     {
         DirectoryInfo? root = new(TestContext.CurrentContext.TestDirectory);
         while (root != null && !File.Exists(Path.Combine(root.FullName, "package.json")))
@@ -695,36 +522,20 @@ internal sealed class DocumentationImportTests
         string[] examples = Regex
             .Matches(File.ReadAllText(path), @"```csharp\s*\r?\n(?<code>[\s\S]*?)```")
             .Select(match => match.Groups["code"].Value)
-            .Where(code =>
-                code.Contains("RegisterMessageRegistrationBuilder", StringComparison.Ordinal)
-            )
+            .Where(code => code.Contains("RegisterMessageRegistrationBuilder", StringComparison.Ordinal))
             .ToArray();
-        Assert.That(
-            examples,
-            Has.Length.EqualTo(3),
-            path + ": complete builder-registration surface"
-        );
+        Assert.That(examples, Has.Length.EqualTo(3), path + ": complete builder-registration surface");
         CSharpParseOptions options = ProviderOptions;
         if (explicitConsumerSymbol)
         {
-            options = options.WithPreprocessorSymbols(
-                "UNITY_2021_3_OR_NEWER",
-                "VCONTAINER_PRESENT"
-            );
+            options = options.WithPreprocessorSymbols("UNITY_2021_3_OR_NEWER", "VCONTAINER_PRESENT");
         }
         SyntaxNode tree = CSharpSyntaxTree.ParseText(examples[exampleIndex], options).GetRoot();
         InvocationExpressionSyntax[] calls = tree.DescendantNodes()
             .OfType<InvocationExpressionSyntax>()
-            .Where(call =>
-                call.Expression is MemberAccessExpressionSyntax member
-                && member.Name.Identifier.ValueText == "RegisterMessageRegistrationBuilder"
-            )
+            .Where(call => call.Expression is MemberAccessExpressionSyntax member && member.Name.Identifier.ValueText == "RegisterMessageRegistrationBuilder")
             .ToArray();
-        Assert.That(
-            calls,
-            Has.Length.EqualTo(1),
-            $"{path} example {exampleIndex}; consumer symbol={explicitConsumerSymbol}: installed framework must retain builder registration"
-        );
+        Assert.That(calls, Has.Length.EqualTo(1), $"{path} example {exampleIndex}; consumer symbol={explicitConsumerSymbol}: installed framework must retain builder registration");
     }
 
     /// <summary>Compiles documented message calls using only the imports shown with each sample.</summary>
@@ -751,25 +562,12 @@ internal sealed class DocumentationImportTests
             vcontainer ? "vcontainer.md"
             : busFirst ? "emit-shorthands.md"
             : "message-bus-providers.md";
-        string path = Path.Combine(
-            root!.FullName,
-            "docs",
-            vcontainer ? "integrations" : "advanced",
-            page
-        );
+        string path = Path.Combine(root!.FullName, "docs", vcontainer ? "integrations" : "advanced", page);
         CSharpParseOptions options = ProviderOptions;
         CompilationUnitSyntax[] examples = Regex
             .Matches(File.ReadAllText(path), @"```csharp\s*\r?\n(?<code>[\s\S]*?)```")
-            .Select(match =>
-                CSharpSyntaxTree
-                    .ParseText(match.Groups["code"].Value, options)
-                    .GetCompilationUnitRoot()
-            )
-            .Where(unit =>
-                unit.DescendantNodes()
-                    .OfType<ClassDeclarationSyntax>()
-                    .Any(type => type.Identifier.ValueText == className)
-            )
+            .Select(match => CSharpSyntaxTree.ParseText(match.Groups["code"].Value, options).GetCompilationUnitRoot())
+            .Where(unit => unit.DescendantNodes().OfType<ClassDeclarationSyntax>().Any(type => type.Identifier.ValueText == className))
             .ToArray();
         Assert.That(examples, Has.Length.EqualTo(1), path + ": " + exampleName);
         CompilationUnitSyntax published = examples[0];
@@ -792,14 +590,8 @@ internal sealed class DocumentationImportTests
             FieldDeclarationSyntax field = published
                 .DescendantNodes()
                 .OfType<FieldDeclarationSyntax>()
-                .Single(candidate =>
-                    candidate.Declaration.Variables.Any(variable =>
-                        variable.Identifier.ValueText == fieldName
-                    )
-                );
-            expression = qualifyName
-                ? "global::" + expectedType
-                : field.Declaration.Type.ToString();
+                .Single(candidate => candidate.Declaration.Variables.Any(variable => variable.Identifier.ValueText == fieldName));
+            expression = qualifyName ? "global::" + expectedType : field.Declaration.Type.ToString();
         }
         else
         {
@@ -807,45 +599,20 @@ internal sealed class DocumentationImportTests
                 .DescendantNodes()
                 .OfType<InvocationExpressionSyntax>()
                 .Single(call => call.Expression.ToString() == "ConfigureMessageBus");
-            expression = qualifyName
-                ? "global::" + expectedType + ".RebindActive"
-                : configure.ArgumentList.Arguments[1].Expression.ToString();
+            expression = qualifyName ? "global::" + expectedType + ".RebindActive" : configure.ArgumentList.Arguments[1].Expression.ToString();
         }
         string imports = string.Join(
             "\n",
-            published
-                .Usings.Where(import =>
-                    import.Name?.ToString().StartsWith("DxMessaging.", StringComparison.Ordinal)
-                    == true
-                )
-                .Select(import => import.ToFullString())
+            published.Usings.Where(import => import.Name?.ToString().StartsWith("DxMessaging.", StringComparison.Ordinal) == true).Select(import => import.ToFullString())
         );
-        string member = fieldProbe
-            ? "public void Use(" + expression + " provider) { }"
-            : "public object Use() => " + expression + ";";
-        SyntaxTree probe = CSharpSyntaxTree.ParseText(
-            imports + "\npublic sealed class DocumentedProvider { " + member + " }",
-            options,
-            "DocumentedProvider.cs"
-        );
+        string member = fieldProbe ? "public void Use(" + expression + " provider) { }" : "public object Use() => " + expression + ";";
+        SyntaxTree probe = CSharpSyntaxTree.ParseText(imports + "\npublic sealed class DocumentedProvider { " + member + " }", options, "DocumentedProvider.cs");
         // Compile the actual provider declarations. Only their external Unity base and
         // attribute are supplied here; no DxMessaging declaration is replaced by a stub.
         List<SyntaxTree> trees = new() { probe };
-        foreach (
-            string file in new[]
-            {
-                "ScriptableMessageBusProvider.cs",
-                "InitialGlobalMessageBusProvider.cs",
-            }
-        )
+        foreach (string file in new[] { "ScriptableMessageBusProvider.cs", "InitialGlobalMessageBusProvider.cs" })
         {
-            trees.Add(
-                CSharpSyntaxTree.ParseText(
-                    File.ReadAllText(Path.Combine(root.FullName, "Runtime", "Unity", file)),
-                    options,
-                    file
-                )
-            );
+            trees.Add(CSharpSyntaxTree.ParseText(File.ReadAllText(Path.Combine(root.FullName, "Runtime", "Unity", file)), options, file));
         }
         trees.Add(
             CSharpSyntaxTree.ParseText(
@@ -856,54 +623,28 @@ internal sealed class DocumentationImportTests
                 "ExternalUnityTypes.cs"
             )
         );
-        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
-            ?? throw new InvalidOperationException("Runtime references are unavailable.");
+        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") ?? throw new InvalidOperationException("Runtime references are unavailable.");
         CSharpCompilation compilation = CSharpCompilation.Create(
             "ProviderImports",
             trees,
-            references
-                .Split(Path.PathSeparator)
-                .Select(file => MetadataReference.CreateFromFile(file))
-                .Append(PortableRuntime.Value),
-            new CSharpCompilationOptions(
-                OutputKind.DynamicallyLinkedLibrary,
-                generalDiagnosticOption: ReportDiagnostic.Error
-            )
+            references.Split(Path.PathSeparator).Select(file => MetadataReference.CreateFromFile(file)).Append(PortableRuntime.Value),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, generalDiagnosticOption: ReportDiagnostic.Error)
         );
         using MemoryStream image = new();
         Microsoft.CodeAnalysis.Emit.EmitResult emitted = compilation.Emit(image);
-        Assert.That(
-            emitted.Success,
-            Is.True,
-            $"{exampleName}; qualified control={qualifyName}: \n"
-                + string.Join("\n", emitted.Diagnostics)
-        );
+        Assert.That(emitted.Success, Is.True, $"{exampleName}; qualified control={qualifyName}: \n" + string.Join("\n", emitted.Diagnostics));
         ITypeSymbol? resolved;
         if (fieldProbe)
         {
-            TypeSyntax type = probe
-                .GetRoot()
-                .DescendantNodes()
-                .OfType<ParameterSyntax>()
-                .Single()
-                .Type!;
+            TypeSyntax type = probe.GetRoot().DescendantNodes().OfType<ParameterSyntax>().Single().Type!;
             resolved = compilation.GetSemanticModel(probe).GetTypeInfo(type).Type;
         }
         else
         {
-            ExpressionSyntax value = probe
-                .GetRoot()
-                .DescendantNodes()
-                .OfType<ArrowExpressionClauseSyntax>()
-                .Single()
-                .Expression;
+            ExpressionSyntax value = probe.GetRoot().DescendantNodes().OfType<ArrowExpressionClauseSyntax>().Single().Expression;
             resolved = compilation.GetSemanticModel(probe).GetTypeInfo(value).Type;
         }
-        Assert.That(
-            resolved?.ToDisplayString(),
-            Is.EqualTo(expectedType),
-            path + ": actual production type identity"
-        );
+        Assert.That(resolved?.ToDisplayString(), Is.EqualTo(expectedType), path + ": actual production type identity");
     }
 
     /// <summary>Compiles the documented fluent callback signature with its printed imports.</summary>
@@ -925,14 +666,10 @@ internal sealed class DocumentationImportTests
         Assert.That(start, Is.GreaterThanOrEqualTo(0), path + ": " + Start);
         int end = markdown.IndexOf(End, start + Start.Length, StringComparison.Ordinal);
         Assert.That(end, Is.GreaterThan(start), path + ": " + End);
-        Match[] blocks = Regex
-            .Matches(markdown[start..end], @"```csharp\s*\r?\n(?<code>[\s\S]*?)```")
-            .ToArray();
+        Match[] blocks = Regex.Matches(markdown[start..end], @"```csharp\s*\r?\n(?<code>[\s\S]*?)```").ToArray();
         Assert.That(blocks, Has.Length.EqualTo(1), path + ": one complete DI example");
         CSharpParseOptions options = new(LanguageVersion.CSharp9);
-        CompilationUnitSyntax published = CSharpSyntaxTree
-            .ParseText(blocks[0].Groups["code"].Value, options)
-            .GetCompilationUnitRoot();
+        CompilationUnitSyntax published = CSharpSyntaxTree.ParseText(blocks[0].Groups["code"].Value, options).GetCompilationUnitRoot();
         MethodDeclarationSyntax[] callbacks = published
             .DescendantNodes()
             .OfType<MethodDeclarationSyntax>()
@@ -940,73 +677,30 @@ internal sealed class DocumentationImportTests
             .ToArray();
         Assert.That(callbacks, Has.Length.EqualTo(1), path + ": declared registration callback");
         MethodDeclarationSyntax signature = callbacks[0].WithBody(SyntaxFactory.Block());
-        Assert.That(
-            signature.ParameterList.Parameters,
-            Has.Count.EqualTo(1),
-            path + ": token parameter"
-        );
+        Assert.That(signature.ParameterList.Parameters, Has.Count.EqualTo(1), path + ": token parameter");
         if (qualifyParameter)
         {
-            ParameterSyntax parameter = signature
-                .ParameterList.Parameters[0]
-                .WithType(
-                    SyntaxFactory.ParseTypeName("global::DxMessaging.Core.MessageRegistrationToken")
-                );
-            signature = signature.WithParameterList(
-                signature.ParameterList.WithParameters(
-                    SyntaxFactory.SingletonSeparatedList(parameter)
-                )
-            );
+            ParameterSyntax parameter = signature.ParameterList.Parameters[0].WithType(SyntaxFactory.ParseTypeName("global::DxMessaging.Core.MessageRegistrationToken"));
+            signature = signature.WithParameterList(signature.ParameterList.WithParameters(SyntaxFactory.SingletonSeparatedList(parameter)));
         }
         string imports = string.Join(
             "\n",
-            published
-                .Usings.Where(import =>
-                    import.Name?.ToString().StartsWith("DxMessaging.", StringComparison.Ordinal)
-                    == true
-                )
-                .Select(import => import.ToFullString())
+            published.Usings.Where(import => import.Name?.ToString().StartsWith("DxMessaging.", StringComparison.Ordinal) == true).Select(import => import.ToFullString())
         );
-        string source =
-            imports
-            + "\npublic sealed class DocumentedCallback { "
-            + signature.NormalizeWhitespace().ToFullString()
-            + " }";
+        string source = imports + "\npublic sealed class DocumentedCallback { " + signature.NormalizeWhitespace().ToFullString() + " }";
         SyntaxTree tree = CSharpSyntaxTree.ParseText(source, options, "DocumentedCallback.cs");
-        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
-            ?? throw new InvalidOperationException("Runtime references are unavailable.");
+        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") ?? throw new InvalidOperationException("Runtime references are unavailable.");
         CSharpCompilation compilation = CSharpCompilation.Create(
             "DocumentationImports",
             new[] { tree },
-            references
-                .Split(Path.PathSeparator)
-                .Select(file => MetadataReference.CreateFromFile(file))
-                .Append(PortableRuntime.Value),
-            new CSharpCompilationOptions(
-                OutputKind.DynamicallyLinkedLibrary,
-                generalDiagnosticOption: ReportDiagnostic.Error
-            )
+            references.Split(Path.PathSeparator).Select(file => MetadataReference.CreateFromFile(file)).Append(PortableRuntime.Value),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, generalDiagnosticOption: ReportDiagnostic.Error)
         );
         using MemoryStream image = new();
         Microsoft.CodeAnalysis.Emit.EmitResult emitted = compilation.Emit(image);
-        Assert.That(
-            emitted.Success,
-            Is.True,
-            $"qualified control={qualifyParameter}; imports must resolve the actual token type: \n"
-                + string.Join("\n", emitted.Diagnostics)
-        );
-        ParameterSyntax compiledParameter = tree.GetRoot()
-            .DescendantNodes()
-            .OfType<ParameterSyntax>()
-            .Single();
-        ITypeSymbol? token = compilation
-            .GetSemanticModel(tree)
-            .GetTypeInfo(compiledParameter.Type!)
-            .Type;
-        Assert.That(
-            token?.ToDisplayString(),
-            Is.EqualTo("DxMessaging.Core.MessageRegistrationToken"),
-            path + ": actual production token identity"
-        );
+        Assert.That(emitted.Success, Is.True, $"qualified control={qualifyParameter}; imports must resolve the actual token type: \n" + string.Join("\n", emitted.Diagnostics));
+        ParameterSyntax compiledParameter = tree.GetRoot().DescendantNodes().OfType<ParameterSyntax>().Single();
+        ITypeSymbol? token = compilation.GetSemanticModel(tree).GetTypeInfo(compiledParameter.Type!).Type;
+        Assert.That(token?.ToDisplayString(), Is.EqualTo("DxMessaging.Core.MessageRegistrationToken"), path + ": actual production token identity");
     }
 }

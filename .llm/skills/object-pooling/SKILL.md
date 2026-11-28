@@ -1,6 +1,8 @@
 ---
 name: object-pooling
-description: "Reuse pooled message objects through Rent/Return instead of allocating a new instance per emit, so dispatch stays allocation-free. Use when adding a message type, seeing GC spikes or a rising allocation rate in the Unity profiler, writing an allocation test, or choosing between a pooled class message and a readonly struct message."
+description:
+  "Reuse pooled message objects through Rent/Return instead of allocating a new instance per emit, so dispatch stays allocation-free. Use when adding a message type, seeing GC
+  spikes or a rising allocation rate in the Unity profiler, writing an allocation test, or choosing between a pooled class message and a readonly struct message."
 metadata:
   category: "performance"
   tags: "memory, allocation, garbage-collection, pooling, zero-alloc, hot-path"
@@ -8,9 +10,8 @@ metadata:
 
 # Object Pooling for Zero-Allocation Messaging
 
-Pre-allocate message instances and reuse them instead of calling `new` per emit.
-Messages are high-frequency, short-lived objects, so their allocations dominate
-GC pressure and produce visible frame spikes.
+Pre-allocate message instances and reuse them instead of calling `new` per emit. Messages are high-frequency, short-lived objects, so their allocations dominate GC pressure and
+produce visible frame spikes.
 
 ## When to use
 
@@ -20,37 +21,26 @@ GC pressure and produce visible frame spikes.
 - Targeting mobile or console, or holding a consistent 60+ FPS budget.
 - Choosing between a pooled class message and a `readonly struct` message.
 
-Skip pooling for editor tools, one-shot events (level start, game over), and
-low-frequency UI events. The pool bookkeeping is not free.
+Skip pooling for editor tools, one-shot events (level start, game over), and low-frequency UI events. The pool bookkeeping is not free.
 
 ## Rules
 
 - Acquire with `Rent()`, never `new`. Release with `Dispose()` or `Return(item)`.
-- Wrap every rental in `using` or `try`/`finally`. An early `return` between
-  `Rent()` and `Dispose()` leaks the instance into the GC, which is the exact
-  cost pooling exists to avoid.
-- Reset state on return, not after rent. `ObjectPool<T>.Return` invokes the
-  `resetAction` before pushing, so a stale field can never reach the next caller.
-- Cap the pool. `ObjectPool<T>(initialCapacity: 16, maxSize: 1024, resetAction: null)`
-  pre-warms `initialCapacity` instances at construction and drops returns once
+- Wrap every rental in `using` or `try`/`finally`. An early `return` between `Rent()` and `Dispose()` leaks the instance into the GC, which is the exact cost pooling exists to
+  avoid.
+- Reset state on return, not after rent. `ObjectPool<T>.Return` invokes the `resetAction` before pushing, so a stale field can never reach the next caller.
+- Cap the pool. `ObjectPool<T>(initialCapacity: 16, maxSize: 1024, resetAction: null)` pre-warms `initialCapacity` instances at construction and drops returns once
   `pool.Count >= maxSize`, so a usage spike cannot grow memory without bound.
-- `Rent()` on an empty pool allocates a fresh `T` rather than blocking. That
-  instance is still poolable on return; only the first frames pay for it.
+- `Rent()` on an empty pool allocates a fresh `T` rather than blocking. That instance is still poolable on return; only the first frames pay for it.
 - Guard all pool state, including `CountInactive`, behind the pool's `syncLock`.
-- Never hold a reference to a pooled object past the handler call. The instance
-  is reset and handed to someone else. Copy the fields you need
-  (`message.Damage`, `message.Source`) into your own storage instead.
-- Prefer the `PooledMessage<TSelf> : IMessage, IDisposable` base for pooled
-  message types: it owns the static `ObjectPool<TSelf>`, exposes `static Rent()`,
-  and its `isRented` latch makes a second `Dispose()` a no-op instead of a
-  double-return that hands one instance to two callers.
-- `protected abstract void Reset()` on a pooled message must clear every field
-  the type declares back to `default`.
-- Prefer a `readonly struct` message emitted by value when the payload is small
-  and the API allows it. That removes the pool bookkeeping as well as the
-  allocation, and it is the fastest of the three shapes.
-- Pre-warm during loading, not during gameplay. Pool construction is the only
-  place allocation is acceptable.
+- Never hold a reference to a pooled object past the handler call. The instance is reset and handed to someone else. Copy the fields you need (`message.Damage`, `message.Source`)
+  into your own storage instead.
+- Prefer the `PooledMessage<TSelf> : IMessage, IDisposable` base for pooled message types: it owns the static `ObjectPool<TSelf>`, exposes `static Rent()`, and its `isRented` latch
+  makes a second `Dispose()` a no-op instead of a double-return that hands one instance to two callers.
+- `protected abstract void Reset()` on a pooled message must clear every field the type declares back to `default`.
+- Prefer a `readonly struct` message emitted by value when the payload is small and the API allows it. That removes the pool bookkeeping as well as the allocation, and it is the
+  fastest of the three shapes.
+- Pre-warm during loading, not during gameplay. Pool construction is the only place allocation is acceptable.
 
 ## Measured cost
 
@@ -64,10 +54,8 @@ At 10,000 messages per frame (Unity 2021.3, IL2CPP):
 
 ## Test coverage
 
-Every pool needs four tests: reuse identity (`ReferenceEquals(first, second)`
-after a rent/return/rent cycle), the `maxSize` cap (`CountInactive` stops at
-`maxSize` after over-returning), reset behavior (no field survives a round trip),
-and concurrent rent/return.
+Every pool needs four tests: reuse identity (`ReferenceEquals(first, second)` after a rent/return/rent cycle), the `maxSize` cap (`CountInactive` stops at `maxSize` after
+over-returning), reset behavior (no field survives a round trip), and concurrent rent/return.
 
 ## References
 

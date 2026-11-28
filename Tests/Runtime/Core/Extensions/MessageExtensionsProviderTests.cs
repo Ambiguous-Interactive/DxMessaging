@@ -47,10 +47,7 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
             token.Enable();
 
             MessageHandler globalHandler = new(new InstanceId(102)) { active = true };
-            MessageRegistrationToken globalToken = MessageRegistrationToken.Create(
-                globalHandler,
-                MessageHandler.MessageBus
-            );
+            MessageRegistrationToken globalToken = MessageRegistrationToken.Create(globalHandler, MessageHandler.MessageBus);
             int globalCount = 0;
             _ = globalToken.RegisterUntargeted((in TestUntargetedMessage _) => globalCount++);
             globalToken.Enable();
@@ -70,10 +67,7 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
         public void EmitUntargetedWithUnavailableProviderFallsBackToGlobalBus()
         {
             MessageHandler globalHandler = new(new InstanceId(201)) { active = true };
-            MessageRegistrationToken globalToken = MessageRegistrationToken.Create(
-                globalHandler,
-                MessageHandler.MessageBus
-            );
+            MessageRegistrationToken globalToken = MessageRegistrationToken.Create(globalHandler, MessageHandler.MessageBus);
             int globalCount = 0;
             _ = globalToken.RegisterUntargeted((in TestUntargetedMessage _) => globalCount++);
             globalToken.Enable();
@@ -86,18 +80,13 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
             Assert.AreEqual(1, globalCount);
 
 #if UNITY_2021_3_OR_NEWER
-            TestScriptableMessageBusProvider destroyedProvider =
-                UnityEngine.ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
+            TestScriptableMessageBusProvider destroyedProvider = UnityEngine.ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
             destroyedProvider.Configure(new MessageBus());
             UnityEngine.Object.DestroyImmediate(destroyedProvider);
 
             message.EmitUntargeted(messageBusProvider: destroyedProvider);
 
-            Assert.AreEqual(
-                2,
-                globalCount,
-                "A destroyed Unity provider should be unavailable and preserve the global fallback."
-            );
+            Assert.AreEqual(2, globalCount, "A destroyed Unity provider should be unavailable and preserve the global fallback.");
 #endif
 
             globalToken.Disable();
@@ -109,26 +98,14 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
             MessageBus explicitBus = new();
             MessageBus providerBus = new();
 
-            MessageHandler explicitHandler = new(new InstanceId(301), explicitBus)
-            {
-                active = true,
-            };
-            MessageRegistrationToken explicitToken = MessageRegistrationToken.Create(
-                explicitHandler,
-                explicitBus
-            );
+            MessageHandler explicitHandler = new(new InstanceId(301), explicitBus) { active = true };
+            MessageRegistrationToken explicitToken = MessageRegistrationToken.Create(explicitHandler, explicitBus);
             int explicitCount = 0;
             _ = explicitToken.RegisterUntargeted((in TestUntargetedMessage _) => explicitCount++);
             explicitToken.Enable();
 
-            MessageHandler providerHandler = new(new InstanceId(302), providerBus)
-            {
-                active = true,
-            };
-            MessageRegistrationToken providerToken = MessageRegistrationToken.Create(
-                providerHandler,
-                providerBus
-            );
+            MessageHandler providerHandler = new(new InstanceId(302), providerBus) { active = true };
+            MessageRegistrationToken providerToken = MessageRegistrationToken.Create(providerHandler, providerBus);
             int providerCount = 0;
             _ = providerToken.RegisterUntargeted((in TestUntargetedMessage _) => providerCount++);
             providerToken.Enable();
@@ -157,10 +134,7 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
             token.Enable();
 
             MessageHandler globalHandler = new(new InstanceId(402)) { active = true };
-            MessageRegistrationToken globalToken = MessageRegistrationToken.Create(
-                globalHandler,
-                MessageHandler.MessageBus
-            );
+            MessageRegistrationToken globalToken = MessageRegistrationToken.Create(globalHandler, MessageHandler.MessageBus);
             int globalCount = 0;
             _ = globalToken.RegisterTargeted(target, (in TestTargetedMessage _) => globalCount++);
             globalToken.Enable();
@@ -189,10 +163,7 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
             token.Enable();
 
             MessageHandler globalHandler = new(new InstanceId(502)) { active = true };
-            MessageRegistrationToken globalToken = MessageRegistrationToken.Create(
-                globalHandler,
-                MessageHandler.MessageBus
-            );
+            MessageRegistrationToken globalToken = MessageRegistrationToken.Create(globalHandler, MessageHandler.MessageBus);
             int globalCount = 0;
             _ = globalToken.RegisterBroadcast(source, (in TestBroadcastMessage _) => globalCount++);
             globalToken.Enable();
@@ -221,10 +192,7 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
             token.Enable();
 
             MessageHandler globalHandler = new(new InstanceId(504)) { active = true };
-            MessageRegistrationToken globalToken = MessageRegistrationToken.Create(
-                globalHandler,
-                MessageHandler.MessageBus
-            );
+            MessageRegistrationToken globalToken = MessageRegistrationToken.Create(globalHandler, MessageHandler.MessageBus);
             int globalCount = 0;
             _ = globalToken.RegisterBroadcast(source, (in TestBroadcastMessage _) => globalCount++);
             globalToken.Enable();
@@ -247,32 +215,16 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
             MessageBus providerBus = new();
             InstanceId source = new(779);
 
-            MessageHandler explicitHandler = new(new InstanceId(505), explicitBus)
-            {
-                active = true,
-            };
-            MessageRegistrationToken explicitToken = MessageRegistrationToken.Create(
-                explicitHandler,
-                explicitBus
-            );
+            MessageHandler explicitHandler = new(new InstanceId(505), explicitBus) { active = true };
+            MessageRegistrationToken explicitToken = MessageRegistrationToken.Create(explicitHandler, explicitBus);
             int explicitCount = 0;
-            _ = explicitToken.RegisterBroadcast(source, (in TestBroadcastMessage _) =>
-                explicitCount++
-            );
+            _ = explicitToken.RegisterBroadcast(source, (in TestBroadcastMessage _) => explicitCount++);
             explicitToken.Enable();
 
-            MessageHandler providerHandler = new(new InstanceId(506), providerBus)
-            {
-                active = true,
-            };
-            MessageRegistrationToken providerToken = MessageRegistrationToken.Create(
-                providerHandler,
-                providerBus
-            );
+            MessageHandler providerHandler = new(new InstanceId(506), providerBus) { active = true };
+            MessageRegistrationToken providerToken = MessageRegistrationToken.Create(providerHandler, providerBus);
             int providerCount = 0;
-            _ = providerToken.RegisterBroadcast(source, (in TestBroadcastMessage _) =>
-                providerCount++
-            );
+            _ = providerToken.RegisterBroadcast(source, (in TestBroadcastMessage _) => providerCount++);
             providerToken.Enable();
 
             TestBroadcastMessage message = new(25);
@@ -299,14 +251,9 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
             token.Enable();
 
             MessageHandler globalHandler = new(new InstanceId(602)) { active = true };
-            MessageRegistrationToken globalToken = MessageRegistrationToken.Create(
-                globalHandler,
-                MessageHandler.MessageBus
-            );
+            MessageRegistrationToken globalToken = MessageRegistrationToken.Create(globalHandler, MessageHandler.MessageBus);
             string globalReceived = null;
-            _ = globalToken.RegisterTargeted(target, (in StringMessage m) =>
-                globalReceived = m.message
-            );
+            _ = globalToken.RegisterTargeted(target, (in StringMessage m) => globalReceived = m.message);
             globalToken.Enable();
 
             TestMessageBusProvider provider = new(providerBus);
@@ -328,20 +275,13 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
             MessageHandler handler = new(new InstanceId(603), providerBus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, providerBus);
             string received = null;
-            _ = token.RegisterBroadcast(source, (in SourcedStringMessage m) =>
-                received = m.message
-            );
+            _ = token.RegisterBroadcast(source, (in SourcedStringMessage m) => received = m.message);
             token.Enable();
 
             MessageHandler globalHandler = new(new InstanceId(604)) { active = true };
-            MessageRegistrationToken globalToken = MessageRegistrationToken.Create(
-                globalHandler,
-                MessageHandler.MessageBus
-            );
+            MessageRegistrationToken globalToken = MessageRegistrationToken.Create(globalHandler, MessageHandler.MessageBus);
             string globalReceived = null;
-            _ = globalToken.RegisterBroadcast(source, (in SourcedStringMessage m) =>
-                globalReceived = m.message
-            );
+            _ = globalToken.RegisterBroadcast(source, (in SourcedStringMessage m) => globalReceived = m.message);
             globalToken.Enable();
 
             TestMessageBusProvider provider = new(providerBus);
@@ -381,8 +321,7 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
         }
 
 #if UNITY_2021_3_OR_NEWER
-        private sealed class TestScriptableMessageBusProvider
-            : DxMessaging.Unity.ScriptableMessageBusProvider
+        private sealed class TestScriptableMessageBusProvider : DxMessaging.Unity.ScriptableMessageBusProvider
         {
             private IMessageBus _bus;
 

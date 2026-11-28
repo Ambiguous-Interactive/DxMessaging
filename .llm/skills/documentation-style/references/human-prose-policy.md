@@ -1,24 +1,31 @@
 # Human-Prose Documentation Policy
 
-> **One-line summary**: All documentation prose - in `.md` files and `///` XML doc comments - must avoid marketing adjectives, LLM filler idioms, hedge transitions, vague quantifiers, and soft conversational fluff.
+> **One-line summary**: All documentation prose - in `.md` files and `///` XML doc comments - must avoid marketing adjectives, LLM filler idioms, hedge transitions, vague
+> quantifiers, and soft conversational fluff.
 
 ## Overview
 
-DxMessaging documentation is written for humans reading reference material. Prose that reads like a marketing landing page or a generic LLM completion costs the reader trust and the project tokens. This policy bans a specific set of LLM-signature phrasings; the Vale rule packs under `.vale/styles/DxMessaging/` cover the mechanical checks, and the rest is applied when writing and reviewing.
+DxMessaging documentation is written for humans reading reference material. Prose that reads like a marketing landing page or a generic LLM completion costs the reader trust and
+the project tokens. This policy bans a specific set of LLM-signature phrasings; the Vale rule packs under `.vale/styles/DxMessaging/` cover the mechanical checks, and the rest is
+applied when writing and reviewing.
 
 ## Rationale
 
-Marketing adjectives without a measurement (`blazing fast`, `world-class`) signal that the writer did not have a number. Filler phrases like `it goes without saying` consume context and produce no signal. Banning a small set of phrases keeps voice convergent without per-PR debates.
+Marketing adjectives without a measurement (`blazing fast`, `world-class`) signal that the writer did not have a number. Filler phrases like `it goes without saying` consume
+context and produce no signal. Banning a small set of phrases keeps voice convergent without per-PR debates.
 
 ## Banned Categories
 
 Marketing adjectives (case-insensitive, whole-word):
 
-`cutting-edge`, `cutting edge`, `blazing fast`, `seamless`, `seamlessly`, `seamlessness`, `powerful`, `powerfully`, `robust`, `robustly`, `elegant`, `elegantly`, `world-class`, `next-generation`, `industry-leading`, `state-of-the-art`, `comprehensive`, `comprehensively`, `unparalleled`, `revolutionary`, `game-changing`, `best-in-class`, `production-ready`, `enterprise-grade`, `lightning-fast`, `frictionless`, `battle-tested`, `bulletproof`, `rock-solid`.
+`cutting-edge`, `cutting edge`, `blazing fast`, `seamless`, `seamlessly`, `seamlessness`, `powerful`, `powerfully`, `robust`, `robustly`, `elegant`, `elegantly`, `world-class`,
+`next-generation`, `industry-leading`, `state-of-the-art`, `comprehensive`, `comprehensively`, `unparalleled`, `revolutionary`, `game-changing`, `best-in-class`,
+`production-ready`, `enterprise-grade`, `lightning-fast`, `frictionless`, `battle-tested`, `bulletproof`, `rock-solid`.
 
 LLM filler idioms (case-insensitive, phrase match):
 
-`delve into`, `delving into`, `delved into`, `delves into`, `harness the power`, `navigate the complexities`, `unlock the potential`, `tapestry`, `realm of`, `dive deep into`, `dive into`, `at the heart of`, `lies the`, `treasure trove`, `it goes without saying`, `needless to say`.
+`delve into`, `delving into`, `delved into`, `delves into`, `harness the power`, `navigate the complexities`, `unlock the potential`, `tapestry`, `realm of`, `dive deep into`,
+`dive into`, `at the heart of`, `lies the`, `treasure trove`, `it goes without saying`, `needless to say`.
 
 Hedge transitions (only at the start of a sentence or list item; trailing comma optional):
 
@@ -36,15 +43,21 @@ The Banned Categories lists above are the canonical set; apply them when writing
 
 ## Allowed Exceptions
 
-- **Skill files about the policy.** Files under `.llm/skills/documentation-style/`, `.llm/skills/markdown-authoring/`, and `.llm/skills/documentation-code-samples/` are wholly exempt.
+- **Skill files about the policy.** Files under `.llm/skills/documentation-style/`, `.llm/skills/markdown-authoring/`, and `.llm/skills/documentation-code-samples/` are wholly
+  exempt.
 - **`CHANGELOG.md` and `comprehensive`.** Release notes legitimately use the term. The exemption is matched case-insensitively on the basename.
-- **Auto-generated files.** `llms.txt` is exempt because it is regenerated mechanically by `scripts/update-llms-txt.js`. (`.llm/index.md` is generated wholesale from each skill's own description, so the policy applies to the `description` fields it is built from.)
-- **YAML frontmatter.** A leading `---\n...\n---\n` block at the top of `.md` files is out of scope. Schema strings inside frontmatter (such as `complexity` reasoning fields) are not prose.
-- **Genuinely-right words.** When a banned term is the right word for a specific sentence (for example, quoting an error message or naming an upstream feature), keep it and be ready to defend it in review. Historical `<!-- prose-allow* -->` HTML comments in older docs were markers for a deleted validator; no tool processes them anymore, so do not add new ones. The default answer to a banned term is still to rewrite the sentence.
+- **Auto-generated files.** `llms.txt` is exempt because it is regenerated mechanically by `scripts/update-llms-txt.js`. (`.llm/index.md` is generated wholesale from each skill's
+  own description, so the policy applies to the `description` fields it is built from.)
+- **YAML frontmatter.** A leading `---\n...\n---\n` block at the top of `.md` files is out of scope. Schema strings inside frontmatter (such as `complexity` reasoning fields) are
+  not prose.
+- **Genuinely-right words.** When a banned term is the right word for a specific sentence (for example, quoting an error message or naming an upstream feature), keep it and be
+  ready to defend it in review. Historical `<!-- prose-allow* -->` HTML comments in older docs were markers for a deleted validator; no tool processes them anymore, so do not add
+  new ones. The default answer to a banned term is still to rewrite the sentence.
 
 ## Enforcement
 
-This is a writing convention applied at authoring and review time; there is no bespoke validator. The Vale configuration (`.vale.ini` + `.vale/styles/DxMessaging/`) covers passive voice, weasel words, hedges, marketing language, and LLM filler when you run Vale locally (`vale docs/ README.md`).
+This is a writing convention applied at authoring and review time; there is no bespoke validator. The Vale configuration (`.vale.ini` + `.vale/styles/DxMessaging/`) covers passive
+voice, weasel words, hedges, marketing language, and LLM filler when you run Vale locally (`vale docs/ README.md`).
 
 There is no grandfather list: every banned phrase you encounter in a file you touch is a defect to fix.
 

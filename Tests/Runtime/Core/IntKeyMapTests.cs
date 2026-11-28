@@ -22,17 +22,10 @@ namespace DxMessaging.Tests.Runtime.Core
             }
 
             Assert.AreEqual(keys.Length, map.Count, "Every distinct key should occupy one entry.");
-            Assert.GreaterOrEqual(
-                MapInspection.Capacity(map),
-                map.Count,
-                "Growth must retain enough storage."
-            );
+            Assert.GreaterOrEqual(MapInspection.Capacity(map), map.Count, "Growth must retain enough storage.");
             for (int index = 0; index < keys.Length; ++index)
             {
-                Assert.IsTrue(
-                    map.TryGetValue(keys[index], out string value),
-                    $"Missing key {keys[index]}."
-                );
+                Assert.IsTrue(map.TryGetValue(keys[index], out string value), $"Missing key {keys[index]}.");
                 Assert.AreEqual($"value-{index}", value, $"Wrong value for key {keys[index]}.");
             }
         }
@@ -47,10 +40,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(1, map.Count, "Replacing a value must not add an entry.");
             Assert.IsTrue(map.TryGetValue(7, out string value), "The updated key should exist.");
             Assert.AreEqual("second", value, "Lookup should return the replacement value.");
-            Assert.Throws<ArgumentNullException>(
-                () => map[8] = null,
-                "Null cannot be represented because it marks an empty bucket."
-            );
+            Assert.Throws<ArgumentNullException>(() => map[8] = null, "Null cannot be represented because it marks an empty bucket.");
             Assert.AreEqual(1, map.Count, "A rejected null value must leave the map unchanged.");
         }
 
@@ -58,41 +48,19 @@ namespace DxMessaging.Tests.Runtime.Core
         public void RemoveBackShiftsWrappedCollisionCluster()
         {
             IntKeyMap<string> map = new();
-            Assert.AreEqual(
-                3,
-                IntKeyMap<string>.Bucket(-100, 3),
-                "The collision must begin in the last bucket to exercise wraparound."
-            );
-            Assert.AreEqual(
-                IntKeyMap<string>.Bucket(-100, 3),
-                IntKeyMap<string>.Bucket(-99, 3),
-                "The first two keys must share a home bucket for this structural test."
-            );
-            Assert.AreEqual(
-                IntKeyMap<string>.Bucket(-100, 3),
-                IntKeyMap<string>.Bucket(-98, 3),
-                "All three keys must share a home bucket for this structural test."
-            );
+            Assert.AreEqual(3, IntKeyMap<string>.Bucket(-100, 3), "The collision must begin in the last bucket to exercise wraparound.");
+            Assert.AreEqual(IntKeyMap<string>.Bucket(-100, 3), IntKeyMap<string>.Bucket(-99, 3), "The first two keys must share a home bucket for this structural test.");
+            Assert.AreEqual(IntKeyMap<string>.Bucket(-100, 3), IntKeyMap<string>.Bucket(-98, 3), "All three keys must share a home bucket for this structural test.");
             map[-100] = "first";
             map[-99] = "second";
             map[-98] = "third";
-            Assert.AreEqual(
-                4,
-                MapInspection.Capacity(map),
-                "The cluster should wrap within four buckets."
-            );
+            Assert.AreEqual(4, MapInspection.Capacity(map), "The cluster should wrap within four buckets.");
 
             Assert.IsTrue(map.Remove(-100), "The cluster head should be removable.");
             Assert.IsFalse(map.TryGetValue(-100, out _), "The removed key must stay absent.");
-            Assert.IsTrue(
-                map.TryGetValue(-99, out string second),
-                "The first shifted key should remain."
-            );
+            Assert.IsTrue(map.TryGetValue(-99, out string second), "The first shifted key should remain.");
             Assert.AreEqual("second", second, "The first wrapped entry must remain reachable.");
-            Assert.IsTrue(
-                map.TryGetValue(-98, out string third),
-                "The cluster tail should remain."
-            );
+            Assert.IsTrue(map.TryGetValue(-98, out string third), "The cluster tail should remain.");
             Assert.AreEqual("third", third, "The second wrapped entry must remain reachable.");
 
             Assert.IsTrue(map.Remove(-99), "A shifted entry should remain removable.");
@@ -113,11 +81,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(0, empty.LookupProbes, "An unallocated map performs no slot probes.");
             Assert.AreEqual(0, empty.DeletionScans, "An absent key predicts no deletion scans.");
             Assert.AreEqual(0, empty.DeletionMoves, "An absent key predicts no deletion moves.");
-            Assert.AreEqual(
-                0,
-                MapInspection.LongestCluster(map),
-                "An empty map must report no occupied cluster."
-            );
+            Assert.AreEqual(0, MapInspection.LongestCluster(map), "An empty map must report no occupied cluster.");
 
             map[-100] = "first";
             map[-99] = "second";
@@ -131,17 +95,13 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 collisionMissKey++;
             }
-            IntKeyMapTopologyObservation collisionMiss = map.ObserveTopologyForBenchmark(
-                collisionMissKey
-            );
+            IntKeyMapTopologyObservation collisionMiss = map.ObserveTopologyForBenchmark(collisionMissKey);
             int emptyBucketMissKey = 0;
             while (IntKeyMap<string>.Bucket(emptyBucketMissKey, 3) != 2)
             {
                 emptyBucketMissKey++;
             }
-            IntKeyMapTopologyObservation emptyBucketMiss = map.ObserveTopologyForBenchmark(
-                emptyBucketMissKey
-            );
+            IntKeyMapTopologyObservation emptyBucketMiss = map.ObserveTopologyForBenchmark(emptyBucketMissKey);
 
             Assert.IsTrue(head.Found, "The wrapped cluster head must be observable.");
             Assert.AreEqual(3, head.SlotIndex, "The wrapped cluster head must occupy bucket 3.");
@@ -155,41 +115,17 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(0, tail.DeletionScans, "Deleting the tail must scan no followers.");
             Assert.AreEqual(0, tail.DeletionMoves, "Deleting the tail must move no followers.");
             Assert.IsFalse(collisionMiss.Found, "A same-home missing key must remain absent.");
-            Assert.AreEqual(
-                4,
-                collisionMiss.LookupProbes,
-                "A same-home miss must inspect the full wrapped cluster and its empty terminator."
-            );
+            Assert.AreEqual(4, collisionMiss.LookupProbes, "A same-home miss must inspect the full wrapped cluster and its empty terminator.");
             Assert.IsFalse(emptyBucketMiss.Found, "An empty-home missing key must remain absent.");
-            Assert.AreEqual(
-                1,
-                emptyBucketMiss.LookupProbes,
-                "An empty-home miss must stop after one probe."
-            );
-            Assert.AreEqual(
-                3,
-                MapInspection.LongestCluster(map),
-                "The wrapped occupied run must count as one three-entry cluster."
-            );
+            Assert.AreEqual(1, emptyBucketMiss.LookupProbes, "An empty-home miss must stop after one probe.");
+            Assert.AreEqual(3, MapInspection.LongestCluster(map), "The wrapped occupied run must count as one three-entry cluster.");
 
             Assert.IsTrue(map.Remove(-100), "The observed cluster head must remain removable.");
             IntKeyMapTopologyObservation shiftedMiddle = map.ObserveTopologyForBenchmark(-99);
             IntKeyMapTopologyObservation shiftedTail = map.ObserveTopologyForBenchmark(-98);
-            Assert.AreEqual(
-                middle.LookupProbes - 1,
-                shiftedMiddle.LookupProbes,
-                "The predicted first move should close one probe position."
-            );
-            Assert.AreEqual(
-                tail.LookupProbes - 1,
-                shiftedTail.LookupProbes,
-                "The predicted second move should close one probe position."
-            );
-            Assert.AreEqual(
-                2,
-                MapInspection.LongestCluster(map),
-                "Removing the head must leave one two-entry wrapped cluster."
-            );
+            Assert.AreEqual(middle.LookupProbes - 1, shiftedMiddle.LookupProbes, "The predicted first move should close one probe position.");
+            Assert.AreEqual(tail.LookupProbes - 1, shiftedTail.LookupProbes, "The predicted second move should close one probe position.");
+            Assert.AreEqual(2, MapInspection.LongestCluster(map), "Removing the head must leave one two-entry wrapped cluster.");
         }
 
         [Test]
@@ -197,16 +133,8 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             IntKeyMap<string> map = new();
             Assert.AreEqual(3, IntKeyMap<string>.Bucket(-195, 3), "The gap key must home at 3.");
-            Assert.AreEqual(
-                0,
-                IntKeyMap<string>.Bucket(-191, 3),
-                "The stationary key must home at 0."
-            );
-            Assert.AreEqual(
-                3,
-                IntKeyMap<string>.Bucket(-192, 3),
-                "The movable key must home at 3."
-            );
+            Assert.AreEqual(0, IntKeyMap<string>.Bucket(-191, 3), "The stationary key must home at 0.");
+            Assert.AreEqual(3, IntKeyMap<string>.Bucket(-192, 3), "The movable key must home at 3.");
             map[-195] = "gap";
             map[-191] = "stays-at-home";
             map[-192] = "moves-across-wrap";
@@ -223,16 +151,8 @@ namespace DxMessaging.Tests.Runtime.Core
 
             IntKeyMapTopologyObservation stayed = map.ObserveTopologyForBenchmark(-191);
             IntKeyMapTopologyObservation moved = map.ObserveTopologyForBenchmark(-192);
-            Assert.AreEqual(
-                staying.SlotIndex,
-                stayed.SlotIndex,
-                "An entry at its home bucket must not move into the wrapped gap."
-            );
-            Assert.AreEqual(
-                3,
-                moved.SlotIndex,
-                "The one predicted movable entry must fill the wrapped gap."
-            );
+            Assert.AreEqual(staying.SlotIndex, stayed.SlotIndex, "An entry at its home bucket must not move into the wrapped gap.");
+            Assert.AreEqual(3, moved.SlotIndex, "The one predicted movable entry must fill the wrapped gap.");
         }
 
         [Test]
@@ -248,11 +168,7 @@ namespace DxMessaging.Tests.Runtime.Core
             map.Clear();
 
             Assert.AreEqual(0, map.Count, "Clear should remove every logical entry.");
-            Assert.AreEqual(
-                capacity,
-                MapInspection.Capacity(map),
-                "A pooled map should retain its reusable arrays."
-            );
+            Assert.AreEqual(capacity, MapInspection.Capacity(map), "A pooled map should retain its reusable arrays.");
             Assert.IsFalse(map.TryGetValue(1, out _), "Clear should remove the first value.");
             Assert.IsFalse(map.TryGetValue(5, out _), "Clear should remove the second value.");
             int enumerated = 0;
@@ -263,10 +179,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(0, enumerated, "Clear must remove every enumerable value.");
 
             map[-9] = first;
-            Assert.IsTrue(
-                map.TryGetValue(-9, out object reused),
-                "Cleared storage should accept a new key."
-            );
+            Assert.IsTrue(map.TryGetValue(-9, out object reused), "Cleared storage should accept a new key.");
             Assert.AreSame(first, reused, "Cleared storage should remain reusable.");
         }
 
@@ -285,23 +198,12 @@ namespace DxMessaging.Tests.Runtime.Core
                 map[key] = $"value-{index}";
             }
 
-            Assert.GreaterOrEqual(
-                homeBuckets.Count,
-                192,
-                "Hashing should mix high key bits into low power-of-two bucket bits."
-            );
+            Assert.GreaterOrEqual(homeBuckets.Count, 192, "Hashing should mix high key bits into low power-of-two bucket bits.");
             for (int index = 0; index < keyCount; ++index)
             {
                 int key = index << 20;
-                Assert.IsTrue(
-                    map.TryGetValue(key, out string value),
-                    $"High-bit-spaced key {key} should remain reachable."
-                );
-                Assert.AreEqual(
-                    $"value-{index}",
-                    value,
-                    $"High-bit-spaced key {key} returned the wrong value."
-                );
+                Assert.IsTrue(map.TryGetValue(key, out string value), $"High-bit-spaced key {key} should remain reachable.");
+                Assert.AreEqual($"value-{index}", value, $"High-bit-spaced key {key} returned the wrong value.");
             }
         }
 
@@ -324,33 +226,17 @@ namespace DxMessaging.Tests.Runtime.Core
                         expected[key] = value;
                         break;
                     case 1:
-                        Assert.AreEqual(
-                            expected.Remove(key),
-                            actual.Remove(key),
-                            $"Remove diverged at operation {operation} for key {key}."
-                        );
+                        Assert.AreEqual(expected.Remove(key), actual.Remove(key), $"Remove diverged at operation {operation} for key {key}.");
                         break;
                     default:
                         bool expectedFound = expected.TryGetValue(key, out string expectedValue);
                         bool actualFound = actual.TryGetValue(key, out string actualValue);
-                        Assert.AreEqual(
-                            expectedFound,
-                            actualFound,
-                            $"Lookup presence diverged at operation {operation} for key {key}."
-                        );
-                        Assert.AreEqual(
-                            expectedValue,
-                            actualValue,
-                            $"Lookup value diverged at operation {operation} for key {key}."
-                        );
+                        Assert.AreEqual(expectedFound, actualFound, $"Lookup presence diverged at operation {operation} for key {key}.");
+                        Assert.AreEqual(expectedValue, actualValue, $"Lookup value diverged at operation {operation} for key {key}.");
                         break;
                 }
 
-                Assert.AreEqual(
-                    expected.Count,
-                    actual.Count,
-                    $"Count diverged after operation {operation}."
-                );
+                Assert.AreEqual(expected.Count, actual.Count, $"Count diverged after operation {operation}.");
             }
 
             HashSet<string> enumerated = new();
@@ -358,11 +244,7 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 Assert.IsTrue(enumerated.Add(value), "Enumeration returned a duplicate value.");
             }
-            Assert.That(
-                enumerated,
-                Is.EquivalentTo(expected.Values),
-                "Enumeration should return exactly the oracle's live values."
-            );
+            Assert.That(enumerated, Is.EquivalentTo(expected.Values), "Enumeration should return exactly the oracle's live values.");
         }
     }
 }

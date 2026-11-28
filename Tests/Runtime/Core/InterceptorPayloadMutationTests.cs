@@ -25,15 +25,9 @@ namespace DxMessaging.Tests.Runtime.Core
     public sealed class InterceptorPayloadMutationTests : MessagingTestBase
     {
         [Test]
-        public void SingleInterceptorMutationIsObservedByHandler(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void SingleInterceptorMutationIsObservedByHandler([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(SingleInterceptorMutationIsObservedByHandler) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(SingleInterceptorMutationIsObservedByHandler) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -47,30 +41,14 @@ namespace DxMessaging.Tests.Runtime.Core
 
             using (LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName))
             {
-                handles.Add(
-                    RegisterMutatingInterceptor(
-                        scenario,
-                        token,
-                        priority: 0,
-                        onIntercepted: observedByInterceptor.Add,
-                        replacement: mutatedId
-                    )
-                );
-                handles.Add(
-                    RegisterRecordingHandler(scenario, token, hostId, observedByHandler.Add)
-                );
+                handles.Add(RegisterMutatingInterceptor(scenario, token, priority: 0, onIntercepted: observedByInterceptor.Add, replacement: mutatedId));
+                handles.Add(RegisterRecordingHandler(scenario, token, hostId, observedByHandler.Add));
 
                 EmitComplex(scenario, hostId, originalId);
                 RemoveAll(token, handles);
             }
 
-            Assert.AreEqual(
-                1,
-                observedByInterceptor.Count,
-                "[{0}] Interceptor must run exactly once. interceptorCount={1}.",
-                scenario.Kind,
-                observedByInterceptor.Count
-            );
+            Assert.AreEqual(1, observedByInterceptor.Count, "[{0}] Interceptor must run exactly once. interceptorCount={1}.", scenario.Kind, observedByInterceptor.Count);
             Assert.AreEqual(
                 originalId,
                 observedByInterceptor[0],
@@ -79,13 +57,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 originalId,
                 observedByInterceptor[0]
             );
-            Assert.AreEqual(
-                1,
-                observedByHandler.Count,
-                "[{0}] Handler must run exactly once. handlerCount={1}.",
-                scenario.Kind,
-                observedByHandler.Count
-            );
+            Assert.AreEqual(1, observedByHandler.Count, "[{0}] Handler must run exactly once. handlerCount={1}.", scenario.Kind, observedByHandler.Count);
             Assert.AreEqual(
                 mutatedId,
                 observedByHandler[0],
@@ -98,15 +70,9 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void ChainedInterceptorsMutateInPriorityOrder(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void ChainedInterceptorsMutateInPriorityOrder([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(ChainedInterceptorsMutateInPriorityOrder) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(ChainedInterceptorsMutateInPriorityOrder) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -127,39 +93,15 @@ namespace DxMessaging.Tests.Runtime.Core
                     dependence on registration order (instead of priority order)
                     fails loudly below.
                 */
-                handles.Add(
-                    RegisterMutatingInterceptor(
-                        scenario,
-                        token,
-                        priority: 10,
-                        onIntercepted: observedByLate.Add,
-                        replacement: secondMutation
-                    )
-                );
-                handles.Add(
-                    RegisterMutatingInterceptor(
-                        scenario,
-                        token,
-                        priority: 0,
-                        onIntercepted: observedByEarly.Add,
-                        replacement: firstMutation
-                    )
-                );
-                handles.Add(
-                    RegisterRecordingHandler(scenario, token, hostId, observedByHandler.Add)
-                );
+                handles.Add(RegisterMutatingInterceptor(scenario, token, priority: 10, onIntercepted: observedByLate.Add, replacement: secondMutation));
+                handles.Add(RegisterMutatingInterceptor(scenario, token, priority: 0, onIntercepted: observedByEarly.Add, replacement: firstMutation));
+                handles.Add(RegisterRecordingHandler(scenario, token, hostId, observedByHandler.Add));
 
                 EmitComplex(scenario, hostId, originalId);
                 RemoveAll(token, handles);
             }
 
-            Assert.AreEqual(
-                1,
-                observedByEarly.Count,
-                "[{0}] Priority-0 interceptor must run exactly once. count={1}.",
-                scenario.Kind,
-                observedByEarly.Count
-            );
+            Assert.AreEqual(1, observedByEarly.Count, "[{0}] Priority-0 interceptor must run exactly once. count={1}.", scenario.Kind, observedByEarly.Count);
             Assert.AreEqual(
                 originalId,
                 observedByEarly[0],
@@ -168,13 +110,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 originalId,
                 observedByEarly[0]
             );
-            Assert.AreEqual(
-                1,
-                observedByLate.Count,
-                "[{0}] Priority-10 interceptor must run exactly once. count={1}.",
-                scenario.Kind,
-                observedByLate.Count
-            );
+            Assert.AreEqual(1, observedByLate.Count, "[{0}] Priority-10 interceptor must run exactly once. count={1}.", scenario.Kind, observedByLate.Count);
             Assert.AreEqual(
                 firstMutation,
                 observedByLate[0],
@@ -183,13 +119,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 firstMutation,
                 observedByLate[0]
             );
-            Assert.AreEqual(
-                1,
-                observedByHandler.Count,
-                "[{0}] Handler must run exactly once. count={1}.",
-                scenario.Kind,
-                observedByHandler.Count
-            );
+            Assert.AreEqual(1, observedByHandler.Count, "[{0}] Handler must run exactly once. count={1}.", scenario.Kind, observedByHandler.Count);
             Assert.AreEqual(
                 secondMutation,
                 observedByHandler[0],
@@ -201,15 +131,9 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void PostProcessorObservesFinalMutatedPayload(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void PostProcessorObservesFinalMutatedPayload([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(PostProcessorObservesFinalMutatedPayload) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(PostProcessorObservesFinalMutatedPayload) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -223,44 +147,15 @@ namespace DxMessaging.Tests.Runtime.Core
 
             using (LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName))
             {
-                handles.Add(
-                    RegisterMutatingInterceptor(
-                        scenario,
-                        token,
-                        priority: 0,
-                        onIntercepted: null,
-                        replacement: firstMutation
-                    )
-                );
-                handles.Add(
-                    RegisterMutatingInterceptor(
-                        scenario,
-                        token,
-                        priority: 5,
-                        onIntercepted: null,
-                        replacement: finalMutation
-                    )
-                );
-                handles.Add(
-                    RegisterRecordingPostProcessor(
-                        scenario,
-                        token,
-                        hostId,
-                        observedByPostProcessor.Add
-                    )
-                );
+                handles.Add(RegisterMutatingInterceptor(scenario, token, priority: 0, onIntercepted: null, replacement: firstMutation));
+                handles.Add(RegisterMutatingInterceptor(scenario, token, priority: 5, onIntercepted: null, replacement: finalMutation));
+                handles.Add(RegisterRecordingPostProcessor(scenario, token, hostId, observedByPostProcessor.Add));
 
                 EmitComplex(scenario, hostId, originalId);
                 RemoveAll(token, handles);
             }
 
-            Assert.AreEqual(
-                1,
-                observedByPostProcessor.Count,
-                "[{0}] Post-processor must run exactly once. count={1}.",
-                scenario.Kind,
-                observedByPostProcessor.Count
-            );
+            Assert.AreEqual(1, observedByPostProcessor.Count, "[{0}] Post-processor must run exactly once. count={1}.", scenario.Kind, observedByPostProcessor.Count);
             Assert.AreEqual(
                 finalMutation,
                 observedByPostProcessor[0],
@@ -282,15 +177,10 @@ namespace DxMessaging.Tests.Runtime.Core
         /// </summary>
         [Test]
         public void GlobalAcceptAllObservesMutatedPayloadBetweenInterceptorsAndHandlers(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario
         )
         {
-            GameObject host = new(
-                nameof(GlobalAcceptAllObservesMutatedPayloadBetweenInterceptorsAndHandlers)
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(GlobalAcceptAllObservesMutatedPayloadBetweenInterceptorsAndHandlers) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -304,42 +194,20 @@ namespace DxMessaging.Tests.Runtime.Core
 
             using (LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName))
             {
-                handles.Add(
-                    RegisterMutatingInterceptor(
-                        scenario,
-                        token,
-                        priority: 0,
-                        onIntercepted: _ => stageOrder.Add("interceptor"),
-                        replacement: mutatedId
-                    )
-                );
+                handles.Add(RegisterMutatingInterceptor(scenario, token, priority: 0, onIntercepted: _ => stageOrder.Add("interceptor"), replacement: mutatedId));
                 handles.Add(RegisterRecordingGlobal(token, observed =>
                     {
                         observedByGlobal.Add(observed);
                         stageOrder.Add("global");
                     }));
-                handles.Add(
-                    RegisterRecordingHandler(scenario, token, hostId, _ =>
-                        stageOrder.Add("handler")
-                    )
-                );
-                handles.Add(
-                    RegisterRecordingPostProcessor(scenario, token, hostId, _ =>
-                        stageOrder.Add("postProcessor")
-                    )
-                );
+                handles.Add(RegisterRecordingHandler(scenario, token, hostId, _ => stageOrder.Add("handler")));
+                handles.Add(RegisterRecordingPostProcessor(scenario, token, hostId, _ => stageOrder.Add("postProcessor")));
 
                 EmitComplex(scenario, hostId, originalId);
                 RemoveAll(token, handles);
             }
 
-            Assert.AreEqual(
-                1,
-                observedByGlobal.Count,
-                "[{0}] GlobalAcceptAll must observe exactly one emission. count={1}.",
-                scenario.Kind,
-                observedByGlobal.Count
-            );
+            Assert.AreEqual(1, observedByGlobal.Count, "[{0}] GlobalAcceptAll must observe exactly one emission. count={1}.", scenario.Kind, observedByGlobal.Count);
             Assert.AreEqual(
                 mutatedId,
                 observedByGlobal[0],
@@ -358,10 +226,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
-        private static void RemoveAll(
-            MessageRegistrationToken token,
-            List<MessageRegistrationHandle> handles
-        )
+        private static void RemoveAll(MessageRegistrationToken token, List<MessageRegistrationHandle> handles)
         {
             foreach (MessageRegistrationHandle handle in handles)
             {
@@ -425,57 +290,30 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
 
-        private static MessageRegistrationHandle RegisterRecordingHandler(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            InstanceId target,
-            Action<Guid> onHandled
-        )
+        private static MessageRegistrationHandle RegisterRecordingHandler(MessageScenario scenario, MessageRegistrationToken token, InstanceId target, Action<Guid> onHandled)
         {
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
                 {
-                    return ScenarioHarness.RegisterUntargeted<ComplexUntargetedMessage>(
-                        scenario,
-                        token,
-                        (in ComplexUntargetedMessage message) => onHandled(message.firstId)
-                    );
+                    return ScenarioHarness.RegisterUntargeted<ComplexUntargetedMessage>(scenario, token, (in ComplexUntargetedMessage message) => onHandled(message.firstId));
                 }
                 case MessageKind.Targeted:
                 {
-                    return ScenarioHarness.RegisterTargeted<ComplexTargetedMessage>(
-                        scenario,
-                        token,
-                        target,
-                        (in ComplexTargetedMessage message) => onHandled(message.firstId)
-                    );
+                    return ScenarioHarness.RegisterTargeted<ComplexTargetedMessage>(scenario, token, target, (in ComplexTargetedMessage message) => onHandled(message.firstId));
                 }
                 case MessageKind.Broadcast:
                 {
-                    return ScenarioHarness.RegisterBroadcast<ComplexBroadcastMessage>(
-                        scenario,
-                        token,
-                        target,
-                        (in ComplexBroadcastMessage message) => onHandled(message.firstId)
-                    );
+                    return ScenarioHarness.RegisterBroadcast<ComplexBroadcastMessage>(scenario, token, target, (in ComplexBroadcastMessage message) => onHandled(message.firstId));
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
@@ -491,45 +329,30 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 case MessageKind.Untargeted:
                 {
-                    return ScenarioHarness.RegisterUntargetedPostProcessor<ComplexUntargetedMessage>(
-                        scenario,
-                        token,
-                        (in ComplexUntargetedMessage message) => onPostProcessed(message.firstId)
+                    return ScenarioHarness.RegisterUntargetedPostProcessor<ComplexUntargetedMessage>(scenario, token, (in ComplexUntargetedMessage message) =>
+                        onPostProcessed(message.firstId)
                     );
                 }
                 case MessageKind.Targeted:
                 {
-                    return ScenarioHarness.RegisterTargetedPostProcessor<ComplexTargetedMessage>(
-                        scenario,
-                        token,
-                        target,
-                        (in ComplexTargetedMessage message) => onPostProcessed(message.firstId)
+                    return ScenarioHarness.RegisterTargetedPostProcessor<ComplexTargetedMessage>(scenario, token, target, (in ComplexTargetedMessage message) =>
+                        onPostProcessed(message.firstId)
                     );
                 }
                 case MessageKind.Broadcast:
                 {
-                    return ScenarioHarness.RegisterBroadcastPostProcessor<ComplexBroadcastMessage>(
-                        scenario,
-                        token,
-                        target,
-                        (in ComplexBroadcastMessage message) => onPostProcessed(message.firstId)
+                    return ScenarioHarness.RegisterBroadcastPostProcessor<ComplexBroadcastMessage>(scenario, token, target, (in ComplexBroadcastMessage message) =>
+                        onPostProcessed(message.firstId)
                     );
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
 
-        private static MessageRegistrationHandle RegisterRecordingGlobal(
-            MessageRegistrationToken token,
-            Action<Guid> onObserved
-        )
+        private static MessageRegistrationHandle RegisterRecordingGlobal(MessageRegistrationToken token, Action<Guid> onObserved)
         {
             return token.RegisterGlobalAcceptAll(
                 (IUntargetedMessage message) =>
@@ -580,11 +403,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }

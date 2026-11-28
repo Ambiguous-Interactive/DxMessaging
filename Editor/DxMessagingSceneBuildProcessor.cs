@@ -45,9 +45,7 @@ namespace DxMessaging.Editor
 
             if (0 < cleared && report != null)
             {
-                Debug.Log(
-                    $"[DxMessaging] Cleared {cleared} MessagingComponent instance(s) in scene '{scene.path}' prior to build."
-                );
+                Debug.Log($"[DxMessaging] Cleared {cleared} MessagingComponent instance(s) in scene '{scene.path}' prior to build.");
             }
         }
 
@@ -63,9 +61,7 @@ namespace DxMessaging.Editor
                     continue;
                 }
 
-                MessagingComponent[] components = root.GetComponentsInChildren<MessagingComponent>(
-                    includeInactive: true
-                );
+                MessagingComponent[] components = root.GetComponentsInChildren<MessagingComponent>(includeInactive: true);
                 if (components == null || components.Length == 0)
                 {
                     continue;

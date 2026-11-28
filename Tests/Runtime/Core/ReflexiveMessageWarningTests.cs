@@ -36,11 +36,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 bus.TargetedBroadcast(ref target, ref message);
                 Assert.AreEqual(1, receiver.InvocationCount);
                 int warningsAfter = CountWarnings(logs);
-                Assert.Greater(
-                    warningsAfter,
-                    warningsBefore,
-                    "First reflexive dispatch should log a warning."
-                );
+                Assert.Greater(warningsAfter, warningsBefore, "First reflexive dispatch should log a warning.");
                 StringAssert.Contains("ReflexiveMessage", logs[^1].message);
 
                 warningsBefore = warningsAfter;
@@ -48,11 +44,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 bus.TargetedBroadcast(ref target, ref message);
                 Assert.AreEqual(2, receiver.InvocationCount);
                 warningsAfter = CountWarnings(logs);
-                Assert.AreEqual(
-                    warningsBefore,
-                    warningsAfter,
-                    "Second dispatch on the same bus should not emit additional warnings."
-                );
+                Assert.AreEqual(warningsBefore, warningsAfter, "Second dispatch on the same bus should not emit additional warnings.");
 
                 MessageBus secondBus = new();
                 warningsBefore = warningsAfter;
@@ -60,11 +52,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 secondBus.TargetedBroadcast(ref target, ref message);
                 Assert.AreEqual(3, receiver.InvocationCount);
                 warningsAfter = CountWarnings(logs);
-                Assert.AreEqual(
-                    warningsBefore + 1,
-                    warningsAfter,
-                    "A new bus should emit its own warning."
-                );
+                Assert.AreEqual(warningsBefore + 1, warningsAfter, "A new bus should emit its own warning.");
             }
             finally
             {
@@ -74,10 +62,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
         private static int CountWarnings(List<(LogLevel level, string message)> logs)
         {
-            return logs.Count(entry =>
-                entry.level == LogLevel.Warn
-                && 0 <= entry.message.IndexOf("ReflexiveMessage dispatch", StringComparison.Ordinal)
-            );
+            return logs.Count(entry => entry.level == LogLevel.Warn && 0 <= entry.message.IndexOf("ReflexiveMessage dispatch", StringComparison.Ordinal));
         }
     }
 }

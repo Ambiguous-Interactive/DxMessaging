@@ -34,20 +34,12 @@ namespace DxMessaging.Tests.Editor
     [TestFixture]
     public sealed class PendingDeregistrationStorageTests
     {
-        private static readonly Type PendingType = typeof(MessageRegistrationToken).GetNestedType(
-            "PendingDeregistration",
-            BindingFlags.NonPublic
-        );
+        private static readonly Type PendingType = typeof(MessageRegistrationToken).GetNestedType("PendingDeregistration", BindingFlags.NonPublic);
 
         [Test]
         public void NestedPendingDeregistrationTypeResolves()
         {
-            Assert.That(
-                PendingType,
-                Is.Not.Null,
-                "MessageRegistrationToken.PendingDeregistration was renamed or removed; "
-                    + "update PendingDeregistrationStorageTests."
-            );
+            Assert.That(PendingType, Is.Not.Null, "MessageRegistrationToken.PendingDeregistration was renamed or removed; " + "update PendingDeregistrationStorageTests.");
         }
 
         [Test]
@@ -88,11 +80,7 @@ namespace DxMessaging.Tests.Editor
             pending.Add(() => { });
             pending.Add(() => { });
 
-            Assert.That(
-                pending.OverflowList,
-                Is.Not.Null,
-                "A second de-registration for the same handle must spill to the overflow " + "list."
-            );
+            Assert.That(pending.OverflowList, Is.Not.Null, "A second de-registration for the same handle must spill to the overflow " + "list.");
             Assert.That(pending.OverflowList.Count, Is.EqualTo(1));
             Assert.That(pending.Count, Is.EqualTo(2));
         }
@@ -110,11 +98,7 @@ namespace DxMessaging.Tests.Editor
 
             Assert.That(exception, Is.Null);
             Assert.That(order, Is.EqualTo(new[] { 0, 1, 2 }), "Insertion order must be preserved.");
-            Assert.That(
-                pending.Count,
-                Is.EqualTo(0),
-                "Every successful de-registration is removed."
-            );
+            Assert.That(pending.Count, Is.EqualTo(0), "Every successful de-registration is removed.");
         }
 
         [Test]
@@ -156,11 +140,7 @@ namespace DxMessaging.Tests.Editor
             Assert.That(exception, Is.SameAs(thrown), "The first exception is surfaced.");
             Assert.That(firstInvocations, Is.EqualTo(1));
             Assert.That(secondInvocations, Is.EqualTo(1), "Later de-registrations still run.");
-            Assert.That(
-                pending.Count,
-                Is.EqualTo(1),
-                "The throwing de-registration stays retryable; the successful one is removed."
-            );
+            Assert.That(pending.Count, Is.EqualTo(1), "The throwing de-registration stays retryable; the successful one is removed.");
 
             // The retained de-registration retries on a second pass.
             Exception second = pending.InvokeFrom(0);
@@ -187,25 +167,13 @@ namespace DxMessaging.Tests.Editor
             Assert.That(exception, Is.SameAs(thrown));
             Assert.That(headInvocations, Is.EqualTo(1), "The head ran and was removed.");
             Assert.That(overflowInvocations, Is.EqualTo(1));
-            Assert.That(
-                pending.Count,
-                Is.EqualTo(1),
-                "The failed overflow de-registration is retained (promoted to the head slot)."
-            );
-            Assert.That(
-                pending.OverflowList,
-                Is.Empty,
-                "Promoting the lone survivor to the head leaves the overflow list empty."
-            );
+            Assert.That(pending.Count, Is.EqualTo(1), "The failed overflow de-registration is retained (promoted to the head slot).");
+            Assert.That(pending.OverflowList, Is.Empty, "Promoting the lone survivor to the head leaves the overflow list empty.");
 
             // The promoted survivor retries from the head slot.
             Exception second = pending.InvokeFrom(0);
             Assert.That(second, Is.SameAs(thrown));
-            Assert.That(
-                overflowInvocations,
-                Is.EqualTo(2),
-                "The promoted de-registration retries."
-            );
+            Assert.That(overflowInvocations, Is.EqualTo(2), "The promoted de-registration retries.");
         }
 
         [Test]
@@ -248,11 +216,7 @@ namespace DxMessaging.Tests.Editor
 
             Assert.That(exception, Is.Null);
             Assert.That(order, Is.EqualTo(new[] { 3 }), "Only the logical-index-3 entry runs.");
-            Assert.That(
-                pending.Count,
-                Is.EqualTo(3),
-                "The head plus the two skipped overflow entries are retained."
-            );
+            Assert.That(pending.Count, Is.EqualTo(3), "The head plus the two skipped overflow entries are retained.");
         }
 
         [Test]
@@ -277,11 +241,7 @@ namespace DxMessaging.Tests.Editor
 
             Assert.That(exception, Is.SameAs(firstThrown), "The FIRST exception is surfaced.");
             Assert.That(order, Is.EqualTo(new[] { 0, 1, 2 }), "All three run, in logical order.");
-            Assert.That(
-                pending.Count,
-                Is.EqualTo(2),
-                "Both failed overflow entries are retained (one promoted to the head slot)."
-            );
+            Assert.That(pending.Count, Is.EqualTo(2), "Both failed overflow entries are retained (one promoted to the head slot).");
 
             /*
                 The two retained failures retry in their original relative order (the
@@ -290,11 +250,7 @@ namespace DxMessaging.Tests.Editor
             order.Clear();
             Exception retry = pending.InvokeFrom(0);
             Assert.That(retry, Is.SameAs(firstThrown));
-            Assert.That(
-                order,
-                Is.EqualTo(new[] { 1, 2 }),
-                "The retained failures retry in their original relative order."
-            );
+            Assert.That(order, Is.EqualTo(new[] { 1, 2 }), "The retained failures retry in their original relative order.");
             Assert.That(pending.Count, Is.EqualTo(2), "Both still fail, so both stay retryable.");
         }
 
@@ -345,11 +301,7 @@ namespace DxMessaging.Tests.Editor
             Exception exception = pending.InvokeFrom(0);
 
             Assert.That(exception, Is.Null);
-            Assert.That(
-                order,
-                Is.EqualTo(new[] { 0, 1 }),
-                "The re-entrant de-registration runs in the same pass, after the head."
-            );
+            Assert.That(order, Is.EqualTo(new[] { 0, 1 }), "The re-entrant de-registration runs in the same pass, after the head.");
             Assert.That(pending.Count, Is.EqualTo(0), "Both are consumed.");
             Assert.That(pending.OverflowList, Is.Null.Or.Empty);
         }
@@ -362,18 +314,9 @@ namespace DxMessaging.Tests.Editor
         /// </summary>
         private sealed class Pending
         {
-            private static readonly MethodInfo AddMethod = PendingType?.GetMethod(
-                "Add",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
-            private static readonly MethodInfo InvokeFromMethod = PendingType?.GetMethod(
-                "InvokeFrom",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
-            private static readonly PropertyInfo CountProperty = PendingType?.GetProperty(
-                "Count",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
+            private static readonly MethodInfo AddMethod = PendingType?.GetMethod("Add", BindingFlags.Instance | BindingFlags.NonPublic);
+            private static readonly MethodInfo InvokeFromMethod = PendingType?.GetMethod("InvokeFrom", BindingFlags.Instance | BindingFlags.NonPublic);
+            private static readonly PropertyInfo CountProperty = PendingType?.GetProperty("Count", BindingFlags.Instance | BindingFlags.NonPublic);
             private static readonly FieldInfo OverflowField = ResolveOverflowField();
 
             private readonly object _instance;
@@ -382,17 +325,9 @@ namespace DxMessaging.Tests.Editor
             {
                 Assert.That(PendingType, Is.Not.Null, "PendingDeregistration type missing.");
                 Assert.That(AddMethod, Is.Not.Null, "PendingDeregistration.Add missing.");
-                Assert.That(
-                    InvokeFromMethod,
-                    Is.Not.Null,
-                    "PendingDeregistration.InvokeFrom missing."
-                );
+                Assert.That(InvokeFromMethod, Is.Not.Null, "PendingDeregistration.InvokeFrom missing.");
                 Assert.That(CountProperty, Is.Not.Null, "PendingDeregistration.Count missing.");
-                Assert.That(
-                    OverflowField,
-                    Is.Not.Null,
-                    "PendingDeregistration must keep a List<HandlerDeregistration> overflow field."
-                );
+                Assert.That(OverflowField, Is.Not.Null, "PendingDeregistration must keep a List<HandlerDeregistration> overflow field.");
                 _instance = Activator.CreateInstance(PendingType, nonPublic: true);
             }
 
@@ -403,8 +338,7 @@ namespace DxMessaging.Tests.Editor
                 tests only assert its Count / null-or-empty, so expose it through the
                 non-generic ICollection surface.
             */
-            internal System.Collections.ICollection OverflowList =>
-                (System.Collections.ICollection)OverflowField.GetValue(_instance);
+            internal System.Collections.ICollection OverflowList => (System.Collections.ICollection)OverflowField.GetValue(_instance);
 
             internal void Add(Action action)
             {
@@ -428,11 +362,7 @@ namespace DxMessaging.Tests.Editor
                     return null;
                 }
 
-                foreach (
-                    FieldInfo field in PendingType.GetFields(
-                        BindingFlags.Instance | BindingFlags.NonPublic
-                    )
-                )
+                foreach (FieldInfo field in PendingType.GetFields(BindingFlags.Instance | BindingFlags.NonPublic))
                 {
                     if (field.FieldType == typeof(List<MessageHandler.HandlerDeregistration>))
                     {

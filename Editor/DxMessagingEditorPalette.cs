@@ -67,12 +67,7 @@ namespace DxMessaging.Editor
         /// both. Both store their chip state as what is <em>hidden</em>, so their
         /// <c>default</c> is an unfiltered log.
         /// </remarks>
-        internal static bool ShowsRouteKind(
-            string routeKind,
-            bool showUntargeted,
-            bool showTargeted,
-            bool showBroadcast
-        )
+        internal static bool ShowsRouteKind(string routeKind, bool showUntargeted, bool showTargeted, bool showBroadcast)
         {
             switch (NormalizeRouteKind(routeKind))
             {

@@ -1,571 +1,313 @@
 # Perf Benchmark Methodology Runbook
 
-This runbook is the developer/ops reference for how DxMessaging's published
-performance numbers are produced. The user-facing page that shows the rendered
-tables is [Performance Benchmarks](../architecture/performance.md); this runbook
-covers the methodology behind those tables, the CI configuration that runs them,
-the scenario taxonomy, baseline capture, the automatic pull-request evidence and the
-local-only smoke gate, and how to add or bump a comparison library.
+This runbook is the developer/ops reference for how DxMessaging's published performance numbers are produced. The user-facing page that shows the rendered tables is
+[Performance Benchmarks](../architecture/performance.md); this runbook covers the methodology behind those tables, the CI configuration that runs them, the scenario taxonomy,
+baseline capture, the automatic pull-request evidence and the local-only smoke gate, and how to add or bump a comparison library.
 
 ## Measurement methodology
 
-The benchmark harness measures raw dispatch cost over a single continuous
-window:
+The benchmark harness measures raw dispatch cost over a single continuous window:
 
-1. Warm up the scenario for `DispatchBenchmarkScenarios.WarmupEmits(scenario)`
-   emits so JIT and pools reach steady state. That count is
-   `BenchmarkProtocol.WarmupEmits` (currently 10,000, the default) for every
-   scenario except the registration/deregistration floods and the cold
-   first-dispatch scenarios, which warm up 0 emits so they measure one-time or
-   first-touch cost. `ComparisonScenarios.WarmupEmits` applies the same policy to
-   the comparison bridges.
+1. Warm up the scenario for `DispatchBenchmarkScenarios.WarmupEmits(scenario)` emits so JIT and pools reach steady state. That count is `BenchmarkProtocol.WarmupEmits` (currently
+   10,000, the default) for every scenario except the registration/deregistration floods and the cold first-dispatch scenarios, which warm up 0 emits so they measure one-time or
+   first-touch cost. `ComparisonScenarios.WarmupEmits` applies the same policy to the comparison bridges.
 1. Start a stopwatch.
-1. Emit in batches until ONE continuous measurement window of `N` seconds has
-   elapsed (`BenchmarkProtocol.MeasurementSeconds`, currently `N = 5`).
-1. Count managed GC allocations over ONE additional, untimed batch via
-   `AllocationProbe` (the `GC.Alloc` profiler recorder), reported as a COUNT, and
-   measure the total allocated BYTES over that SAME batch as `gcAllocatedBytes`.
+1. Emit in batches until ONE continuous measurement window of `N` seconds has elapsed (`BenchmarkProtocol.MeasurementSeconds`, currently `N = 5`).
+1. Count managed GC allocations over ONE additional, untimed batch via `AllocationProbe` (the `GC.Alloc` profiler recorder), reported as a COUNT, and measure the total allocated
+   BYTES over that SAME batch as `gcAllocatedBytes`.
 
-Throughput is `total operations / measured elapsed seconds`. Allocation is counted
-in a SEPARATE batch (not the timed window) so the recorder's overhead cannot
-distort the throughput clock, and is reported as a count of allocation calls -- a
-sharper "0 vs N per op" signal than a byte delta. **Why a count, not bytes:**
-`GC.GetAllocatedBytesForCurrentThread()` (the former source) returns `0` for every
-allocation under Unity's Boehm GC -- proven on the host editor, where a forced 1 MB
-array allocation read back as a `0`-byte delta -- so the old "allocated bytes"
-column was vacuously `0` for every technology. The `GC.Alloc` recorder
-(`AllocationProbe`) counts allocations reliably and is immune to GC timing; it
-self-validates and reports the `Unmeasured` sentinel (`-1`) rather than a
-fabricated `0` when no probe is available on a backend (for example a
-non-development player). A surface that is unmeasured for EVERY row (the whole
-Standalone leg) is omitted rather than rendered `n/a`; `n/a` survives only as an
+Throughput is `total operations / measured elapsed seconds`. Allocation is counted in a SEPARATE batch (not the timed window) so the recorder's overhead cannot distort the
+throughput clock, and is reported as a count of allocation calls -- a sharper "0 vs N per op" signal than a byte delta. **Why a count, not bytes:**
+`GC.GetAllocatedBytesForCurrentThread()` (the former source) returns `0` for every allocation under Unity's Boehm GC -- proven on the host editor, where a forced 1 MB array
+allocation read back as a `0`-byte delta -- so the old "allocated bytes" column was vacuously `0` for every technology. The `GC.Alloc` recorder (`AllocationProbe`) counts
+allocations reliably and is immune to GC timing; it self-validates and reports the `Unmeasured` sentinel (`-1`) rather than a fabricated `0` when no probe is available on a backend
+(for example a non-development player). A surface that is unmeasured for EVERY row (the whole Standalone leg) is omitted rather than rendered `n/a`; `n/a` survives only as an
 individual cell within an otherwise-measured table or matrix.
 
-**Allocated bytes (`gcAllocatedBytes`), informational.** Alongside the gated
-allocation COUNT, the harness reports the total allocated BYTES over that SAME batch from a
-before/after delta of the live Unity
-`ProfilerRecorder(ProfilerCategory.Memory, "GC Allocated In Frame").CurrentValue` --
-a within-frame `GC.Alloc`-hook byte accumulator. Because it SUMS allocation-hook
-bytes rather than measuring a heap-size difference, it is exact and run-to-run
-identical (100 x `byte[10000]` reads 1,003,200 bytes) and immune to mid-window
-collections (a heavy-churn region that swung a `GC.GetTotalMemory` delta to -133 MB
-read a stable 8,000,000 bytes here). The other byte sources were rejected:
-`GC.GetAllocatedBytesForCurrentThread()` returns `0` under Boehm; a `GC.GetTotalMemory`
-delta is dominated by warm-editor heap noise (a zero-alloc loop read 24 KB; the same
-op swung 41 KB-938 KB across repeats) and is corrupted by collections; the `GC.Alloc`
-recorder's per-sample `.Value` is garbage (2400 for a 1.2 MB region); and
-`GC.TryStartNoGCRegion` throws `NotImplementedException` on Unity Mono. Bytes and
-counts are self-validated independently; the Standalone Release leg cannot measure
-either (its profiler is stripped), so the renderer omits the all-unmeasured memory
-columns/matrices entirely rather than publishing a vacuous wall of `n/a`. For local
-or manually dispatched editor runs, the renderer sources the count and byte metrics
-from the first scope that measured each rather than reusing the count scope for
-bytes. Bytes are
-INFORMATIONAL: rendered byte deltas are goodness-signed (`N fewer bytes` /
-`N more bytes`), but allocation regression classification stays on the COUNT.
-There is **no median-of-runs**: the older approach
-of measuring several short sub-windows and comparing their median has been
-replaced by this single long window. The shared protocol is the single source of
-truth for every benchmark suite (dispatch throughput, comparisons) and lives in
-[`Tests/Runtime/Benchmarks/BenchmarkProtocol.cs`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Tests/Runtime/Benchmarks/BenchmarkProtocol.cs).
-The diagnostic in-process paired fixture is the explicit exception: it uses
-counterbalanced batches to normalize DxMessaging against an unchanged MessagePipe
-control while canonical published rows keep the continuous-window method.
+**Allocated bytes (`gcAllocatedBytes`), informational.** Alongside the gated allocation COUNT, the harness reports the total allocated BYTES over that SAME batch from a
+before/after delta of the live Unity `ProfilerRecorder(ProfilerCategory.Memory, "GC Allocated In Frame").CurrentValue` -- a within-frame `GC.Alloc`-hook byte accumulator. Because
+it SUMS allocation-hook bytes rather than measuring a heap-size difference, it is exact and run-to-run identical (100 x `byte[10000]` reads 1,003,200 bytes) and immune to
+mid-window collections (a heavy-churn region that swung a `GC.GetTotalMemory` delta to -133 MB read a stable 8,000,000 bytes here). The other byte sources were rejected:
+`GC.GetAllocatedBytesForCurrentThread()` returns `0` under Boehm; a `GC.GetTotalMemory` delta is dominated by warm-editor heap noise (a zero-alloc loop read 24 KB; the same op
+swung 41 KB-938 KB across repeats) and is corrupted by collections; the `GC.Alloc` recorder's per-sample `.Value` is garbage (2400 for a 1.2 MB region); and `GC.TryStartNoGCRegion`
+throws `NotImplementedException` on Unity Mono. Bytes and counts are self-validated independently; the Standalone Release leg cannot measure either (its profiler is stripped), so
+the renderer omits the all-unmeasured memory columns/matrices entirely rather than publishing a vacuous wall of `n/a`. For local or manually dispatched editor runs, the renderer
+sources the count and byte metrics from the first scope that measured each rather than reusing the count scope for bytes. Bytes are INFORMATIONAL: rendered byte deltas are
+goodness-signed (`N fewer bytes` / `N more bytes`), but allocation regression classification stays on the COUNT. There is **no median-of-runs**: the older approach of measuring
+several short sub-windows and comparing their median has been replaced by this single long window. The shared protocol is the single source of truth for every benchmark suite
+(dispatch throughput, comparisons) and lives in
+[`Tests/Runtime/Benchmarks/BenchmarkProtocol.cs`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Tests/Runtime/Benchmarks/BenchmarkProtocol.cs). The diagnostic
+in-process paired fixture is the explicit exception: it uses counterbalanced batches to normalize DxMessaging against an unchanged MessagePipe control while canonical published
+rows keep the continuous-window method.
 
-Registration scenarios report wall-clock milliseconds instead of emits per
-second, because they measure one-time setup cost rather than steady-state
-dispatch. The registration flood registers 1000 distinct closed generic
-value-type messages from a cold bus with no warm-up by design. Under Mono each
-distinct closed generic forces a one-time JIT compile, so the flood measures JIT
-cost, not the registration algorithm; under IL2CPP/AOT those generics are
-precompiled, so the same flood is on the order of 100x cheaper.
+Registration scenarios report wall-clock milliseconds instead of emits per second, because they measure one-time setup cost rather than steady-state dispatch. The registration
+flood registers 1000 distinct closed generic value-type messages from a cold bus with no warm-up by design. Under Mono each distinct closed generic forces a one-time JIT compile,
+so the flood measures JIT cost, not the registration algorithm; under IL2CPP/AOT those generics are precompiled, so the same flood is on the order of 100x cheaper.
 
 ### Storage benchmark workload boundaries
 
-Storage inspection and fixture isolation live in test assemblies. Benchmarks call the
-ordinary production registration, dispatch, removal, and trim paths. The context-map
-pool fixture isolates cached containers inside the production singleton; it does not
-install an alternate runtime pool.
+Storage inspection and fixture isolation live in test assemblies. Benchmarks call the ordinary production registration, dispatch, removal, and trim paths. The context-map pool
+fixture isolates cached containers inside the production singleton; it does not install an alternate runtime pool.
 
-`ChurnWithTrim` removes a target, calls `MessageBus.Trim(force: true)`, and registers
-the replacement. Its time includes the complete trim operation and public storage-count
-reads that verify the single-target eviction. It replaces the old
-benchmark-only exact-slot sweep and is a different workload; do not compare their
-rates as a performance change.
+`ChurnWithTrim` removes a target, calls `MessageBus.Trim(force: true)`, and registers the replacement. Its time includes the complete trim operation and public storage-count reads
+that verify the single-target eviction. It replaces the old benchmark-only exact-slot sweep and is a different workload; do not compare their rates as a performance change.
 
-`IntKeyMapFreshConstructionBenchmark` constructs the production `IntKeyMap<object>`
-implementation and reports `DXM_INT_KEY_MAP_CONSTRUCTION`. It measures that map,
-not the enclosing bus context-map owner. The old synthetic priority-owner constructor
-row is retired. Historical constructor rows for those owners are not comparable to
-the remaining storage constructor rows.
+`IntKeyMapFreshConstructionBenchmark` constructs the production `IntKeyMap<object>` implementation and reports `DXM_INT_KEY_MAP_CONSTRUCTION`. It measures that map, not the
+enclosing bus context-map owner. The old synthetic priority-owner constructor row is retired. Historical constructor rows for those owners are not comparable to the remaining
+storage constructor rows.
 
 ### Sticky publication, lookup, and replay workloads
 
-`StickyMessageBenchmarks` adds 18 warmed throughput rows. Ordinary and sticky
-publication each cover class and struct payloads with no callback, `Action<T>`,
-and `FastHandler<T>`. Both publication arms start with the same retained value;
-the ordinary arm keeps it while the sticky arm updates it. Lookup rows cover a
-present value, an empty latest-value map, and a missing type in a populated map,
-for both payload kinds. Each row uses the continuous-window protocol and its
-separate allocation batch. Callback counts, payload values, retained reference
-identity, registration counts, and cleanup are checked outside the measured window.
+`StickyMessageBenchmarks` adds 18 warmed throughput rows. Ordinary and sticky publication each cover class and struct payloads with no callback, `Action<T>`, and `FastHandler<T>`.
+Both publication arms start with the same retained value; the ordinary arm keeps it while the sticky arm updates it. Lookup rows cover a present value, an empty latest-value map,
+and a missing type in a populated map, for both payload kinds. Each row uses the continuous-window protocol and its separate allocation batch. Callback counts, payload values,
+retained reference identity, registration counts, and cleanup are checked outside the measured window.
 
-`StickyAlternatingTypeBenchmarks` adds four warmed rows that alternate two
-distinct types on one bus: ordinary and sticky publication for class and struct
-payloads, without callbacks. Both arms seed the same two retained values before
-warmup. Each publication counts as one operation, including both types. The loop
-keeps its alternation across batch boundaries. Verify the public emission counter
-against warmup, timed, and allocation-probe operations, then verify both values,
-reference identities, bus isolation, and clearing. Short contracts add observers
-to check actual type order; throughput rows have no observers or subscriptions.
+`StickyAlternatingTypeBenchmarks` adds four warmed rows that alternate two distinct types on one bus: ordinary and sticky publication for class and struct payloads, without
+callbacks. Both arms seed the same two retained values before warmup. Each publication counts as one operation, including both types. The loop keeps its alternation across batch
+boundaries. Verify the public emission counter against warmup, timed, and allocation-probe operations, then verify both values, reference identities, bus isolation, and clearing.
+Short contracts add observers to check actual type order; throughput rows have no observers or subscriptions.
 
 `StickyMessageLatencyBenchmarks` adds 28 latency rows with 32 raw trials per row:
 
-- Twelve first-publication rows cover ordinary and sticky emission, class and
-  struct payloads, and the three callback choices above. Each trial starts with a
-  fresh bus that has never published a message. Handler setup stays outside the clock.
-- Sixteen registration rows cover class and struct payloads, `Action<T>` and
-  `FastHandler<T>`, a present or absent latest value, and replay enabled or disabled.
-  An existing subscription stays live. The clock covers registration of a distinct,
-  enabled token and any synchronous replay. Existing subscribers must receive no
-  replay; only the new subscriber receives the retained value when replay is enabled.
+- Twelve first-publication rows cover ordinary and sticky emission, class and struct payloads, and the three callback choices above. Each trial starts with a fresh bus that has
+  never published a message. Handler setup stays outside the clock.
+- Sixteen registration rows cover class and struct payloads, `Action<T>` and `FastHandler<T>`, a present or absent latest value, and replay enabled or disabled. An existing
+  subscription stays live. The clock covers registration of a distinct, enabled token and any synchronous replay. Existing subscribers must receive no replay; only the new
+  subscriber receives the retained value when replay is enabled.
 
-These latency rows warm the exact operation on a throwaway bus before measurement.
-They measure fresh per-bus state with warmed code, rather than a first JIT compile.
-State construction, callback creation, verification, and disposal stay outside each
-sample. The existing cold-latency protocol includes allocation-probe overhead in
-single-shot times on profiler-bearing backends. A stripped IL2CPP player reports
-unavailable allocation measurements as `-1`.
+These latency rows warm the exact operation on a throwaway bus before measurement. They measure fresh per-bus state with warmed code, rather than a first JIT compile. State
+construction, callback creation, verification, and disposal stay outside each sample. The existing cold-latency protocol includes allocation-probe overhead in single-shot times on
+profiler-bearing backends. A stripped IL2CPP player reports unavailable allocation measurements as `-1`.
 
-`StickyFirstTypeBenchmarks` adds four separate distinct-type publication rows:
-ordinary and sticky emission for class and struct payloads, without callbacks.
-Each row times one publication for each of 32 disjoint closed message types on
-fresh buses. No publication, registration, or latest-value lookup for that type
-runs before its sample. Contract tests use a separate family of closed types.
-Admission uses reference comparisons, without hashing message types, to reserve
-the entire row before timing and reject reused types in the same loaded assembly.
-Run these rows in a fresh player or after an assembly reload;
-running them again in the same process is an admission error, not a cold sample.
+`StickyFirstTypeBenchmarks` adds four separate distinct-type publication rows: ordinary and sticky emission for class and struct payloads, without callbacks. Each row times one
+publication for each of 32 disjoint closed message types on fresh buses. No publication, registration, or latest-value lookup for that type runs before its sample. Contract tests
+use a separate family of closed types. Admission uses reference comparisons, without hashing message types, to reserve the entire row before timing and reject reused types in the
+same loaded assembly. Run these rows in a fresh player or after an assembly reload; running them again in the same process is an admission error, not a cold sample.
 
-These rows measure the first publication after state preparation. Type
-materialization, factory/delegate creation, payload construction, and bus
-construction stay outside timing. Interface dispatch and the workload wrapper
-remain inside timing. Closed types may share generated code, and some metadata
-may already be initialized during setup. The results do not measure all metadata
-cost, retained metadata size, independent JIT compilations, or process startup.
-The cold protocol includes its existing allocation-probe overhead.
+These rows measure the first publication after state preparation. Type materialization, factory/delegate creation, payload construction, and bus construction stay outside timing.
+Interface dispatch and the workload wrapper remain inside timing. Closed types may share generated code, and some metadata may already be initialized during setup. The results do
+not measure all metadata cost, retained metadata size, independent JIT compilations, or process startup. The cold protocol includes its existing allocation-probe overhead.
 
-Retain all 128 ordered `DXM_STICKY_FIRST_TYPE_TRIAL` records with their message
-type, first-use flag, round-trip time, allocation count, and allocated bytes.
-Summaries use the unchanged cold-latency median. Preserve the first sample and
-every adverse sample; the distinct types are observations within one process,
-not independent builds. Verify retained values and reference identity, ordinary
-absence, bus isolation, and clearing outside the timed operation.
+Retain all 128 ordered `DXM_STICKY_FIRST_TYPE_TRIAL` records with their message type, first-use flag, round-trip time, allocation count, and allocated bytes. Summaries use the
+unchanged cold-latency median. Preserve the first sample and every adverse sample; the distinct types are observations within one process, not independent builds. Verify retained
+values and reference identity, ordinary absence, bus isolation, and clearing outside the timed operation.
 
-`ColdLatencyMeasurement.RawTrials` retains the ordered wall-clock, allocation-count,
-and allocation-byte samples without changing the median calculation. The sticky
-fixture writes all samples after measurement as `DXM_STICKY_LATENCY_TRIAL` records,
-using round-trip wall-clock precision. Preserve those records alongside the summary
-CSV; its millisecond rounding can hide differences between short operations.
+`ColdLatencyMeasurement.RawTrials` retains the ordered wall-clock, allocation-count, and allocation-byte samples without changing the median calculation. The sticky fixture writes
+all samples after measurement as `DXM_STICKY_LATENCY_TRIAL` records, using round-trip wall-clock precision. Preserve those records alongside the summary CSV; its millisecond
+rounding can hide differences between short operations.
 
-Bind each result to its source commit, Unity version, backend, optimization level,
-and actual process instruction set. Process architecture comes from
-`RuntimeInformation.ProcessArchitecture`; an eight-byte pointer does not distinguish
-Arm64 from x64. Treat local Mono runs as local observations. These rows alone do
-not establish an IL2CPP optimization, an independent-build result, or a causal speedup.
+Bind each result to its source commit, Unity version, backend, optimization level, and actual process instruction set. Process architecture comes from
+`RuntimeInformation.ProcessArchitecture`; an eight-byte pointer does not distinguish Arm64 from x64. Treat local Mono runs as local observations. These rows alone do not establish
+an IL2CPP optimization, an independent-build result, or a causal speedup.
 
 ### Cold vs warm/hot modes
 
-Scenario suffixes describe preparation, while each workload defines its own timed
-boundary. The `Cold` and `WarmJit` names remain unchanged. These latency rows use
-the common CSV schema with `emitsPerSecond=0` and duration in `wallClockMs`.
-`render-perf-deltas.js` excludes a nonpositive baseline rate from its throughput
-smoke gate. Read these rows as latency observations.
+Scenario suffixes describe preparation, while each workload defines its own timed boundary. The `Cold` and `WarmJit` names remain unchanged. These latency rows use the common CSV
+schema with `emitsPerSecond=0` and duration in `wallClockMs`. `render-perf-deltas.js` excludes a nonpositive baseline rate from its throughput smoke gate. Read these rows as
+latency observations.
 
-- **First dispatch after registration.** The three `*FirstDispatch_Cold` rows use
-  `BenchmarkProtocol.MeasureColdLatency` for 32 trials, each with a distinct closed
-  message type. Setup creates a fresh bus and registers a readonly by-reference
-  `FastHandler<T>` callback outside timing. The clock covers exactly one typed bus
-  emission through `ColdTrialState.Emit`, including the wrapper and dispatch setup.
-  The bus resolves its current dispatch plans and fast invokers. First-touch work
-  can include JIT compilation under a backend that performs it; distinct types do
-  not establish separate compilation events or total metadata cost. The reported
-  wall-clock median uses all 32 samples, including the first. It discards no trial
-  and supplies no independent-build uncertainty. A functional allocation recorder
-  stays enabled during the operation; its start, sample read and disposal are
-  outside the clock.
-- **Registration floods.** `RegistrationFlood_1000Types_FromColdBus` constructs the
-  builder delegates before timing, then times scope construction, all 1000
-  registrations and scope disposal in one pass. The `WarmJit` variant first runs
-  the builders on a throwaway scope. That scope's registrations are released;
-  compiled code, metadata, type keys and other process state may remain. Each of
-  its `DispatchThroughputBenchmarks.WarmFloodTrials` trials creates a fresh scope
-  before timing and disposes it after timing. Its clock covers the registration
-  loop alone. Cold/warm differences therefore include different construction and
-  cleanup boundaries as well as preparation. The warm row reports the minimum
-  measured duration; its allocation count and bytes come from the first trial,
-  which can differ from the minimum-duration trial. This descriptive minimum is
-  not a calibrated noise-free floor or an isolated JIT/data-structure cost.
-- **Deregistration floods.** `DeregistrationFlood_1000Types_Cold` and
-  `DeregistrationFlood_1000Types_WarmJit` register the cached builders before timing
-  and time `MessageRegistrationToken.UnregisterAll()`. Scope disposal remains
-  outside both clocks. The cold row uses one measured pass. The warm row primes
-  registration and teardown on a throwaway scope, then reports the minimum over
-  `WarmFloodTrials` fresh populations. Its allocation count and bytes also come
-  from the first trial. Backend and prior process state affect interpretation;
-  the labels alone establish neither JIT cost nor equality under AOT.
-- **Registration-cycle attribution.** The four `RegistrationAttribution_*_131072`
-  rows time complete same-type register/remove cycles through the direct bus,
-  direct handler, disabled token, and active token layers. Every row reuses one
-  cached readonly by-reference handler, selects the operation outside the timed loop, and ends
-  with zero bus registrations, flat handlers, token metadata, and deliveries.
-  `TokenActive` matches the DxMessaging subscribe/unsubscribe comparison shape.
-  `TokenStage` is a sibling measurement, not a cumulative lower layer. The
-  `TokenActive` minus `DirectHandler` delta includes registration-object creation,
-  arena/handle work, teardown bookkeeping, and augmented delegate binding; do not
-  label it as token storage alone. Each row warms the exact cycle on throwaway
-  state, settles the heap once, and reports the minimum of seven fresh timing
-  trials. Allocation instrumentation runs afterward over seven fresh states. Each
-  state executes 10000 warm-up cycles before the recorder opens, then measures a
-  second 10000-cycle batch and reports the minimum count with bytes from that same
-  attempt. This matches the comparison harness's warmed allocation batch size and
-  state without putting profiler overhead in the latency clock. A stripped IL2CPP
-  player reports `n/a` for both allocation fields.
-- **Token dispatch attribution.** Compare `UntargetedFlood_OneDirectHandler` with
-  `UntargetedFlood_OneHandler`. Both use the same readonly by-reference fast slot, one active
-  handler, and exact fan-out. The first registers the user delegate directly
-  through `MessageHandler`; the second uses the public enabled-token path and its
-  `AugmentedScalarFast` callback. The token's diagnostics flag remains mutable, so
-  the augmented callback's per-dispatch branch is part of the public contract.
-- **Deregistration attribution.** The four `DeregistrationAttribution_*_131072`
-  rows report cumulative layers over one same-type, high-cardinality population:
-  direct bus removal; handler-cache plus bus removal; token `RemoveRegistration`
-  plus the lower layers; and token `Disable` queue teardown plus the lower layers.
-  Within the same run, subtract direct bus from direct handler to estimate
-  handler-cache cost, then direct handler from token removal to estimate
-  per-handle token bookkeeping. Treat `Disable` as a sibling end-to-end path:
-  unlike `RemoveRegistration`, it retains staged token state, so subtracting the
-  two mixes queue work with omitted arena unlinking. Each row collects once before
-  its seven-trial loop, prepares every fresh state outside the stopwatch, validates
-  exact zero-registration and zero-delivery
-  state after each sample, and reports the minimum elapsed time. Full teardown
-  also clears the ordered handler storage before the clock stops, so the sample
-  does not defer compaction to the next dispatch. Allocation columns are `n/a`:
-  multi-second destructive windows collect ambient editor allocations, and a
-  faster implementation would look like an allocation win merely by shortening
-  exposure. Prove allocation changes with structural or short-window differential
-  guards instead. The attribution entry and the published dispatch entry share
-  `DispatchThroughputBenchmarks`: method-level NUnit `Order` runs every dispatch
-  scenario before the 131072-cycle and retained-population attribution setup. These
-  diagnostic wall-clock rows are not hard regression gates. Do not compare them
-  with the 1000-type flood rows because their registration topology differs.
-- **Deregistration attribution palindrome.** The non-published
-  `DirectHandlerAndBusDeregistrationPalindromeDiagnostic` measures a
-  handler-then-bus pair followed by a bus-then-handler pair after the published
-  attribution rows. Each trial prepares all four fresh populations before timing,
-  measures the H/B/B/H arms back-to-back, and selects the lowest complete
-  palindrome duration across eight trials. Preparation direction alternates with
-  four forward and four reverse opportunities, so the same endpoint is not always
-  the most recently built state. The diagnostic
-  never combines an arm from one trial with an arm from another. Keeping four
-  populations live increases diagnostic peak memory, but it is required to avoid
-  allocation-heavy setup between timed arms. The 131072 cardinality stays aligned
-  with the published attribution rows and keeps the direct-bus arm near 10 ms on
-  the measured Mono host. This diagnostic runs after the published rows and does
-  not add player/runtime storage. It reports
-  `DXM_DEREGISTRATION_ATTRIBUTION_PALINDROME` with both additive handler-minus-bus
-  excesses and their arithmetic center. Interpret the sample only when both
-  excesses are positive, handler and bus same-path drift are each at most 3%, and
-  the two additive excesses differ by at most 3% of their center. Joint trial
-  selection retains all four arms from one observation and records
-  `jointTrialSelection=true` plus `sameTrialArms=true` in the marker. Its compact
-  `trialSequence` records each trial index, preparation direction, and complete
-  duration so an artifact consumer can verify alternation and the selected floor.
-  `interpretable=true` is still a noise-rejection prerequisite, not candidate
-  acceptance. The marker always records
-  `diagnosticOnly=true`, `acceptanceEvidence=false`, and
-  `candidateCompared=false`; require a separate repeated control/candidate
-  bracket before claiming a 3% improvement.
-- **Noise control on the wall-clock floods.** A single one-shot sample of a ~1 ms
-  operation on a shared CI runner swings run-to-run by tens of percent (scheduler
-  preemption, or a GC landing inside the timed window). Two mitigations: (1) the
-  WARM/repeatable floods report the minimum over `WarmFloodTrials` trials (above);
-  (2) EVERY flood (cold and warm) calls `QuiesceGarbageCollector()` -- a full
-  `GC.Collect` + `WaitForPendingFinalizers` + `GC.Collect` -- STRICTLY BEFORE the
-  measurement stopwatch starts, so a pending collection cannot land inside the timed
-  region and inflate the sample. The COLD floods stay single-shot (their whole point
-  is the one-time first-touch JIT cost, which cannot be re-measured cold), but are
-  GC-quiesced. These floods are report-only (never gated -- see below), so the only
-  effect is more trustworthy published numbers.
+- **First dispatch after registration.** The three `*FirstDispatch_Cold` rows use `BenchmarkProtocol.MeasureColdLatency` for 32 trials, each with a distinct closed message type.
+  Setup creates a fresh bus and registers a readonly by-reference `FastHandler<T>` callback outside timing. The clock covers exactly one typed bus emission through
+  `ColdTrialState.Emit`, including the wrapper and dispatch setup. The bus resolves its current dispatch plans and fast invokers. First-touch work can include JIT compilation under
+  a backend that performs it; distinct types do not establish separate compilation events or total metadata cost. The reported wall-clock median uses all 32 samples, including the
+  first. It discards no trial and supplies no independent-build uncertainty. A functional allocation recorder stays enabled during the operation; its start, sample read and
+  disposal are outside the clock.
+- **Registration floods.** `RegistrationFlood_1000Types_FromColdBus` constructs the builder delegates before timing, then times scope construction, all 1000 registrations and scope
+  disposal in one pass. The `WarmJit` variant first runs the builders on a throwaway scope. That scope's registrations are released; compiled code, metadata, type keys and other
+  process state may remain. Each of its `DispatchThroughputBenchmarks.WarmFloodTrials` trials creates a fresh scope before timing and disposes it after timing. Its clock covers the
+  registration loop alone. Cold/warm differences therefore include different construction and cleanup boundaries as well as preparation. The warm row reports the minimum measured
+  duration; its allocation count and bytes come from the first trial, which can differ from the minimum-duration trial. This descriptive minimum is not a calibrated noise-free
+  floor or an isolated JIT/data-structure cost.
+- **Deregistration floods.** `DeregistrationFlood_1000Types_Cold` and `DeregistrationFlood_1000Types_WarmJit` register the cached builders before timing and time
+  `MessageRegistrationToken.UnregisterAll()`. Scope disposal remains outside both clocks. The cold row uses one measured pass. The warm row primes registration and teardown on a
+  throwaway scope, then reports the minimum over `WarmFloodTrials` fresh populations. Its allocation count and bytes also come from the first trial. Backend and prior process state
+  affect interpretation; the labels alone establish neither JIT cost nor equality under AOT.
+- **Registration-cycle attribution.** The four `RegistrationAttribution_*_131072` rows time complete same-type register/remove cycles through the direct bus, direct handler,
+  disabled token, and active token layers. Every row reuses one cached readonly by-reference handler, selects the operation outside the timed loop, and ends with zero bus
+  registrations, flat handlers, token metadata, and deliveries. `TokenActive` matches the DxMessaging subscribe/unsubscribe comparison shape. `TokenStage` is a sibling measurement,
+  not a cumulative lower layer. The `TokenActive` minus `DirectHandler` delta includes registration-object creation, arena/handle work, teardown bookkeeping, and augmented delegate
+  binding; do not label it as token storage alone. Each row warms the exact cycle on throwaway state, settles the heap once, and reports the minimum of seven fresh timing trials.
+  Allocation instrumentation runs afterward over seven fresh states. Each state executes 10000 warm-up cycles before the recorder opens, then measures a second 10000-cycle batch
+  and reports the minimum count with bytes from that same attempt. This matches the comparison harness's warmed allocation batch size and state without putting profiler overhead in
+  the latency clock. A stripped IL2CPP player reports `n/a` for both allocation fields.
+- **Token dispatch attribution.** Compare `UntargetedFlood_OneDirectHandler` with `UntargetedFlood_OneHandler`. Both use the same readonly by-reference fast slot, one active
+  handler, and exact fan-out. The first registers the user delegate directly through `MessageHandler`; the second uses the public enabled-token path and its `AugmentedScalarFast`
+  callback. The token's diagnostics flag remains mutable, so the augmented callback's per-dispatch branch is part of the public contract.
+- **Deregistration attribution.** The four `DeregistrationAttribution_*_131072` rows report cumulative layers over one same-type, high-cardinality population: direct bus removal;
+  handler-cache plus bus removal; token `RemoveRegistration` plus the lower layers; and token `Disable` queue teardown plus the lower layers. Within the same run, subtract direct
+  bus from direct handler to estimate handler-cache cost, then direct handler from token removal to estimate per-handle token bookkeeping. Treat `Disable` as a sibling end-to-end
+  path: unlike `RemoveRegistration`, it retains staged token state, so subtracting the two mixes queue work with omitted arena unlinking. Each row collects once before its
+  seven-trial loop, prepares every fresh state outside the stopwatch, validates exact zero-registration and zero-delivery state after each sample, and reports the minimum elapsed
+  time. Full teardown also clears the ordered handler storage before the clock stops, so the sample does not defer compaction to the next dispatch. Allocation columns are `n/a`:
+  multi-second destructive windows collect ambient editor allocations, and a faster implementation would look like an allocation win merely by shortening exposure. Prove allocation
+  changes with structural or short-window differential guards instead. The attribution entry and the published dispatch entry share `DispatchThroughputBenchmarks`: method-level
+  NUnit `Order` runs every dispatch scenario before the 131072-cycle and retained-population attribution setup. These diagnostic wall-clock rows are not hard regression gates. Do
+  not compare them with the 1000-type flood rows because their registration topology differs.
+- **Deregistration attribution palindrome.** The non-published `DirectHandlerAndBusDeregistrationPalindromeDiagnostic` measures a handler-then-bus pair followed by a
+  bus-then-handler pair after the published attribution rows. Each trial prepares all four fresh populations before timing, measures the H/B/B/H arms back-to-back, and selects the
+  lowest complete palindrome duration across eight trials. Preparation direction alternates with four forward and four reverse opportunities, so the same endpoint is not always the
+  most recently built state. The diagnostic never combines an arm from one trial with an arm from another. Keeping four populations live increases diagnostic peak memory, but it is
+  required to avoid allocation-heavy setup between timed arms. The 131072 cardinality stays aligned with the published attribution rows and keeps the direct-bus arm near 10 ms on
+  the measured Mono host. This diagnostic runs after the published rows and does not add player/runtime storage. It reports `DXM_DEREGISTRATION_ATTRIBUTION_PALINDROME` with both
+  additive handler-minus-bus excesses and their arithmetic center. Interpret the sample only when both excesses are positive, handler and bus same-path drift are each at most 3%,
+  and the two additive excesses differ by at most 3% of their center. Joint trial selection retains all four arms from one observation and records `jointTrialSelection=true` plus
+  `sameTrialArms=true` in the marker. Its compact `trialSequence` records each trial index, preparation direction, and complete duration so an artifact consumer can verify
+  alternation and the selected floor. `interpretable=true` is still a noise-rejection prerequisite, not candidate acceptance. The marker always records `diagnosticOnly=true`,
+  `acceptanceEvidence=false`, and `candidateCompared=false`; require a separate repeated control/candidate bracket before claiming a 3% improvement.
+- **Noise control on the wall-clock floods.** A single one-shot sample of a ~1 ms operation on a shared CI runner swings run-to-run by tens of percent (scheduler preemption, or a
+  GC landing inside the timed window). Two mitigations: (1) the WARM/repeatable floods report the minimum over `WarmFloodTrials` trials (above); (2) EVERY flood (cold and warm)
+  calls `QuiesceGarbageCollector()` -- a full `GC.Collect` + `WaitForPendingFinalizers` + `GC.Collect` -- STRICTLY BEFORE the measurement stopwatch starts, so a pending collection
+  cannot land inside the timed region and inflate the sample. The COLD floods stay single-shot (their whole point is the one-time first-touch JIT cost, which cannot be re-measured
+  cold), but are GC-quiesced. These floods are report-only (never gated -- see below), so the only effect is more trustworthy published numbers.
 
-The cold counterpart to `BenchmarkProtocol.Measure` is
-`BenchmarkProtocol.MeasureColdLatency`. It runs K trials; each trial builds fresh
-state (untimed, indexed so the caller picks a distinct closed type per trial),
-times EXACTLY ONE operation on it, then tears the state down (untimed). It reports
-the median wall clock and median GC-allocation count across the trials (cold
-latency is right-skewed, so the median is the headline). The three cold dispatch
-scenarios are
-its callers; the continuous-window protocol applies only to the warm/hot throughput
-scenarios.
+The cold counterpart to `BenchmarkProtocol.Measure` is `BenchmarkProtocol.MeasureColdLatency`. It runs K trials; each trial builds fresh state (untimed, indexed so the caller picks
+a distinct closed type per trial), times EXACTLY ONE operation on it, then tears the state down (untimed). It reports the median wall clock and median GC-allocation count across
+the trials (cold latency is right-skewed, so the median is the headline). The three cold dispatch scenarios are its callers; the continuous-window protocol applies only to the
+warm/hot throughput scenarios.
 
 ### Budget interpretation
 
-Dispatch budgets are interpreted in per-emit terms. Convert throughput to
-nanoseconds per emit with:
+Dispatch budgets are interpreted in per-emit terms. Convert throughput to nanoseconds per emit with:
 
 ```text
 ns_per_emit = 1,000,000,000 / emits_per_second
 ```
 
-Compare both throughput and per-emit nanoseconds. Throughput is easier to scan,
-but per-emit nanoseconds make fixed overhead visible. A 10 ns increase is
-material on handlers whose work is only 10-20 ns.
+Compare both throughput and per-emit nanoseconds. Throughput is easier to scan, but per-emit nanoseconds make fixed overhead visible. A 10 ns increase is material on handlers whose
+work is only 10-20 ns.
 
-Allocation budgets are interpreted as the COUNT of managed GC allocations during
-the measured batch. Dispatch scenarios should stay at zero measured allocations
-after warmup. Any non-zero allocation count on a hot-path dispatch scenario
-requires an explanation, a fix, or an explicit reviewer-approved exception. A
-count of `Unmeasured` (rendered `n/a`) is neither a pass nor a fail -- it means no
-reliable probe was available on that backend, so the budget cannot be evaluated.
+Allocation budgets are interpreted as the COUNT of managed GC allocations during the measured batch. Dispatch scenarios should stay at zero measured allocations after warmup. Any
+non-zero allocation count on a hot-path dispatch scenario requires an explanation, a fix, or an explicit reviewer-approved exception. A count of `Unmeasured` (rendered `n/a`) is
+neither a pass nor a fail -- it means no reliable probe was available on that backend, so the budget cannot be evaluated.
 
 ### Experimental latency quantiles
 
-Issue [#512](https://github.com/Ambiguous-Interactive/DxMessaging/issues/512)
-keeps cold, burst, and queued latency separate from the warmed throughput rows
-above. The current exact reducer reports a strict-upper empirical percentile:
-for `n` sorted observations, p99 selects the zero-based rank `floor(99*n/100)`.
-For an exactly one-in-100 deterministic tail-control trace, that selects the
-delayed observation. This verifies the protocol's rank response, not a
-population p99 estimate.
+Issue [#512](https://github.com/Ambiguous-Interactive/DxMessaging/issues/512) keeps cold, burst, and queued latency separate from the warmed throughput rows above. The current
+exact reducer reports a strict-upper empirical percentile: for `n` sorted observations, p99 selects the zero-based rank `floor(99*n/100)`. For an exactly one-in-100 deterministic
+tail-control trace, that selects the delayed observation. This verifies the protocol's rank response, not a population p99 estimate.
 
-The reducer also reports exact equal-tail 95% binomial order-statistic rank
-bounds, conditional on independent, identically distributed units. A finite
-two-sided p99 interval first becomes possible at 368 such units. At 72 units,
-the ranks are 69 and no finite upper endpoint. Even 368 units do not guarantee
-a narrow interval or a sound claim when the clock, host, or workload is unstable.
-The [#512 unit and interval boundary](https://github.com/Ambiguous-Interactive/DxMessaging/issues/512#issuecomment-5717971411)
-records the pre-player stop rule and the remaining interval-width decision.
+The reducer also reports exact equal-tail 95% binomial order-statistic rank bounds, conditional on independent, identically distributed units. A finite two-sided p99 interval first
+becomes possible at 368 such units. At 72 units, the ranks are 69 and no finite upper endpoint. Even 368 units do not guarantee a narrow interval or a sound claim when the clock,
+host, or workload is unstable. The [#512 unit and interval boundary](https://github.com/Ambiguous-Interactive/DxMessaging/issues/512#issuecomment-5717971411) records the pre-player
+stop rule and the remaining interval-width decision.
 
-Count a fresh clean build/player start once for process-cold work. Retain the
-type shape, order, build, and player identities for type-cold work; shapes in
-one player form a cluster. Burst and queue traces may contain many frames or
-messages, but one complete host-stable player session is one replication unit.
-Within-session quantiles remain descriptive. A percentile of session p99 values
-describes session p99 variation; it is not the percentile of pooled messages.
-Do not use the number of messages, frames, or repeated launches as the
-independent-unit count. Report the population interval and verdict as `N/A`
-when a bound is absent, while retaining the labeled descriptive observation.
-The exact reducer does not verify independence; source and session evidence
-must establish it before inference.
+Count a fresh clean build/player start once for process-cold work. Retain the type shape, order, build, and player identities for type-cold work; shapes in one player form a
+cluster. Burst and queue traces may contain many frames or messages, but one complete host-stable player session is one replication unit. Within-session quantiles remain
+descriptive. A percentile of session p99 values describes session p99 variation; it is not the percentile of pooled messages. Do not use the number of messages, frames, or repeated
+launches as the independent-unit count. Report the population interval and verdict as `N/A` when a bound is absent, while retaining the labeled descriptive observation. The exact
+reducer does not verify independence; source and session evidence must establish it before inference.
 
 ## Build and runtime configuration
 
-The published numbers are measured under **Standalone IL2CPP + .NET Standard
-2.1 + Release** in a true Release player. The published workflow omits allocation
-metrics because the Release player strips the required profiler recorder (see
-[Editor-vs-player rationale](#editor-vs-player-rationale)). The leg is driven by
+The published numbers are measured under **Standalone IL2CPP + .NET Standard 2.1 + Release** in a true Release player. The published workflow omits allocation metrics because the
+Release player strips the required profiler recorder (see [Editor-vs-player rationale](#editor-vs-player-rationale)). The leg is driven by
 [`scripts/unity/run-ci-tests.ps1`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/scripts/unity/run-ci-tests.ps1):
 
-- **Standalone perf leg (the throughput headline)** builds an **IL2CPP
-  non-development (Release) player**. The generated build modifier actively
-  clears `BuildOptions.Development` -- the Unity Test Framework's PlayerLauncher
-  injects it by default, and a development player reports
-  `Debug.isDebugBuild == true` -- and the project configurator pins the IL2CPP
-  C++ configuration to Release:
-  `PlayerSettings.SetIl2CppCompilerConfiguration(BuildTargetGroup.Standalone, Il2CppCompilerConfiguration.Release)`.
-  The player uses `ApiCompatibilityLevel.NET_Standard` (the non-deprecated
-  profile that targets .NET Standard 2.1) and **disabled managed code
-  stripping**, so the test assemblies and the `[Preserve]` standalone test-run
-  callback survive into the player. The runner's `-StandaloneScriptingBackend`
-  parameter defaults to `IL2CPP` and also accepts `Mono2x`; the published leg
-  pins IL2CPP. The workflow passes
-  `.github/perf/canonical-il2cpp-profile.v1.json` as the reviewed source of
-  truth. That profile also pins speed-optimized IL2CPP code generation,
-  incremental GC, engine-code stripping, and the final build options. The
-  runner archives the exact profile and its SHA-256 with every published standalone run.
+- **Standalone perf leg (the throughput headline)** builds an **IL2CPP non-development (Release) player**. The generated build modifier actively clears `BuildOptions.Development`
+  -- the Unity Test Framework's PlayerLauncher injects it by default, and a development player reports `Debug.isDebugBuild == true` -- and the project configurator pins the IL2CPP
+  C++ configuration to Release: `PlayerSettings.SetIl2CppCompilerConfiguration(BuildTargetGroup.Standalone, Il2CppCompilerConfiguration.Release)`. The player uses
+  `ApiCompatibilityLevel.NET_Standard` (the non-deprecated profile that targets .NET Standard 2.1) and **disabled managed code stripping**, so the test assemblies and the
+  `[Preserve]` standalone test-run callback survive into the player. The runner's `-StandaloneScriptingBackend` parameter defaults to `IL2CPP` and also accepts `Mono2x`; the
+  published leg pins IL2CPP. The workflow passes `.github/perf/canonical-il2cpp-profile.v1.json` as the reviewed source of truth. That profile also pins speed-optimized IL2CPP code
+  generation, incremental GC, engine-code stripping, and the final build options. The runner archives the exact profile and its SHA-256 with every published standalone run.
   Generated editor and player code embed the same profile ID and hash.
 
-  `configured-profile.json`, `prebuild-profile.json`, and
-  `postbuild-profile.json` record the effective settings after configuration
-  and inside the actual build process. `build-options-profile.json` records
-  Unity's final post-build options, and `runtime-profile.json` records
-  `Debug.isDebugBuild`. Build-options evidence schema 2 also records `buildProvenance`:
-  `playerBuildKind` is `clean` when the final report includes `CleanBuildCache`,
-  otherwise `incremental`. Before each build, both builders observe the `Library`,
-  `Library/Bee`, `Library/Il2cppBuildCache`, and player output directories as
-  `missing`, `empty`, or `populated`. The observations do not enumerate recursively
-  or change cache contents. Missing provenance, inconsistent directory states,
-  populated player output, and incremental options fail the reviewed clean profiles.
-  Schema 1 build-options evidence cannot establish this provenance and is rejected.
-  Configuration and runtime evidence remain schema 1, and profile hashes remain unchanged.
-  The runner compares every pinned field with the archived
-  profile and fails on a missing, extra, mistyped, or different value. Each
-  evidence file must also name the exact Unity version requested by the runner.
-  Standalone validation requires `-ExpectedUnityVersion` when checking evidence;
-  `-ProfileOnly` validates the shared profile without selecting an editor.
+  `configured-profile.json`, `prebuild-profile.json`, and `postbuild-profile.json` record the effective settings after configuration and inside the actual build process.
+  `build-options-profile.json` records Unity's final post-build options, and `runtime-profile.json` records `Debug.isDebugBuild`. Build-options evidence schema 2 also records
+  `buildProvenance`: `playerBuildKind` is `clean` when the final report includes `CleanBuildCache`, otherwise `incremental`. Before each build, both builders observe the `Library`,
+  `Library/Bee`, `Library/Il2cppBuildCache`, and player output directories as `missing`, `empty`, or `populated`. The observations do not enumerate recursively or change cache
+  contents. Missing provenance, inconsistent directory states, populated player output, and incremental options fail the reviewed clean profiles. Schema 1 build-options evidence
+  cannot establish this provenance and is rejected. Configuration and runtime evidence remain schema 1, and profile hashes remain unchanged. The runner compares every pinned field
+  with the archived profile and fails on a missing, extra, mistyped, or different value. Each evidence file must also name the exact Unity version requested by the runner.
+  Standalone validation requires `-ExpectedUnityVersion` when checking evidence; `-ProfileOnly` validates the shared profile without selecting an editor.
 
-  Both profiled builders retain `native-build-inputs/manifest.json` with the
-  JSON graph and input-data companions of the exact player DAG named by Bee in
-  the completed build's log. Cached builds need no graph regeneration. When the
-  build program runs, its graph/input pair must agree with the backend DAG.
-  The manifest records that distinction and the logged binary DAG's hash; it
-  does not claim a cached JSON companion was regenerated or passed directly to
-  the backend. The binary DAG itself is not uploaded.
-  The capture also retains numeric Bee response file paths observed in the player
-  build program and backend log phases. Earlier and later editor TypeDB phases
-  belong to other graphs and can remove their temporary response files.
-  The capture excludes those unrelated references. Native response files are
-  renamed with a `.txt` suffix for credential scanning. Missing or empty inputs,
-  conflicting graphs, more than 256 retained files, or more than 64 MiB of total
-  source input bytes stop capture. This reads existing inputs; it adds no build,
-  player launch, benchmark window, or recursive cache scan.
-  The source manifest binds the profile, editor, original log hash, and original
-  input hashes. The existing artifact redactor creates `retained-manifest.json`
-  with hashes of the safely scanned bytes during its normal pass. Missing,
-  duplicated, unsafe, or unscanned file references prevent finalization. Artifact
-  upload still requires that entire redaction step to pass.
-  `responseFileScope: player-build-log-references-only` means this is not a complete response
-  dependency closure. Native executable hashes and versions, nested response inputs,
-  and immutable remote restoration still need campaign evidence. The editor compiler
-  version printed in `unity.log` does not identify the player compiler.
+  Both profiled builders retain `native-build-inputs/manifest.json` with the JSON graph and input-data companions of the exact player DAG named by Bee in the completed build's log.
+  Cached builds need no graph regeneration. When the build program runs, its graph/input pair must agree with the backend DAG. The manifest records that distinction and the logged
+  binary DAG's hash; it does not claim a cached JSON companion was regenerated or passed directly to the backend. The binary DAG itself is not uploaded. The capture also retains
+  numeric Bee response file paths observed in the player build program and backend log phases. Earlier and later editor TypeDB phases belong to other graphs and can remove their
+  temporary response files. The capture excludes those unrelated references. Native response files are renamed with a `.txt` suffix for credential scanning. Missing or empty
+  inputs, conflicting graphs, more than 256 retained files, or more than 64 MiB of total source input bytes stop capture. This reads existing inputs; it adds no build, player
+  launch, benchmark window, or recursive cache scan. The source manifest binds the profile, editor, original log hash, and original input hashes. The existing artifact redactor
+  creates `retained-manifest.json` with hashes of the safely scanned bytes during its normal pass. Missing, duplicated, unsafe, or unscanned file references prevent finalization.
+  Artifact upload still requires that entire redaction step to pass. `responseFileScope: player-build-log-references-only` means this is not a complete response dependency closure.
+  Native executable hashes and versions, nested response inputs, and immutable remote restoration still need campaign evidence. The editor compiler version printed in `unity.log`
+  does not identify the player compiler.
 
-  The `DXM perf config:` log line and each row's platform
-  string (`Standalone IL2CPP x64 Release (WindowsPlayer; ...)`) remain
-  diagnostic surfaces; a published `x64 Debug` row is a configuration bug. A Release player
-  strips the `GC.Alloc` profiler recorder, so the Standalone leg cannot measure
-  allocations or bytes at all; rather than fill those columns with `n/a`, the
-  renderer omits the all-unmeasured memory columns from the Standalone table and
-  the all-unmeasured memory matrices entirely.
+  The `DXM perf config:` log line and each row's platform string (`Standalone IL2CPP x64 Release (WindowsPlayer; ...)`) remain diagnostic surfaces; a published `x64 Debug` row is a
+  configuration bug. A Release player strips the `GC.Alloc` profiler recorder, so the Standalone leg cannot measure allocations or bytes at all; rather than fill those columns with
+  `n/a`, the renderer omits the all-unmeasured memory columns from the Standalone table and the all-unmeasured memory matrices entirely.
 
-- **Shipping-fidelity leg (not published)** builds separate IL2CPP Release
-  players with Minimal, Low, Medium, and High managed stripping and no test
-  assemblies. The Unity Tests workflow runs this matrix weekly on Sunday at
-  04:17 UTC, or when a manual run enables `shipping_fidelity`. Pull requests,
-  pushes, and default manual runs execute the regular three test modes without
-  this matrix. The schedule takes effect after the workflow reaches the default
-  branch. Each level has a reviewed profile under `.github/perf/`; the
-  existing `shipping-fidelity-il2cpp-profile.v1.json` remains the High profile.
-  The harness calls `BuildPipeline.BuildPlayer` directly, without Unity Test
-  Framework or a PlayerConnection. The oldest and newest supported Unity
-  editors build five topologies at every stripping level in isolated project and
-  artifact directories: the 18-shape semantic topology plus exact closed sets of
-  1, 16, 256, and 1,000 public readonly struct messages. This produces 20 builds
-  per editor. Each built binary runs twice. The positive run checks generated AOT
-  roots, typed dispatch, and registered untyped dispatch for every expected type.
-  The semantic topology covers public top-level, public nested, and private
-  nested class and readonly struct messages across all three message kinds. The
-  cardinality topologies expose source-generation and IL2CPP scaling failures.
-  The missing-root run checks the expected failure for a private manual message.
-  Evidence binds the topology ID and exact message count to the ordered type
-  inventory, generated project inputs, runtime results, and unchanged-binary
-  manifest. The runner clears and hashes every generated project input before
-  reuse. It also archives a privacy-safe hash and semantic summary of the
-  resolved package lock, the exact consumer/runtime/attributes build inventory, loaded
-  assembly inventory, and profile evidence. Each cell also records build-time,
-  size, and cold-start evidence. The builder writes `shipping-build-report.json`
-  from the same `BuildReport` that proves the final options: a Stopwatch
-  duration around `BuildPipeline.BuildPlayer`, Unity's reported total time and
-  size, and every build step with its duration. Both player runs write a
-  `timings` block. The positive run measures bus construction, the root-probe
-  phase, registration, the first typed dispatch, the typed and untyped phases, a
-  1,000,000-emit dispatch loop after a discarded warm-up, a forced trim, and
-  teardown. Every phase uses `Stopwatch`, except engine start to first script,
-  which reads `Time.realtimeSinceStartupAsDouble`. The missing-root run measures
-  none of them and marks each phase `-1`, because reporting `0` would claim a
-  measurement for work that never ran. The runner joins those with the Library
-  cache state, the editor wall clock, the player byte count, and the
-  `GameAssembly.dll` size in `shipping-cell-evidence.json`, and the matrix
-  wrapper collects every completed cell into one `shipping-matrix-evidence.json`
-  per endpoint editor. Those two joined files carry
-  `measurementClass: "characterization"`; the build report and the two player
-  results do not, because their exact property lists are validated fail-closed
-  and an extra field would be rejected. These values show size and build-time
-  cliffs across 1,
-  16, 256, and 1,000 message types for the
-  [#506](https://github.com/Ambiguous-Interactive/DxMessaging/issues/506)
-  protocol, and they are never published as throughput rows. The dispatch-loop
-  rate is a fixed-count average that includes the harness counting each
-  delivery, so compare it only across cells that loop the same message shape.
-  The semantic cell loops a class message and the cardinality cells loop a
-  struct, so the table prints the shape beside the rate. Every IL2CPP build in
-  this leg is a clean build: the builder always sets
-  `BuildOptions.CleanBuildCache`, and each profile pins `cleanBuildCache` so a
-  build that drops it fails validation. This means a clean player build cache;
-  it does not mean a fresh imported Library or freshly installed toolchain.
-  `libraryState` in each shipping cell describes the Library at runner startup;
-  `buildProvenance` records directories later, immediately before the player build.
-  Keep those observations separate when comparing build times. An incremental
-  experiment needs a preregistered profile variant and separate analysis; do not
-  pool its outputs with independent clean builds or infer its factor from a warm Library.
-  This correctness slice does
-  not contribute benchmark rows or change the published performance profile.
+- **Shipping-fidelity leg (not published)** builds separate IL2CPP Release players with Minimal, Low, Medium, and High managed stripping and no test assemblies. The Unity Tests
+  workflow runs this matrix weekly on Sunday at 04:17 UTC, or when a manual run enables `shipping_fidelity`. Pull requests, pushes, and default manual runs execute the regular
+  three test modes without this matrix. The schedule takes effect after the workflow reaches the default branch. Each level has a reviewed profile under `.github/perf/`; the
+  existing `shipping-fidelity-il2cpp-profile.v1.json` remains the High profile. The harness calls `BuildPipeline.BuildPlayer` directly, without Unity Test Framework or a
+  PlayerConnection. The oldest and newest supported Unity editors build five topologies at every stripping level in isolated project and artifact directories: the 18-shape semantic
+  topology plus exact closed sets of 1, 16, 256, and 1,000 public readonly struct messages. This produces 20 builds per editor. Each built binary runs twice. The positive run
+  checks generated AOT roots, typed dispatch, and registered untyped dispatch for every expected type. The semantic topology covers public top-level, public nested, and private
+  nested class and readonly struct messages across all three message kinds. The cardinality topologies expose source-generation and IL2CPP scaling failures. The missing-root run
+  checks the expected failure for a private manual message. Evidence binds the topology ID and exact message count to the ordered type inventory, generated project inputs, runtime
+  results, and unchanged-binary manifest. The runner clears and hashes every generated project input before reuse. It also archives a privacy-safe hash and semantic summary of the
+  resolved package lock, the exact consumer/runtime/attributes build inventory, loaded assembly inventory, and profile evidence. Each cell also records build-time, size, and
+  cold-start evidence. The builder writes `shipping-build-report.json` from the same `BuildReport` that proves the final options: a Stopwatch duration around
+  `BuildPipeline.BuildPlayer`, Unity's reported total time and size, and every build step with its duration. Both player runs write a `timings` block. The positive run measures bus
+  construction, the root-probe phase, registration, the first typed dispatch, the typed and untyped phases, a 1,000,000-emit dispatch loop after a discarded warm-up, a forced trim,
+  and teardown. Every phase uses `Stopwatch`, except engine start to first script, which reads `Time.realtimeSinceStartupAsDouble`. The missing-root run measures none of them and
+  marks each phase `-1`, because reporting `0` would claim a measurement for work that never ran. The runner joins those with the Library cache state, the editor wall clock, the
+  player byte count, and the `GameAssembly.dll` size in `shipping-cell-evidence.json`, and the matrix wrapper collects every completed cell into one `shipping-matrix-evidence.json`
+  per endpoint editor. Those two joined files carry `measurementClass: "characterization"`; the build report and the two player results do not, because their exact property lists
+  are validated fail-closed and an extra field would be rejected. These values show size and build-time cliffs across 1, 16, 256, and 1,000 message types for the
+  [#506](https://github.com/Ambiguous-Interactive/DxMessaging/issues/506) protocol, and they are never published as throughput rows. The dispatch-loop rate is a fixed-count average
+  that includes the harness counting each delivery, so compare it only across cells that loop the same message shape. The semantic cell loops a class message and the cardinality
+  cells loop a struct, so the table prints the shape beside the rate. Every IL2CPP build in this leg is a clean build: the builder always sets `BuildOptions.CleanBuildCache`, and
+  each profile pins `cleanBuildCache` so a build that drops it fails validation. This means a clean player build cache; it does not mean a fresh imported Library or freshly
+  installed toolchain. `libraryState` in each shipping cell describes the Library at runner startup; `buildProvenance` records directories later, immediately before the player
+  build. Keep those observations separate when comparing build times. An incremental experiment needs a preregistered profile variant and separate analysis; do not pool its outputs
+  with independent clean builds or infer its factor from a warm Library. This correctness slice does not contribute benchmark rows or change the published performance profile.
 
-  A manual run can also enable `shipping_native_payload` with `shipping_fidelity`.
-  For each endpoint editor, this retains the launcher, `GameAssembly.dll`, and
-  `global-metadata.dat` from the High semantic cell in a separate artifact. The
-  runner checks each source and copied file against the directory manifest that
-  matched before and after both player launches. Pull requests, pushes, scheduled
-  runs, and default manual runs do not copy or upload these files, so this option
-  does not add work to recurring CI.
+  A manual run can also enable `shipping_native_payload` with `shipping_fidelity`. For each endpoint editor, this retains the launcher, `GameAssembly.dll`, and
+  `global-metadata.dat` from the High semantic cell in a separate artifact. The runner checks each source and copied file against the directory manifest that matched before and
+  after both player launches. Pull requests, pushes, scheduled runs, and default manual runs do not copy or upload these files, so this option does not add work to recurring CI.
 
-  GitHub retains this binary artifact for 14 days. Do not treat it as campaign
-  evidence until a maintainer downloads it, checks it for private material,
-  publishes it at an immutable location, restores that publication independently,
-  and verifies the hashes from `source-player-manifest.json`. The regular shipping
-  artifact remains the privacy-scanned text evidence bundle.
+  GitHub retains this binary artifact for 14 days. Do not treat it as campaign evidence until a maintainer downloads it, checks it for private material, publishes it at an
+  immutable location, restores that publication independently, and verifies the hashes from `source-player-manifest.json`. The regular shipping artifact remains the privacy-scanned
+  text evidence bundle.
 
-- **EditMode leg (not published)** also runs in-editor under Mono with
-  `-releaseCodeOptimization`. It remains a fast scope for local iteration, and
-  manually dispatched `unity-benchmarks.yml` runs the editmode + playmode
-  benchmark tests per Unity version as coverage; EditMode numbers are not
-  published.
+- **EditMode leg (not published)** also runs in-editor under Mono with `-releaseCodeOptimization`. It remains a fast scope for local iteration, and manually dispatched
+  `unity-benchmarks.yml` runs the editmode + playmode benchmark tests per Unity version as coverage; EditMode numbers are not published.
 
-The harness can exercise every scope through the shared protocol.
-`perf-numbers.yml` runs and publishes only the **Standalone IL2CPP leg** (see
-[Editor-vs-player rationale](#editor-vs-player-rationale)). Local MCP runs and
-manually dispatched `unity-benchmarks.yml` runs retain the editor scopes for fast
-iteration and allocation investigation.
+The harness can exercise every scope through the shared protocol. `perf-numbers.yml` runs and publishes only the **Standalone IL2CPP leg** (see
+[Editor-vs-player rationale](#editor-vs-player-rationale)). Local MCP runs and manually dispatched `unity-benchmarks.yml` runs retain the editor scopes for fast iteration and
+allocation investigation.
 
-The manual benchmark workflow keeps one complete EditMode selection per supported version.
-PlayMode uses three disjoint selections: non-`PerfBench` coverage, the `PerfBench`
-`HandlerCardinalityBenchmarks` fixture, and the remaining `PerfBench` cases. Each selection
-keeps its own results and the existing 600-second editor watchdog. This preserves all cases
-and measurement windows while keeping each process within its budget.
+The manual benchmark workflow keeps one complete EditMode selection per supported version. PlayMode uses three disjoint selections: non-`PerfBench` coverage, the `PerfBench`
+`HandlerCardinalityBenchmarks` fixture, and the remaining `PerfBench` cases. Each selection keeps its own results and the existing 600-second editor watchdog. This preserves all
+cases and measurement windows while keeping each process within its budget.
 
-For Editor runs, `run-ci-tests.ps1 -TestFilter` (or `DXM_UNITY_TEST_FILTER`) forwards Unity's
-full-name or regular-expression filter as one argument. Category and name filters intersect;
-a leading `!` excludes matching names. Standalone and shipping runs reject this Editor filter.
+For Editor runs, `run-ci-tests.ps1 -TestFilter` (or `DXM_UNITY_TEST_FILTER`) forwards Unity's full-name or regular-expression filter as one argument. Category and name filters
+intersect; a leading `!` excludes matching names. Standalone and shipping runs reject this Editor filter.
 
 ## Scenario taxonomy
 
-There are two scenario families. The DxMessaging-only family measures raw
-dispatch throughput across DxMessaging's own paths; the comparison family is the
-apples-to-apples set every library bridge implements (or declares unsupported).
+There are two scenario families. The DxMessaging-only family measures raw dispatch throughput across DxMessaging's own paths; the comparison family is the apples-to-apples set
+every library bridge implements (or declares unsupported).
 
 ### Dispatch scenarios (DxMessaging only)
 
-The scenario registry contains thirty-five DxMessaging rows: fifteen continuous-window
-dispatch-throughput rows and twenty wall-clock rows. Twenty-seven rows are defined in
-[`DispatchThroughputBenchmarks.cs`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Tests/Runtime/Benchmarks/DispatchThroughputBenchmarks.cs).
-The eight diagnostic registration/deregistration attribution rows are defined in
-[`RegistrationLifecycleBenchmarks.cs`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Tests/Runtime/Benchmarks/RegistrationLifecycleBenchmarks.cs).
-The twenty cold, warm-JIT, construction, marginal-registration, deregistration, and
-attribution rows report zero throughput and wall-clock latency; see
-[Cold vs warm/hot modes](#cold-vs-warmhot-modes). The three marginal-registration
-rows report the GC-allocation cost of an additional same-type registration -- the
-surface where the registration allocation work was reduced -- and are measurable only where the
-profiler is present (an in-editor PlayMode/Mono run; the published Standalone IL2CPP
-leg strips it, so its allocation columns are omitted):
+The scenario registry contains thirty-five DxMessaging rows: fifteen continuous-window dispatch-throughput rows and twenty wall-clock rows. Twenty-seven rows are defined in
+[`DispatchThroughputBenchmarks.cs`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Tests/Runtime/Benchmarks/DispatchThroughputBenchmarks.cs). The eight diagnostic
+registration/deregistration attribution rows are defined in
+[`RegistrationLifecycleBenchmarks.cs`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Tests/Runtime/Benchmarks/RegistrationLifecycleBenchmarks.cs). The twenty
+cold, warm-JIT, construction, marginal-registration, deregistration, and attribution rows report zero throughput and wall-clock latency; see
+[Cold vs warm/hot modes](#cold-vs-warmhot-modes). The three marginal-registration rows report the GC-allocation cost of an additional same-type registration -- the surface where
+the registration allocation work was reduced -- and are measurable only where the profiler is present (an in-editor PlayMode/Mono run; the published Standalone IL2CPP leg strips
+it, so its allocation columns are omitted):
 
-Each marginal latency row settles the heap once, then reports the minimum of seven
-independently prepared 1000-registration trials. A long retained-population window is
-unsuitable because registration allocation forces collections into that clock.
-On profiler-bearing Mono, allocation is measured over eight separate fresh populations
-after timing, keeping the minimum count and its same-attempt bytes, so the profiler hook
-is not part of latency and ambient editor spikes do not become the allocation headline.
-The stripped IL2CPP leg skips those allocation-only populations and reports `n/a`; its
-seven timing populations still execute. Repeated floor trials replace the former
-sub-millisecond single shot without changing the reported per-bus cardinality.
+Each marginal latency row settles the heap once, then reports the minimum of seven independently prepared 1000-registration trials. A long retained-population window is unsuitable
+because registration allocation forces collections into that clock. On profiler-bearing Mono, allocation is measured over eight separate fresh populations after timing, keeping the
+minimum count and its same-attempt bytes, so the profiler hook is not part of latency and ambient editor spikes do not become the allocation headline. The stripped IL2CPP leg skips
+those allocation-only populations and reports `n/a`; its seven timing populations still execute. Repeated floor trials replace the former sub-millisecond single shot without
+changing the reported per-bus cardinality.
 
 | Scenario key                                                      | What it measures                                                       |
 | ----------------------------------------------------------------- | ---------------------------------------------------------------------- |
@@ -608,9 +350,8 @@ sub-millisecond single shot without changing the reported per-bus cardinality.
 ### Comparison scenarios (cross-library)
 
 The nine apples-to-apples comparison scenarios are defined in
-[`ComparisonScenario.cs`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Tests/Runtime/Comparisons/ComparisonScenario.cs).
-Each library implements only the scenarios it idiomatically supports; an
-unsupported scenario renders `N/A` in the matrix and is **never faked**:
+[`ComparisonScenario.cs`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Tests/Runtime/Comparisons/ComparisonScenario.cs). Each library implements only the
+scenarios it idiomatically supports; an unsupported scenario renders `N/A` in the matrix and is **never faked**:
 
 | #   | Scenario key          | What it measures                         |
 | --- | --------------------- | ---------------------------------------- |
@@ -626,22 +367,15 @@ unsupported scenario renders `N/A` in the matrix and is **never faked**:
 
 ### Comparison vs dispatch: exact internal topology twins
 
-Each public comparison scenario has an independent internal topology twin. The
-one-subscriber and 16-subscriber untargeted twins use existing dispatch rows. The
-other seven use `ComparisonTopologyBenchmarks`, in the comparison assembly so the
-struct row can register the exact same closed `ComparisonStructPayload` type.
-Matching topology does not prove equal throughput across separate players or builds.
-The callback bodies and harness code still require attribution before a timing difference
-can be assigned to the bus.
+Each public comparison scenario has an independent internal topology twin. The one-subscriber and 16-subscriber untargeted twins use existing dispatch rows. The other seven use
+`ComparisonTopologyBenchmarks`, in the comparison assembly so the struct row can register the exact same closed `ComparisonStructPayload` type. Matching topology does not prove
+equal throughput across separate players or builds. The callback bodies and harness code still require attribution before a timing difference can be assigned to the bus.
 
 The map below is pinned by
-[`ComparisonDispatchTopologyTests`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Tests/Runtime/Comparisons/ComparisonDispatchTopologyTests.cs).
-It executes both workloads, compares all six bus counters and token registration
-metadata, and checks payloads, priorities, routes, diagnostics, exact fan-out, and
-cleanup against an independent manifest. Cases cover zero, one, and 17 operations
-with global diagnostics enabled and disabled. Deliberate mutations to live tokens,
-handlers, priorities, payloads, and routes must fail validation. Missing callbacks
-and retained registrations must fail accounting and teardown assertions.
+[`ComparisonDispatchTopologyTests`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Tests/Runtime/Comparisons/ComparisonDispatchTopologyTests.cs). It executes both
+workloads, compares all six bus counters and token registration metadata, and checks payloads, priorities, routes, diagnostics, exact fan-out, and cleanup against an independent
+manifest. Cases cover zero, one, and 17 operations with global diagnostics enabled and disabled. Deliberate mutations to live tokens, handlers, priorities, payloads, and routes
+must fail validation. Missing callbacks and retained registrations must fail accounting and teardown assertions.
 
 | Comparison cell       | DxMessaging shape                                       | Exact internal row                            |
 | --------------------- | ------------------------------------------------------- | --------------------------------------------- |
@@ -655,176 +389,110 @@ and retained registrations must fail accounting and teardown assertions.
 | `SubUnsub`            | 1 token, cached callback, register/remove per operation | `InternalComparisonTwin_SubUnsub`             |
 | `StructNoBox`         | 1 token, 1 handler of `ComparisonStructPayload`         | `InternalComparisonTwin_StructNoBox`          |
 
-Both workloads explicitly disable bus and token diagnostics. The contract tests run
-with global diagnostics enabled too, so editor preferences cannot change measured
-work. No unused primary token remains in the fan-out twins. `SubUnsub` retains its
-empty token and verifies the registration topology returns to empty after operations.
-An untimed registration log also requires one actual register/remove pair per operation,
-with the exact payload and reused handler owner, so an empty before/after state cannot
-hide a missing churn cycle. Its progress counts completed register/remove cycles;
-dispatch rows count handlers.
-The hook rows preserve the public comparison's allowing interceptor and empty
+Both workloads explicitly disable bus and token diagnostics. The contract tests run with global diagnostics enabled too, so editor preferences cannot change measured work. No
+unused primary token remains in the fan-out twins. `SubUnsub` retains its empty token and verifies the registration topology returns to empty after operations. An untimed
+registration log also requires one actual register/remove pair per operation, with the exact payload and reused handler owner, so an empty before/after state cannot hide a missing
+churn cycle. Its progress counts completed register/remove cycles; dispatch rows count handlers. The hook rows preserve the public comparison's allowing interceptor and empty
 post-processor bodies; only terminal handlers advance the callback marker.
 
-The fast checks use `ComparisonContract`. The seven additional timing rows require
-an explicit `PerfTopologyTwin` category selection in the comparison assembly. They
-do not carry `PerfComparison`, `PerfBench`, or `ComparisonContract`, so the normal
-comparison workflow's category filters do not add seven five-second windows. A
-contract test pins this separation. Each timing row uses `BenchmarkProtocol.Measure`,
-the public row's warm-up policy, and the separate allocation probe. It reconciles
-warm-up plus all timed and probe operations, then verifies cleanup. Results retain
-the `InternalComparisonTwin_` prefix; they cannot replace a public `Comparison_` row.
-These are exact public-topology workloads, not normalized lower bounds.
+The fast checks use `ComparisonContract`. The seven additional timing rows require an explicit `PerfTopologyTwin` category selection in the comparison assembly. They do not carry
+`PerfComparison`, `PerfBench`, or `ComparisonContract`, so the normal comparison workflow's category filters do not add seven five-second windows. A contract test pins this
+separation. Each timing row uses `BenchmarkProtocol.Measure`, the public row's warm-up policy, and the separate allocation probe. It reconciles warm-up plus all timed and probe
+operations, then verifies cleanup. Results retain the `InternalComparisonTwin_` prefix; they cannot replace a public `Comparison_` row. These are exact public-topology workloads,
+not normalized lower bounds.
 
-The [versioned semantic ledger](https://github.com/Ambiguous-Interactive/DxMessaging/blob/main/scripts/unity/comparison-semantic-ledger-v1.json)
-classifies twelve dimensions for each of the nine public rows. It preserves the public
-result identifiers, exact internal twin names, topology, and unsupported MessagePipe
-priority row. The [contract catalog](https://github.com/Ambiguous-Interactive/DxMessaging/blob/main/scripts/unity/comparison-evidence-catalog-v1.json)
-records source hashes and logical test references. These references do not assert retained
-test execution. Every row remains ineligible for a parity claim, and normalized result
-mappings stay empty. Unmatched dimensions prevent cost attribution.
+The [versioned semantic ledger](https://github.com/Ambiguous-Interactive/DxMessaging/blob/main/scripts/unity/comparison-semantic-ledger-v1.json) classifies twelve dimensions for
+each of the nine public rows. It preserves the public result identifiers, exact internal twin names, topology, and unsupported MessagePipe priority row. The
+[contract catalog](https://github.com/Ambiguous-Interactive/DxMessaging/blob/main/scripts/unity/comparison-evidence-catalog-v1.json) records source hashes and logical test
+references. These references do not assert retained test execution. Every row remains ineligible for a parity claim, and normalized result mappings stay empty. Unmatched dimensions
+prevent cost attribution.
 
 The existing performance registry validates both files against the
-[shared JSON schema](https://github.com/Ambiguous-Interactive/DxMessaging/blob/main/scripts/unity/comparison-contract-v1.schema.json) before extraction,
-rendering, or paired reduction. Missing dimensions, source references, and numerical topology
-drift fail validation. Standalone comparison builds also record Unity's resolved MessagePipe
-package, check its version and twelve declared source files, and check the twenty-one declared
-repository files before the player build. Repository hashes normalize CRLF to LF; the evidence
-also retains exact compiler-input hashes. Package hashes use exact installed bytes. The runner
-checks sources again after the build and binds `comparison-source-evidence.json` to the player
-directory manifest and each validated result file before artifact redaction. Hashes labeled
-`unredacted` describe the original bytes; they do not authenticate a later sanitized upload.
-Post-redaction content binding remains part of the evidence-retention work. This checks the
-declared files, not the complete compiled package or its stripped generic closures. It adds
-no timing windows or Unity launches. Repeated launches reuse the same prelaunch player
-manifest; ordinary comparison builds add one directory hash pass.
+[shared JSON schema](https://github.com/Ambiguous-Interactive/DxMessaging/blob/main/scripts/unity/comparison-contract-v1.schema.json) before extraction, rendering, or paired
+reduction. Missing dimensions, source references, and numerical topology drift fail validation. Standalone comparison builds also record Unity's resolved MessagePipe package, check
+its version and twelve declared source files, and check the twenty-one declared repository files before the player build. Repository hashes normalize CRLF to LF; the evidence also
+retains exact compiler-input hashes. Package hashes use exact installed bytes. The runner checks sources again after the build and binds `comparison-source-evidence.json` to the
+player directory manifest and each validated result file before artifact redaction. Hashes labeled `unredacted` describe the original bytes; they do not authenticate a later
+sanitized upload. Post-redaction content binding remains part of the evidence-retention work. This checks the declared files, not the complete compiled package or its stripped
+generic closures. It adds no timing windows or Unity launches. Repeated launches reuse the same prelaunch player manifest; ordinary comparison builds add one directory hash pass.
 
-Retained native semantic results, targeted/broadcast/without-context and global-accept-all
-sibling experiments, and source-bound allocation/lifecycle evidence remain tracked by
-[comparison audit #507](https://github.com/Ambiguous-Interactive/DxMessaging/issues/507).
-No MessagePipe parity verdict follows from topology or schema coverage alone.
+Retained native semantic results, targeted/broadcast/without-context and global-accept-all sibling experiments, and source-bound allocation/lifecycle evidence remain tracked by
+[comparison audit #507](https://github.com/Ambiguous-Interactive/DxMessaging/issues/507). No MessagePipe parity verdict follows from topology or schema coverage alone.
 
-**Fresh-state guarantee.** CI builds the comparison matrix into a dedicated player;
-the internal benchmark player, including the 131072-cycle and teardown rows,
-cannot leave heap state behind for it. Every matrix row then constructs and disposes
-a fresh bridge. The harness does not force collections between rows; the dedicated player
-provides the required clean process boundary without adding GC work to each case. The DxMessaging path uses a fresh
-`new MessageBus()` per scenario,
-MessagePipe resolves from a row-local provider instead of its static global provider,
-and Unity object bridges destroy their row-local objects synchronously. The harness
-also requires each bridge's declared fan-out to equal the scenario's canonical fan-out
-before its `ProgressMarker` assertion reconciles the full measurement. This catches
-current-row deduplication and fan-out mismatches. Teardown contracts separately verify
-synchronous cleanup where the pinned API exposes observable Unity objects or assets.
+**Fresh-state guarantee.** CI builds the comparison matrix into a dedicated player; the internal benchmark player, including the 131072-cycle and teardown rows, cannot leave heap
+state behind for it. Every matrix row then constructs and disposes a fresh bridge. The harness does not force collections between rows; the dedicated player provides the required
+clean process boundary without adding GC work to each case. The DxMessaging path uses a fresh `new MessageBus()` per scenario, MessagePipe resolves from a row-local provider
+instead of its static global provider, and Unity object bridges destroy their row-local objects synchronously. The harness also requires each bridge's declared fan-out to equal the
+scenario's canonical fan-out before its `ProgressMarker` assertion reconciles the full measurement. This catches current-row deduplication and fan-out mismatches. Teardown
+contracts separately verify synchronous cleanup where the pinned API exposes observable Unity objects or assets.
 
 ### Pilot host-health diagnostics
 
-When a pilot requests player-time host telemetry, its validator continues reading
-timestamps after a cadence failure. The final sample determines player-end coverage;
-an earlier sample cannot establish an end gap. Malformed tail timestamps and samples
-after the recorded stop still reject the run. Correcting a secondary diagnosis does
-not clear an earlier health failure or authorize a pilot retry.
+When a pilot requests player-time host telemetry, its validator continues reading timestamps after a cadence failure. The final sample determines player-end coverage; an earlier
+sample cannot establish an end gap. Malformed tail timestamps and samples after the recorded stop still reject the run. Correcting a secondary diagnosis does not clear an earlier
+health failure or authorize a pilot retry.
 
-Keep the original health verdict and inputs with their source commitments. Artifact
-redaction can change telemetry bytes while its envelope retains the unredacted
-checksum. An offline replay of those bytes must retain that checksum rejection and
-write separate outputs; it cannot establish a valid measurement session.
+Keep the original health verdict and inputs with their source commitments. Artifact redaction can change telemetry bytes while its envelope retains the unredacted checksum. An
+offline replay of those bytes must retain that checksum rejection and write separate outputs; it cannot establish a valid measurement session.
 
 ### In-process paired stability evidence
 
-The published comparison job builds and launches one Standalone IL2CPP Release
-player. A dedicated fixture prepares DxMessaging and MessagePipe together for
-each scenario that both libraries support. MessagePipe is the unchanged control
-for host-wide movement when a DxMessaging candidate is compared with its control.
+The published comparison job builds and launches one Standalone IL2CPP Release player. A dedicated fixture prepares DxMessaging and MessagePipe together for each scenario that both
+libraries support. MessagePipe is the unchanged control for host-wide movement when a DxMessaging candidate is compared with its control.
 
-Before both published players run, the workflow queries
-[Windows CPU-set metadata](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-system_cpu_set_information)
-and selects every logical processor in the highest numerical `EfficiencyClass`.
-Windows defines higher values as faster and less power-efficient. The pinned
-32-thread i9-13900KF profile must resolve to 16 logical processors on eight cores
-in one processor group. This excludes the unlike core class while leaving enough
-processors for Unity's background threads. The process stays at Normal priority,
-so affinity is the only new scheduling variable in this experiment.
+Before both published players run, the workflow queries [Windows CPU-set metadata](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-system_cpu_set_information)
+and selects every logical processor in the highest numerical `EfficiencyClass`. Windows defines higher values as faster and less power-efficient. The pinned 32-thread i9-13900KF
+profile must resolve to 16 logical processors on eight cores in one processor group. This excludes the unlike core class while leaving enough processors for Unity's background
+threads. The process stays at Normal priority, so affinity is the only new scheduling variable in this experiment.
 
-The workflow fails before taking the Unity lock if the model, logical count, or
-resolved topology changes. It retains the complete selection in
-`performance-cpu-profile.json`. The launcher refreshes and verifies the actual
-process affinity and priority after start, then writes them to
-`standalone-process.json`. The comparison gate requires both artifacts and copies
-the execution profile into the paired JSON and Markdown summaries. A setting
-failure stops the run. The generated performance page also identifies this
-execution profile because the affinity change affects internal and comparison
-absolute rates.
+The workflow fails before taking the Unity lock if the model, logical count, or resolved topology changes. It retains the complete selection in `performance-cpu-profile.json`. The
+launcher refreshes and verifies the actual process affinity and priority after start, then writes them to `standalone-process.json`. The comparison gate requires both artifacts and
+copies the execution profile into the paired JSON and Markdown summaries. A setting failure stops the run. The generated performance page also identifies this execution profile
+because the affinity change affects internal and comparison absolute rates.
 
-The committed `perf-baseline-profile.json` sidecar identifies the execution
-profile that produced `perf-baseline.csv`. Pull-request reporting requires its
-profile ID, affinity mask, and priority to match the current artifact exactly.
-If the post-merge refresh is skipped or waits in a fallback pull request, later
-runs omit the historical delta instead of comparing different scheduling regimes.
+The committed `perf-baseline-profile.json` sidecar identifies the execution profile that produced `perf-baseline.csv`. Pull-request reporting requires its profile ID, affinity
+mask, and priority to match the current artifact exactly. If the post-merge refresh is skipped or waits in a fallback pull request, later runs omit the historical delta instead of
+comparing different scheduling regimes.
 
-After preparing both bridges, the harness settles the heap once outside all timed
-work, then warms both bridges. `BenchmarkProtocol.MeasurePaired` runs four cycles.
-Each cycle repeats batch-level `ABBA/BAAB` super-cycles until both libraries have
-at least 625 ms of measured active time. A batch contains 10000 operations. Both
-libraries appear four times in each eight-batch super-cycle, and the unchanged
-control stays milliseconds from the workload it normalizes. Each library receives
-at least 2.5 seconds of measured active time per scenario without another player
-launch; a slower library naturally receives more time while the faster side reaches
-the same minimum.
+After preparing both bridges, the harness settles the heap once outside all timed work, then warms both bridges. `BenchmarkProtocol.MeasurePaired` runs four cycles. Each cycle
+repeats batch-level `ABBA/BAAB` super-cycles until both libraries have at least 625 ms of measured active time. A batch contains 10000 operations. Both libraries appear four times
+in each eight-batch super-cycle, and the unchanged control stays milliseconds from the workload it normalizes. Each library receives at least 2.5 seconds of measured active time
+per scenario without another player launch; a slower library naturally receives more time while the faster side reaches the same minimum.
 
-The exact sequence is `ABBABAAB`: across its `ABBA` and `BAAB` halves, each
-library occupies ordinal positions 1 through 4 once. The estimator removes only
-movement that is common and approximately multiplicative for both bridges.
-Workload-specific GC/cache effects or different frequency sensitivity are not
-common-mode; they must remain visible in the raw-cycle or outer-run spread.
+The exact sequence is `ABBABAAB`: across its `ABBA` and `BAAB` halves, each library occupies ordinal positions 1 through 4 once. The estimator removes only movement that is common
+and approximately multiplicative for both bridges. Workload-specific GC/cache effects or different frequency sensitivity are not common-mode; they must remain visible in the
+raw-cycle or outer-run spread.
 
-Each cycle ratio divides the two aggregate rates from that cycle. The headline is
-the geometric combination of all four retained cycle ratios. The evidence also
-keeps the simpler ratio of total rates as a diagnostic and reports:
+Each cycle ratio divides the two aggregate rates from that cycle. The headline is the geometric combination of all four retained cycle ratios. The evidence also keeps the simpler
+ratio of total rates as a diagnostic and reports:
 
 ```text
 spread_percent = (maximum_cycle_ratio / minimum_cycle_ratio - 1) * 100
 ```
 
-No cycle is discarded and no median is taken. A spread above the predeclared 3%
-materiality band emits a warning and remains in the NUnit output. It does not
-fail correctness or turn an unstable measurement into a regression. Each side
-still has an exact fan-out assertion over warm-up plus every measured operation.
-The paired fixture emits only `DXM_PAIRED_COMPARISON` evidence markers, not
-structured or CSV performance rows, so it cannot replace or duplicate canonical
-`Comparison_` rows in the published matrix.
-`SubUnsub` stays on the canonical continuous window: its allocation and collection
-work can spill into the other workload's next batch, which breaks paired isolation.
-The paired fixture lives in the lexically last comparison assembly. The CI gate
-reads the chronological player log and requires its first paired marker to follow
-the last canonical marker, so sustained paired load cannot silently heat published rows.
+No cycle is discarded and no median is taken. A spread above the predeclared 3% materiality band emits a warning and remains in the NUnit output. It does not fail correctness or
+turn an unstable measurement into a regression. Each side still has an exact fan-out assertion over warm-up plus every measured operation. The paired fixture emits only
+`DXM_PAIRED_COMPARISON` evidence markers, not structured or CSV performance rows, so it cannot replace or duplicate canonical `Comparison_` rows in the published matrix. `SubUnsub`
+stays on the canonical continuous window: its allocation and collection work can spill into the other workload's next batch, which breaks paired isolation. The paired fixture lives
+in the lexically last comparison assembly. The CI gate reads the chronological player log and requires its first paired marker to follow the last canonical marker, so sustained
+paired load cannot silently heat published rows.
 
-Cases run scenario-major within each roster assembly. This keeps same-scenario cells
-closer together inside the zero-dependency, external-package, and Unity Atoms rosters,
-but assembly boundaries still separate the complete matrix. Use the paired
-DxMessaging/MessagePipe ratios for candidate/control/candidate attribution when
-absolute rates move together.
+Cases run scenario-major within each roster assembly. This keeps same-scenario cells closer together inside the zero-dependency, external-package, and Unity Atoms rosters, but
+assembly boundaries still separate the complete matrix. Use the paired DxMessaging/MessagePipe ratios for candidate/control/candidate attribution when absolute rates move together.
 
-Before the first run, commit `scripts/unity/paired-bracket-manifest.json`. Keep it
-byte-for-byte unchanged through all three runs. The workflow embeds the file's
-SHA-256 digest in each paired summary. The manifest assigns every paired row one
-of three roles:
+Before the first run, commit `scripts/unity/paired-bracket-manifest.json`. Keep it byte-for-byte unchanged through all three runs. The workflow embeds the file's SHA-256 digest in
+each paired summary. The manifest assigns every paired row one of three roles:
 
 - `target`: a primary row whose sentinel-normalized effect must strictly exceed 3%.
-- `affected`: a row the changed call path can reach whose sentinel-normalized regression must not
-  exceed 3%.
+- `affected`: a row the changed call path can reach whose sentinel-normalized regression must not exceed 3%.
 - `sentinel`: a row the changed call path cannot reach whose absolute effect must stay within 3%.
 
-Declare at least one target and two sentinels. Prove every role from the
-production call path during review. Do not classify a row after any bracket run
-has started. Declare the exact `Runtime/` files or directories that contain the candidate mechanism
-in `candidatePaths`. Every path must exist in all three arms. Do not use a broad path to make an
-unrelated runtime edit satisfy the candidate-source check. Manifest preflight checks exact tracked
-path case at the current `HEAD`; later artifact reduction uses retained digests and stays replayable
-if a subsequent change renames or removes the source path.
+Declare at least one target and two sentinels. Prove every role from the production call path during review. Do not classify a row after any bracket run has started. Declare the
+exact `Runtime/` files or directories that contain the candidate mechanism in `candidatePaths`. Every path must exist in all three arms. Do not use a broad path to make an
+unrelated runtime edit satisfy the candidate-source check. Manifest preflight checks exact tracked path case at the current `HEAD`; later artifact reduction uses retained digests
+and stays replayable if a subsequent change renames or removes the source path.
 
-The file uses this exact schema and every paired row in canonical summary order. Change only the
-bracket ID, orientation, candidate paths, and call-path-proven roles:
+The file uses this exact schema and every paired row in canonical summary order. Change only the bracket ID, orientation, candidate paths, and call-path-proven roles:
 
 ```json
 {
@@ -845,8 +513,7 @@ bracket ID, orientation, candidate paths, and call-path-proven roles:
 }
 ```
 
-Let `q1`, `q2`, and `q3` be the first, center, and last paired
-DxMessaging/MessagePipe headline ratios. The positional reductions are:
+Let `q1`, `q2`, and `q3` be the first, center, and last paired DxMessaging/MessagePipe headline ratios. The positional reductions are:
 
 ```text
 candidate/control/candidate: candidate_effect = sqrt(q1 * q3) / q2 - 1
@@ -854,10 +521,8 @@ control/candidate/control: candidate_effect = q2 / sqrt(q1 * q3) - 1
 outer_spread_percent = (maximum(q1, q3) / minimum(q1, q3) - 1) * 100
 ```
 
-The reducer performs these calculations in log space and rejects non-finite results. Compute
-`candidate_effect` for every row. Let `sentinel_reference` be the geometric mean of all sentinel
-effect factors (`1 + candidate_effect`). Compute each target and affected row's normalized effect
-as:
+The reducer performs these calculations in log space and rejects non-finite results. Compute `candidate_effect` for every row. Let `sentinel_reference` be the geometric mean of all
+sentinel effect factors (`1 + candidate_effect`). Compute each target and affected row's normalized effect as:
 
 ```text
 sentinel_normalized_effect = (1 + candidate_effect) / sentinel_reference - 1
@@ -874,151 +539,92 @@ node scripts/unity/reduce-paired-bracket.js \
   --output <bracket-verdict.json>
 ```
 
-The producer requires checked-out `HEAD` to equal the published commit and rejects tracked runtime
-or benchmark-source dirt. It derives the whole-tree ID and a SHA-256 digest of the predeclared
-candidate paths from that commit. The reducer requires three distinct commit stamps, equal outer
-whole-tree and candidate-source IDs, different center whole-tree and candidate-source IDs, and the
-exact manifest digest, execution profile, protocol, materiality band, and complete ordered row set
-in all three summaries. It recomputes each headline and raw spread from the four retained cycle
-ratios. It
-returns `accepted` only when all of these conditions hold:
+The producer requires checked-out `HEAD` to equal the published commit and rejects tracked runtime or benchmark-source dirt. It derives the whole-tree ID and a SHA-256 digest of
+the predeclared candidate paths from that commit. The reducer requires three distinct commit stamps, equal outer whole-tree and candidate-source IDs, different center whole-tree
+and candidate-source IDs, and the exact manifest digest, execution profile, protocol, materiality band, and complete ordered row set in all three summaries. It recomputes each
+headline and raw spread from the four retained cycle ratios. It returns `accepted` only when all of these conditions hold:
 
 - Every run's raw-cycle spread and every row's outer spread are at most 3%.
 - Every causally untouched sentinel has an absolute candidate effect at most 3%.
 - Every sentinel-normalized target effect is strictly greater than 3% in the intended direction.
 - Every sentinel-normalized affected row regresses by no more than 3%.
 
-It returns `uninterpretable` for a raw, outer, or sentinel stability failure and
-`rejected` for a stable target or affected-row failure. Both non-accepted states
-exit nonzero. Retain the manifest, all summaries, every commit and source-tree ID, every raw cycle
-ratio, and the verdict. Do not discard or replace a run. Allocation gates remain separate. A
-low raw-cycle spread proves stability inside one player process; it does not
-prove that the center run is representative across builds.
+It returns `uninterpretable` for a raw, outer, or sentinel stability failure and `rejected` for a stable target or affected-row failure. Both non-accepted states exit nonzero.
+Retain the manifest, all summaries, every commit and source-tree ID, every raw cycle ratio, and the verdict. Do not discard or replace a run. Allocation gates remain separate. A
+low raw-cycle spread proves stability inside one player process; it does not prove that the center run is representative across builds.
 
-Rows without a valid paired control stay canonical-only. `SubUnsub` remains on
-its allocation-heavy continuous window. Its separate deregistration palindrome
-is diagnostic-only and is not candidate acceptance evidence. `PriorityOrdered`
-also remains canonical-only until a causally independent paired workload exists.
-Neither row is a causal sentinel or candidate evidence.
+Rows without a valid paired control stay canonical-only. `SubUnsub` remains on its allocation-heavy continuous window. Its separate deregistration palindrome is diagnostic-only and
+is not candidate acceptance evidence. `PriorityOrdered` also remains canonical-only until a causally independent paired workload exists. Neither row is a causal sentinel or
+candidate evidence.
 
-Capability cells follow the pinned libraries' public APIs. MessagePipe uses predicate
-subscription and pre/post filters, UniRx uses `Where`, Zenject uses signal identifiers,
-and Unity Atoms uses a custom `AtomEvent<ComparisonStructPayload>` with replay disabled.
-Unity `SendMessage` is an addressed GameObject API, so its keyless S1 and S2 cells are
-`N/A`; its keyed cell measures the addressed operation it actually provides.
+Capability cells follow the pinned libraries' public APIs. MessagePipe uses predicate subscription and pre/post filters, UniRx uses `Where`, Zenject uses signal identifiers, and
+Unity Atoms uses a custom `AtomEvent<ComparisonStructPayload>` with replay disabled. Unity `SendMessage` is an addressed GameObject API, so its keyless S1 and S2 cells are `N/A`;
+its keyed cell measures the addressed operation it actually provides.
 
 ## How CI produces and publishes the numbers
 
-The [Performance Numbers workflow](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/workflows/perf-numbers.yml)
-(`.github/workflows/perf-numbers.yml`) runs on eligible same-repository pull
-requests and on pushes to `master`. Fork and Dependabot pull requests skip the
-licensed jobs; generated performance-doc pull requests do not trigger this
-workflow because both generated paths are ignored. It runs two sequential published
-matrix entries: one **Standalone IL2CPP Release player** for internal benchmarks and
-one fresh **Standalone IL2CPP Release player** containing only real cross-library
-comparison rows. The comparison job first runs bridge contracts in a disposable Mono
-editor process; the IL2CPP player starts afterward with a separate managed heap. Both
-published players have `BuildOptions.Development` stripped and use the Release IL2CPP
-C++ configuration. Contract fixtures that open synthetic five-second windows are
-excluded from both published categories.
+The [Performance Numbers workflow](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/workflows/perf-numbers.yml) (`.github/workflows/perf-numbers.yml`) runs
+on eligible same-repository pull requests and on pushes to `master`. Fork and Dependabot pull requests skip the licensed jobs; generated performance-doc pull requests do not
+trigger this workflow because both generated paths are ignored. It runs two sequential published matrix entries: one **Standalone IL2CPP Release player** for internal benchmarks
+and one fresh **Standalone IL2CPP Release player** containing only real cross-library comparison rows. The comparison job first runs bridge contracts in a disposable Mono editor
+process; the IL2CPP player starts afterward with a separate managed heap. Both published players have `BuildOptions.Development` stripped and use the Release IL2CPP C++
+configuration. Contract fixtures that open synthetic five-second windows are excluded from both published categories.
 
-After both published entries finish, `scripts/unity/render-perf-doc.js` reads the benchmark
-rows and rewrites the AUTOGENERATED region of
-`docs/architecture/performance.md`. The renderer derives the execution scope
-from each row's platform string (`Standalone`, `PlayMode`, `EditMode`), emits
-one dispatch-throughput table per scope present (in headline order: Standalone,
-then PlayMode, then EditMode), and emits the cross-library comparison matrices.
-Each per-scope dispatch table omits any profiler metric column it could not measure
-(the Standalone Release table is throughput-only), so a column never degenerates to
-all-`n/a`. The throughput comparison matrix uses the first scope present in headline
-order (Standalone in published runs); a metric no present scope measured has its
-whole matrix omitted rather than rendered all-`n/a`. These selectors are
-intentionally independent because a backend can expose the byte counter while the
-allocation-count recorder is unavailable, or vice versa. Each table's backend
-label (Mono or IL2CPP) is derived from the platform string in that scope's rows,
-so the heading follows the data. Scenario rows and library rows are joined on
-stable machine keys (`DispatchBenchmarkScenarios.Key`, `ComparisonScenarios.Key`,
-and each bridge's `TechKey`), never on display names.
+After both published entries finish, `scripts/unity/render-perf-doc.js` reads the benchmark rows and rewrites the AUTOGENERATED region of `docs/architecture/performance.md`. The
+renderer derives the execution scope from each row's platform string (`Standalone`, `PlayMode`, `EditMode`), emits one dispatch-throughput table per scope present (in headline
+order: Standalone, then PlayMode, then EditMode), and emits the cross-library comparison matrices. Each per-scope dispatch table omits any profiler metric column it could not
+measure (the Standalone Release table is throughput-only), so a column never degenerates to all-`n/a`. The throughput comparison matrix uses the first scope present in headline
+order (Standalone in published runs); a metric no present scope measured has its whole matrix omitted rather than rendered all-`n/a`. These selectors are intentionally independent
+because a backend can expose the byte counter while the allocation-count recorder is unavailable, or vice versa. Each table's backend label (Mono or IL2CPP) is derived from the
+platform string in that scope's rows, so the heading follows the data. Scenario rows and library rows are joined on stable machine keys (`DispatchBenchmarkScenarios.Key`,
+`ComparisonScenarios.Key`, and each bridge's `TechKey`), never on display names.
 
-The generated doc carries a privacy-safe provenance line describing the runner
-HARDWARE -- CPU, physical/logical cores, clock, RAM size/speed/type, GPU, and OS
--- collected by
-[`scripts/unity/collect-machine-specs.ps1`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/scripts/unity/collect-machine-specs.ps1)
-and embedded by `render-perf-doc.js --machine-specs`. The script deliberately
-emits NO hostname or runner name; when the probe yields nothing the renderer
-falls back to a neutral description.
+The generated doc carries a privacy-safe provenance line describing the runner HARDWARE -- CPU, physical/logical cores, clock, RAM size/speed/type, GPU, and OS -- collected by
+[`scripts/unity/collect-machine-specs.ps1`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/scripts/unity/collect-machine-specs.ps1) and embedded by
+`render-perf-doc.js --machine-specs`. The script deliberately emits NO hostname or runner name; when the probe yields nothing the renderer falls back to a neutral description.
 
-For an eligible pull request, the reporting job checks out the trusted base
-commit's renderer and baseline, verifies artifacts stamped with the exact head
-SHA, and creates or updates one PR comment linked to that commit and workflow
-attempt. The comment includes current Standalone TargetMap rows and a historical
-Standalone delta only when the pull request did not change benchmark or harness
-files. Delta percentages use outcome direction: `+` is better and `-` is worse,
-for both higher-is-better throughput and lower-is-better wall clock. It re-checks the
-live PR head before reporting so a superseded run cannot overwrite newer
-evidence. A failed current-head run replaces the sticky comment's older success
-with the failed status and run link. After the pull request merges, the push run
-re-renders and, if the doc OR the baseline moved, commits both
-`docs/architecture/performance.md` and the regenerated
-`docs/architecture/perf-baseline.csv` directly to the default branch. The
-auto-commit mechanics (the GitHub App token, branch-protection bypass, and the
-`paths-ignore` loop break covering both files) are in the
-[perf-numbers auto-commit runbook](perf-numbers-auto-commit.md).
+For an eligible pull request, the reporting job checks out the trusted base commit's renderer and baseline, verifies artifacts stamped with the exact head SHA, and creates or
+updates one PR comment linked to that commit and workflow attempt. The comment includes current Standalone TargetMap rows and a historical Standalone delta only when the pull
+request did not change benchmark or harness files. Delta percentages use outcome direction: `+` is better and `-` is worse, for both higher-is-better throughput and lower-is-better
+wall clock. It re-checks the live PR head before reporting so a superseded run cannot overwrite newer evidence. A failed current-head run replaces the sticky comment's older
+success with the failed status and run link. After the pull request merges, the push run re-renders and, if the doc OR the baseline moved, commits both
+`docs/architecture/performance.md` and the regenerated `docs/architecture/perf-baseline.csv` directly to the default branch. The auto-commit mechanics (the GitHub App token,
+branch-protection bypass, and the `paths-ignore` loop break covering both files) are in the [perf-numbers auto-commit runbook](perf-numbers-auto-commit.md).
 
 ### Editor-vs-player rationale
 
-The throughput headline is **Standalone under IL2CPP in a true Release player**
-because it is the highest shipping fidelity: shipped titles run ahead-of-time
-(AOT) compiled Release players, not the editor. A development build or a Debug
-IL2CPP C++ configuration changes the measured numbers, so the published leg
-strips `BuildOptions.Development` and pins the Release C++ configuration;
-`Debug.isDebugBuild` must be false in every published run.
+The throughput headline is **Standalone under IL2CPP in a true Release player** because it is the highest shipping fidelity: shipped titles run ahead-of-time (AOT) compiled Release
+players, not the editor. A development build or a Debug IL2CPP C++ configuration changes the measured numbers, so the published leg strips `BuildOptions.Development` and pins the
+Release C++ configuration; `Debug.isDebugBuild` must be false in every published run.
 
-Allocations are **only measurable where the profiler is available**. A
-Release player strips the `GC.Alloc` recorder, so the Standalone leg cannot measure
-allocations or bytes at all, and the renderer omits those memory columns entirely
-(rather than filling them with `n/a`). `perf-numbers.yml` does not add a Mono leg
-solely to recover those metrics. Use local MCP runs or manually dispatched
-`unity-benchmarks.yml` editor scopes when allocation evidence is needed, and keep
-the exact-zero `AllocationMatrixTests` contract green for dispatch changes.
+Allocations are **only measurable where the profiler is available**. A Release player strips the `GC.Alloc` recorder, so the Standalone leg cannot measure allocations or bytes at
+all, and the renderer omits those memory columns entirely (rather than filling them with `n/a`). `perf-numbers.yml` does not add a Mono leg solely to recover those metrics. Use
+local MCP runs or manually dispatched `unity-benchmarks.yml` editor scopes when allocation evidence is needed, and keep the exact-zero `AllocationMatrixTests` contract green for
+dispatch changes.
 
-EditMode runs inside the editor's hosting environment, is the least
-representative of shipping behavior, and is not published; it -- and PlayMode --
-remain useful for local iteration and for manually dispatched per-version
-benchmark-test coverage in `unity-benchmarks.yml`.
+EditMode runs inside the editor's hosting environment, is the least representative of shipping behavior, and is not published; it -- and PlayMode -- remain useful for local
+iteration and for manually dispatched per-version benchmark-test coverage in `unity-benchmarks.yml`.
 
 ## Baseline capture
 
 ### The committed master baseline
 
-[`docs/architecture/perf-baseline.csv`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/docs/architecture/perf-baseline.csv)
-is committed and is the baseline the diagnostic PR regression smoke and delta table
-compare against. It ships as an honest header-only seed -- the column header with
-no data rows -- so the first rollout has no fabricated numbers. Each push to the
-default branch regenerates it with real Standalone IL2CPP rows from that run
-(`extract-perf-baseline.js --replace --scope Standalone`) and commits it
-alongside `performance.md`, so the seed becomes real after the first master push.
-The baseline regeneration passes `--scope Standalone` so the committed baseline
-stays **Standalone-only**. A missing or header-only baseline omits the
-historical delta while current evidence still reports. The committed
-baseline is therefore CI-owned and Standalone-scoped.
+[`docs/architecture/perf-baseline.csv`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/docs/architecture/perf-baseline.csv) is committed and is the baseline the
+diagnostic PR regression smoke and delta table compare against. It ships as an honest header-only seed -- the column header with no data rows -- so the first rollout has no
+fabricated numbers. Each push to the default branch regenerates it with real Standalone IL2CPP rows from that run (`extract-perf-baseline.js --replace --scope Standalone`) and
+commits it alongside `performance.md`, so the seed becomes real after the first master push. The baseline regeneration passes `--scope Standalone` so the committed baseline stays
+**Standalone-only**. A missing or header-only baseline omits the historical delta while current evidence still reports. The committed baseline is therefore CI-owned and
+Standalone-scoped.
 
-To capture a baseline locally, run the explicit `DispatchThroughputBenchmarks`
-baseline-update test in PlayMode through the MCP loop against the host editor (run
-the benchmark assembly via `DxMcpTestRunner.Run`; see the Unity MCP Test Loop
-skill). The benchmark CSV defaults to `.artifacts/perf-baseline.csv` (override
-with the `DX_PERF_BASELINE` env var), and `DX_PERF_COMMIT` stamps the commit
-column. Because baseline rows match on scenario + platform, a locally captured
-PlayMode CSV serves local within-scope comparison (for example the local smoke
-gate), not the published Standalone baseline.
+To capture a baseline locally, run the explicit `DispatchThroughputBenchmarks` baseline-update test in PlayMode through the MCP loop against the host editor (run the benchmark
+assembly via `DxMcpTestRunner.Run`; see the Unity MCP Test Loop skill). The benchmark CSV defaults to `.artifacts/perf-baseline.csv` (override with the `DX_PERF_BASELINE` env var),
+and `DX_PERF_COMMIT` stamps the commit column. Because baseline rows match on scenario + platform, a locally captured PlayMode CSV serves local within-scope comparison (for example
+the local smoke gate), not the published Standalone baseline.
 
 ### Ad-hoc baselines for regression work
 
-Capture ad-hoc baselines into a local CSV file and keep the file path explicit
-in the commands that consume it. Do not put generated baseline CSVs in package
-documentation or rely on a dated filename. For CI or release comparison, publish
-the CSV as a workflow artifact or attach it to the pull request that records the
-measurement.
+Capture ad-hoc baselines into a local CSV file and keep the file path explicit in the commands that consume it. Do not put generated baseline CSVs in package documentation or rely
+on a dated filename. For CI or release comparison, publish the CSV as a workflow artifact or attach it to the pull request that records the measurement.
 
 Recommended commit cells:
 
@@ -1037,75 +643,45 @@ Required configuration cells:
 
 For each commit and configuration:
 
-- Keep the benchmark harness available; older runtime commits may not contain
-  the benchmark files.
-- Measure the older runtime with a harness-preserving flow. Use a throwaway
-  branch that cherry-picks the current harness onto the measured runtime commit,
-  or keep the harness branch checked out and swap only the runtime files being
-  measured.
-- Set `DX_PERF_COMMIT=<measured-runtime-commit>` for every benchmark run so CSV
-  rows identify the runtime commit under test. `DX_PERF_COMMIT` overrides CI's
-  `GITHUB_SHA` when both are present.
-- Run the benchmarks in batchmode with the same Release configuration CI uses:
-  the Standalone IL2CPP leg
-  (`-StandaloneScriptingBackend IL2CPP -ReleasePlayerBuild -ReleaseCodeOptimization`)
-  for rows comparable to the published scope, or the PlayMode leg
-  (`-ReleaseCodeOptimization`) for faster local iteration.
-- Extract the benchmark rows from the Unity output and append them to the local
-  baseline CSV.
-- Record the exact commit, platform, scope, Unity version, and scripting
-  backend.
+- Keep the benchmark harness available; older runtime commits may not contain the benchmark files.
+- Measure the older runtime with a harness-preserving flow. Use a throwaway branch that cherry-picks the current harness onto the measured runtime commit, or keep the harness
+  branch checked out and swap only the runtime files being measured.
+- Set `DX_PERF_COMMIT=<measured-runtime-commit>` for every benchmark run so CSV rows identify the runtime commit under test. `DX_PERF_COMMIT` overrides CI's `GITHUB_SHA` when both
+  are present.
+- Run the benchmarks in batchmode with the same Release configuration CI uses: the Standalone IL2CPP leg
+  (`-StandaloneScriptingBackend IL2CPP -ReleasePlayerBuild -ReleaseCodeOptimization`) for rows comparable to the published scope, or the PlayMode leg (`-ReleaseCodeOptimization`)
+  for faster local iteration.
+- Extract the benchmark rows from the Unity output and append them to the local baseline CSV.
+- Record the exact commit, platform, scope, Unity version, and scripting backend.
 
-Do not mix methodology changes with baseline updates. If the harness changes,
-capture a new baseline and make the old/new methodology boundary explicit in the
-PR description. In particular, a baseline captured under the old median-of-runs
-methodology is not comparable to one captured under the current single-window
-methodology -- recapture rather than compare across the boundary.
+Do not mix methodology changes with baseline updates. If the harness changes, capture a new baseline and make the old/new methodology boundary explicit in the PR description. In
+particular, a baseline captured under the old median-of-runs methodology is not comparable to one captured under the current single-window methodology -- recapture rather than
+compare across the boundary.
 
 ## Pull-request performance evidence
 
-After the perf leg runs, the PR job publishes current-head evidence before any
-optimization is accepted. It calls
-[`scripts/unity/render-perf-deltas.js`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/scripts/unity/render-perf-deltas.js)
-with `--scope Standalone`, which compares this PR's Standalone IL2CPP
-DxMessaging numbers against the committed master baseline and prints two lines: `changed=true|false` (whether any metric
-moved beyond `--tolerance`) and `regressed=true|false` (the catastrophic-smoke
-signal). The job posts the DxMessaging-only delta before failing when
-`regressed=true`, so reviewers always see the numbers.
-The script always exits 0 itself; the workflow decides whether to fail from the
-`regressed=` line.
+After the perf leg runs, the PR job publishes current-head evidence before any optimization is accepted. It calls
+[`scripts/unity/render-perf-deltas.js`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/scripts/unity/render-perf-deltas.js) with `--scope Standalone`, which
+compares this PR's Standalone IL2CPP DxMessaging numbers against the committed master baseline and prints two lines: `changed=true|false` (whether any metric moved beyond
+`--tolerance`) and `regressed=true|false` (the catastrophic-smoke signal). The job posts the DxMessaging-only delta before failing when `regressed=true`, so reviewers always see
+the numbers. The script always exits 0 itself; the workflow decides whether to fail from the `regressed=` line.
 
-A scenario trips that smoke signal when its throughput drops by more than the regression
-threshold (default `0.33`, looser than the comment tolerance) OR its allocation
-exceeds the baseline. Only canonical DxMessaging scenarios participate in the hard
-smoke. Zero-throughput wall-clock rows skip the throughput comparison; increased
-comparable allocation counts still fail the gate. The delta comment is broader
-diagnostic output: it keeps the dispatch scenarios plus
-the DxMessaging comparison rows and drops every other library's rows. Comparison
-rows are report-only because a single cross-library comparison sample is too
-noisy for required CI. The workflow first requires the complete expected
-Standalone scenario set and the exact measured commit stamp. A missing or
-header-only baseline yields no historical comparison, while current Standalone
-TargetMap evidence still reports.
+A scenario trips that smoke signal when its throughput drops by more than the regression threshold (default `0.33`, looser than the comment tolerance) OR its allocation exceeds the
+baseline. Only canonical DxMessaging scenarios participate in the hard smoke. Zero-throughput wall-clock rows skip the throughput comparison; increased comparable allocation counts
+still fail the gate. The delta comment is broader diagnostic output: it keeps the dispatch scenarios plus the DxMessaging comparison rows and drops every other library's rows.
+Comparison rows are report-only because a single cross-library comparison sample is too noisy for required CI. The workflow first requires the complete expected Standalone scenario
+set and the exact measured commit stamp. A missing or header-only baseline yields no historical comparison, while current Standalone TargetMap evidence still reports.
 
-The committed historical baseline is Standalone-only, where allocation values
-are unmeasured, so the automatic historical smoke gates throughput only.
-`AllocationMatrixTests` remains a separate exact-zero contract for focused local
-and manually dispatched validation; the required PR jobs do not run its
-`Allocation` category.
+The committed historical baseline is Standalone-only, where allocation values are unmeasured, so the automatic historical smoke gates throughput only. `AllocationMatrixTests`
+remains a separate exact-zero contract for focused local and manually dispatched validation; the required PR jobs do not run its `Allocation` category.
 
-This historical comparison is not a causal A/B/A experiment and the workflow is
-not a required branch-protection check. Treat green as evidence that the pinned
-benchmarks completed, not as proof that an optimization is acceptable. Use
-fresh, same-runner controls for a close result; do not compare across a benchmark
-or harness change.
+This historical comparison is not a causal A/B/A experiment and the workflow is not a required branch-protection check. Treat green as evidence that the pinned benchmarks
+completed, not as proof that an optimization is acceptable. Use fresh, same-runner controls for a close result; do not compare across a benchmark or harness change.
 
 ## Local-only C# smoke gate
 
-`Tests/Editor/Benchmarks/PerfRegressionSmokeTests.cs` is now a LOCAL tool only;
-it is `[Explicit, Category("PerfGate")]` and not part of automatic PR evidence. Use
-it to fail a local run when a within-platform regression exceeds 1.5x against a
-captured baseline. Enable it with:
+`Tests/Editor/Benchmarks/PerfRegressionSmokeTests.cs` is now a LOCAL tool only; it is `[Explicit, Category("PerfGate")]` and not part of automatic PR evidence. Use it to fail a
+local run when a within-platform regression exceeds 1.5x against a captured baseline. Enable it with:
 
 ```bash
 DX_PERF_GATE=1 \
@@ -1114,211 +690,127 @@ DX_PERF_BASELINE_COMMIT=<baseline-commit> \
 pwsh scripts/unity/run-ci-tests.ps1 -TestMode editmode -ReleaseCodeOptimization -ReleasePlayerBuild
 ```
 
-The commit matching was relaxed for this local use. When
-`DX_PERF_BASELINE_COMMIT` is unset the gate matches the baseline row on
-`scenario` + `platform` only (a committed master baseline reflects one historical
-commit while a local run is at HEAD, so commit-exact matching would make the gate
-impossible); when it IS set, the original commit-exact match is preserved. If
-`DX_PERF_GATE=1` is set without `DX_PERF_BASELINE`, if the CSV is missing, or if
-NO baseline row matches the current scenario + platform (for example on a
-different Unity version or OS than the captured baseline), the gate now skips
-gracefully rather than failing. Because the baseline and the current run must use
-the same single-window methodology, do not gate against a baseline captured under
-the old median-of-runs approach.
+The commit matching was relaxed for this local use. When `DX_PERF_BASELINE_COMMIT` is unset the gate matches the baseline row on `scenario` + `platform` only (a committed master
+baseline reflects one historical commit while a local run is at HEAD, so commit-exact matching would make the gate impossible); when it IS set, the original commit-exact match is
+preserved. If `DX_PERF_GATE=1` is set without `DX_PERF_BASELINE`, if the CSV is missing, or if NO baseline row matches the current scenario + platform (for example on a different
+Unity version or OS than the captured baseline), the gate now skips gracefully rather than failing. Because the baseline and the current run must use the same single-window
+methodology, do not gate against a baseline captured under the old median-of-runs approach.
 
 ### Hot-path review rule
 
-When you change one of the hot paths, review the refreshed numbers the workflow
-posts as a comment on your PR:
+When you change one of the hot paths, review the refreshed numbers the workflow posts as a comment on your PR:
 
 - `Runtime/Core/MessageBus/MessageBus.cs`
 - `Runtime/Core/MessageHandler.cs`
 - `Runtime/Core/Pooling/**`
 
-An unexpected throughput drop or a new non-zero allocation count in the rendered
-tables is a regression to investigate before merging. The numbers track the
-actual measured throughput of the branch under review rather than committed
-state or a manually pasted table.
+An unexpected throughput drop or a new non-zero allocation count in the rendered tables is a regression to investigate before merging. The numbers track the actual measured
+throughput of the branch under review rather than committed state or a manually pasted table.
 
 ## Comparison packages: add or bump a library
 
 The single source of truth for the comparison packages is
-[`.github/comparison-packages.json`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/comparison-packages.json).
-It pins the OpenUPM scoped registry, the exact package versions, the required
-Unity built-in packages (for example `com.unity.ugui` and
-`com.unity.modules.animation`), and the `versionDefines` symbols (for example
-`MESSAGEPIPE_PRESENT`, `UNIRX_PRESENT`, `ZENJECT_PRESENT`,
-`UNITY_ATOMS_CORE_PRESENT`, and `UNITY_ATOMS_BASE_ATOMS_PRESENT`). The
-comparison legs build an ephemeral manifest from this file; the committed
-`.unity-test-project/Packages/manifest.json` and
-`.unity-test-project/Packages/packages-lock.json` keep local parity.
+[`.github/comparison-packages.json`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/comparison-packages.json). It pins the OpenUPM scoped registry, the
+exact package versions, the required Unity built-in packages (for example `com.unity.ugui` and `com.unity.modules.animation`), and the `versionDefines` symbols (for example
+`MESSAGEPIPE_PRESENT`, `UNIRX_PRESENT`, `ZENJECT_PRESENT`, `UNITY_ATOMS_CORE_PRESENT`, and `UNITY_ATOMS_BASE_ATOMS_PRESENT`). The comparison legs build an ephemeral manifest from
+this file; the committed `.unity-test-project/Packages/manifest.json` and `.unity-test-project/Packages/packages-lock.json` keep local parity.
 
 The external and Unity Atoms comparison suites are package-gated and live under:
 
-- [`Tests/Runtime/Comparisons/External/`](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/Tests/Runtime/Comparisons/External)
-  -- MessagePipe, UniRx, Zenject SignalBus.
-- [`Tests/Runtime/Comparisons/UnityAtoms/`](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/Tests/Runtime/Comparisons/UnityAtoms)
-  -- Unity Atoms.
+- [`Tests/Runtime/Comparisons/External/`](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/Tests/Runtime/Comparisons/External) -- MessagePipe, UniRx, Zenject
+  SignalBus.
+- [`Tests/Runtime/Comparisons/UnityAtoms/`](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/Tests/Runtime/Comparisons/UnityAtoms) -- Unity Atoms.
 
-The zero-dependency baselines (plain C# event, UnityEvent, ScriptableObject
-channel, Unity `SendMessage`) live directly in
-[`Tests/Runtime/Comparisons/`](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/Tests/Runtime/Comparisons)
-and need no package.
+The zero-dependency baselines (plain C# event, UnityEvent, ScriptableObject channel, Unity `SendMessage`) live directly in
+[`Tests/Runtime/Comparisons/`](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/Tests/Runtime/Comparisons) and need no package.
 
 To add or bump a comparison library:
 
-1. Edit `.github/comparison-packages.json`: add or change the registry scope,
-   the pinned package version(s), any required `unityBuiltInPackages`, and the
-   `defines` symbol(s).
-1. Update the matching `versionDefines` in the gated comparison asmdef(s) under
-   `Tests/Runtime/Comparisons/External/` and/or
-   `Tests/Runtime/Comparisons/UnityAtoms/` so the gated code compiles only when
-   the package is present.
-1. Update the committed `.unity-test-project/Packages/manifest.json` and
-   `.unity-test-project/Packages/packages-lock.json` to keep local parity with
-   the single source.
-1. Re-check by hand that every consumer (asmdef `versionDefines` /
-   `defineConstraints`, manifest, package lock) agrees with
-   `.github/comparison-packages.json`.
+1. Edit `.github/comparison-packages.json`: add or change the registry scope, the pinned package version(s), any required `unityBuiltInPackages`, and the `defines` symbol(s).
+1. Update the matching `versionDefines` in the gated comparison asmdef(s) under `Tests/Runtime/Comparisons/External/` and/or `Tests/Runtime/Comparisons/UnityAtoms/` so the gated
+   code compiles only when the package is present.
+1. Update the committed `.unity-test-project/Packages/manifest.json` and `.unity-test-project/Packages/packages-lock.json` to keep local parity with the single source.
+1. Re-check by hand that every consumer (asmdef `versionDefines` / `defineConstraints`, manifest, package lock) agrees with `.github/comparison-packages.json`.
 
 ## History note
 
-The numbers on this page were previously produced by a now-removed editor-side
-PlayMode benchmark suite that wrote per-OS (Windows/macOS/Linux) tables by hand
-and used a median-of-short-windows methodology. Those hand tables and the
-old comparison tables (which lived in a now-deleted editor comparison test
-directory) have been
-**superseded by the CI-generated per-scope tables** rendered into
-`docs/architecture/performance.md`. The only enduring guidance from that era is
-the tradeoff intuition that still holds: interceptors and post-processors add
-real overhead (with several interceptors or post-processors registered,
-throughput drops materially versus the no-interceptor baseline), and reflexive
-(dynamic) messaging is slower than direct handler registration because of
-reflection overhead. Treat any pre-migration number as non-comparable to the
-current single-window results.
+The numbers on this page were previously produced by a now-removed editor-side PlayMode benchmark suite that wrote per-OS (Windows/macOS/Linux) tables by hand and used a
+median-of-short-windows methodology. Those hand tables and the old comparison tables (which lived in a now-deleted editor comparison test directory) have been **superseded by the
+CI-generated per-scope tables** rendered into `docs/architecture/performance.md`. The only enduring guidance from that era is the tradeoff intuition that still holds: interceptors
+and post-processors add real overhead (with several interceptors or post-processors registered, throughput drops materially versus the no-interceptor baseline), and reflexive
+(dynamic) messaging is slower than direct handler registration because of reflection overhead. Treat any pre-migration number as non-comparable to the current single-window
+results.
 
 ## Verify the optional native SDK floor
 
-The Runner Audit workflow includes an opt-in research lane for
-Unity 2021.3.45f1, Burst 1.6.6, Collections 1.2.3, Mathematics 1.2.6 and
-Jobs 0.50.0-preview.9. Dispatch
-`runner-bootstrap.yml` on the source branch with `runner-label: ELI-MACHINE` and
-`native-sdk-floor: true`. Keep all other experiment inputs at their defaults.
-Check the fresh serialized ELI budget before dispatch; the one eligible ELI job
-has a 600-minute ceiling. Bootstrap and pilot jobs do not run in this mode.
+The Runner Audit workflow includes an opt-in research lane for Unity 2021.3.45f1, Burst 1.6.6, Collections 1.2.3, Mathematics 1.2.6 and Jobs 0.50.0-preview.9. Dispatch
+`runner-bootstrap.yml` on the source branch with `runner-label: ELI-MACHINE` and `native-sdk-floor: true`. Keep all other experiment inputs at their defaults. Check the fresh
+serialized ELI budget before dispatch; the one eligible ELI job has a 600-minute ceiling. Bootstrap and pilot jobs do not run in this mode.
 
-The research assembly requires `DXM_NATIVE_SDK_RESEARCH` before compilation.
-The generated host defines it only when that assembly is explicitly selected.
-Ordinary comparison hosts clear the symbol, including when reusing an opt-in project.
-Installed comparison packages alone do not enable the research assembly.
+The research assembly requires `DXM_NATIVE_SDK_RESEARCH` before compilation. The generated host defines it only when that assembly is explicitly selected. Ordinary comparison hosts
+clear the symbol, including when reusing an opt-in project. Installed comparison packages alone do not enable the research assembly.
 
-The lane runs all 745 CPU/Burst PlayMode cases, including allocation assays and
-positive controls. A namespace setup fixture captures actual package versions,
-sources, compiler-source hashes, manifest and lock before candidates execute.
-It rejects substituted packages and requires the batch interface to come from
-that actual Jobs package and its Unity.Jobs assembly. Collections 1.2.3 predates
-the Jobs merge into Collections 1.4.0, so this generated host pins the older Jobs
-provider. Current hosts using the merged Collections provider do not install it.
-The comparison manifest also supplies Physics and Physics2D modules required by
-the pinned UniRx source; the committed local-parity manifest retains these modules.
-The result gate requires the exact retained
-case identities, with no failed, skipped or inconclusive cases.
+The lane runs all 745 CPU/Burst PlayMode cases, including allocation assays and positive controls. A namespace setup fixture captures actual package versions, sources,
+compiler-source hashes, manifest and lock before candidates execute. It rejects substituted packages and requires the batch interface to come from that actual Jobs package and its
+Unity.Jobs assembly. Collections 1.2.3 predates the Jobs merge into Collections 1.4.0, so this generated host pins the older Jobs provider. Current hosts using the merged
+Collections provider do not install it. The comparison manifest also supplies Physics and Physics2D modules required by the pinned UniRx source; the committed local-parity manifest
+retains these modules. The result gate requires the exact retained case identities, with no failed, skipped or inconclusive cases.
 
-The lane retains fixed direct-call metadata before and after the complete scope.
-Before capture reads method IL and generated member metadata without static field
-values or kernel invocation. After capture observes compiler flags and zero/nonzero
-pointer state on the three generated dispatch types already exercised by the cases.
-It records addresses only as zero/nonzero and retains observation errors. A matched
-wrapper tail-call signature identifies its target; unmatched IL stays in the record.
-These diagnostics do not replace the native execution markers or permit fallback.
+The lane retains fixed direct-call metadata before and after the complete scope. Before capture reads method IL and generated member metadata without static field values or kernel
+invocation. After capture observes compiler flags and zero/nonzero pointer state on the three generated dispatch types already exercised by the cases. It records addresses only as
+zero/nonzero and retains observation errors. A matched wrapper tail-call signature identifies its target; unmatched IL stays in the record. These diagnostics do not replace the
+native execution markers or permit fallback.
 
-Editor test invocations first prepare package compiler inputs in a separate batch
-process through `DxmCiTestConfigurator.PrepareCompilerInputs`. A fresh completion
-marker admits the test process; preparation failures stop before tests. The phase
-uses the public package preparation API and does not apply player settings.
-The artifacts retain response-file and ignore-sidecar hashes, lengths and write
-timestamps before and after tests, including failing NUnit runs. Floor admission
-requires both inputs to remain unchanged. This avoids leaving deferred response-file
-imports for the test process; it does not override Burst compilation settings.
+Editor test invocations first prepare package compiler inputs in a separate batch process through `DxmCiTestConfigurator.PrepareCompilerInputs`. A fresh completion marker admits
+the test process; preparation failures stop before tests. The phase uses the public package preparation API and does not apply player settings. The artifacts retain response-file
+and ignore-sidecar hashes, lengths and write timestamps before and after tests, including failing NUnit runs. Floor admission requires both inputs to remain unchanged. This avoids
+leaving deferred response-file imports for the test process; it does not override Burst compilation settings.
 
-Standalone configuration can also retain actual floor SDK admission before a
-player build. When `DXM_NATIVE_SDK_FLOOR_EVIDENCE` requests a fresh output,
-`DxmCiTestConfigurator.Apply` calls the optional fixture's public admission method
-after preparing compiler inputs and applying settings, before its completion
-marker. Missing or ambiguous fixtures, an incompatible method, stale evidence,
-admission failures and missing output stop configuration. Ordinary configuration
-does not inspect optional fixtures when no floor evidence was requested.
-This boundary supplies Editor package provenance; it does not prove player SDK
-identity, native execution or player allocation measurements. The 122 allocation
-cases require a functional `GC.Alloc` count recorder. Unity 2021.3 documents
-[Recorder samplers](https://docs.unity3d.com/2021.3/Documentation/ScriptReference/Profiling.Recorder.html)
-for Editor and Development players. An unavailable recorder cannot pass these
-assertions. The separate
-[ProfilerRecorder API](https://docs.unity3d.com/2021.3/Documentation/ScriptReference/Unity.Profiling.ProfilerRecorder.html)
-supports Release metrics; that does not establish that the count probe works.
+Standalone configuration can also retain actual floor SDK admission before a player build. When `DXM_NATIVE_SDK_FLOOR_EVIDENCE` requests a fresh output,
+`DxmCiTestConfigurator.Apply` calls the optional fixture's public admission method after preparing compiler inputs and applying settings, before its completion marker. Missing or
+ambiguous fixtures, an incompatible method, stale evidence, admission failures and missing output stop configuration. Ordinary configuration does not inspect optional fixtures when
+no floor evidence was requested. This boundary supplies Editor package provenance; it does not prove player SDK identity, native execution or player allocation measurements. The
+122 allocation cases require a functional `GC.Alloc` count recorder. Unity 2021.3 documents
+[Recorder samplers](https://docs.unity3d.com/2021.3/Documentation/ScriptReference/Profiling.Recorder.html) for Editor and Development players. An unavailable recorder cannot pass
+these assertions. The separate [ProfilerRecorder API](https://docs.unity3d.com/2021.3/Documentation/ScriptReference/Unity.Profiling.ProfilerRecorder.html) supports Release metrics;
+that does not establish that the count probe works.
 
-The fixed floor diagnostic also uses standard Burst debug level 1. After all cases,
-the namespace fixture snapshots only main/thread compiler logs from the actual
-process current directory, before framework teardown can overwrite them. Capture
-is bounded to 64 files, 4 MiB per file and 64 MiB total. Missing, changing, invalid
-or truncated data stays incomplete. Raw hashes describe captured source bytes
-before the existing artifact redaction. Runtime directory file hashes and any
-observable loaded assembly location are separate observations; an unobserved
-assembly is not proof that it was unloaded. Diagnostic logging supplies no timing
-claim and does not change synchronous/eager options or execution assertions.
+The fixed floor diagnostic also uses standard Burst debug level 1. After all cases, the namespace fixture snapshots only main/thread compiler logs from the actual process current
+directory, before framework teardown can overwrite them. Capture is bounded to 64 files, 4 MiB per file and 64 MiB total. Missing, changing, invalid or truncated data stays
+incomplete. Raw hashes describe captured source bytes before the existing artifact redaction. Runtime directory file hashes and any observable loaded assembly location are separate
+observations; an unobserved assembly is not proof that it was unloaded. Diagnostic logging supplies no timing claim and does not change synchronous/eager options or execution
+assertions.
 
-The pinned central actions own admission and automatic cleanup. Acquisition
-requires resource lifecycle protection; return, classification, release and
-confirmed cleanup run before artifact redaction and upload. The runner must
-already have the exact healthy editor installed. The lane performs no repair.
+The pinned central actions own admission and automatic cleanup. Acquisition requires resource lifecycle protection; return, classification, release and confirmed cleanup run before
+artifact redaction and upload. The runner must already have the exact healthy editor installed. The lane performs no repair.
 
-This lane verifies the CPU/Burst SDK floor. GPU, macOS plugin and IL2CPP floor
-checks require separate native evidence. PlayMode results do not establish
-calibrated player throughput or architectural acceptance.
+This lane verifies the CPU/Burst SDK floor. GPU, macOS plugin and IL2CPP floor checks require separate native evidence. PlayMode results do not establish calibrated player
+throughput or architectural acceptance.
 
-For the separate player qualification, retain `native-sdk-floor: true` and select
-`native-sdk-scope: StandaloneRelease`. The default remains `PlayMode`. The same
-745 cases execute without allocation exclusions. The distinct
-`native-sdk-il2cpp-qualification-profile.v1.json` retains the reviewed Release
-test-player settings and is limited to the old-floor assembly/category and one
-process. Configuration, build and runtime profile evidence must match it.
-The lane retains full player file hashes before and after execution, including
-failed NUnit runs, and requires the actual executable, IL2CPP and Burst libraries.
-The callback records public SDK type/assembly metadata, platform, backend, pointer
-size and Burst enabled state after writing the test results. Use package-owned
-`NativeList<T>` for the Collections assembly; `NativeArray<T>`
-belongs to the engine core module and cannot admit that package. Runtime SDK schema
-2 retains all four assembly version components as integers through normal artifact
-redaction. The gate rejects missing, invalid or inconsistent version components.
-After the NUnit result is written, the same opt-in callback records public legacy
-`GC.Alloc` presence/validity and separate forced-allocation/empty-operation counts.
-Invalid or missing recorders retain `-1` counts. It also records `ProfilerRecorder`
-validity for three Memory metrics: `GC.Alloc`, `GC Allocation In Frame Count`, and
-`GC Allocated In Frame`. Recorders are released even when observation throws.
-These observations diagnose availability; validity alone does not prove allocation
-counting, and a zero forced-allocation count cannot qualify an instrument.
-Metadata observations and file hashes do not establish private compiler identity. The player-proof gate
-runs after failed work; the complete-case gate still requires all 745 cases to pass.
-Retain recorder failures as unavailable measurement evidence when that is their
-actual cause; any additional native contract failure requires investigation.
+For the separate player qualification, retain `native-sdk-floor: true` and select `native-sdk-scope: StandaloneRelease`. The default remains `PlayMode`. The same 745 cases execute
+without allocation exclusions. The distinct `native-sdk-il2cpp-qualification-profile.v1.json` retains the reviewed Release test-player settings and is limited to the old-floor
+assembly/category and one process. Configuration, build and runtime profile evidence must match it. The lane retains full player file hashes before and after execution, including
+failed NUnit runs, and requires the actual executable, IL2CPP and Burst libraries. The callback records public SDK type/assembly metadata, platform, backend, pointer size and Burst
+enabled state after writing the test results. Use package-owned `NativeList<T>` for the Collections assembly; `NativeArray<T>` belongs to the engine core module and cannot admit
+that package. Runtime SDK schema 2 retains all four assembly version components as integers through normal artifact redaction. The gate rejects missing, invalid or inconsistent
+version components. After the NUnit result is written, the same opt-in callback records public legacy `GC.Alloc` presence/validity and separate forced-allocation/empty-operation
+counts. Invalid or missing recorders retain `-1` counts. It also records `ProfilerRecorder` validity for three Memory metrics: `GC.Alloc`, `GC Allocation In Frame Count`, and
+`GC Allocated In Frame`. Recorders are released even when observation throws. These observations diagnose availability; validity alone does not prove allocation counting, and a
+zero forced-allocation count cannot qualify an instrument. Metadata observations and file hashes do not establish private compiler identity. The player-proof gate runs after failed
+work; the complete-case gate still requires all 745 cases to pass. Retain recorder failures as unavailable measurement evidence when that is their actual cause; any additional
+native contract failure requires investigation.
 
-Unity includes the raw research C plugin source in a Windows IL2CPP build even
-when its managed fixture is limited to the macOS Editor. Keep its four ABI/layout
-requirements as named compile-time assertions and use compiler-specific exports.
-The existing player-output guard requires nonempty IL2CPP code and metadata
-before accepting the executable/Data directory or narrating a benign shutdown.
-These file checks precede the separate profile, runtime and complete-case gates.
-Mono output is checked with its explicit backend and does not require IL2CPP files.
+Unity includes the raw research C plugin source in a Windows IL2CPP build even when its managed fixture is limited to the macOS Editor. Keep its four ABI/layout requirements as
+named compile-time assertions and use compiler-specific exports. The existing player-output guard requires nonempty IL2CPP code and metadata before accepting the executable/Data
+directory or narrating a benign shutdown. These file checks precede the separate profile, runtime and complete-case gates. Mono output is checked with its explicit backend and does
+not require IL2CPP files.
 
 ## Collect Windows clock and sleep events
 
-Use the existing Runner Audit (Windows) workflow to collect event logs from a named runner.
-Set `runner-label` to `ELI-MACHINE`, leave other performance modes disabled, and set
-`perf-event-window-utc` to `2026-10-08T03:04:00Z,2026-10-08T03:06:00Z` for the retained
-cadence failure. The `runner-bootstrap-ELI-MACHINE-<run-id>-<attempt>` artifact contains
-`host-event-logs.json`, including raw event XML and per-query status. This mode reads the
-System log and skips the editor/prerequisite audit; it does not launch a performance player.
-Licensed workflow jobs retain the central organization acquire/work/cleanup/release sequence.
+Use the existing Runner Audit (Windows) workflow to collect event logs from a named runner. Set `runner-label` to `ELI-MACHINE`, leave other performance modes disabled, and set
+`perf-event-window-utc` to `2026-10-08T03:04:00Z,2026-10-08T03:06:00Z` for the retained cadence failure. The `runner-bootstrap-ELI-MACHINE-<run-id>-<attempt>` artifact contains
+`host-event-logs.json`, including raw event XML and per-query status. This mode reads the System log and skips the editor/prerequisite audit; it does not launch a performance
+player. Licensed workflow jobs retain the central organization acquire/work/cleanup/release sequence.
 
 Run the same collector directly on Windows:
 
@@ -1330,75 +822,50 @@ Run the same collector directly on Windows:
   -OutputPath '.artifacts/host-event-logs.json'
 ```
 
-The window must use UTC timestamps ending in `Z`, increase, and span at most 24 hours.
-The collector queries Kernel-General event 1, Kernel-Power event 42 and
-Power-Troubleshooter event 1. Raw XML retains clock-change details without depending on
-localized messages. An empty query is recorded as `no-matches`; it does not prove that
-no clock change occurred or that older records remain available. Access failures and
-truncation are recorded in the JSON and cause a nonzero exit. Queries retain at most
-1000 events per provider; narrow the window if that limit is exceeded.
+The window must use UTC timestamps ending in `Z`, increase, and span at most 24 hours. The collector queries Kernel-General event 1, Kernel-Power event 42 and Power-Troubleshooter
+event 1. Raw XML retains clock-change details without depending on localized messages. An empty query is recorded as `no-matches`; it does not prove that no clock change occurred
+or that older records remain available. Access failures and truncation are recorded in the JSON and cause a nonzero exit. Queries retain at most 1000 events per provider; narrow
+the window if that limit is exceeded.
 
-The [Microsoft event-query documentation](https://learn.microsoft.com/en-us/powershell/scripting/samples/creating-get-winevent-queries-with-filterhashtable)
-describes the time filters. [Microsoft's clock-reset guidance](https://learn.microsoft.com/en-us/troubleshoot/windows-server/active-directory/client-clock-reverts-to-previous-time)
-identifies Kernel-General event 1 as clock-change evidence. Treat logs as diagnostic
-inputs; they do not replace the frozen telemetry health gate or justify accepting a failed run.
+The [Microsoft event-query documentation](https://learn.microsoft.com/en-us/powershell/scripting/samples/creating-get-winevent-queries-with-filterhashtable) describes the time
+filters. [Microsoft's clock-reset guidance](https://learn.microsoft.com/en-us/troubleshoot/windows-server/active-directory/client-clock-reverts-to-previous-time) identifies
+Kernel-General event 1 as clock-change evidence. Treat logs as diagnostic inputs; they do not replace the frozen telemetry health gate or justify accepting a failed run.
 
 ### Distinguish elapsed time from UTC in new sensor records
 
-Each new sensor sample retains `monotonicClock`: the actual Stopwatch frequency and
-`isHighResolution` value, `readStartTicks`, and `utcBeforeTicks` / `utcAfterTicks`
-bracketing its UTC capture. Frequency and ticks are decimal strings so JSON readers
-can preserve integer precision. Convert their differences using the recorded frequency;
-do not treat ticks as UTC or mix counters from separate processes or hosts.
+Each new sensor sample retains `monotonicClock`: the actual Stopwatch frequency and `isHighResolution` value, `readStartTicks`, and `utcBeforeTicks` / `utcAfterTicks` bracketing
+its UTC capture. Frequency and ticks are decimal strings so JSON readers can preserve integer precision. Convert their differences using the recorded frequency; do not treat ticks
+as UTC or mix counters from separate processes or hosts.
 
-For consecutive brackets `[b1, a1]` and `[b2, a2]`, the elapsed-time interval lies
-between `(b2 - a1) / frequency` and `(a2 - b1) / frequency`. Compare the UTC delta
-against those bounds. A wide bracket remains ambiguous. Compare each read start with
-its UTC bracket to separate sensor-read elapsed time from time outside that read.
-These fields retain diagnostics; they do not change the sampler schedule or the
-frozen health gates. Older records without brackets cannot establish this comparison.
+For consecutive brackets `[b1, a1]` and `[b2, a2]`, the elapsed-time interval lies between `(b2 - a1) / frequency` and `(a2 - b1) / frequency`. Compare the UTC delta against those
+bounds. A wide bracket remains ambiguous. Compare each read start with its UTC bracket to separate sensor-read elapsed time from time outside that read. These fields retain
+diagnostics; they do not change the sampler schedule or the frozen health gates. Older records without brackets cannot establish this comparison.
 
-[Microsoft's Windows timing guidance](https://learn.microsoft.com/en-us/windows/win32/sysinfo/acquiring-high-resolution-time-stamps)
-describes Stopwatch/QPC as independent of UTC. Retain the actual runtime frequency
-and high-resolution flag before interpreting a capture. A measured disagreement
-reports a numerical clock-domain discrepancy within the captured bounds. UTC timestamp
-digits do not establish resolution or accuracy. Keep those properties unmeasured until
-calibrated; small residuals can reflect granularity, rounding or relative clock drift.
-They do not prove an adjustment or the external cause of an earlier gap.
-No historical rejected block becomes admissible
-through these added fields. Keep the stopped pilot and its rates unopened until its
-separate collection and budget gates are satisfied.
+[Microsoft's Windows timing guidance](https://learn.microsoft.com/en-us/windows/win32/sysinfo/acquiring-high-resolution-time-stamps) describes Stopwatch/QPC as independent of UTC.
+Retain the actual runtime frequency and high-resolution flag before interpreting a capture. A measured disagreement reports a numerical clock-domain discrepancy within the captured
+bounds. UTC timestamp digits do not establish resolution or accuracy. Keep those properties unmeasured until calibrated; small residuals can reflect granularity, rounding or
+relative clock drift. They do not prove an adjustment or the external cause of an earlier gap. No historical rejected block becomes admissible through these added fields. Keep the
+stopped pilot and its rates unopened until its separate collection and budget gates are satisfied.
 
 ## Collect retained Unity Package Manager diagnostics
 
-Dispatch Runner Audit (Windows) with `runner-label=ELI-MACHINE` and
-`native-sdk-log-source=<floor-run-id>,<attempt>`. Leave every other optional mode
-at its default. The collector reads the retained floor project and cache, plus
-`upm.log` and `upm.log.prev` from the documented user and SYSTEM account locations.
-It does not start Unity or alter the project or cache. Central runner registration
-preflight remains required; licensed jobs keep their automatic organization lock
-lifecycle.
+Dispatch Runner Audit (Windows) with `runner-label=ELI-MACHINE` and `native-sdk-log-source=<floor-run-id>,<attempt>`. Leave every other optional mode at its default. The collector
+reads the retained floor project and cache, plus `upm.log` and `upm.log.prev` from the documented user and SYSTEM account locations. It does not start Unity or alter the project or
+cache. Central runner registration preflight remains required; licensed jobs keep their automatic organization lock lifecycle.
 
-The workflow also reads the installed `RunUnityPackageManagerDiagnostics.bat`
-launcher and immediate directory metadata from the managed Unity 2021.3.45f1
-`Editor/Data/Resources/PackageManager/Diagnostics` directory. It captures the
-launcher as text; it does not execute it. A missing, invalid or incomplete requested
-launcher fails capture while retaining its record. Direct collection includes this
-inspection only when `-InstalledDiagnosticsPath '<diagnostics-directory>'` is supplied.
-Inspect the retained launcher and tool scope before selecting a separate diagnostic
-invocation from [Unity's documented procedure](https://docs.unity3d.com/2021.3/Documentation/Manual/upm-network.html).
+The workflow also reads the installed `RunUnityPackageManagerDiagnostics.bat` launcher and immediate directory metadata from the managed Unity 2021.3.45f1
+`Editor/Data/Resources/PackageManager/Diagnostics` directory. It captures the launcher as text; it does not execute it. A missing, invalid or incomplete requested launcher fails
+capture while retaining its record. Direct collection includes this inspection only when `-InstalledDiagnosticsPath '<diagnostics-directory>'` is supplied. Inspect the retained
+launcher and tool scope before selecting a separate diagnostic invocation from
+[Unity's documented procedure](https://docs.unity3d.com/2021.3/Documentation/Manual/upm-network.html).
 
-The existing `runner-bootstrap-ELI-MACHINE-<run-id>-<attempt>` artifact includes
-`package-manager-diagnostics.json`. Log text and project manifest/lock contents
-are captured with source metadata. Directory inventories contain metadata only
-and do not recurse. The existing artifact redactor must succeed before upload.
-Source text hashes describe capture before redaction, not the uploaded text.
+The existing `runner-bootstrap-ELI-MACHINE-<run-id>-<attempt>` artifact includes `package-manager-diagnostics.json`. Log text and project manifest/lock contents are captured with
+source metadata. Directory inventories contain metadata only and do not recurse. The existing artifact redactor must succeed before upload. Source text hashes describe capture
+before redaction, not the uploaded text.
 
-Missing sources are explicit. No complete service log, a read error, changed log,
-more than four million characters in a file, or more than 200 directory entries
-makes capture incomplete and fails the step while retaining diagnostics.
-These records do not prove which retained service-log session belongs to the
-failed run; compare timestamps, project paths and process/session markers.
+Missing sources are explicit. No complete service log, a read error, changed log, more than four million characters in a file, or more than 200 directory entries makes capture
+incomplete and fails the step while retaining diagnostics. These records do not prove which retained service-log session belongs to the failed run; compare timestamps, project
+paths and process/session markers.
 
 Run the collector directly on Windows with the retained paths:
 
@@ -1408,70 +875,47 @@ Run the collector directly on Windows with the retained paths:
   -OutputPath '.artifacts/package-manager-diagnostics.json'
 ```
 
-[Unity's log file documentation](https://docs.unity3d.com/2021.3/Documentation/Manual/LogFiles.html)
-lists `%LOCALAPPDATA%/Unity/Editor/upm.log` for a user account and
-`%ALLUSERSPROFILE%/Unity/Editor/upm.log` for SYSTEM. Keep missing or incomplete
-records; diagnose the first failed attempt before dispatching another floor run.
+[Unity's log file documentation](https://docs.unity3d.com/2021.3/Documentation/Manual/LogFiles.html) lists `%LOCALAPPDATA%/Unity/Editor/upm.log` for a user account and
+`%ALLUSERSPROFILE%/Unity/Editor/upm.log` for SYSTEM. Keep missing or incomplete records; diagnose the first failed attempt before dispatching another floor run.
 
 ## Run the installed UPM network diagnostic
 
-Set Runner Audit's `native-sdk-upm-network-probe=true` with `runner-label=ELI-MACHINE`.
-Leave all other optional modes at their defaults. The collector verifies regular installed
-diagnostic and UPM server files under the managed Unity 2021.3.45f1 directory, retains
-their hashes, and invokes the diagnostic executable once with the actual launcher's
-`-o` report-file and `-p` server arguments. The `-o` operand names the new
-`upm-network-report/upm-diagnostic-report.txt` file.
-It does not run the batch wrapper's interactive keyboard pause.
-The work step has a fixed five-minute limit within the existing ten-minute job.
+Set Runner Audit's `native-sdk-upm-network-probe=true` with `runner-label=ELI-MACHINE`. Leave all other optional modes at their defaults. The collector verifies regular installed
+diagnostic and UPM server files under the managed Unity 2021.3.45f1 directory, retains their hashes, and invokes the diagnostic executable once with the actual launcher's `-o`
+report-file and `-p` server arguments. The `-o` operand names the new `upm-network-report/upm-diagnostic-report.txt` file. It does not run the batch wrapper's interactive keyboard
+pause. The work step has a fixed five-minute limit within the existing ten-minute job.
 
-The collector records invocation evidence before launch and refuses an existing report
-directory. It reads the executing account's fixed `%LOCALAPPDATA%/Unity/Editor/upm-diag.log`
-before and after the call through the existing bounded strict text reader. The prior
-log is retained as `upm-diag-before.log`; the current log is copied to the scoped report
-directory. It does not write to or relocate the source log. An unchanged prior log cannot
-supply current execution evidence. Missing, invalid or oversized current logs fail completeness.
-The redacted artifact includes `upm-network-diagnostics.json`, console output,
-`upm-network-report/upm-diagnostic-report.txt` and `upm-network-report/upm-diag.log`.
-Required reports must be nonempty and no larger than 4 MiB each. Nonzero exits, missing
-reports and partial executions remain failed records with their available output.
-The existing artifact redactor must succeed before upload.
+The collector records invocation evidence before launch and refuses an existing report directory. It reads the executing account's fixed `%LOCALAPPDATA%/Unity/Editor/upm-diag.log`
+before and after the call through the existing bounded strict text reader. The prior log is retained as `upm-diag-before.log`; the current log is copied to the scoped report
+directory. It does not write to or relocate the source log. An unchanged prior log cannot supply current execution evidence. Missing, invalid or oversized current logs fail
+completeness. The redacted artifact includes `upm-network-diagnostics.json`, console output, `upm-network-report/upm-diagnostic-report.txt` and `upm-network-report/upm-diag.log`.
+Required reports must be nonempty and no larger than 4 MiB each. Nonzero exits, missing reports and partial executions remain failed records with their available output. The
+existing artifact redactor must succeed before upload.
 
-The [Unity staff diagnostic guidance](https://discussions.unity.com/t/cant-run-rununitypackagemanagerdiagnostics-error-eisdir/825952/2)
-describes direct invocation. Preserve a report-creation failure and verify the installed
-version's output contract before inferring any network failure.
+The [Unity staff diagnostic guidance](https://discussions.unity.com/t/cant-run-rununitypackagemanagerdiagnostics-error-eisdir/825952/2) describes direct invocation. Preserve a
+report-creation failure and verify the installed version's output contract before inferring any network failure.
 
-A completed invocation does not assert that every network test passed. Inspect the report
-outcomes separately. This supported diagnostic starts no Unity Editor or licensed build;
-it does not change SDK project/cache policy or security settings. Its current result does
-not explain an earlier UPM abort or admit installed SDK versions, runtime correctness,
+A completed invocation does not assert that every network test passed. Inspect the report outcomes separately. This supported diagnostic starts no Unity Editor or licensed build;
+it does not change SDK project/cache policy or security settings. Its current result does not explain an earlier UPM abort or admit installed SDK versions, runtime correctness,
 player compatibility or calibrated performance.
 
 ## Diagnose the exact Burst registry archive download
 
-Set Runner Audit's `native-sdk-registry-probe=true` with `runner-label=ELI-MACHINE`.
-Leave every other optional mode at its default, including the retained-log source.
-The existing package diagnostic job makes one HTTPS request for the fixed canonical
-CDN Burst 1.6.6 archive and compares its complete body with the SHA1 from Unity's
-registry metadata. It records SHA256, byte count, declared length, timestamps,
-route, HTTP status and errors in `registry-download.json` in the redacted bootstrap artifact.
+Set Runner Audit's `native-sdk-registry-probe=true` with `runner-label=ELI-MACHINE`. Leave every other optional mode at its default, including the retained-log source. The existing
+package diagnostic job makes one HTTPS request for the fixed canonical CDN Burst 1.6.6 archive and compares its complete body with the SHA1 from Unity's registry metadata. It
+records SHA256, byte count, declared length, timestamps, route, HTTP status and errors in `registry-download.json` in the redacted bootstrap artifact.
 
-The two fixed collector routes are `Gateway` and `Cdn`; arbitrary URLs are not accepted.
-The workflow explicitly selects `Cdn` at `cdn.packages.unity.com`. The direct collector
-defaults to `Gateway` at `download.packages.unity.com`, preserving the original
-no-redirect case. Select the canonical object directly with `-RegistryArchiveRoute Cdn`.
-Record each route as a distinct diagnostic case; retain a gateway redirect failure.
+The two fixed collector routes are `Gateway` and `Cdn`; arbitrary URLs are not accepted. The workflow explicitly selects `Cdn` at `cdn.packages.unity.com`. The direct collector
+defaults to `Gateway` at `download.packages.unity.com`, preserving the original no-redirect case. Select the canonical object directly with `-RegistryArchiveRoute Cdn`. Record each
+route as a distinct diagnostic case; retain a gateway redirect failure.
 
-The probe uses the platform's normal HTTPS client, a 120-second cancellation
-bound covering headers and body, and a 512 MiB body cap. It performs no retries,
-redirects, archive execution or package-cache writes. It does not start Unity.
-The unlicensed job retains central registration preflight and a ten-minute cap;
-licensed jobs retain their existing central automatic lifecycle and pilot gates.
+The probe uses the platform's normal HTTPS client, a 120-second cancellation bound covering headers and body, and a 512 MiB body cap. It performs no retries, redirects, archive
+execution or package-cache writes. It does not start Unity. The unlicensed job retains central registration preflight and a ten-minute cap; licensed jobs retain their existing
+central automatic lifecycle and pilot gates.
 
-A complete matching download verifies current reachability and archive bytes
-under this client. It does not explain an earlier UPM abort or establish SDK
-installation, compatibility, runtime correctness or calibrated throughput.
-HTTP errors, partial reads, cap violations and integrity failures remain failed
-observations with retained evidence. Do not rerun the SDK floor solely to get green.
+A complete matching download verifies current reachability and archive bytes under this client. It does not explain an earlier UPM abort or establish SDK installation,
+compatibility, runtime correctness or calibrated throughput. HTTP errors, partial reads, cap violations and integrity failures remain failed observations with retained evidence. Do
+not rerun the SDK floor solely to get green.
 
-[Microsoft's completion-option documentation](https://learn.microsoft.com/en-us/dotnet/api/system.net.http.httpcompletionoption)
-explains why the cancellation bound also covers streamed content reads.
+[Microsoft's completion-option documentation](https://learn.microsoft.com/en-us/dotnet/api/system.net.http.httpcompletionoption) explains why the cancellation bound also covers
+streamed content reads.

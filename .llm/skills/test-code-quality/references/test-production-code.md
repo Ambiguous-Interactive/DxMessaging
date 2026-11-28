@@ -4,7 +4,8 @@
 
 ## Overview
 
-A common anti-pattern in testing is re-implementing production validation logic inside test files. When tests maintain their own copies of validation rules, they can pass even when production code regresses. This skill documents how to structure code for testability and avoid this dangerous pattern.
+A common anti-pattern in testing is re-implementing production validation logic inside test files. When tests maintain their own copies of validation rules, they can pass even when
+production code regresses. This skill documents how to structure code for testability and avoid this dangerous pattern.
 
 ## Problem Statement
 

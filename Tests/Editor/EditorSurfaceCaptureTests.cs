@@ -43,9 +43,7 @@ namespace DxMessaging.Tests.Editor
         {
             if (!EditorSurfaceCapture.IsSupported)
             {
-                Assert.Ignore(
-                    "Offscreen capture needs a graphics device; this editor runs with -nographics."
-                );
+                Assert.Ignore("Offscreen capture needs a graphics device; this editor runs with -nographics.");
             }
         }
 
@@ -74,30 +72,16 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void CaptureWritesTruecolorPngWithoutAlpha()
         {
-            EditorSurfaceCaptureResult result = Capture(
-                CreateOpaqueProbe(),
-                nameof(CaptureWritesTruecolorPngWithoutAlpha)
-            );
+            EditorSurfaceCaptureResult result = Capture(CreateOpaqueProbe(), nameof(CaptureWritesTruecolorPngWithoutAlpha));
 
-            Assert.That(
-                result.PngColorType,
-                Is.EqualTo(EditorSurfaceCapture.PngTruecolorWithoutAlpha)
-            );
+            Assert.That(result.PngColorType, Is.EqualTo(EditorSurfaceCapture.PngTruecolorWithoutAlpha));
             Assert.That(File.Exists(result.OutputPath), Is.True, result.ToString());
             Assert.That(result.ByteCount, Is.GreaterThan(0), result.ToString());
-            Assert.That(
-                result.Width,
-                Is.EqualTo(SurfaceWidth),
-                "The written image is cropped to the surface, not to the canvas."
-            );
+            Assert.That(result.Width, Is.EqualTo(SurfaceWidth), "The written image is cropped to the surface, not to the canvas.");
             Assert.That(result.Height, Is.EqualTo(SurfaceHeight), result.ToString());
 
             byte[] written = File.ReadAllBytes(result.OutputPath);
-            Assert.That(
-                written.Length,
-                Is.EqualTo(result.ByteCount),
-                "The reported byte count must describe the file that was actually written."
-            );
+            Assert.That(written.Length, Is.EqualTo(result.ByteCount), "The reported byte count must describe the file that was actually written.");
         }
 
         [Test]
@@ -113,21 +97,10 @@ namespace DxMessaging.Tests.Editor
                 RenderTexture.active = sentinel;
                 GL.sRGBWrite = true;
 
-                Capture(
-                    CreateOpaqueProbe(),
-                    nameof(CaptureRestoresRenderStateAndLeavesNoWindowBehind)
-                );
+                Capture(CreateOpaqueProbe(), nameof(CaptureRestoresRenderStateAndLeavesNoWindowBehind));
 
-                Assert.That(
-                    RenderTexture.active,
-                    Is.SameAs(sentinel),
-                    "Capture must restore the active render target it found."
-                );
-                Assert.That(
-                    GL.sRGBWrite,
-                    Is.True,
-                    "Capture must restore GL.sRGBWrite; leaving it off recolors every later render."
-                );
+                Assert.That(RenderTexture.active, Is.SameAs(sentinel), "Capture must restore the active render target it found.");
+                Assert.That(GL.sRGBWrite, Is.True, "Capture must restore GL.sRGBWrite; leaving it off recolors every later render.");
             }
             finally
             {
@@ -135,11 +108,7 @@ namespace DxMessaging.Tests.Editor
                 GL.sRGBWrite = previousSrgbWrite;
             }
 
-            Assert.That(
-                Resources.FindObjectsOfTypeAll<EditorWindow>().Length,
-                Is.EqualTo(windowsBefore),
-                "Capture must close its hidden host window."
-            );
+            Assert.That(Resources.FindObjectsOfTypeAll<EditorWindow>().Length, Is.EqualTo(windowsBefore), "Capture must close its hidden host window.");
         }
 
         [Test]
@@ -166,12 +135,7 @@ namespace DxMessaging.Tests.Editor
                 GL.sRGBWrite = true;
 
                 Assert.Throws<InvalidOperationException>(() =>
-                    EditorSurfaceCapture.Capture(
-                        oversized,
-                        CanvasWidth,
-                        CanvasHeight,
-                        ResolveOutputPath(nameof(CaptureRestoresRenderStateWhenTheSurfaceThrows))
-                    )
+                    EditorSurfaceCapture.Capture(oversized, CanvasWidth, CanvasHeight, ResolveOutputPath(nameof(CaptureRestoresRenderStateWhenTheSurfaceThrows)))
                 );
 
                 Assert.That(RenderTexture.active, Is.SameAs(sentinel));
@@ -183,55 +147,34 @@ namespace DxMessaging.Tests.Editor
                 GL.sRGBWrite = previousSrgbWrite;
             }
 
-            Assert.That(
-                Resources.FindObjectsOfTypeAll<EditorWindow>().Length,
-                Is.EqualTo(windowsBefore),
-                "A failed capture must still close its hidden host window."
-            );
+            Assert.That(Resources.FindObjectsOfTypeAll<EditorWindow>().Length, Is.EqualTo(windowsBefore), "A failed capture must still close its hidden host window.");
         }
 
         [Test]
         public void CaptureRendersTheInspectorWarningPanel()
         {
-            EditorSurfaceCaptureResult result = Capture(
-                CreateInspectorWarningPanel(),
-                nameof(CaptureRendersTheInspectorWarningPanel)
-            );
+            EditorSurfaceCaptureResult result = Capture(CreateInspectorWarningPanel(), nameof(CaptureRendersTheInspectorWarningPanel));
 
             /*
                 A cleared target has exactly one distinct color. The warning panel carries a
                 background, an amber border, a title, a body, a method list, and two buttons, so a
                 frame that really rendered cannot be flat.
             */
-            Assert.That(
-                result.DistinctColorCount,
-                Is.GreaterThan(1),
-                $"The captured frame is a single flat color, so nothing rendered: {result}"
-            );
+            Assert.That(result.DistinctColorCount, Is.GreaterThan(1), $"The captured frame is a single flat color, so nothing rendered: {result}");
         }
 
         [Test]
         public void CaptureRendersAPackageOwnedEditorWindowSurface()
         {
-            EditorSurfaceCaptureResult result = Capture(
-                CreateEmptyStateSurface(),
-                nameof(CaptureRendersAPackageOwnedEditorWindowSurface)
-            );
+            EditorSurfaceCaptureResult result = Capture(CreateEmptyStateSurface(), nameof(CaptureRendersAPackageOwnedEditorWindowSurface));
 
-            Assert.That(
-                result.DistinctColorCount,
-                Is.GreaterThan(1),
-                $"The captured frame is a single flat color, so nothing rendered: {result}"
-            );
+            Assert.That(result.DistinctColorCount, Is.GreaterThan(1), $"The captured frame is a single flat color, so nothing rendered: {result}");
         }
 
         [Test]
         public void CaptureExcludesTheHostWindowTabFromTheSurface()
         {
-            EditorSurfaceCaptureResult result = Capture(
-                CreateOpaqueProbe(),
-                nameof(CaptureExcludesTheHostWindowTabFromTheSurface)
-            );
+            EditorSurfaceCaptureResult result = Capture(CreateOpaqueProbe(), nameof(CaptureExcludesTheHostWindowTabFromTheSurface));
             Texture2D captured = new(2, 2, TextureFormat.RGB24, false, true);
             _createdObjects.Add(captured);
             Assert.That(
@@ -242,11 +185,7 @@ namespace DxMessaging.Tests.Editor
 
             Color center = captured.GetPixel(captured.width / 2, captured.height / 2);
             const int inset = 10;
-            Assert.That(
-                captured.GetPixel(inset, inset),
-                Is.EqualTo(center),
-                "The lower-left surface corner must match the solid center instead of host chrome."
-            );
+            Assert.That(captured.GetPixel(inset, inset), Is.EqualTo(center), "The lower-left surface corner must match the solid center instead of host chrome.");
             Assert.That(
                 captured.GetPixel(captured.width - inset - 1, inset),
                 Is.EqualTo(center),
@@ -267,21 +206,10 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void CaptureRecordsTheSkinAndUnityVersionItWasTakenUnder()
         {
-            EditorSurfaceCaptureResult result = Capture(
-                CreateOpaqueProbe(),
-                nameof(CaptureRecordsTheSkinAndUnityVersionItWasTakenUnder)
-            );
+            EditorSurfaceCaptureResult result = Capture(CreateOpaqueProbe(), nameof(CaptureRecordsTheSkinAndUnityVersionItWasTakenUnder));
 
-            Assert.That(
-                result.IsProSkin,
-                Is.EqualTo(EditorGUIUtility.isProSkin),
-                "Capture metadata must report the unchanged host skin."
-            );
-            Assert.That(
-                result.UnityVersion,
-                Is.EqualTo(Application.unityVersion),
-                "Capture metadata must report the host Unity version."
-            );
+            Assert.That(result.IsProSkin, Is.EqualTo(EditorGUIUtility.isProSkin), "Capture metadata must report the unchanged host skin.");
+            Assert.That(result.UnityVersion, Is.EqualTo(Application.unityVersion), "Capture metadata must report the host Unity version.");
         }
 
         [Test]
@@ -295,19 +223,10 @@ namespace DxMessaging.Tests.Editor
                 defect the screenshot manifest asks reviewers to catch.
             */
             InvalidOperationException failure = Assert.Throws<InvalidOperationException>(() =>
-                EditorSurfaceCapture.Capture(
-                    oversized,
-                    CanvasWidth,
-                    CanvasHeight,
-                    ResolveOutputPath(nameof(CaptureRefusesASurfaceLargerThanTheCanvas))
-                )
+                EditorSurfaceCapture.Capture(oversized, CanvasWidth, CanvasHeight, ResolveOutputPath(nameof(CaptureRefusesASurfaceLargerThanTheCanvas)))
             );
             Assert.That(failure.Message, Does.Contain("does not fit"));
-            Assert.That(
-                File.Exists(ResolveOutputPath(nameof(CaptureRefusesASurfaceLargerThanTheCanvas))),
-                Is.False,
-                "A refused capture must not leave a partial image behind."
-            );
+            Assert.That(File.Exists(ResolveOutputPath(nameof(CaptureRefusesASurfaceLargerThanTheCanvas))), Is.False, "A refused capture must not leave a partial image behind.");
         }
 
         [TestCase(false)]
@@ -326,10 +245,7 @@ namespace DxMessaging.Tests.Editor
                 CanvasWidth,
                 CanvasHeight,
                 path,
-                () =>
-                    readinessThrows
-                        ? throw new InvalidOperationException("Readiness failed.")
-                        : false,
+                () => readinessThrows ? throw new InvalidOperationException("Readiness failed.") : false,
                 _ => Assert.Fail("A stopped capture cannot finish rendering.")
             );
             try
@@ -341,10 +257,7 @@ namespace DxMessaging.Tests.Editor
                 else
                 {
                     Assert.That(capture.MoveNext(), Is.True);
-                    Assert.That(
-                        Resources.FindObjectsOfTypeAll<EditorWindow>().Length,
-                        Is.EqualTo(windowsBefore + 1)
-                    );
+                    Assert.That(Resources.FindObjectsOfTypeAll<EditorWindow>().Length, Is.EqualTo(windowsBefore + 1));
                 }
                 Assert.That(RenderTexture.active, Is.SameAs(previousTarget));
                 Assert.That(GL.sRGBWrite, Is.EqualTo(previousSrgbWrite));
@@ -354,10 +267,7 @@ namespace DxMessaging.Tests.Editor
                 ((IDisposable)capture).Dispose();
             }
             Assert.That(surface.style.display, Is.EqualTo(originalDisplay));
-            Assert.That(
-                Resources.FindObjectsOfTypeAll<EditorWindow>().Length,
-                Is.EqualTo(windowsBefore)
-            );
+            Assert.That(Resources.FindObjectsOfTypeAll<EditorWindow>().Length, Is.EqualTo(windowsBefore));
             Assert.That(File.Exists(path), Is.False);
         }
 
@@ -393,75 +303,41 @@ namespace DxMessaging.Tests.Editor
                 800,
                 680,
                 path,
-                () =>
-                    EditorToolingDocumentationCaptureTests.AreProjectSettingsControlsReady(
-                        surface,
-                        settings
-                    ),
+                () => EditorToolingDocumentationCaptureTests.AreProjectSettingsControlsReady(surface, settings),
                 result => Assert.That(result.ByteCount, Is.GreaterThan(0))
             );
             foreach (string propertyName in childrenBeforeFirstLayout.Keys)
             {
-                Assert.That(
-                    childrenBeforeFirstLayout[propertyName],
-                    Is.GreaterThan(0),
-                    $"{propertyName} must initialize its control before capture layout begins."
-                );
+                Assert.That(childrenBeforeFirstLayout[propertyName], Is.GreaterThan(0), $"{propertyName} must initialize its control before capture layout begins.");
             }
-            Assert.That(
-                childrenBeforeFirstLayout.Count,
-                Is.EqualTo(5),
-                "The first capture layout must observe all five settings fields."
-            );
+            Assert.That(childrenBeforeFirstLayout.Count, Is.EqualTo(5), "The first capture layout must observe all five settings fields.");
             AssertBoundProjectSettingsControls(surface);
         }
 
         private static void AssertBoundProjectSettingsControls(VisualElement surface)
         {
             foreach (
-                string propertyName in new[]
-                {
-                    "_diagnosticsTargets",
-                    "_diagnosticsStackTraces",
-                    "_messageBufferSize",
-                    "_suppressDomainReloadWarning",
-                    "_baseCallIgnoredTypes",
-                }
+                string propertyName in new[] { "_diagnosticsTargets", "_diagnosticsStackTraces", "_messageBufferSize", "_suppressDomainReloadWarning", "_baseCallIgnoredTypes" }
             )
             {
                 PropertyField field = surface.Q<PropertyField>(propertyName);
                 Assert.That(field, Is.Not.Null, $"Settings surface must contain {propertyName}.");
-                Assert.That(
-                    field.childCount,
-                    Is.GreaterThan(0),
-                    $"{propertyName} must contain its real bound control."
-                );
-                Assert.That(
-                    field.layout.height,
-                    Is.GreaterThan(0),
-                    $"{propertyName} must occupy visible space at capture."
-                );
+                Assert.That(field.childCount, Is.GreaterThan(0), $"{propertyName} must contain its real bound control.");
+                Assert.That(field.layout.height, Is.GreaterThan(0), $"{propertyName} must occupy visible space at capture.");
             }
         }
 
         [Test]
         public void CaptureRejectsAnEmptyOutputPath()
         {
-            Assert.Throws<System.ArgumentException>(() =>
-                EditorSurfaceCapture.Capture(CreateOpaqueProbe(), CanvasWidth, CanvasHeight, "   ")
-            );
+            Assert.Throws<System.ArgumentException>(() => EditorSurfaceCapture.Capture(CreateOpaqueProbe(), CanvasWidth, CanvasHeight, "   "));
         }
 
         [Test]
         public void CaptureRejectsAMissingSurface()
         {
             Assert.Throws<System.ArgumentNullException>(() =>
-                EditorSurfaceCapture.Capture(
-                    null,
-                    CanvasWidth,
-                    CanvasHeight,
-                    ResolveOutputPath(nameof(CaptureRejectsAMissingSurface))
-                )
+                EditorSurfaceCapture.Capture(null, CanvasWidth, CanvasHeight, ResolveOutputPath(nameof(CaptureRejectsAMissingSurface)))
             );
         }
 
@@ -474,13 +350,7 @@ namespace DxMessaging.Tests.Editor
 
         private static string ResolveOutputPath(string name)
         {
-            return Path.Combine(
-                "Packages",
-                "com.wallstop-studios.dxmessaging",
-                ".artifacts",
-                "unity-mcp",
-                $"capture-{name}.png"
-            );
+            return Path.Combine("Packages", "com.wallstop-studios.dxmessaging", ".artifacts", "unity-mcp", $"capture-{name}.png");
         }
 
         private static VisualElement CreateOpaqueProbe()
@@ -495,10 +365,7 @@ namespace DxMessaging.Tests.Editor
 
         private VisualElement CreateEmptyStateSurface()
         {
-            VisualElement surface = DxMessagingEditorTheme.CreateEmptyState(
-                "No emissions recorded",
-                "Enter play mode with diagnostics enabled to populate the Message Monitor."
-            );
+            VisualElement surface = DxMessagingEditorTheme.CreateEmptyState("No emissions recorded", "Enter play mode with diagnostics enabled to populate the Message Monitor.");
             surface.style.width = SurfaceWidth;
             surface.style.height = SurfaceHeight;
             return surface;
@@ -506,30 +373,22 @@ namespace DxMessaging.Tests.Editor
 
         private VisualElement CreateInspectorWarningPanel()
         {
-            GameObject host = EditorUtility.CreateGameObjectWithHideFlags(
-                nameof(CreateInspectorWarningPanel),
-                HideFlags.HideAndDontSave
-            );
+            GameObject host = EditorUtility.CreateGameObjectWithHideFlags(nameof(CreateInspectorWarningPanel), HideFlags.HideAndDontSave);
             _createdObjects.Add(host);
-            MessageAwareComponent component =
-                host.AddComponent<EmptyMessageAwareComponentForCaptureTest>();
+            MessageAwareComponent component = host.AddComponent<EmptyMessageAwareComponentForCaptureTest>();
 
             DxMessagingSettings settings = ScriptableObject.CreateInstance<DxMessagingSettings>();
             settings.hideFlags = HideFlags.HideAndDontSave;
             _createdObjects.Add(settings);
 
-            MessageAwareComponentInspectorState state =
-                MessageAwareComponentInspectorState.ForHarvesterUnavailable(
-                    component,
-                    settings,
-                    component.GetType().FullName,
-                    isFreshThisSession: true
-                );
-
-            VisualElement panel = MessageAwareComponentInspectorView.Create(
-                state,
-                MessageAwareComponentInspectorViewActions.None
+            MessageAwareComponentInspectorState state = MessageAwareComponentInspectorState.ForHarvesterUnavailable(
+                component,
+                settings,
+                component.GetType().FullName,
+                isFreshThisSession: true
             );
+
+            VisualElement panel = MessageAwareComponentInspectorView.Create(state, MessageAwareComponentInspectorViewActions.None);
             panel.style.width = SurfaceWidth;
             return panel;
         }

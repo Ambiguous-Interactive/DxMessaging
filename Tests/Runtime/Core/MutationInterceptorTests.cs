@@ -14,15 +14,9 @@ namespace DxMessaging.Tests.Runtime.Core
     public sealed class MutationInterceptorTests : MessagingTestBase
     {
         [Test]
-        public void AddBlockingInterceptorDuringInterceptor(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void AddBlockingInterceptorDuringInterceptor([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(AddBlockingInterceptorDuringInterceptor) + "_" + scenario,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(AddBlockingInterceptorDuringInterceptor) + "_" + scenario, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent comp = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
@@ -49,11 +43,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             EmitForScenario(scenario, hostId);
             Assert.AreEqual(1, first);
-            Assert.AreEqual(
-                0,
-                second,
-                "New interceptor must not run in the same emission when blocked."
-            );
+            Assert.AreEqual(0, second, "New interceptor must not run in the same emission when blocked.");
 
             EmitForScenario(scenario, hostId);
             Assert.AreEqual(2, first);
@@ -73,18 +63,10 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void ResetFromInterceptorStopsSnapshotAndAllowsFreshRegistration(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void ResetFromInterceptorStopsSnapshotAndAllowsFreshRegistration([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             using LeakWatcher watcher = LeakWatcher.Watch(scenario.DisplayName);
-            GameObject host = new(
-                nameof(ResetFromInterceptorStopsSnapshotAndAllowsFreshRegistration)
-                    + "_"
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(ResetFromInterceptorStopsSnapshotAndAllowsFreshRegistration) + "_" + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -115,97 +97,34 @@ namespace DxMessaging.Tests.Runtime.Core
                 },
                 priority: 0
             );
-            _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () =>
-                ++handlerCount
-            );
+            _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () => ++handlerCount);
 
-            Assert.DoesNotThrow(
-                () => EmitForScenario(scenario, hostId),
-                "[{0}] Reset from an interceptor must stop dispatch without throwing.",
-                scenario.Kind
-            );
-            Assert.AreEqual(
-                1,
-                resettingCount,
-                "[{0}] The resetting interceptor must run exactly once.",
-                scenario.Kind
-            );
-            Assert.AreEqual(
-                0,
-                trailingCount,
-                "[{0}] Reset must stop later interceptors from the in-flight interceptor walk.",
-                scenario.Kind
-            );
-            Assert.AreEqual(
-                0,
-                handlerCount,
-                "[{0}] Reset in the interceptor phase must stop the handler phase.",
-                scenario.Kind
-            );
+            Assert.DoesNotThrow(() => EmitForScenario(scenario, hostId), "[{0}] Reset from an interceptor must stop dispatch without throwing.", scenario.Kind);
+            Assert.AreEqual(1, resettingCount, "[{0}] The resetting interceptor must run exactly once.", scenario.Kind);
+            Assert.AreEqual(0, trailingCount, "[{0}] Reset must stop later interceptors from the in-flight interceptor walk.", scenario.Kind);
+            Assert.AreEqual(0, handlerCount, "[{0}] Reset in the interceptor phase must stop the handler phase.", scenario.Kind);
             Assert.AreEqual(0, bus.RegisteredUntargeted, "[{0}] Untargeted leak.", scenario.Kind);
             Assert.AreEqual(0, bus.RegisteredTargeted, "[{0}] Targeted leak.", scenario.Kind);
             Assert.AreEqual(0, bus.RegisteredBroadcast, "[{0}] Broadcast leak.", scenario.Kind);
-            Assert.AreEqual(
-                0,
-                bus.RegisteredInterceptors,
-                "[{0}] Interceptor leak.",
-                scenario.Kind
-            );
-            Assert.AreEqual(
-                0,
-                bus.RegisteredPostProcessors,
-                "[{0}] Post-processor leak.",
-                scenario.Kind
-            );
-            Assert.AreEqual(
-                0,
-                bus.RegisteredGlobalAcceptAll,
-                "[{0}] Global handler leak.",
-                scenario.Kind
-            );
+            Assert.AreEqual(0, bus.RegisteredInterceptors, "[{0}] Interceptor leak.", scenario.Kind);
+            Assert.AreEqual(0, bus.RegisteredPostProcessors, "[{0}] Post-processor leak.", scenario.Kind);
+            Assert.AreEqual(0, bus.RegisteredGlobalAcceptAll, "[{0}] Global handler leak.", scenario.Kind);
 
-            Assert.DoesNotThrow(
-                () => EmitForScenario(scenario, hostId),
-                "[{0}] An emission immediately after Reset must be a silent no-op.",
-                scenario.Kind
-            );
-            Assert.AreEqual(
-                1,
-                resettingCount,
-                "[{0}] Reset interceptor survived Reset.",
-                scenario.Kind
-            );
-            Assert.AreEqual(
-                0,
-                trailingCount,
-                "[{0}] Trailing interceptor survived Reset.",
-                scenario.Kind
-            );
+            Assert.DoesNotThrow(() => EmitForScenario(scenario, hostId), "[{0}] An emission immediately after Reset must be a silent no-op.", scenario.Kind);
+            Assert.AreEqual(1, resettingCount, "[{0}] Reset interceptor survived Reset.", scenario.Kind);
+            Assert.AreEqual(0, trailingCount, "[{0}] Trailing interceptor survived Reset.", scenario.Kind);
             Assert.AreEqual(0, handlerCount, "[{0}] Handler survived Reset.", scenario.Kind);
 
-            GameObject rebornHost = new(
-                nameof(ResetFromInterceptorStopsSnapshotAndAllowsFreshRegistration)
-                    + "_Reborn_"
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject rebornHost = new(nameof(ResetFromInterceptorStopsSnapshotAndAllowsFreshRegistration) + "_Reborn_" + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(rebornHost);
-            EmptyMessageAwareComponent rebornComponent =
-                rebornHost.GetComponent<EmptyMessageAwareComponent>();
+            EmptyMessageAwareComponent rebornComponent = rebornHost.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken rebornToken = GetToken(rebornComponent);
             InstanceId rebornId = rebornHost;
             int rebornCount = 0;
-            _ = ScenarioCallbacks.RegisterCountingHandler(scenario, rebornToken, rebornId, () =>
-                ++rebornCount
-            );
+            _ = ScenarioCallbacks.RegisterCountingHandler(scenario, rebornToken, rebornId, () => ++rebornCount);
 
             EmitForScenario(scenario, rebornId);
-            Assert.AreEqual(
-                1,
-                rebornCount,
-                "[{0}] A fresh post-reset registration must dispatch normally.",
-                scenario.Kind
-            );
+            Assert.AreEqual(1, rebornCount, "[{0}] A fresh post-reset registration must dispatch normally.", scenario.Kind);
             rebornToken.UnregisterAll();
         }
 
@@ -222,16 +141,10 @@ namespace DxMessaging.Tests.Runtime.Core
         /// </summary>
         [Test]
         public void InterceptorAddedToLaterPriorityGroupDoesNotRunInSameEmission(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario
         )
         {
-            GameObject host = new(
-                nameof(InterceptorAddedToLaterPriorityGroupDoesNotRunInSameEmission)
-                    + "_"
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(InterceptorAddedToLaterPriorityGroupDoesNotRunInSameEmission) + "_" + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -269,12 +182,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             EmitForScenario(scenario, hostId);
-            Assert.AreEqual(
-                1,
-                earlyCount,
-                "[{0}] The priority-0 interceptor must run exactly once.",
-                scenario.Kind
-            );
+            Assert.AreEqual(1, earlyCount, "[{0}] The priority-0 interceptor must run exactly once.", scenario.Kind);
             Assert.AreEqual(
                 0,
                 lateCount,
@@ -284,18 +192,8 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             EmitForScenario(scenario, hostId);
-            Assert.AreEqual(
-                2,
-                earlyCount,
-                "[{0}] The priority-0 interceptor must run again on the second emission.",
-                scenario.Kind
-            );
-            Assert.AreEqual(
-                1,
-                lateCount,
-                "[{0}] The later-group interceptor must start running on the NEXT emission.",
-                scenario.Kind
-            );
+            Assert.AreEqual(2, earlyCount, "[{0}] The priority-0 interceptor must run again on the second emission.", scenario.Kind);
+            Assert.AreEqual(1, lateCount, "[{0}] The later-group interceptor must start running on the NEXT emission.", scenario.Kind);
 
             token.RemoveRegistration(earlyHandle);
             if (lateHandle.HasValue)
@@ -313,16 +211,10 @@ namespace DxMessaging.Tests.Runtime.Core
         /// </summary>
         [Test]
         public void InterceptorRemovedFromLaterPriorityGroupStillRunsInSameEmission(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario
         )
         {
-            GameObject host = new(
-                nameof(InterceptorRemovedFromLaterPriorityGroupStillRunsInSameEmission)
-                    + "_"
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(InterceptorRemovedFromLaterPriorityGroupStillRunsInSameEmission) + "_" + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -366,54 +258,28 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             EmitForScenario(scenario, hostId);
-            Assert.AreEqual(
-                1,
-                earlyCount,
-                "[{0}] The priority-0 interceptor must run exactly once.",
-                scenario.Kind
-            );
+            Assert.AreEqual(1, earlyCount, "[{0}] The priority-0 interceptor must run exactly once.", scenario.Kind);
             Assert.AreEqual(
                 1,
                 lateCount,
-                "[{0}] An interceptor removed from a later priority group must still run for the "
-                    + "in-flight message; the interceptor walk is frozen at emission start.",
+                "[{0}] An interceptor removed from a later priority group must still run for the " + "in-flight message; the interceptor walk is frozen at emission start.",
                 scenario.Kind
             );
 
             EmitForScenario(scenario, hostId);
-            Assert.AreEqual(
-                2,
-                earlyCount,
-                "[{0}] The priority-0 interceptor must run again on the second emission.",
-                scenario.Kind
-            );
-            Assert.AreEqual(
-                1,
-                lateCount,
-                "[{0}] The removed interceptor must not run on the next emission.",
-                scenario.Kind
-            );
+            Assert.AreEqual(2, earlyCount, "[{0}] The priority-0 interceptor must run again on the second emission.", scenario.Kind);
+            Assert.AreEqual(1, lateCount, "[{0}] The removed interceptor must not run on the next emission.", scenario.Kind);
 
             token.RemoveRegistration(earlyHandle);
         }
 
-        private static MessageRegistrationHandle RegisterInterceptor(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            Func<bool> body,
-            int priority = 0
-        )
+        private static MessageRegistrationHandle RegisterInterceptor(MessageScenario scenario, MessageRegistrationToken token, Func<bool> body, int priority = 0)
         {
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
                 {
-                    return ScenarioHarness.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(
-                        scenario,
-                        token,
-                        (ref SimpleUntargetedMessage _) => body(),
-                        priority
-                    );
+                    return ScenarioHarness.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(scenario, token, (ref SimpleUntargetedMessage _) => body(), priority);
                 }
                 case MessageKind.Targeted:
                 {
@@ -435,11 +301,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
@@ -468,11 +330,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }

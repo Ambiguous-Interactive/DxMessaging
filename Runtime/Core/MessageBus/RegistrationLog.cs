@@ -44,10 +44,7 @@ namespace DxMessaging.Core.MessageBus
 
         IEnumerator<MessagingRegistration> IEnumerable<MessagingRegistration>.GetEnumerator()
         {
-            return (
-                (IEnumerable<MessagingRegistration>)_finalizedRegistrations
-                ?? Array.Empty<MessagingRegistration>()
-            ).GetEnumerator();
+            return ((IEnumerable<MessagingRegistration>)_finalizedRegistrations ?? Array.Empty<MessagingRegistration>()).GetEnumerator();
         }
 
         IEnumerator IEnumerable.GetEnumerator()
@@ -97,9 +94,7 @@ namespace DxMessaging.Core.MessageBus
             {
                 return;
             }
-            (_finalizedRegistrations ??= new CyclicBuffer<MessagingRegistration>(_capacity)).Add(
-                registration
-            );
+            (_finalizedRegistrations ??= new CyclicBuffer<MessagingRegistration>(_capacity)).Add(registration);
         }
 
         /// <summary>
@@ -143,9 +138,7 @@ namespace DxMessaging.Core.MessageBus
                 return "[]";
             }
 
-            MessagingRegistration[] snapshot = new MessagingRegistration[
-                finalizedRegistrations.Count
-            ];
+            MessagingRegistration[] snapshot = new MessagingRegistration[finalizedRegistrations.Count];
             for (int i = 0; i < snapshot.Length; ++i)
             {
                 snapshot[i] = finalizedRegistrations[i];

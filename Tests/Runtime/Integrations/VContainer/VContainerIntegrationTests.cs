@@ -29,13 +29,7 @@ namespace DxMessaging.Tests.Runtime.VContainer
             IMessageBus bus = resolver.Resolve<IMessageBus>();
             Assert.NotNull(bus);
 
-            GameObject go = Track(
-                new GameObject(
-                    nameof(ContainerInjectsMessagingComponentWithRegisteredBus),
-                    typeof(MessagingComponent),
-                    typeof(VContainerConfiguredListener)
-                )
-            );
+            GameObject go = Track(new GameObject(nameof(ContainerInjectsMessagingComponentWithRegisteredBus), typeof(MessagingComponent), typeof(VContainerConfiguredListener)));
 
             resolver.InjectGameObject(go);
             VContainerConfiguredListener listener = go.GetComponent<VContainerConfiguredListener>();
@@ -44,11 +38,7 @@ namespace DxMessaging.Tests.Runtime.VContainer
             SimpleUntargetedMessage message = new();
             message.EmitUntargeted(bus);
 
-            Assert.AreEqual(
-                1,
-                listener.ReceivedCount,
-                "Listener should receive messages emitted via the VContainer-resolved bus."
-            );
+            Assert.AreEqual(1, listener.ReceivedCount, "Listener should receive messages emitted via the VContainer-resolved bus.");
         }
 
         [Test]
@@ -62,11 +52,7 @@ namespace DxMessaging.Tests.Runtime.VContainer
             Assert.NotNull(bus);
 
             GameObject go = Track(
-                new GameObject(
-                    nameof(ContainerInjectsMessagingComponentWithFactoryRegisteredBus),
-                    typeof(MessagingComponent),
-                    typeof(VContainerConfiguredListener)
-                )
+                new GameObject(nameof(ContainerInjectsMessagingComponentWithFactoryRegisteredBus), typeof(MessagingComponent), typeof(VContainerConfiguredListener))
             );
 
             resolver.InjectGameObject(go);
@@ -76,11 +62,7 @@ namespace DxMessaging.Tests.Runtime.VContainer
             SimpleUntargetedMessage message = new();
             message.EmitUntargeted(bus);
 
-            Assert.AreEqual(
-                1,
-                listener.ReceivedCount,
-                "Listener should receive messages emitted via the factory-registered bus."
-            );
+            Assert.AreEqual(1, listener.ReceivedCount, "Listener should receive messages emitted via the factory-registered bus.");
         }
 
         [Test]
@@ -95,11 +77,7 @@ namespace DxMessaging.Tests.Runtime.VContainer
             Assert.AreSame(instance, bus, "Resolved bus should match registered instance.");
 
             GameObject go = Track(
-                new GameObject(
-                    nameof(ContainerInjectsMessagingComponentWithInstanceRegisteredBus),
-                    typeof(MessagingComponent),
-                    typeof(VContainerConfiguredListener)
-                )
+                new GameObject(nameof(ContainerInjectsMessagingComponentWithInstanceRegisteredBus), typeof(MessagingComponent), typeof(VContainerConfiguredListener))
             );
 
             resolver.InjectGameObject(go);
@@ -109,11 +87,7 @@ namespace DxMessaging.Tests.Runtime.VContainer
             SimpleUntargetedMessage message = new();
             message.EmitUntargeted(bus);
 
-            Assert.AreEqual(
-                1,
-                listener.ReceivedCount,
-                "Listener should receive messages emitted via the instance-registered bus."
-            );
+            Assert.AreEqual(1, listener.ReceivedCount, "Listener should receive messages emitted via the instance-registered bus.");
         }
 
         [Test]
@@ -126,11 +100,7 @@ namespace DxMessaging.Tests.Runtime.VContainer
             IMessageBus first = resolver.Resolve<IMessageBus>();
             IMessageBus second = resolver.Resolve<IMessageBus>();
 
-            Assert.AreSame(
-                first,
-                second,
-                "Repeated resolutions of IMessageBus should return the same singleton instance."
-            );
+            Assert.AreSame(first, second, "Repeated resolutions of IMessageBus should return the same singleton instance.");
         }
 
         [Test]
@@ -143,11 +113,7 @@ namespace DxMessaging.Tests.Runtime.VContainer
             IMessageBus first = resolver.Resolve<IMessageBus>();
             IMessageBus second = resolver.Resolve<IMessageBus>();
 
-            Assert.AreNotSame(
-                first,
-                second,
-                "Transient lifetime should produce a new bus per resolution."
-            );
+            Assert.AreNotSame(first, second, "Transient lifetime should produce a new bus per resolution.");
         }
 
         [Test]
@@ -160,62 +126,34 @@ namespace DxMessaging.Tests.Runtime.VContainer
             IMessageBus first = resolver.Resolve<IMessageBus>();
             IMessageBus second = resolver.Resolve<IMessageBus>();
 
-            Assert.AreSame(
-                first,
-                second,
-                "Scoped lifetime should return the same bus within a single scope."
-            );
+            Assert.AreSame(first, second, "Scoped lifetime should return the same bus within a single scope.");
         }
 
         [TestCaseSource(nameof(RegisterDxMessagingBusContractCases))]
-        public void RegisterDxMessagingBusExposesSameInstanceAcrossContracts(
-            BusRegistrationCase registrationCase
-        )
+        public void RegisterDxMessagingBusExposesSameInstanceAcrossContracts(BusRegistrationCase registrationCase)
         {
             ContainerBuilder builder = new();
             registrationCase.Register(builder);
 
             IObjectResolver resolver = TrackDisposable(builder.Build());
-            MessageBus concrete = ResolveWithDiagnostic<MessageBus>(
-                resolver,
-                registrationCase.DisplayName
-            );
-            IMessageBus iFace = ResolveWithDiagnostic<IMessageBus>(
-                resolver,
-                registrationCase.DisplayName
-            );
+            MessageBus concrete = ResolveWithDiagnostic<MessageBus>(resolver, registrationCase.DisplayName);
+            IMessageBus iFace = ResolveWithDiagnostic<IMessageBus>(resolver, registrationCase.DisplayName);
 
-            Assert.AreSame(
-                concrete,
-                iFace,
-                $"{registrationCase.DisplayName}: resolving MessageBus and IMessageBus should yield the same singleton."
-            );
+            Assert.AreSame(concrete, iFace, $"{registrationCase.DisplayName}: resolving MessageBus and IMessageBus should yield the same singleton.");
             registrationCase.Verify(concrete, iFace);
         }
 
         [TestCaseSource(nameof(RegisterDxMessagingBusContractCases))]
-        public void RegisterDxMessagingBusExposesSameInstanceWhenInterfaceResolvesFirst(
-            BusRegistrationCase registrationCase
-        )
+        public void RegisterDxMessagingBusExposesSameInstanceWhenInterfaceResolvesFirst(BusRegistrationCase registrationCase)
         {
             ContainerBuilder builder = new();
             registrationCase.Register(builder);
 
             IObjectResolver resolver = TrackDisposable(builder.Build());
-            IMessageBus iFace = ResolveWithDiagnostic<IMessageBus>(
-                resolver,
-                registrationCase.DisplayName
-            );
-            MessageBus concrete = ResolveWithDiagnostic<MessageBus>(
-                resolver,
-                registrationCase.DisplayName
-            );
+            IMessageBus iFace = ResolveWithDiagnostic<IMessageBus>(resolver, registrationCase.DisplayName);
+            MessageBus concrete = ResolveWithDiagnostic<MessageBus>(resolver, registrationCase.DisplayName);
 
-            Assert.AreSame(
-                iFace,
-                concrete,
-                $"{registrationCase.DisplayName}: resolving IMessageBus before MessageBus should still yield the same singleton."
-            );
+            Assert.AreSame(iFace, concrete, $"{registrationCase.DisplayName}: resolving IMessageBus before MessageBus should still yield the same singleton.");
             registrationCase.Verify(concrete, iFace);
         }
 
@@ -250,11 +188,7 @@ namespace DxMessaging.Tests.Runtime.VContainer
         {
             IContainerBuilder nullBuilder = null;
 
-            AssertArgumentNull(
-                () => nullBuilder.RegisterDxMessagingBus(),
-                "builder",
-                "Default overload should reject a null VContainer builder with the correct argument name."
-            );
+            AssertArgumentNull(() => nullBuilder.RegisterDxMessagingBus(), "builder", "Default overload should reject a null VContainer builder with the correct argument name.");
             AssertArgumentNull(
                 () => nullBuilder.RegisterDxMessagingBus(_ => new MessageBus()),
                 "builder",
@@ -272,16 +206,8 @@ namespace DxMessaging.Tests.Runtime.VContainer
             );
 
             ContainerBuilder builder = new();
-            AssertArgumentNull(
-                () => builder.RegisterDxMessagingBus((Func<IObjectResolver, MessageBus>)null),
-                "factory",
-                "Factory overload should reject a null bus factory."
-            );
-            AssertArgumentNull(
-                () => builder.RegisterDxMessagingBus((IDxMessagingClock)null),
-                "clock",
-                "Clock overload should reject a null clock."
-            );
+            AssertArgumentNull(() => builder.RegisterDxMessagingBus((Func<IObjectResolver, MessageBus>)null), "factory", "Factory overload should reject a null bus factory.");
+            AssertArgumentNull(() => builder.RegisterDxMessagingBus((IDxMessagingClock)null), "clock", "Clock overload should reject a null clock.");
         }
 
         [Test]
@@ -292,17 +218,10 @@ namespace DxMessaging.Tests.Runtime.VContainer
             builder.RegisterMessageRegistrationBuilder();
 
             IObjectResolver resolver = TrackDisposable(builder.Build());
-            IMessageRegistrationBuilder registrationBuilder =
-                resolver.Resolve<IMessageRegistrationBuilder>();
-            using MessageRegistrationLease lease = registrationBuilder.Build(
-                new MessageRegistrationBuildOptions()
-            );
+            IMessageRegistrationBuilder registrationBuilder = resolver.Resolve<IMessageRegistrationBuilder>();
+            using MessageRegistrationLease lease = registrationBuilder.Build(new MessageRegistrationBuildOptions());
 
-            Assert.AreSame(
-                resolver.Resolve<IMessageBus>(),
-                lease.MessageBus,
-                "Registration extension should resolve a builder backed by the container bus."
-            );
+            Assert.AreSame(resolver.Resolve<IMessageBus>(), lease.MessageBus, "Registration extension should resolve a builder backed by the container bus.");
         }
 
         [Test]
@@ -312,33 +231,21 @@ namespace DxMessaging.Tests.Runtime.VContainer
             builder.RegisterDxMessagingBus();
 
             MessageBus providerBus = new MessageBus();
-            TestScriptableMessageBusProvider provider = Track(
-                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>()
-            );
+            TestScriptableMessageBusProvider provider = Track(ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>());
             provider.Configure(providerBus);
             builder.RegisterInstance<IMessageBusProvider>(provider).As<IMessageBusProvider>();
             builder.RegisterMessageRegistrationBuilder();
 
             IObjectResolver resolver = TrackDisposable(builder.Build());
-            IMessageRegistrationBuilder registrationBuilder =
-                resolver.Resolve<IMessageRegistrationBuilder>();
-            using MessageRegistrationLease lease = registrationBuilder.Build(
-                new MessageRegistrationBuildOptions()
-            );
+            IMessageRegistrationBuilder registrationBuilder = resolver.Resolve<IMessageRegistrationBuilder>();
+            using MessageRegistrationLease lease = registrationBuilder.Build(new MessageRegistrationBuildOptions());
 
-            Assert.AreSame(
-                providerBus,
-                lease.MessageBus,
-                "Registration extensions should prefer an explicitly registered IMessageBusProvider."
-            );
+            Assert.AreSame(providerBus, lease.MessageBus, "Registration extensions should prefer an explicitly registered IMessageBusProvider.");
 
             UnityEngine.Object.DestroyImmediate(provider);
 
-            IMessageRegistrationBuilder fallbackBuilder =
-                resolver.Resolve<IMessageRegistrationBuilder>();
-            using MessageRegistrationLease fallbackLease = fallbackBuilder.Build(
-                new MessageRegistrationBuildOptions()
-            );
+            IMessageRegistrationBuilder fallbackBuilder = resolver.Resolve<IMessageRegistrationBuilder>();
+            using MessageRegistrationLease fallbackLease = fallbackBuilder.Build(new MessageRegistrationBuildOptions());
 
             Assert.AreSame(
                 resolver.Resolve<IMessageBus>(),
@@ -390,13 +297,7 @@ namespace DxMessaging.Tests.Runtime.VContainer
 
         private static IEnumerable<TestCaseData> RegisterDxMessagingBusContractCases()
         {
-            yield return new TestCaseData(
-                new BusRegistrationCase(
-                    "default overload",
-                    builder => builder.RegisterDxMessagingBus(),
-                    (_, _) => { }
-                )
-            );
+            yield return new TestCaseData(new BusRegistrationCase("default overload", builder => builder.RegisterDxMessagingBus(), (_, _) => { }));
 
             FakeClock clock = new FakeClock(initialSeconds: 42d);
             yield return new TestCaseData(
@@ -405,11 +306,7 @@ namespace DxMessaging.Tests.Runtime.VContainer
                     builder => builder.RegisterDxMessagingBus(clock),
                     (_, _) =>
                     {
-                        Assert.AreEqual(
-                            42d,
-                            clock.NowSeconds,
-                            "Clock overload should construct the bus through CreateForInternalUse without advancing the clock."
-                        );
+                        Assert.AreEqual(42d, clock.NowSeconds, "Clock overload should construct the bus through CreateForInternalUse without advancing the clock.");
                         Assert.GreaterOrEqual(
                             clock.ReadCount,
                             2,
@@ -439,29 +336,15 @@ namespace DxMessaging.Tests.Runtime.VContainer
                     },
                     (concrete, _) =>
                     {
-                        Assert.AreSame(
-                            expected,
-                            concrete,
-                            "Factory overload should construct the bus exactly as the caller supplied."
-                        );
-                        Assert.AreEqual(
-                            1,
-                            factoryCalls,
-                            "Singleton factory should run once even when both MessageBus and IMessageBus are resolved."
-                        );
-                        Assert.IsTrue(
-                            resolverWasProvided,
-                            "Factory overload should pass the active VContainer resolver to the caller."
-                        );
+                        Assert.AreSame(expected, concrete, "Factory overload should construct the bus exactly as the caller supplied.");
+                        Assert.AreEqual(1, factoryCalls, "Singleton factory should run once even when both MessageBus and IMessageBus are resolved.");
+                        Assert.IsTrue(resolverWasProvided, "Factory overload should pass the active VContainer resolver to the caller.");
                     }
                 )
             );
         }
 
-        private static T ResolveWithDiagnostic<T>(
-            IObjectResolver resolver,
-            string registrationDisplayName
-        )
+        private static T ResolveWithDiagnostic<T>(IObjectResolver resolver, string registrationDisplayName)
         {
             try
             {
@@ -469,18 +352,12 @@ namespace DxMessaging.Tests.Runtime.VContainer
             }
             catch (Exception exception)
             {
-                Assert.Fail(
-                    $"{registrationDisplayName}: RegisterDxMessagingBus should expose {typeof(T).FullName}, but VContainer threw: {exception}"
-                );
+                Assert.Fail($"{registrationDisplayName}: RegisterDxMessagingBus should expose {typeof(T).FullName}, but VContainer threw: {exception}");
                 throw;
             }
         }
 
-        private static void AssertArgumentNull(
-            TestDelegate action,
-            string expectedParameterName,
-            string message
-        )
+        private static void AssertArgumentNull(TestDelegate action, string expectedParameterName, string message)
         {
             ArgumentNullException exception = Assert.Throws<ArgumentNullException>(action, message);
             Assert.AreEqual(expectedParameterName, exception.ParamName, message);
@@ -488,11 +365,7 @@ namespace DxMessaging.Tests.Runtime.VContainer
 
         public sealed class BusRegistrationCase
         {
-            public BusRegistrationCase(
-                string displayName,
-                Action<ContainerBuilder> register,
-                Action<MessageBus, IMessageBus> verify
-            )
+            public BusRegistrationCase(string displayName, Action<ContainerBuilder> register, Action<MessageBus, IMessageBus> verify)
             {
                 DisplayName = displayName;
                 Register = register;

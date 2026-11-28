@@ -17,10 +17,6 @@ namespace DxMessaging.Core.Attributes
     /// suppress derived classes. Each subclass must opt out explicitly.
     /// </para>
     /// </remarks>
-    [AttributeUsage(
-        AttributeTargets.Class | AttributeTargets.Method,
-        Inherited = false,
-        AllowMultiple = false
-    )]
+    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method, Inherited = false, AllowMultiple = false)]
     public sealed class DxIgnoreMissingBaseCallAttribute : Attribute { }
 }

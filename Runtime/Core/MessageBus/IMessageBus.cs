@@ -129,14 +129,10 @@ namespace DxMessaging.Core.MessageBus
                 int current = Volatile.Read(ref GlobalSequentialIndex);
                 if (current == int.MaxValue)
                 {
-                    throw new InvalidOperationException(
-                        "The message bus index space is exhausted."
-                    );
+                    throw new InvalidOperationException("The message bus index space is exhausted.");
                 }
                 int next = current + 1;
-                if (
-                    Interlocked.CompareExchange(ref GlobalSequentialIndex, next, current) == current
-                )
+                if (Interlocked.CompareExchange(ref GlobalSequentialIndex, next, current) == current)
                 {
                     return next;
                 }
@@ -159,9 +155,7 @@ namespace DxMessaging.Core.MessageBus
                 return false;
             }
 
-            return isEditor
-                ? targets.HasFlagNoAlloc(DiagnosticsTarget.Editor)
-                : targets.HasFlagNoAlloc(DiagnosticsTarget.Runtime);
+            return isEditor ? targets.HasFlagNoAlloc(DiagnosticsTarget.Editor) : targets.HasFlagNoAlloc(DiagnosticsTarget.Runtime);
         }
 
         /// <summary>
@@ -197,12 +191,7 @@ namespace DxMessaging.Core.MessageBus
             /// <param name="targetSlotsEvicted">Number of bus target or source context entries removed.</param>
             /// <param name="pooledCollectionsEvicted">Number of collections dropped from shared pools.</param>
             /// <param name="liveTypeSlotsRemaining">Number of occupied type slots remaining after the pass.</param>
-            public TrimResult(
-                int typeSlotsEvicted,
-                int targetSlotsEvicted,
-                int pooledCollectionsEvicted,
-                int liveTypeSlotsRemaining
-            )
+            public TrimResult(int typeSlotsEvicted, int targetSlotsEvicted, int pooledCollectionsEvicted, int liveTypeSlotsRemaining)
             {
                 TypeSlotsEvicted = typeSlotsEvicted;
                 TargetSlotsEvicted = targetSlotsEvicted;
@@ -238,13 +227,7 @@ namespace DxMessaging.Core.MessageBus
 
             /// <summary>Produces a hash from all four trim counts.</summary>
             /// <returns>Hash code derived from the reported counts.</returns>
-            public override int GetHashCode() =>
-                (
-                    TypeSlotsEvicted,
-                    TargetSlotsEvicted,
-                    PooledCollectionsEvicted,
-                    LiveTypeSlotsRemaining
-                ).GetHashCode();
+            public override int GetHashCode() => (TypeSlotsEvicted, TargetSlotsEvicted, PooledCollectionsEvicted, LiveTypeSlotsRemaining).GetHashCode();
 
             /// <summary>Compares two values for equality.</summary>
             /// <param name="left">Left value to compare.</param>
@@ -256,8 +239,7 @@ namespace DxMessaging.Core.MessageBus
             /// <param name="left">Left value to compare.</param>
             /// <param name="right">Right value to compare.</param>
             /// <returns><c>false</c> when all four trim counts match; otherwise <c>true</c>.</returns>
-            public static bool operator !=(TrimResult left, TrimResult right) =>
-                !left.Equals(right);
+            public static bool operator !=(TrimResult left, TrimResult right) => !left.Equals(right);
 
             /// <summary>Formats all four named trim counts.</summary>
             /// <returns>Text containing the reclaimed counts and remaining type-slot count.</returns>
@@ -369,10 +351,7 @@ namespace DxMessaging.Core.MessageBus
         /// <param name="messageHandler">MessageHandler to register to accept UntargetedMessages of the specified type.</param>
         /// <param name="priority">Priority at which to run; lower runs earlier.</param>
         /// <returns>An opaque registration handle. Pass it to <see cref="Deregister{T}"/> with the same T to stop receiving messages.</returns>
-        MessageBusRegistration RegisterUntargeted<T>(
-            MessageHandler messageHandler,
-            int priority = 0
-        )
+        MessageBusRegistration RegisterUntargeted<T>(MessageHandler messageHandler, int priority = 0)
             where T : IUntargetedMessage;
 
         /// <summary>
@@ -393,11 +372,7 @@ namespace DxMessaging.Core.MessageBus
         /// at every spawned GameObject) should prefer <see cref="RegisterTargetedWithoutTargeting{T}"/>
         /// or recycle MessageHandlers to avoid unbounded inner-dictionary growth.
         /// </remarks>
-        MessageBusRegistration RegisterTargeted<T>(
-            InstanceId target,
-            MessageHandler messageHandler,
-            int priority = 0
-        )
+        MessageBusRegistration RegisterTargeted<T>(InstanceId target, MessageHandler messageHandler, int priority = 0)
             where T : ITargetedMessage;
 
         /// <summary>
@@ -408,10 +383,7 @@ namespace DxMessaging.Core.MessageBus
         /// <param name="messageHandler">MessageHandler to register to accept all TargetedMessages of the specified type.</param>
         /// <param name="priority">Priority at which to run; lower runs earlier.</param>
         /// <returns>An opaque registration handle. Pass it to <see cref="Deregister{T}"/> with the same T to stop receiving messages.</returns>
-        MessageBusRegistration RegisterTargetedWithoutTargeting<T>(
-            MessageHandler messageHandler,
-            int priority = 0
-        )
+        MessageBusRegistration RegisterTargetedWithoutTargeting<T>(MessageHandler messageHandler, int priority = 0)
             where T : ITargetedMessage;
 
         /// <summary>
@@ -432,11 +404,7 @@ namespace DxMessaging.Core.MessageBus
         /// every spawned GameObject) should prefer <see cref="RegisterSourcedBroadcastWithoutSource{T}"/>
         /// or recycle MessageHandlers to avoid unbounded inner-dictionary growth.
         /// </remarks>
-        MessageBusRegistration RegisterSourcedBroadcast<T>(
-            InstanceId source,
-            MessageHandler messageHandler,
-            int priority = 0
-        )
+        MessageBusRegistration RegisterSourcedBroadcast<T>(InstanceId source, MessageHandler messageHandler, int priority = 0)
             where T : IBroadcastMessage;
 
         /// <summary>
@@ -447,10 +415,7 @@ namespace DxMessaging.Core.MessageBus
         /// <param name="messageHandler">MessageHandler to register to accept BroadcastMessages.</param>
         /// <param name="priority"></param>
         /// <returns>An opaque registration handle. Pass it to <see cref="Deregister{T}"/> with the same T to stop receiving messages.</returns>
-        MessageBusRegistration RegisterSourcedBroadcastWithoutSource<T>(
-            MessageHandler messageHandler,
-            int priority = 0
-        )
+        MessageBusRegistration RegisterSourcedBroadcastWithoutSource<T>(MessageHandler messageHandler, int priority = 0)
             where T : IBroadcastMessage;
 
         /// <summary>
@@ -484,10 +449,7 @@ namespace DxMessaging.Core.MessageBus
         /// from dispatch. Other registrations of the same interceptor remain active.
         /// </remarks>
         /// <returns>An opaque registration handle. Pass it to <see cref="Deregister{T}"/> with the same T to stop intercepting messages.</returns>
-        MessageBusRegistration RegisterUntargetedInterceptor<T>(
-            UntargetedInterceptor<T> interceptor,
-            int priority = 0
-        )
+        MessageBusRegistration RegisterUntargetedInterceptor<T>(UntargetedInterceptor<T> interceptor, int priority = 0)
             where T : IUntargetedMessage;
 
         /// <summary>
@@ -513,10 +475,7 @@ namespace DxMessaging.Core.MessageBus
         /// from dispatch. Other registrations of the same interceptor remain active.
         /// </remarks>
         /// <returns>An opaque registration handle. Pass it to <see cref="Deregister{T}"/> with the same T to stop intercepting messages.</returns>
-        MessageBusRegistration RegisterTargetedInterceptor<T>(
-            TargetedInterceptor<T> interceptor,
-            int priority = 0
-        )
+        MessageBusRegistration RegisterTargetedInterceptor<T>(TargetedInterceptor<T> interceptor, int priority = 0)
             where T : ITargetedMessage;
 
         /// <summary>
@@ -542,10 +501,7 @@ namespace DxMessaging.Core.MessageBus
         /// from dispatch. Other registrations of the same interceptor remain active.
         /// </remarks>
         /// <returns>An opaque registration handle. Pass it to <see cref="Deregister{T}"/> with the same T to stop intercepting messages.</returns>
-        MessageBusRegistration RegisterBroadcastInterceptor<T>(
-            BroadcastInterceptor<T> interceptor,
-            int priority = 0
-        )
+        MessageBusRegistration RegisterBroadcastInterceptor<T>(BroadcastInterceptor<T> interceptor, int priority = 0)
             where T : IBroadcastMessage;
 
         /// <summary>
@@ -556,10 +512,7 @@ namespace DxMessaging.Core.MessageBus
         /// <param name="messageHandler">MessageHandler to post-process messages for.</param>
         /// <param name="priority">Priority of the interceptor to run at. Handlers run in order of priority from low -> high.</param>
         /// <returns>An opaque registration handle. Pass it to <see cref="Deregister{T}"/> with the same T to stop post-processing messages.</returns>
-        MessageBusRegistration RegisterUntargetedPostProcessor<T>(
-            MessageHandler messageHandler,
-            int priority = 0
-        )
+        MessageBusRegistration RegisterUntargetedPostProcessor<T>(MessageHandler messageHandler, int priority = 0)
             where T : IUntargetedMessage;
 
         /// <summary>
@@ -571,11 +524,7 @@ namespace DxMessaging.Core.MessageBus
         /// <param name="messageHandler">MessageHandler to post-process messages for.</param>
         /// <param name="priority">Priority of the interceptor to run at. Handlers run in order of priority from low -> high.</param>
         /// <returns>An opaque registration handle. Pass it to <see cref="Deregister{T}"/> with the same T to stop post-processing messages.</returns>
-        MessageBusRegistration RegisterTargetedPostProcessor<T>(
-            InstanceId target,
-            MessageHandler messageHandler,
-            int priority = 0
-        )
+        MessageBusRegistration RegisterTargetedPostProcessor<T>(InstanceId target, MessageHandler messageHandler, int priority = 0)
             where T : ITargetedMessage;
 
         /// <summary>
@@ -586,10 +535,7 @@ namespace DxMessaging.Core.MessageBus
         /// <param name="messageHandler">MessageHandler to post-process messages for.</param>
         /// <param name="priority">Priority of the interceptor to run at. Handlers run in order of priority from low -> high.</param>
         /// <returns>An opaque registration handle. Pass it to <see cref="Deregister{T}"/> with the same T to stop post-processing messages.</returns>
-        MessageBusRegistration RegisterTargetedWithoutTargetingPostProcessor<T>(
-            MessageHandler messageHandler,
-            int priority = 0
-        )
+        MessageBusRegistration RegisterTargetedWithoutTargetingPostProcessor<T>(MessageHandler messageHandler, int priority = 0)
             where T : ITargetedMessage;
 
         /// <summary>
@@ -601,11 +547,7 @@ namespace DxMessaging.Core.MessageBus
         /// <param name="messageHandler">MessageHandler to post-process messages for.</param>
         /// <param name="priority">Priority of the interceptor to run at. Handlers run in order of priority from low -> high.</param>
         /// <returns>An opaque registration handle. Pass it to <see cref="Deregister{T}"/> with the same T to stop post-processing messages.</returns>
-        MessageBusRegistration RegisterBroadcastPostProcessor<T>(
-            InstanceId source,
-            MessageHandler messageHandler,
-            int priority = 0
-        )
+        MessageBusRegistration RegisterBroadcastPostProcessor<T>(InstanceId source, MessageHandler messageHandler, int priority = 0)
             where T : IBroadcastMessage;
 
         /// <summary>
@@ -616,10 +558,7 @@ namespace DxMessaging.Core.MessageBus
         /// <param name="messageHandler">MessageHandler to post-process messages for.</param>
         /// <param name="priority">Priority of the interceptor to run at. Handlers run in order of priority from low -> high.</param>
         /// <returns>An opaque registration handle. Pass it to <see cref="Deregister{T}"/> with the same T to stop post-processing messages.</returns>
-        MessageBusRegistration RegisterBroadcastWithoutSourcePostProcessor<T>(
-            MessageHandler messageHandler,
-            int priority = 0
-        )
+        MessageBusRegistration RegisterBroadcastWithoutSourcePostProcessor<T>(MessageHandler messageHandler, int priority = 0)
             where T : IBroadcastMessage;
 
         /// <summary>

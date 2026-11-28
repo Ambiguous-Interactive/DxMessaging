@@ -64,34 +64,16 @@ namespace DxMessaging.Tests.Editor.Allocations
                         provider = RunBenchmark(timeout, useProvider: true);
                     }
 
-                    Assert.That(
-                        direct.Count,
-                        Is.GreaterThan(0),
-                        "Direct benchmark produced no operations."
-                    );
-                    Assert.That(
-                        provider.Count,
-                        Is.GreaterThan(0),
-                        "Provider benchmark produced no operations."
-                    );
+                    Assert.That(direct.Count, Is.GreaterThan(0), "Direct benchmark produced no operations.");
+                    Assert.That(provider.Count, Is.GreaterThan(0), "Provider benchmark produced no operations.");
                     samples.Add(new PairedBenchmarkSample(i + 1, direct, provider));
                 }
 
                 BenchmarkResult aggregateDirect = Aggregate(samples, useProvider: false);
                 BenchmarkResult aggregateProvider = Aggregate(samples, useProvider: true);
 
-                RecordBenchmark(
-                    "DxMessaging (Untargeted) - Direct Bus",
-                    aggregateDirect.Count,
-                    aggregateDirect.Duration,
-                    allocating: false
-                );
-                RecordBenchmark(
-                    "DxMessaging (Untargeted) - Provider",
-                    aggregateProvider.Count,
-                    aggregateProvider.Duration,
-                    allocating: false
-                );
+                RecordBenchmark("DxMessaging (Untargeted) - Direct Bus", aggregateDirect.Count, aggregateDirect.Duration, allocating: false);
+                RecordBenchmark("DxMessaging (Untargeted) - Provider", aggregateProvider.Count, aggregateProvider.Duration, allocating: false);
 
                 WriteSampleDiagnostics(samples);
             });
@@ -110,9 +92,7 @@ namespace DxMessaging.Tests.Editor.Allocations
                 Stopwatch stopwatch = Stopwatch.StartNew();
                 int count = 0;
                 BenchmarkUntargetedMessage message = new(0);
-                IMessageBusProvider provider = useProvider
-                    ? new StaticMessageBusProvider(bus)
-                    : null;
+                IMessageBusProvider provider = useProvider ? new StaticMessageBusProvider(bus) : null;
 
                 while (stopwatch.Elapsed < timeout)
                 {
@@ -138,10 +118,7 @@ namespace DxMessaging.Tests.Editor.Allocations
             }
         }
 
-        private static BenchmarkResult Aggregate(
-            List<PairedBenchmarkSample> samples,
-            bool useProvider
-        )
+        private static BenchmarkResult Aggregate(List<PairedBenchmarkSample> samples, bool useProvider)
         {
             int totalCount = 0;
             TimeSpan totalDuration = TimeSpan.Zero;
@@ -191,10 +168,7 @@ namespace DxMessaging.Tests.Editor.Allocations
             TestContext.Out.WriteLine(summary);
             if (TargetSlowdown < medianSlowdown)
             {
-                UnityEngine.Debug.LogWarning(
-                    summary
-                        + " (telemetry only; this benchmark no longer fails CI from a single noisy sample)"
-                );
+                UnityEngine.Debug.LogWarning(summary + " (telemetry only; this benchmark no longer fails CI from a single noisy sample)");
             }
         }
 
@@ -208,17 +182,12 @@ namespace DxMessaging.Tests.Editor.Allocations
 
             internal int Count { get; }
             internal TimeSpan Duration { get; }
-            internal double OperationsPerSecond =>
-                Duration.TotalSeconds <= 0 ? 0 : Count / Duration.TotalSeconds;
+            internal double OperationsPerSecond => Duration.TotalSeconds <= 0 ? 0 : Count / Duration.TotalSeconds;
         }
 
         private readonly struct PairedBenchmarkSample
         {
-            internal PairedBenchmarkSample(
-                int index,
-                BenchmarkResult direct,
-                BenchmarkResult provider
-            )
+            internal PairedBenchmarkSample(int index, BenchmarkResult direct, BenchmarkResult provider)
             {
                 Index = index;
                 Direct = direct;
@@ -228,10 +197,7 @@ namespace DxMessaging.Tests.Editor.Allocations
             internal int Index { get; }
             internal BenchmarkResult Direct { get; }
             internal BenchmarkResult Provider { get; }
-            internal double Slowdown =>
-                Provider.OperationsPerSecond <= 0
-                    ? double.PositiveInfinity
-                    : Direct.OperationsPerSecond / Provider.OperationsPerSecond;
+            internal double Slowdown => Provider.OperationsPerSecond <= 0 ? double.PositiveInfinity : Direct.OperationsPerSecond / Provider.OperationsPerSecond;
         }
 
         private sealed class StaticMessageBusProvider : IMessageBusProvider

@@ -15,34 +15,17 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Tests;
 internal sealed class FunctionPointerConstructorContextTests
 {
     [TestCaseSource(nameof(Cases))]
-    public void GeneratedConstructorsPreserveFunctionPointerContexts(
-        bool returnsVoid,
-        string target,
-        string scope
-    )
+    public void GeneratedConstructorsPreserveFunctionPointerContexts(bool returnsVoid, string target, string scope)
     {
         string context = $"returnsVoid={returnsVoid}; target={target}; scope={scope}";
-        AssertCallerExecutes(
-            CreateCompilation(CreateSource(returnsVoid, target, scope, manual: true)),
-            "Handwritten oracle: " + context
-        );
-        CSharpCompilation input = CreateCompilation(
-            CreateSource(returnsVoid, target, scope, manual: false)
-        );
+        AssertCallerExecutes(CreateCompilation(CreateSource(returnsVoid, target, scope, manual: true)), "Handwritten oracle: " + context);
+        CSharpCompilation input = CreateCompilation(CreateSource(returnsVoid, target, scope, manual: false));
         GeneratorDriver driver = CSharpGeneratorDriver.Create(
             new ISourceGenerator[] { new DxAutoConstructorGenerator() },
             parseOptions: new CSharpParseOptions(LanguageVersion.CSharp9)
         );
-        driver = driver.RunGeneratorsAndUpdateCompilation(
-            input,
-            out Compilation generated,
-            out ImmutableArray<Diagnostic> diagnostics
-        );
-        Assert.That(
-            driver.GetRunResult().Results.Select(result => result.Exception),
-            Has.All.Null,
-            context
-        );
+        driver = driver.RunGeneratorsAndUpdateCompilation(input, out Compilation generated, out ImmutableArray<Diagnostic> diagnostics);
+        Assert.That(driver.GetRunResult().Results.Select(result => result.Exception), Has.All.Null, context);
         Assert.That(diagnostics, Is.Empty, context + "\n" + string.Join("\n", diagnostics));
         Assert.That(driver.GetRunResult().GeneratedTrees, Has.Length.EqualTo(1), context);
         AssertCallerExecutes(generated, "Generated caller: " + context);
@@ -56,9 +39,7 @@ internal sealed class FunctionPointerConstructorContextTests
             {
                 foreach (string scope in new[] { "Type", "Outer", "Field" })
                 {
-                    yield return new TestCaseData(returnsVoid, target, scope).SetName(
-                        $"GeneratedConstructorsPreserveFunctionPointerContexts({returnsVoid},{target},{scope})"
-                    );
+                    yield return new TestCaseData(returnsVoid, target, scope).SetName($"GeneratedConstructorsPreserveFunctionPointerContexts({returnsVoid},{target},{scope})");
                 }
             }
         }
@@ -74,12 +55,8 @@ internal sealed class FunctionPointerConstructorContextTests
         string outerOpen = scope == "Outer" ? $"public {unsafeOuter}partial class Envelope {{" : "";
         string outerClose = scope == "Outer" ? "}" : "";
         string closedType = scope == "Outer" ? "Envelope.Packet" : "Packet";
-        string manualConstructor = manual
-            ? $"public unsafe Packet({type} Value) {{ this.Value = Value; }}"
-            : "";
-        string function = returnsVoid
-            ? "private static void Identity() { }"
-            : "private static int Identity(int value) => value;";
+        string manualConstructor = manual ? $"public unsafe Packet({type} Value) {{ this.Value = Value; }}" : "";
+        string function = returnsVoid ? "private static void Identity() { }" : "private static int Identity(int value) => value;";
         return $$"""
             namespace FunctionPointerConsumer
             {
@@ -107,8 +84,7 @@ internal sealed class FunctionPointerConstructorContextTests
 
     private static CSharpCompilation CreateCompilation(string source)
     {
-        CSharpCompilation compilation =
-            GeneratorTestUtilities.CreateAutoConstructorCompilationFromShippedAttributes(source);
+        CSharpCompilation compilation = GeneratorTestUtilities.CreateAutoConstructorCompilationFromShippedAttributes(source);
         return compilation.WithOptions(compilation.Options.WithAllowUnsafe(true));
     }
 
@@ -116,25 +92,14 @@ internal sealed class FunctionPointerConstructorContextTests
     {
         using MemoryStream stream = new();
         Microsoft.CodeAnalysis.Emit.EmitResult emitted = compilation.Emit(stream);
-        Assert.That(
-            emitted.Success,
-            Is.True,
-            context + "\n" + string.Join("\n", emitted.Diagnostics)
-        );
+        Assert.That(emitted.Success, Is.True, context + "\n" + string.Join("\n", emitted.Diagnostics));
         AssemblyLoadContext load = new("FunctionPointerConstructorConsumer", isCollectible: true);
         try
         {
             stream.Position = 0;
             Assembly assembly = load.LoadFromStream(stream);
-            object? result = assembly
-                .GetType("FunctionPointerConsumer.Caller")!
-                .GetMethod("Read")!
-                .Invoke(null, null);
-            Assert.That(
-                result,
-                Is.EqualTo(37),
-                context + ": retain function pointer identity without invoking it"
-            );
+            object? result = assembly.GetType("FunctionPointerConsumer.Caller")!.GetMethod("Read")!.Invoke(null, null);
+            Assert.That(result, Is.EqualTo(37), context + ": retain function pointer identity without invoking it");
         }
         finally
         {

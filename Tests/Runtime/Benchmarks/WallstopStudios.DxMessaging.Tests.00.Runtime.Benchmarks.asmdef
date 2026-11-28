@@ -1,12 +1,7 @@
 {
   "name": "WallstopStudios.DxMessaging.Tests.00.Runtime.Benchmarks",
   "rootNamespace": "DxMessaging.Tests.Runtime.Benchmarks",
-  "references": [
-    "UnityEngine.TestRunner",
-    "UnityEditor.TestRunner",
-    "WallstopStudios.DxMessaging",
-    "WallstopStudios.DxMessaging.Tests.Runtime"
-  ],
+  "references": ["UnityEngine.TestRunner", "UnityEditor.TestRunner", "WallstopStudios.DxMessaging", "WallstopStudios.DxMessaging.Tests.Runtime"],
   "includePlatforms": [],
   "excludePlatforms": [],
   "allowUnsafeCode": false,

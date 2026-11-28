@@ -4,7 +4,8 @@
 
 ## Overview
 
-A changelog is a curated, chronological record of user-facing changes for each release. It helps users understand what changed, whether a version is safe to adopt, and how to plan upgrades without digging through commits.
+A changelog is a curated, chronological record of user-facing changes for each release. It helps users understand what changed, whether a version is safe to adopt, and how to plan
+upgrades without digging through commits.
 
 In a Unity messaging library context, the changelog is the primary source of truth for:
 
@@ -44,8 +45,7 @@ Follow the [Keep a Changelog](https://keepachangelog.com/) specification. Every 
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
@@ -111,9 +111,12 @@ MAJOR.MINOR.PATCH
 - MkDocs navigation skill documenting navigation patterns
 ```
 
-Changelog entries describe changes that **users experience**, not internal tooling, AI agent guidance, or developer-facing documentation. Skills, context files, and internal process documentation are invisible to package consumers and do not belong in the changelog.
+Changelog entries describe changes that **users experience**, not internal tooling, AI agent guidance, or developer-facing documentation. Skills, context files, and internal
+process documentation are invisible to package consumers and do not belong in the changelog.
 
-**What to document instead**: Nothing for this class of change. The changelog records library behavior: what a package consumer experiences in Unity. Documentation-site content or layout, README text, brand artwork (marks, banners, cards, favicons), CI, and repository tooling never earn entries, even when the changed files ship inside the package. Announce them through the docs site or repository channels instead.
+**What to document instead**: Nothing for this class of change. The changelog records library behavior: what a package consumer experiences in Unity. Documentation-site content or
+layout, README text, brand artwork (marks, banners, cards, favicons), CI, and repository tooling never earn entries, even when the changed files ship inside the package. Announce
+them through the docs site or repository channels instead.
 
 ### Anti-Pattern 2: Overly Broad Scope
 
@@ -135,7 +138,8 @@ This entry implies all test assembly definitions were changed, which is rarely a
 - `WallstopStudios.DxMessaging.Tests.Runtime` assembly definition now specifies Editor-only platform to prevent Burst compilation errors during player builds
 ```
 
-**Rule**: Be specific about what changed. Name the exact files, assemblies, or components that were modified. Vague entries create confusion about which components were affected and make it harder to trace issues back to specific changes.
+**Rule**: Be specific about what changed. Name the exact files, assemblies, or components that were modified. Vague entries create confusion about which components were affected
+and make it harder to trace issues back to specific changes.
 
 ## See Also
 

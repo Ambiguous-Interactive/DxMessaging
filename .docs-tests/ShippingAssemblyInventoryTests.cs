@@ -20,74 +20,28 @@ internal sealed class ShippingAssemblyInventoryTests
         string root = DocsSnippetCompilationTests.ResolveRepoRoot();
         string path = Path.Combine(root, "scripts", "unity", "run-ci-tests.ps1");
         string source = File.ReadAllText(path);
-        int builder = source.IndexOf(
-            "function New-ShippingFidelityBuilderSource {",
-            StringComparison.Ordinal
-        );
-        Assert.That(
-            builder,
-            Is.GreaterThanOrEqualTo(0),
-            "Locate the actual shipping builder generator."
-        );
-        int start = source.IndexOf(
-            "    private static void AssertNoTestAssemblies(",
-            builder,
-            StringComparison.Ordinal
-        );
-        int end = source.IndexOf(
-            "    private static void WriteAssemblyEvidence(",
-            start,
-            StringComparison.Ordinal
-        );
-        Assert.That(
-            start,
-            Is.GreaterThan(builder),
-            "Select the builder's guard, separate from the runtime loaded-assembly check."
-        );
-        Assert.That(
-            end,
-            Is.GreaterThan(start),
-            "Extract the complete unchanged production method."
-        );
+        int builder = source.IndexOf("function New-ShippingFidelityBuilderSource {", StringComparison.Ordinal);
+        Assert.That(builder, Is.GreaterThanOrEqualTo(0), "Locate the actual shipping builder generator.");
+        int start = source.IndexOf("    private static void AssertNoTestAssemblies(", builder, StringComparison.Ordinal);
+        int end = source.IndexOf("    private static void WriteAssemblyEvidence(", start, StringComparison.Ordinal);
+        Assert.That(start, Is.GreaterThan(builder), "Select the builder's guard, separate from the runtime loaded-assembly check.");
+        Assert.That(end, Is.GreaterThan(start), "Extract the complete unchanged production method.");
         string guard = source[start..end];
-        string compiled =
-            "using System; public static class ShippingInventoryGuard {\n"
-            + guard
-            + "\npublic static void Check(string[] names) => AssertNoTestAssemblies(names); }";
-        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
-            ?? throw new InvalidOperationException("Runtime references are unavailable.");
+        string compiled = "using System; public static class ShippingInventoryGuard {\n" + guard + "\npublic static void Check(string[] names) => AssertNoTestAssemblies(names); }";
+        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") ?? throw new InvalidOperationException("Runtime references are unavailable.");
         CSharpCompilation compilation = CSharpCompilation.Create(
             "ActualShippingInventoryGuard",
-            new[]
-            {
-                CSharpSyntaxTree.ParseText(
-                    compiled,
-                    new CSharpParseOptions(LanguageVersion.CSharp9),
-                    path
-                ),
-            },
-            references
-                .Split(Path.PathSeparator)
-                .Select(file => MetadataReference.CreateFromFile(file)),
-            new CSharpCompilationOptions(
-                OutputKind.DynamicallyLinkedLibrary,
-                generalDiagnosticOption: ReportDiagnostic.Error
-            )
+            new[] { CSharpSyntaxTree.ParseText(compiled, new CSharpParseOptions(LanguageVersion.CSharp9), path) },
+            references.Split(Path.PathSeparator).Select(file => MetadataReference.CreateFromFile(file)),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, generalDiagnosticOption: ReportDiagnostic.Error)
         );
         using MemoryStream image = new();
         Microsoft.CodeAnalysis.Emit.EmitResult emitted = compilation.Emit(image);
-        Assert.That(
-            emitted.Success,
-            Is.True,
-            "Compile the actual guard without Unity stubs or duplicated validation:\n"
-                + string.Join("\n", emitted.Diagnostics)
-        );
+        Assert.That(emitted.Success, Is.True, "Compile the actual guard without Unity stubs or duplicated validation:\n" + string.Join("\n", emitted.Diagnostics));
         image.Position = 0;
         _load = new AssemblyLoadContext("ActualShippingInventoryGuard", isCollectible: true);
         Assembly assembly = _load.LoadFromStream(image);
-        _check = assembly
-            .GetType("ShippingInventoryGuard", throwOnError: true)!
-            .GetMethod("Check")!;
+        _check = assembly.GetType("ShippingInventoryGuard", throwOnError: true)!.GetMethod("Check")!;
     }
 
     [OneTimeTearDown]
@@ -106,16 +60,8 @@ internal sealed class ShippingAssemblyInventoryTests
     public void GeneratedBuilderAcceptsOnlyTheCurrentSelectedInventory(string shape, bool accepted)
     {
         string root = DocsSnippetCompilationTests.ResolveRepoRoot();
-        using JsonDocument runtime = JsonDocument.Parse(
-            File.ReadAllText(
-                Path.Combine(root, "Runtime", "Core", "WallstopStudios.DxMessaging.asmdef")
-            )
-        );
-        using JsonDocument attributes = JsonDocument.Parse(
-            File.ReadAllText(
-                Path.Combine(root, "Runtime", "WallstopStudios.DxMessaging.Attributes.asmdef")
-            )
-        );
+        using JsonDocument runtime = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "Runtime", "Core", "WallstopStudios.DxMessaging.asmdef")));
+        using JsonDocument attributes = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "Runtime", "WallstopStudios.DxMessaging.Attributes.asmdef")));
         string runtimeName = runtime.RootElement.GetProperty("name").GetString()!;
         string attributesName = attributes.RootElement.GetProperty("name").GetString()!;
         string[] names = { "Assembly-CSharp", runtimeName, attributesName };
@@ -141,32 +87,17 @@ internal sealed class ShippingAssemblyInventoryTests
                 Array.Reverse(names);
                 break;
             default:
-                Assert.That(
-                    shape,
-                    Is.EqualTo("current"),
-                    "Every shape is an explicit inventory control."
-                );
+                Assert.That(shape, Is.EqualTo("current"), "Every shape is an explicit inventory control.");
                 break;
         }
         if (accepted)
         {
-            Assert.That(
-                () => _check.Invoke(null, new object[] { names }),
-                Throws.Nothing,
-                "The real consumer plus both actual package asmdefs must be accepted."
-            );
+            Assert.That(() => _check.Invoke(null, new object[] { names }), Throws.Nothing, "The real consumer plus both actual package asmdefs must be accepted.");
         }
         else
         {
-            TargetInvocationException? failure = Assert.Throws<TargetInvocationException>(
-                () => _check.Invoke(null, new object[] { names }),
-                shape
-            );
-            Assert.That(
-                failure!.InnerException,
-                Is.TypeOf<InvalidOperationException>(),
-                shape + ": reject through the actual production guard."
-            );
+            TargetInvocationException? failure = Assert.Throws<TargetInvocationException>(() => _check.Invoke(null, new object[] { names }), shape);
+            Assert.That(failure!.InnerException, Is.TypeOf<InvalidOperationException>(), shape + ": reject through the actual production guard.");
         }
     }
 }

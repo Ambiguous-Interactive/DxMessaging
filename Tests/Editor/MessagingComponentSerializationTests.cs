@@ -47,71 +47,39 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void SerializedProviderHandleSurvivesJsonRoundtrip()
         {
-            CurrentGlobalMessageBusProvider provider = Track(
-                ScriptableObject.CreateInstance<CurrentGlobalMessageBusProvider>()
-            );
-            string assetPath = AssetDatabase.GenerateUniqueAssetPath(
-                "Assets/__TempTestProvider.asset"
-            );
+            CurrentGlobalMessageBusProvider provider = Track(ScriptableObject.CreateInstance<CurrentGlobalMessageBusProvider>());
+            string assetPath = AssetDatabase.GenerateUniqueAssetPath("Assets/__TempTestProvider.asset");
             _createdAssetPaths.Add(assetPath);
             AssetDatabase.CreateAsset(provider, assetPath);
             AssetDatabase.SaveAssets();
             AssetDatabase.ImportAsset(assetPath);
 
-            GameObject owner = Track(
-                EditorUtility.CreateGameObjectWithHideFlags(
-                    "OriginalComponentOwner",
-                    HideFlags.HideAndDontSave
-                )
-            );
+            GameObject owner = Track(EditorUtility.CreateGameObjectWithHideFlags("OriginalComponentOwner", HideFlags.HideAndDontSave));
             MessagingComponent original = owner.AddComponent<MessagingComponent>();
-            original.Configure(
-                new MessageBusProviderHandle(provider),
-                MessageBusRebindMode.RebindActive
-            );
+            original.Configure(new MessageBusProviderHandle(provider), MessageBusRebindMode.RebindActive);
 
             SerializedObject originalSerialized = new(original);
-            SerializedProperty autoConfigureProperty = originalSerialized.FindProperty(
-                "autoConfigureSerializedProviderOnAwake"
-            );
+            SerializedProperty autoConfigureProperty = originalSerialized.FindProperty("autoConfigureSerializedProviderOnAwake");
             Assert.IsNotNull(autoConfigureProperty, "Expected auto configure property to exist.");
             autoConfigureProperty.boolValue = true;
             originalSerialized.ApplyModifiedPropertiesWithoutUndo();
 
             string serializedJson = EditorJsonUtility.ToJson(original);
-            Assert.IsFalse(
-                string.IsNullOrEmpty(serializedJson),
-                "JSON serialization should produce content."
-            );
+            Assert.IsFalse(string.IsNullOrEmpty(serializedJson), "JSON serialization should produce content.");
 
-            GameObject cloneOwner = Track(
-                EditorUtility.CreateGameObjectWithHideFlags(
-                    "ClonedComponentOwner",
-                    HideFlags.HideAndDontSave
-                )
-            );
+            GameObject cloneOwner = Track(EditorUtility.CreateGameObjectWithHideFlags("ClonedComponentOwner", HideFlags.HideAndDontSave));
             MessagingComponent clone = cloneOwner.AddComponent<MessagingComponent>();
             EditorJsonUtility.FromJsonOverwrite(serializedJson, clone);
 
             Assert.IsTrue(
-                clone.SerializedProviderHandle.TryGetProvider(
-                    out IMessageBusProvider resolvedProvider
-                ),
+                clone.SerializedProviderHandle.TryGetProvider(out IMessageBusProvider resolvedProvider),
                 "Serialized provider handle should still resolve after JSON roundtrip."
             );
             Assert.AreSame(provider, resolvedProvider, "Provider reference should be preserved.");
-            Assert.AreSame(
-                provider,
-                clone.SerializedProviderHandle.SerializedProvider,
-                "Provider asset reference should be preserved."
-            );
+            Assert.AreSame(provider, clone.SerializedProviderHandle.SerializedProvider, "Provider asset reference should be preserved.");
 
             IMessageBus resolvedBus = clone.SerializedProviderHandle.ResolveBus();
-            Assert.AreSame(
-                MessageHandler.MessageBus,
-                resolvedBus,
-                "The deserialized provider should retain its production resolution behavior."
-            );
+            Assert.AreSame(MessageHandler.MessageBus, resolvedBus, "The deserialized provider should retain its production resolution behavior.");
         }
 
         private T Track<T>(T unityObject)

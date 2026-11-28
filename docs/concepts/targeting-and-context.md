@@ -4,7 +4,8 @@
 
 ## Overview
 
-Targeted and broadcast messages carry context: an `InstanceId` for the target (targeted) or source (broadcast). In Unity, `InstanceId` can represent either a `GameObject` or a specific `Component`. **These are completely separate channels** -- mixing them is the #1 cause of "why isn't my handler firing?" bugs.
+Targeted and broadcast messages carry context: an `InstanceId` for the target (targeted) or source (broadcast). In Unity, `InstanceId` can represent either a `GameObject` or a
+specific `Component`. **These are completely separate channels** -- mixing them is the #1 cause of "why isn't my handler firing?" bugs.
 
 ## Key Concepts
 
@@ -261,8 +262,7 @@ void OnAnyDamage(in InstanceId source, in TookDamage msg)
 damage.EmitFrom(gameObject); // OnAnyDamage fires with source = gameObject
 ```
 
-Each other component that emits the same message uses its own `gameObject` as the source, so the
-global listener still receives damage from every object.
+Each other component that emits the same message uses its own `gameObject` as the source, so the global listener still receives damage from every object.
 
 #### Use cases
 
@@ -289,8 +289,7 @@ damage.EmitFrom(gameObject);
 // Both fire!
 ```
 
-If a different object emits the same message from its own `gameObject`, the global listener still
-fires, while the source-specific listener above does not.
+If a different object emits the same message from its own `gameObject`, the global listener still fires, while the source-specific listener above does not.
 
 ### Real-World Example: Combat System
 
@@ -349,7 +348,8 @@ public class AchievementSystem : MessageAwareComponent
 
 ### Performance Note
 
-Global listeners (`RegisterTargetedWithoutTargeting` / `RegisterBroadcastWithoutSource`) are **slightly slower** than specific listeners because they receive every message of that type. This is usually negligible, but avoid them in hot paths if you're emitting thousands of messages per frame.
+Global listeners (`RegisterTargetedWithoutTargeting` / `RegisterBroadcastWithoutSource`) are **slightly slower** than specific listeners because they receive every message of that
+type. This is usually negligible, but avoid them in hot paths if you're emitting thousands of messages per frame.
 
 #### Rule of thumb
 
@@ -393,19 +393,15 @@ Global listeners (`RegisterTargetedWithoutTargeting` / `RegisterBroadcastWithout
 
 ### Do's
 
-Yes **Pick a context and be consistent** across emitters and listeners for that message type
-Yes **Prefer GameObject when in doubt** -- easier coordination among components on the same object
-Yes **Use explicit helpers** (`EmitGameObjectTargeted`, `RegisterGameObjectTargeted`) to make intent clear
-Yes **Document** which context your message types use (add it to your message comments)
-Yes **Use global listeners** for analytics, debugging, and cross-cutting concerns
+Yes **Pick a context and be consistent** across emitters and listeners for that message type Yes **Prefer GameObject when in doubt** -- easier coordination among components on the
+same object Yes **Use explicit helpers** (`EmitGameObjectTargeted`, `RegisterGameObjectTargeted`) to make intent clear Yes **Document** which context your message types use (add it
+to your message comments) Yes **Use global listeners** for analytics, debugging, and cross-cutting concerns
 
 ### Don'ts
 
-No **Don't emit to GameObject** and expect Component-registered handlers to receive it (and vice versa)
-No **Don't assume `this` means GameObject** -- it's always a Component in Unity
-No **Don't mix GameObject/Component** for the same message type across your codebase
-No **Don't register the same handler under both** unless you intend to handle both contexts
-No **Don't use global listeners** in performance-critical tight loops (thousands of messages/frame)
+No **Don't emit to GameObject** and expect Component-registered handlers to receive it (and vice versa) No **Don't assume `this` means GameObject** -- it's always a Component in
+Unity No **Don't mix GameObject/Component** for the same message type across your codebase No **Don't register the same handler under both** unless you intend to handle both
+contexts No **Don't use global listeners** in performance-critical tight loops (thousands of messages/frame)
 
 ## Troubleshooting
 

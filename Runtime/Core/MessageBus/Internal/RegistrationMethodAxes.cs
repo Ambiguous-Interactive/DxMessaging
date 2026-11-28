@@ -62,9 +62,7 @@ namespace DxMessaging.Core.MessageBus.Internal
                 if (raw < 0)
                 {
                     throw new InvalidOperationException(
-                        "RegistrationMethod enum contains a negative value: "
-                            + values.GetValue(i)
-                            + ". RegistrationMethodAxes assumes non-negative ordinals."
+                        "RegistrationMethod enum contains a negative value: " + values.GetValue(i) + ". RegistrationMethodAxes assumes non-negative ordinals."
                     );
                 }
                 if (max < raw)
@@ -85,95 +83,33 @@ namespace DxMessaging.Core.MessageBus.Internal
                 int idx = (int)method;
                 if (assigned[idx])
                 {
-                    throw new InvalidOperationException(
-                        "RegistrationMethodAxes table assigned twice for "
-                            + method
-                            + ". Mapping must be unique."
-                    );
+                    throw new InvalidOperationException("RegistrationMethodAxes table assigned twice for " + method + ". Mapping must be unique.");
                 }
                 table[idx] = key;
                 assigned[idx] = true;
             }
 
             // Handle phase, default variant.
-            Assign(
-                RegistrationMethod.Targeted,
-                new SlotKey(DispatchKind.Targeted, DispatchPhase.Handle, DispatchVariant.Default)
-            );
-            Assign(
-                RegistrationMethod.Untargeted,
-                new SlotKey(DispatchKind.Untargeted, DispatchPhase.Handle, DispatchVariant.Default)
-            );
-            Assign(
-                RegistrationMethod.Broadcast,
-                new SlotKey(DispatchKind.Broadcast, DispatchPhase.Handle, DispatchVariant.Default)
-            );
+            Assign(RegistrationMethod.Targeted, new SlotKey(DispatchKind.Targeted, DispatchPhase.Handle, DispatchVariant.Default));
+            Assign(RegistrationMethod.Untargeted, new SlotKey(DispatchKind.Untargeted, DispatchPhase.Handle, DispatchVariant.Default));
+            Assign(RegistrationMethod.Broadcast, new SlotKey(DispatchKind.Broadcast, DispatchPhase.Handle, DispatchVariant.Default));
 
             // Handle phase, without-context variant.
-            Assign(
-                RegistrationMethod.BroadcastWithoutSource,
-                new SlotKey(
-                    DispatchKind.Broadcast,
-                    DispatchPhase.Handle,
-                    DispatchVariant.WithoutContext
-                )
-            );
-            Assign(
-                RegistrationMethod.TargetedWithoutTargeting,
-                new SlotKey(
-                    DispatchKind.Targeted,
-                    DispatchPhase.Handle,
-                    DispatchVariant.WithoutContext
-                )
-            );
+            Assign(RegistrationMethod.BroadcastWithoutSource, new SlotKey(DispatchKind.Broadcast, DispatchPhase.Handle, DispatchVariant.WithoutContext));
+            Assign(RegistrationMethod.TargetedWithoutTargeting, new SlotKey(DispatchKind.Targeted, DispatchPhase.Handle, DispatchVariant.WithoutContext));
 
             // Sentinel mappings: multi-slot / out-of-scope.
             Assign(RegistrationMethod.GlobalAcceptAll, SlotKey.None);
             Assign(RegistrationMethod.Interceptor, SlotKey.None);
 
             // Post-process phase, default variant.
-            Assign(
-                RegistrationMethod.UntargetedPostProcessor,
-                new SlotKey(
-                    DispatchKind.Untargeted,
-                    DispatchPhase.PostProcess,
-                    DispatchVariant.Default
-                )
-            );
-            Assign(
-                RegistrationMethod.TargetedPostProcessor,
-                new SlotKey(
-                    DispatchKind.Targeted,
-                    DispatchPhase.PostProcess,
-                    DispatchVariant.Default
-                )
-            );
-            Assign(
-                RegistrationMethod.BroadcastPostProcessor,
-                new SlotKey(
-                    DispatchKind.Broadcast,
-                    DispatchPhase.PostProcess,
-                    DispatchVariant.Default
-                )
-            );
+            Assign(RegistrationMethod.UntargetedPostProcessor, new SlotKey(DispatchKind.Untargeted, DispatchPhase.PostProcess, DispatchVariant.Default));
+            Assign(RegistrationMethod.TargetedPostProcessor, new SlotKey(DispatchKind.Targeted, DispatchPhase.PostProcess, DispatchVariant.Default));
+            Assign(RegistrationMethod.BroadcastPostProcessor, new SlotKey(DispatchKind.Broadcast, DispatchPhase.PostProcess, DispatchVariant.Default));
 
             // Post-process phase, without-context variant.
-            Assign(
-                RegistrationMethod.TargetedWithoutTargetingPostProcessor,
-                new SlotKey(
-                    DispatchKind.Targeted,
-                    DispatchPhase.PostProcess,
-                    DispatchVariant.WithoutContext
-                )
-            );
-            Assign(
-                RegistrationMethod.BroadcastWithoutSourcePostProcessor,
-                new SlotKey(
-                    DispatchKind.Broadcast,
-                    DispatchPhase.PostProcess,
-                    DispatchVariant.WithoutContext
-                )
-            );
+            Assign(RegistrationMethod.TargetedWithoutTargetingPostProcessor, new SlotKey(DispatchKind.Targeted, DispatchPhase.PostProcess, DispatchVariant.WithoutContext));
+            Assign(RegistrationMethod.BroadcastWithoutSourcePostProcessor, new SlotKey(DispatchKind.Broadcast, DispatchPhase.PostProcess, DispatchVariant.WithoutContext));
 
             // Validate that every enum value received an explicit mapping.
             for (int i = 0; i < values.Length; i++)

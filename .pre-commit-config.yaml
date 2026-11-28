@@ -68,9 +68,7 @@ repos:
         stages:
           - pre-commit
         description: >-
-          Sync the package version into the SVG banner. If it rewrites the
-          banner, pre-commit reports the modified file; restage and commit
-          again.
+          Sync the package version into the SVG banner. If it rewrites the banner, pre-commit reports the modified file; restage and commit again.
       - id: prettier
         name: Prettier (markdown, JSON, asmdef, asmref, YAML)
         entry: npx --no-install prettier --write
@@ -123,8 +121,7 @@ repos:
         stages:
           - pre-commit
         description: >-
-          Validate named-volume mounts, ownership, and cache paths when the
-          devcontainer configuration changes.
+          Validate named-volume mounts, ownership, and cache paths when the devcontainer configuration changes.
       - id: validate-asmdef-references
         name: Validate asmdef precompiled references
         entry: node scripts/validate-asmdef-references.js
@@ -134,9 +131,7 @@ repos:
         stages:
           - pre-push
         description: >-
-          Fail when a package asmdef populates precompiledReferences while
-          overrideReferences is false (compiles in the Editor but breaks
-          standalone/IL2CPP player builds).
+          Fail when a package asmdef populates precompiledReferences while overrideReferences is false (compiles in the Editor but breaks standalone/IL2CPP player builds).
       - id: validate-unity-metas
         name: Validate repository Unity .meta files
         entry: node scripts/validate-npm-meta.js --repo-metas-only
@@ -149,24 +144,15 @@ repos:
         stages:
           - pre-commit
         description: >-
-          Fail when an imported tracked asset lacks its .meta companion, a
-          tracked .meta is orphaned, or a C# .meta has a non-canonical
-          MonoImporter block.
+          Fail when an imported tracked asset lacks its .meta companion, a tracked .meta is orphaned, or a C# .meta has a non-canonical MonoImporter block.
       - id: script-tests
         name: Run fast JavaScript script tests (node --test)
         # Curated unit/mocked subset only. Real subprocess/archive integration
         # tests stay in `npm test` so pre-push remains a fast backstop.
         entry: >-
-          node --test
-          scripts/lib/__tests__/lib.test.js
-          scripts/__tests__/analyzer-runtime-placement.test.js
-          scripts/__tests__/fix-csharp-underscore-methods.test.js
-          scripts/__tests__/package-script-contract.test.js
-          scripts/__tests__/sync-banner-version.test.js
-          scripts/__tests__/unity-perf.test.js
-          scripts/__tests__/validate-asmdef-references.test.js
-          scripts/__tests__/validate-npm-meta.test.js
-          scripts/__tests__/validate-unity-versions.test.js
+          node --test scripts/lib/__tests__/lib.test.js scripts/__tests__/analyzer-runtime-placement.test.js scripts/__tests__/fix-csharp-underscore-methods.test.js
+          scripts/__tests__/package-script-contract.test.js scripts/__tests__/sync-banner-version.test.js scripts/__tests__/unity-perf.test.js
+          scripts/__tests__/validate-asmdef-references.test.js scripts/__tests__/validate-npm-meta.test.js scripts/__tests__/validate-unity-versions.test.js
           scripts/wiki/__tests__/transform.test.js
         language: system
         pass_filenames: false

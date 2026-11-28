@@ -36,12 +36,13 @@ void RecordProcessedDamage(InstanceId source, TookDamage m) =>
     replay.RecordProcessedDamageMessage(source, m.amount);
 ```
 
-The handler owns presentation state by spawning a damage number. The post-processor runs
-when dispatch reaches post-processing. It cannot infer the target's final health from the message payload.
+The handler owns presentation state by spawning a damage number. The post-processor runs when dispatch reaches post-processing. It cannot infer the target's final health from the
+message payload.
 
 ## Global accept-all (debug/inspection)
 
-- Observe untargeted, targeted, and broadcast emissions on the token's bus when dispatch reaches the global-observer phase. An interceptor veto, inactive handler, or bus reset can prevent delivery.
+- Observe untargeted, targeted, and broadcast emissions on the token's bus when dispatch reaches the global-observer phase. An interceptor veto, inactive handler, or bus reset can
+  prevent delivery.
 
 ```csharp
 using DxMessaging.Core;
@@ -63,11 +64,8 @@ void OnBroadcast(in InstanceId source, in IBroadcastMessage message) { /* inspec
 
 ### Development Debug Dump
 
-Use [Message Monitor](../guides/diagnostics.md#message-monitor) for recent
-emissions and [Flow Graph](../guides/diagnostics.md#flow-graph) for loaded-scene
-`MessagingComponent` topology in the Editor. Add a global observer when a
-runtime build, direct bus registrations, automated export, or custom dashboard
-needs the same stream in code:
+Use [Message Monitor](../guides/diagnostics.md#message-monitor) for recent emissions and [Flow Graph](../guides/diagnostics.md#flow-graph) for loaded-scene `MessagingComponent`
+topology in the Editor. Add a global observer when a runtime build, direct bus registrations, automated export, or custom dashboard needs the same stream in code:
 
 ```csharp
 using System;
@@ -211,8 +209,7 @@ public sealed class NetworkReplicator : IDisposable
 }
 ```
 
-Use the owner for the full replication scope. Messages marked with `[Networked]` then replicate
-without explicit per-type registration:
+Use the owner for the full replication scope. Messages marked with `[Networked]` then replicate without explicit per-type registration:
 
 ```csharp
 using NetworkReplicator replicator = new(networkManager, MessageHandler.MessageBus);
@@ -225,8 +222,7 @@ dealDamage.EmitTargeted(enemyId);
 
 ### Message Counts
 
-Count observed messages by type on the supplied bus. For dispatch throughput and
-allocation measurements, see [Performance](../architecture/performance.md):
+Count observed messages by type on the supplied bus. For dispatch throughput and allocation measurements, see [Performance](../architecture/performance.md):
 
 ```csharp
 using System;
@@ -292,13 +288,10 @@ Yes **Good use cases:**
 - Testing and diagnostics tools
 - Message replay/recording systems
 
-Warning: **Performance consideration:**
-Global accept-all callbacks receive message interfaces. A struct payload is boxed when it reaches
-this path. Type-specific registrations select which message types reach a callback; total dispatch
-work also includes route lookup, configured listener fan-out, activity checks, and callback work.
-Measure your message rate, message shapes, listener count, and callback work before choosing a
-registration pattern. See the [allocation contract](../reference/faq.md#does-dxmessaging-allocate-memory-is-dispatch-zero-gc)
-and [measured scenarios](../architecture/performance.md) for scope and exceptions.
+Warning: **Performance consideration:** Global accept-all callbacks receive message interfaces. A struct payload is boxed when it reaches this path. Type-specific registrations
+select which message types reach a callback; total dispatch work also includes route lookup, configured listener fan-out, activity checks, and callback work. Measure your message
+rate, message shapes, listener count, and callback work before choosing a registration pattern. See the
+[allocation contract](../reference/faq.md#does-dxmessaging-allocate-memory-is-dispatch-zero-gc) and [measured scenarios](../architecture/performance.md) for scope and exceptions.
 
 No **Avoid for:**
 

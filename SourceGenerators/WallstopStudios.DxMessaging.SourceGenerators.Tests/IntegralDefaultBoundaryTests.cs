@@ -42,11 +42,8 @@ internal sealed class IntegralDefaultBoundaryTests
             CultureInfo.CurrentCulture = testCulture;
             CSharpCompilation Create(bool manual)
             {
-                string declaration =
-                    target == "class" ? "partial class" : "readonly partial struct";
-                string argument = namedExpression
-                    ? "Expression = " + SyntaxFactory.Literal(expression)
-                    : expression;
+                string declaration = target == "class" ? "partial class" : "readonly partial struct";
+                string argument = namedExpression ? "Expression = " + SyntaxFactory.Literal(expression) : expression;
                 string source = $$"""
 using DxMessaging.Core.Attributes;
 {{(manual ? "" : "[DxAutoConstructor]")}}
@@ -70,10 +67,7 @@ public static class Consumer
     }
 }
 """;
-                CSharpCompilation compilation =
-                    GeneratorTestUtilities.CreateAutoConstructorCompilationFromShippedAttributes(
-                        source
-                    );
+                CSharpCompilation compilation = GeneratorTestUtilities.CreateAutoConstructorCompilationFromShippedAttributes(source);
                 Assert.That(
                     compilation.GetTypeByMetadataName("Packet")!.IsReadOnly,
                     Is.EqualTo(target == "readonly struct"),
@@ -82,30 +76,16 @@ public static class Consumer
                 return compilation;
             }
 
-            AssertCallerAndMetadata(
-                Create(manual: true),
-                expectedValue,
-                metadataType,
-                "Manual: " + context
-            );
+            AssertCallerAndMetadata(Create(manual: true), expectedValue, metadataType, "Manual: " + context);
             GeneratorDriver driver = CSharpGeneratorDriver.Create(
                 generators: new ISourceGenerator[] { new DxAutoConstructorGenerator() },
                 parseOptions: new CSharpParseOptions(LanguageVersion.CSharp9)
             );
-            driver = driver.RunGeneratorsAndUpdateCompilation(
-                Create(manual: false),
-                out Compilation generated,
-                out ImmutableArray<Diagnostic> diagnostics
-            );
+            driver = driver.RunGeneratorsAndUpdateCompilation(Create(manual: false), out Compilation generated, out ImmutableArray<Diagnostic> diagnostics);
             Assert.That(driver.GetRunResult().Results.Single().Exception, Is.Null, context);
             Assert.That(driver.GetRunResult().GeneratedTrees, Has.Length.EqualTo(1), context);
             Assert.That(diagnostics, Is.Empty, context + "\n" + string.Join("\n", diagnostics));
-            AssertCallerAndMetadata(
-                generated,
-                expectedValue,
-                metadataType,
-                "Generated: " + context
-            );
+            AssertCallerAndMetadata(generated, expectedValue, metadataType, "Generated: " + context);
         }
         finally
         {
@@ -136,15 +116,7 @@ public static class Consumer
             ("UInt64Min", "ulong", "ulong.MinValue", "0", "System.UInt64"),
             ("UInt64Max", "ulong", "ulong.MaxValue", "18446744073709551615", "System.UInt64"),
         };
-        foreach (
-            (
-                string label,
-                string type,
-                string expression,
-                string value,
-                string metadataType
-            ) in values
-        )
+        foreach ((string label, string type, string expression, string value, string metadataType) in values)
         {
             foreach (string target in new[] { "class", "readonly struct" })
             {
@@ -152,16 +124,7 @@ public static class Consumer
                 {
                     foreach (bool hostileCulture in new[] { false, true })
                     {
-                        yield return new TestCaseData(
-                            label,
-                            type,
-                            expression,
-                            value,
-                            metadataType,
-                            target,
-                            named,
-                            hostileCulture
-                        ).SetName(
+                        yield return new TestCaseData(label, type, expression, value, metadataType, target, named, hostileCulture).SetName(
                             $"IntegralDefault({label},{target},Expression={named},HostileCulture={hostileCulture})"
                         );
                     }
@@ -171,18 +134,9 @@ public static class Consumer
     }
 
     /// <summary>Checks compiled calls and reflected optional metadata against fixed values.</summary>
-    private static void AssertCallerAndMetadata(
-        Compilation compilation,
-        string expectedValue,
-        string metadataType,
-        string context
-    )
+    private static void AssertCallerAndMetadata(Compilation compilation, string expectedValue, string metadataType, string context)
     {
-        Assert.That(
-            compilation.GetDiagnostics(),
-            Is.Empty,
-            context + "\n" + string.Join("\n", compilation.GetDiagnostics())
-        );
+        Assert.That(compilation.GetDiagnostics(), Is.Empty, context + "\n" + string.Join("\n", compilation.GetDiagnostics()));
         using MemoryStream image = new();
         Microsoft.CodeAnalysis.Emit.EmitResult emit = compilation.Emit(image);
         Assert.That(emit.Success, Is.True, context + "\n" + string.Join("\n", emit.Diagnostics));
@@ -191,42 +145,17 @@ public static class Consumer
         try
         {
             Assembly assembly = load.LoadFromStream(image);
-            object[] values = (object[])
-                assembly.GetType("Consumer")!.GetMethod("Read")!.Invoke(null, null)!;
+            object[] values = (object[])assembly.GetType("Consumer")!.GetMethod("Read")!.Invoke(null, null)!;
             Assert.That(values[0], Is.EqualTo(1), "Omitted call runs the constructor: " + context);
-            Assert.That(
-                NumericValue(values[1], metadataType, context),
-                Is.EqualTo(expectedValue),
-                "Caller value: " + context
-            );
+            Assert.That(NumericValue(values[1], metadataType, context), Is.EqualTo(expectedValue), "Caller value: " + context);
             Assert.That(values[2], Is.EqualTo(2), "Explicit call runs the constructor: " + context);
-            Assert.That(
-                NumericValue(values[3], metadataType, context),
-                Is.EqualTo("0"),
-                "Explicit zero: " + context
-            );
-            ParameterInfo parameter = assembly
-                .GetType("Packet")!
-                .GetConstructors()
-                .Single()
-                .GetParameters()[1];
-            Assert.That(
-                parameter.ParameterType.FullName,
-                Is.EqualTo(metadataType),
-                "Declared parameter type: " + context
-            );
-            Assert.That(
-                assembly.GetType("Packet")!.GetField("Value")!.FieldType.FullName,
-                Is.EqualTo(metadataType),
-                "Declared field type: " + context
-            );
+            Assert.That(NumericValue(values[3], metadataType, context), Is.EqualTo("0"), "Explicit zero: " + context);
+            ParameterInfo parameter = assembly.GetType("Packet")!.GetConstructors().Single().GetParameters()[1];
+            Assert.That(parameter.ParameterType.FullName, Is.EqualTo(metadataType), "Declared parameter type: " + context);
+            Assert.That(assembly.GetType("Packet")!.GetField("Value")!.FieldType.FullName, Is.EqualTo(metadataType), "Declared field type: " + context);
             Assert.That(parameter.IsOptional, Is.True, "Optional metadata: " + context);
             Assert.That(parameter.HasDefaultValue, Is.True, "Default metadata exists: " + context);
-            Assert.That(
-                NumericValue(parameter.DefaultValue!, metadataType, context),
-                Is.EqualTo(expectedValue),
-                "Default metadata value: " + context
-            );
+            Assert.That(NumericValue(parameter.DefaultValue!, metadataType, context), Is.EqualTo(expectedValue), "Default metadata value: " + context);
         }
         finally
         {
@@ -237,11 +166,7 @@ public static class Consumer
     /// <summary>Checks exact boxed type before reporting the observed integral value.</summary>
     private static string NumericValue(object value, string metadataType, string context)
     {
-        Assert.That(
-            value.GetType().FullName,
-            Is.EqualTo(metadataType),
-            "Boxed integral type: " + context
-        );
+        Assert.That(value.GetType().FullName, Is.EqualTo(metadataType), "Boxed integral type: " + context);
         return Convert.ToString(value, CultureInfo.InvariantCulture)!;
     }
 }

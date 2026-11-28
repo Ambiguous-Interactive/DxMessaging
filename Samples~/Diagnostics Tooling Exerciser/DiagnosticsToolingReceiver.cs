@@ -84,17 +84,11 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
         private static void RestoreRegistrationsAfterSceneLoad()
         {
 #if UNITY_6000_4_OR_NEWER
-            DiagnosticsToolingReceiver[] receivers = FindObjectsByType<DiagnosticsToolingReceiver>(
-                FindObjectsInactive.Exclude
-            );
+            DiagnosticsToolingReceiver[] receivers = FindObjectsByType<DiagnosticsToolingReceiver>(FindObjectsInactive.Exclude);
 #elif UNITY_2023_1_OR_NEWER
-            DiagnosticsToolingReceiver[] receivers = FindObjectsByType<DiagnosticsToolingReceiver>(
-                FindObjectsInactive.Exclude,
-                FindObjectsSortMode.None
-            );
+            DiagnosticsToolingReceiver[] receivers = FindObjectsByType<DiagnosticsToolingReceiver>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
 #else
-            DiagnosticsToolingReceiver[] receivers =
-                FindObjectsOfType<DiagnosticsToolingReceiver>();
+            DiagnosticsToolingReceiver[] receivers = FindObjectsOfType<DiagnosticsToolingReceiver>();
 #endif
             foreach (DiagnosticsToolingReceiver receiver in receivers)
             {

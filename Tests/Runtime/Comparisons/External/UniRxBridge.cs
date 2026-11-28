@@ -71,9 +71,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
             {
                 return null;
             }
-            return scenario == ComparisonScenario.StructMessageNoBoxing
-                ? typeof(ComparisonStructPayload)
-                : typeof(int);
+            return scenario == ComparisonScenario.StructMessageNoBoxing ? typeof(ComparisonStructPayload) : typeof(int);
         }
 
         public void Prepare(ComparisonScenario scenario)
@@ -117,9 +115,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                     _churnHandler = Handle;
                     return;
                 case ComparisonScenario.StructMessageNoBoxing:
-                    _subscriptions.Add(
-                        _broker.Receive<ComparisonStructPayload>().Subscribe(HandleStruct)
-                    );
+                    _subscriptions.Add(_broker.Receive<ComparisonStructPayload>().Subscribe(HandleStruct));
                     return;
                 default:
                     return;

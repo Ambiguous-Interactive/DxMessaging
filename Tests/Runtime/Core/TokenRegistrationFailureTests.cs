@@ -23,17 +23,11 @@ namespace DxMessaging.Tests.Runtime.Core
 
         private static IEnumerable<TestCaseData> HandlerCases()
         {
-            foreach (
-                MessageScenario scenario in MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext
-            )
+            foreach (MessageScenario scenario in MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext)
             {
                 foreach (bool action in new[] { false, true })
                 {
-                    if (
-                        scenario.Kind == MessageKind.Untargeted
-                        && scenario.UsePostProcessor
-                        && action
-                    )
+                    if (scenario.Kind == MessageKind.Untargeted && scenario.UsePostProcessor && action)
                     {
                         continue; // Untargeted post-processors expose only the fast overload.
                     }
@@ -46,11 +40,7 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [TestCaseSource(nameof(HandlerCases))]
-        public void RejectedHandlerDoesNotBecomeStaged(
-            MessageScenario scenario,
-            bool action,
-            bool diagnostics
-        )
+        public void RejectedHandlerDoesNotBecomeStaged(MessageScenario scenario, bool action, bool diagnostics)
         {
             using CaseState state = new CaseState(diagnostics);
             VerifyImmediateFailure(
@@ -62,11 +52,7 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [TestCaseSource(nameof(HandlerCases))]
-        public void FailedDisabledHandlerReplayKeepsReturnedHandle(
-            MessageScenario scenario,
-            bool action,
-            bool diagnostics
-        )
+        public void FailedDisabledHandlerReplayKeepsReturnedHandle(MessageScenario scenario, bool action, bool diagnostics)
         {
             using CaseState state = new CaseState(diagnostics);
             VerifyDisabledReplay(
@@ -79,8 +65,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
         [Test]
         public void RejectedInterceptorDoesNotBecomeStaged(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
             [Values(false, true)] bool diagnostics
         )
         {
@@ -96,52 +81,34 @@ namespace DxMessaging.Tests.Runtime.Core
 
         [Test]
         public void FailedDisabledInterceptorReplayKeepsReturnedHandle(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
             [Values(false, true)] bool diagnostics
         )
         {
             using CaseState state = new CaseState(diagnostics);
-            VerifyDisabledReplay(
-                state,
-                scenario,
-                record => RegisterInterceptor(state.Token, scenario, record),
-                scenario + ", diagnostics=" + diagnostics
-            );
+            VerifyDisabledReplay(state, scenario, record => RegisterInterceptor(state.Token, scenario, record), scenario + ", diagnostics=" + diagnostics);
         }
 
         [Test]
         public void RejectedGlobalDoesNotBecomeStaged(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
             [Values(false, true)] bool action,
             [Values(false, true)] bool diagnostics
         )
         {
             using CaseState state = new CaseState(diagnostics);
-            VerifyImmediateFailure(
-                state,
-                scenario,
-                record => RegisterGlobal(state.Token, action, record),
-                scenario + ", action=" + action + ", diagnostics=" + diagnostics
-            );
+            VerifyImmediateFailure(state, scenario, record => RegisterGlobal(state.Token, action, record), scenario + ", action=" + action + ", diagnostics=" + diagnostics);
         }
 
         [Test]
         public void FailedDisabledGlobalReplayKeepsReturnedHandle(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
             [Values(false, true)] bool action,
             [Values(false, true)] bool diagnostics
         )
         {
             using CaseState state = new CaseState(diagnostics);
-            VerifyDisabledReplay(
-                state,
-                scenario,
-                record => RegisterGlobal(state.Token, action, record),
-                scenario + ", action=" + action + ", diagnostics=" + diagnostics
-            );
+            VerifyDisabledReplay(state, scenario, record => RegisterGlobal(state.Token, action, record), scenario + ", action=" + action + ", diagnostics=" + diagnostics);
         }
 
         [TestCase(false, 1)]
@@ -165,30 +132,18 @@ namespace DxMessaging.Tests.Runtime.Core
                 for (int index = 0; index < nestedCount; ++index)
                 {
                     int captured = index;
-                    nested.Add(
-                        RegisterHandler(state.Token, scenario, false, () =>
-                            state.Calls.Add(captured.ToString())
-                        )
-                    );
+                    nested.Add(RegisterHandler(state.Token, scenario, false, () => state.Calls.Add(captured.ToString())));
                 }
             };
             state.Bus.RejectNext = true;
-            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
-                RegisterHandler(state.Token, scenario, false, () => state.Calls.Add("rejected"))
-            );
+            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() => RegisterHandler(state.Token, scenario, false, () => state.Calls.Add("rejected")));
             state.Emit(scenario);
             string[] expected = new string[nestedCount];
             for (int index = 0; index < expected.Length; ++index)
             {
                 expected[index] = index.ToString();
             }
-            TestContext.WriteLine(
-                label
-                    + ": metadata="
-                    + state.Token._metadata.Count
-                    + "; calls="
-                    + string.Join(",", state.Calls)
-            );
+            TestContext.WriteLine(label + ": metadata=" + state.Token._metadata.Count + "; calls=" + string.Join(",", state.Calls));
             Assert.That(exception, Is.SameAs(state.Bus.Failure), label);
             Assert.That(state.Token._metadata.Count, Is.EqualTo(nestedCount), label);
             Assert.That(state.Calls, Is.EqualTo(expected), label);
@@ -218,28 +173,14 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.That(state.Calls, Is.EqualTo(new[] { "first" }), label + ": accepted control");
             // Interceptors are forwarded directly; only augmented handler/global invokers record.
             int expectedDiagnosticCount = state.Token.DiagnosticMode && recordsDiagnostics ? 1 : 0;
-            int beforeCount = state.Token._callCounts.TryGetValue(first, out int recorded)
-                ? recorded
-                : 0;
-            Assert.That(
-                beforeCount,
-                Is.EqualTo(expectedDiagnosticCount),
-                label + ": accepted diagnostic control"
-            );
+            int beforeCount = state.Token._callCounts.TryGetValue(first, out int recorded) ? recorded : 0;
+            Assert.That(beforeCount, Is.EqualTo(expectedDiagnosticCount), label + ": accepted diagnostic control");
             state.Calls.Clear();
             state.Bus.RejectNext = true;
-            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
-                () => register(() => state.Calls.Add("rejected")),
-                label
-            );
+            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() => register(() => state.Calls.Add("rejected")), label);
             int metadataAfterFailure = state.Token._metadata.Count;
             bool enabledAfterFailure = state.Token.Enabled;
-            int firstCallCountAfterFailure = state.Token._callCounts.TryGetValue(
-                first,
-                out int count
-            )
-                ? count
-                : 0;
+            int firstCallCountAfterFailure = state.Token._callCounts.TryGetValue(first, out int count) ? count : 0;
             state.Emit(scenario);
             string[] immediately = state.Calls.ToArray();
             state.Calls.Clear();
@@ -267,37 +208,21 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             Assert.That(exception, Is.SameAs(state.Bus.Failure), label);
             Assert.That(enabledAfterFailure, Is.True, label);
-            Assert.That(
-                firstCallCountAfterFailure,
-                Is.EqualTo(expectedDiagnosticCount),
-                label + ": existing diagnostics"
-            );
+            Assert.That(firstCallCountAfterFailure, Is.EqualTo(expectedDiagnosticCount), label + ": existing diagnostics");
             Assert.That(metadataAfterFailure, Is.EqualTo(1), label);
             Assert.That(immediately, Is.EqualTo(new[] { "first" }), label);
             Assert.That(afterReplay, Is.EqualTo(new[] { "first", "next" }), label);
             Assert.That(state.Calls, Is.Empty, label);
             Assert.That(state.Token._metadata.Count, Is.Zero, label);
             Assert.That(state.Token._callCounts, Is.Empty, label + ": diagnostic counts clear");
-            Assert.That(
-                state.Token._emissionBuffer.Count,
-                Is.Zero,
-                label + ": diagnostic history clears"
-            );
+            Assert.That(state.Token._emissionBuffer.Count, Is.Zero, label + ": diagnostic history clears");
         }
 
-        private static void VerifyDisabledReplay(
-            CaseState state,
-            MessageScenario scenario,
-            Func<Action, MessageRegistrationHandle> register,
-            string label
-        )
+        private static void VerifyDisabledReplay(CaseState state, MessageScenario scenario, Func<Action, MessageRegistrationHandle> register, string label)
         {
             MessageRegistrationHandle handle = register(() => state.Calls.Add("staged"));
             state.Bus.RejectNext = true;
-            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
-                state.Token.Enable,
-                label
-            );
+            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(state.Token.Enable, label);
             Assert.That(exception, Is.SameAs(state.Bus.Failure), label);
             Assert.That(state.Token.Enabled, Is.False, label);
             Assert.That(state.Token._metadata.Count, Is.EqualTo(1), label);
@@ -315,20 +240,12 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.That(state.Token._metadata.Count, Is.Zero, label);
         }
 
-        private static MessageRegistrationHandle RegisterHandler(
-            MessageRegistrationToken token,
-            MessageScenario scenario,
-            bool action,
-            Action record
-        )
+        private static MessageRegistrationHandle RegisterHandler(MessageRegistrationToken token, MessageScenario scenario, bool action, Action record)
         {
             Action<ProbeMessage> scalar = _ => record();
             Action<InstanceId, ProbeMessage> context = (_, __) => record();
             MessageHandler.FastHandler<ProbeMessage> fast = (in ProbeMessage _) => record();
-            MessageHandler.FastHandlerWithContext<ProbeMessage> fastContext = (
-                in InstanceId _,
-                in ProbeMessage __
-            ) => record();
+            MessageHandler.FastHandlerWithContext<ProbeMessage> fastContext = (in InstanceId _, in ProbeMessage __) => record();
             return (scenario.Kind, scenario.UsePostProcessor, action) switch
             {
                 (MessageKind.Untargeted, false, true) => token.RegisterUntargeted(scalar),
@@ -336,49 +253,25 @@ namespace DxMessaging.Tests.Runtime.Core
                 (MessageKind.Untargeted, true, _) => token.RegisterUntargetedPostProcessor(fast),
                 (MessageKind.Targeted, false, true) => token.RegisterTargeted(Context, scalar),
                 (MessageKind.Targeted, false, false) => token.RegisterTargeted(Context, fast),
-                (MessageKind.Targeted, true, true) => token.RegisterTargetedPostProcessor(
-                    Context,
-                    scalar
-                ),
-                (MessageKind.Targeted, true, false) => token.RegisterTargetedPostProcessor(
-                    Context,
-                    fast
-                ),
+                (MessageKind.Targeted, true, true) => token.RegisterTargetedPostProcessor(Context, scalar),
+                (MessageKind.Targeted, true, false) => token.RegisterTargetedPostProcessor(Context, fast),
                 (MessageKind.Broadcast, false, true) => token.RegisterBroadcast(Context, scalar),
                 (MessageKind.Broadcast, false, false) => token.RegisterBroadcast(Context, fast),
-                (MessageKind.Broadcast, true, true) => token.RegisterBroadcastPostProcessor(
-                    Context,
-                    scalar
-                ),
-                (MessageKind.Broadcast, true, false) => token.RegisterBroadcastPostProcessor(
-                    Context,
-                    fast
-                ),
-                (MessageKind.TargetedWithoutTargeting, false, true) =>
-                    token.RegisterTargetedWithoutTargeting(context),
-                (MessageKind.TargetedWithoutTargeting, false, false) =>
-                    token.RegisterTargetedWithoutTargeting(fastContext),
-                (MessageKind.TargetedWithoutTargeting, true, true) =>
-                    token.RegisterTargetedWithoutTargetingPostProcessor(context),
-                (MessageKind.TargetedWithoutTargeting, true, false) =>
-                    token.RegisterTargetedWithoutTargetingPostProcessor(fastContext),
-                (MessageKind.BroadcastWithoutSource, false, true) =>
-                    token.RegisterBroadcastWithoutSource(context),
-                (MessageKind.BroadcastWithoutSource, false, false) =>
-                    token.RegisterBroadcastWithoutSource(fastContext),
-                (MessageKind.BroadcastWithoutSource, true, true) =>
-                    token.RegisterBroadcastWithoutSourcePostProcessor(context),
-                (MessageKind.BroadcastWithoutSource, true, false) =>
-                    token.RegisterBroadcastWithoutSourcePostProcessor(fastContext),
+                (MessageKind.Broadcast, true, true) => token.RegisterBroadcastPostProcessor(Context, scalar),
+                (MessageKind.Broadcast, true, false) => token.RegisterBroadcastPostProcessor(Context, fast),
+                (MessageKind.TargetedWithoutTargeting, false, true) => token.RegisterTargetedWithoutTargeting(context),
+                (MessageKind.TargetedWithoutTargeting, false, false) => token.RegisterTargetedWithoutTargeting(fastContext),
+                (MessageKind.TargetedWithoutTargeting, true, true) => token.RegisterTargetedWithoutTargetingPostProcessor(context),
+                (MessageKind.TargetedWithoutTargeting, true, false) => token.RegisterTargetedWithoutTargetingPostProcessor(fastContext),
+                (MessageKind.BroadcastWithoutSource, false, true) => token.RegisterBroadcastWithoutSource(context),
+                (MessageKind.BroadcastWithoutSource, false, false) => token.RegisterBroadcastWithoutSource(fastContext),
+                (MessageKind.BroadcastWithoutSource, true, true) => token.RegisterBroadcastWithoutSourcePostProcessor(context),
+                (MessageKind.BroadcastWithoutSource, true, false) => token.RegisterBroadcastWithoutSourcePostProcessor(fastContext),
                 _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
             };
         }
 
-        private static MessageRegistrationHandle RegisterInterceptor(
-            MessageRegistrationToken token,
-            MessageScenario scenario,
-            Action record
-        )
+        private static MessageRegistrationHandle RegisterInterceptor(MessageRegistrationToken token, MessageScenario scenario, Action record)
         {
             bool Scalar(ref ProbeMessage message)
             {
@@ -394,18 +287,12 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 MessageKind.Untargeted => token.RegisterUntargetedInterceptor<ProbeMessage>(Scalar),
                 MessageKind.Targeted => token.RegisterTargetedInterceptor<ProbeMessage>(Contextual),
-                MessageKind.Broadcast => token.RegisterBroadcastInterceptor<ProbeMessage>(
-                    Contextual
-                ),
+                MessageKind.Broadcast => token.RegisterBroadcastInterceptor<ProbeMessage>(Contextual),
                 _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
             };
         }
 
-        private static MessageRegistrationHandle RegisterGlobal(
-            MessageRegistrationToken token,
-            bool action,
-            Action record
-        )
+        private static MessageRegistrationHandle RegisterGlobal(MessageRegistrationToken token, bool action, Action record)
         {
             if (action)
             {
@@ -473,9 +360,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
         private sealed class RejectingBus : DelegatingMessageBus
         {
-            internal readonly InvalidOperationException Failure = new InvalidOperationException(
-                "Registration rejected before forwarding."
-            );
+            internal readonly InvalidOperationException Failure = new InvalidOperationException("Registration rejected before forwarding.");
             internal bool RejectNext;
             internal Action BeforeRejection;
 
@@ -495,95 +380,61 @@ namespace DxMessaging.Tests.Runtime.Core
                 throw Failure;
             }
 
-            public override MessageBusRegistration RegisterUntargeted<T>(
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterUntargeted<T>(MessageHandler handler, int priority = 0)
             {
                 Before();
                 return base.RegisterUntargeted<T>(handler, priority);
             }
 
-            public override MessageBusRegistration RegisterUntargetedPostProcessor<T>(
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterUntargetedPostProcessor<T>(MessageHandler handler, int priority = 0)
             {
                 Before();
                 return base.RegisterUntargetedPostProcessor<T>(handler, priority);
             }
 
-            public override MessageBusRegistration RegisterTargeted<T>(
-                InstanceId target,
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterTargeted<T>(InstanceId target, MessageHandler handler, int priority = 0)
             {
                 Before();
                 return base.RegisterTargeted<T>(target, handler, priority);
             }
 
-            public override MessageBusRegistration RegisterTargetedPostProcessor<T>(
-                InstanceId target,
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterTargetedPostProcessor<T>(InstanceId target, MessageHandler handler, int priority = 0)
             {
                 Before();
                 return base.RegisterTargetedPostProcessor<T>(target, handler, priority);
             }
 
-            public override MessageBusRegistration RegisterTargetedWithoutTargeting<T>(
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterTargetedWithoutTargeting<T>(MessageHandler handler, int priority = 0)
             {
                 Before();
                 return base.RegisterTargetedWithoutTargeting<T>(handler, priority);
             }
 
-            public override MessageBusRegistration RegisterTargetedWithoutTargetingPostProcessor<T>(
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterTargetedWithoutTargetingPostProcessor<T>(MessageHandler handler, int priority = 0)
             {
                 Before();
                 return base.RegisterTargetedWithoutTargetingPostProcessor<T>(handler, priority);
             }
 
-            public override MessageBusRegistration RegisterSourcedBroadcast<T>(
-                InstanceId source,
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterSourcedBroadcast<T>(InstanceId source, MessageHandler handler, int priority = 0)
             {
                 Before();
                 return base.RegisterSourcedBroadcast<T>(source, handler, priority);
             }
 
-            public override MessageBusRegistration RegisterBroadcastPostProcessor<T>(
-                InstanceId source,
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterBroadcastPostProcessor<T>(InstanceId source, MessageHandler handler, int priority = 0)
             {
                 Before();
                 return base.RegisterBroadcastPostProcessor<T>(source, handler, priority);
             }
 
-            public override MessageBusRegistration RegisterSourcedBroadcastWithoutSource<T>(
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterSourcedBroadcastWithoutSource<T>(MessageHandler handler, int priority = 0)
             {
                 Before();
                 return base.RegisterSourcedBroadcastWithoutSource<T>(handler, priority);
             }
 
-            public override MessageBusRegistration RegisterBroadcastWithoutSourcePostProcessor<T>(
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterBroadcastWithoutSourcePostProcessor<T>(MessageHandler handler, int priority = 0)
             {
                 Before();
                 return base.RegisterBroadcastWithoutSourcePostProcessor<T>(handler, priority);
@@ -595,38 +446,26 @@ namespace DxMessaging.Tests.Runtime.Core
                 return base.RegisterGlobalAcceptAll(handler);
             }
 
-            public override MessageBusRegistration RegisterUntargetedInterceptor<T>(
-                IMessageBus.UntargetedInterceptor<T> interceptor,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterUntargetedInterceptor<T>(IMessageBus.UntargetedInterceptor<T> interceptor, int priority = 0)
             {
                 Before();
                 return base.RegisterUntargetedInterceptor(interceptor, priority);
             }
 
-            public override MessageBusRegistration RegisterTargetedInterceptor<T>(
-                IMessageBus.TargetedInterceptor<T> interceptor,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterTargetedInterceptor<T>(IMessageBus.TargetedInterceptor<T> interceptor, int priority = 0)
             {
                 Before();
                 return base.RegisterTargetedInterceptor(interceptor, priority);
             }
 
-            public override MessageBusRegistration RegisterBroadcastInterceptor<T>(
-                IMessageBus.BroadcastInterceptor<T> interceptor,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterBroadcastInterceptor<T>(IMessageBus.BroadcastInterceptor<T> interceptor, int priority = 0)
             {
                 Before();
                 return base.RegisterBroadcastInterceptor(interceptor, priority);
             }
         }
 
-        private readonly struct ProbeMessage
-            : IUntargetedMessage,
-                ITargetedMessage,
-                IBroadcastMessage
+        private readonly struct ProbeMessage : IUntargetedMessage, ITargetedMessage, IBroadcastMessage
         {
             public Type MessageType => typeof(ProbeMessage);
         }

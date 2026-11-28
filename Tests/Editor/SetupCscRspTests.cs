@@ -18,10 +18,8 @@ namespace DxMessaging.Tests.Editor
         private string _projectDirectory;
         private string _assetsDirectory;
 
-        private const string SidecarArgument =
-            "-additionalfile:\"Assets/Editor/DxMessaging.BaseCallIgnore.txt\"";
-        private const string LegacyAnalyzerArgument =
-            "-a:\"Assets/Plugins/Editor/WallstopStudios.DxMessaging/WallstopStudios.DxMessaging.Analyzer.dll\"";
+        private const string SidecarArgument = "-additionalfile:\"Assets/Editor/DxMessaging.BaseCallIgnore.txt\"";
+        private const string LegacyAnalyzerArgument = "-a:\"Assets/Plugins/Editor/WallstopStudios.DxMessaging/WallstopStudios.DxMessaging.Analyzer.dll\"";
 
         [SetUp]
         public void SetUp()
@@ -81,80 +79,36 @@ namespace DxMessaging.Tests.Editor
 
         [TestCase(false)]
         [TestCase(true)]
-        public void PreparationCreatesColdInputsBeforeCompletingTheImportBatch(
-            bool existingConsumerOptions
-        )
+        public void PreparationCreatesColdInputsBeforeCompletingTheImportBatch(bool existingConsumerOptions)
         {
             if (existingConsumerOptions)
             {
                 File.WriteAllText(_testRspFilePath, "-define:CONSUMER\n");
             }
-            string sidecarPath = Path.Combine(
-                _projectDirectory,
-                DxMessagingBaseCallIgnoreSync.SidecarAssetPath
-            );
+            string sidecarPath = Path.Combine(_projectDirectory, DxMessagingBaseCallIgnoreSync.SidecarAssetPath);
             List<string> events = new();
             bool sidecarPending = false;
             bool rspPending = false;
             Action prepareSidecar = () =>
-                DxMessagingBaseCallIgnoreSync.WriteSidecarOrThrow(
-                    sidecarPath,
-                    new[] { "Consumer.IgnoredType" },
-                    path => events.Add(path),
-                    ref sidecarPending
-                );
-            Action prepareResponse = () =>
-                SetupCscRsp.SynchronizeResponseFiles(
-                    _assetsDirectory,
-                    path => events.Add(path),
-                    ref rspPending
-                );
+                DxMessagingBaseCallIgnoreSync.WriteSidecarOrThrow(sidecarPath, new[] { "Consumer.IgnoredType" }, path => events.Add(path), ref sidecarPending);
+            Action prepareResponse = () => SetupCscRsp.SynchronizeResponseFiles(_assetsDirectory, path => events.Add(path), ref rspPending);
 
-            SetupCscRsp.PrepareCompilerInputs(
-                true,
-                prepareSidecar,
-                prepareResponse,
-                () => events.Add("begin"),
-                () => events.Add("end"),
-                ref sidecarPending,
-                ref rspPending
-            );
+            SetupCscRsp.PrepareCompilerInputs(true, prepareSidecar, prepareResponse, () => events.Add("begin"), () => events.Add("end"), ref sidecarPending, ref rspPending);
 
             string context = $"existingConsumerOptions={existingConsumerOptions}";
             CollectionAssert.AreEqual(
-                new[]
-                {
-                    "begin",
-                    DxMessagingBaseCallIgnoreSync.SidecarAssetPath,
-                    "Assets/csc.rsp",
-                    "end",
-                },
+                new[] { "begin", DxMessagingBaseCallIgnoreSync.SidecarAssetPath, "Assets/csc.rsp", "end" },
                 events,
                 $"Cold sidecar and response-file imports must finish in one ordered batch: {context}."
             );
-            Assert.IsTrue(
-                File.ReadAllText(sidecarPath).Contains("\nConsumer.IgnoredType\n"),
-                $"Preparation must persist ignored types before returning: {context}."
-            );
-            AssertResponseFile(
-                _testRspFilePath,
-                existingConsumerOptions
-                    ? new[] { "-define:CONSUMER", SidecarArgument }
-                    : new[] { SidecarArgument },
-                context
-            );
-            Assert.IsFalse(
-                sidecarPending || rspPending,
-                $"Successful batch must finish both imports: {context}."
-            );
+            Assert.IsTrue(File.ReadAllText(sidecarPath).Contains("\nConsumer.IgnoredType\n"), $"Preparation must persist ignored types before returning: {context}.");
+            AssertResponseFile(_testRspFilePath, existingConsumerOptions ? new[] { "-define:CONSUMER", SidecarArgument } : new[] { SidecarArgument }, context);
+            Assert.IsFalse(sidecarPending || rspPending, $"Successful batch must finish both imports: {context}.");
 
             events.Clear();
             prepareSidecar();
             prepareResponse();
-            Assert.IsEmpty(
-                events,
-                $"Later deferred sidecar/response synchronization must not import again: {context}."
-            );
+            Assert.IsEmpty(events, $"Later deferred sidecar/response synchronization must not import again: {context}.");
         }
 
         [TestCase("start")]
@@ -188,15 +142,8 @@ namespace DxMessaging.Tests.Editor
                     ),
                 $"Preparation must fail at {failureStage}."
             );
-            Assert.AreSame(
-                expected,
-                actual,
-                $"The original {failureStage} failure must reach the caller."
-            );
-            Assert.IsTrue(
-                sidecarPending && rspPending,
-                $"The failed {failureStage} phase must retain both import retries."
-            );
+            Assert.AreSame(expected, actual, $"The original {failureStage} failure must reach the caller.");
+            Assert.IsTrue(sidecarPending && rspPending, $"The failed {failureStage} phase must retain both import retries.");
             CollectionAssert.AreEqual(
                 failureStage == "start" ? new[] { "start" }
                     : failureStage == "sidecar" ? new[] { "start", "sidecar", "stop" }
@@ -226,10 +173,7 @@ namespace DxMessaging.Tests.Editor
                 "A busy or non-main-thread editor must reject preparation."
             );
             Assert.IsEmpty(events, "Rejected preparation must not perform any asset operation.");
-            Assert.IsFalse(
-                sidecarPending || rspPending,
-                "Rejected preparation must not change import state."
-            );
+            Assert.IsFalse(sidecarPending || rspPending, "Rejected preparation must not change import state.");
         }
 
         [Test]
@@ -252,32 +196,18 @@ namespace DxMessaging.Tests.Editor
                     ),
                 "Batch cleanup must not replace the original preparation failure."
             );
-            CollectionAssert.AreEqual(
-                new Exception[] { workFailure, stopFailure },
-                actual.InnerExceptions,
-                "Both failures must remain available for CI diagnosis."
-            );
+            CollectionAssert.AreEqual(new Exception[] { workFailure, stopFailure }, actual.InnerExceptions, "Both failures must remain available for CI diagnosis.");
         }
 
         [Test]
         public void FailedBatchCompletionRetriesBothImportsWithoutRewritingInputs()
         {
-            string sidecarPath = Path.Combine(
-                _projectDirectory,
-                DxMessagingBaseCallIgnoreSync.SidecarAssetPath
-            );
+            string sidecarPath = Path.Combine(_projectDirectory, DxMessagingBaseCallIgnoreSync.SidecarAssetPath);
             List<string> imports = new();
             bool sidecarPending = false;
             bool rspPending = false;
-            Action prepareSidecar = () =>
-                DxMessagingBaseCallIgnoreSync.WriteSidecarOrThrow(
-                    sidecarPath,
-                    Array.Empty<string>(),
-                    imports.Add,
-                    ref sidecarPending
-                );
-            Action prepareResponse = () =>
-                SetupCscRsp.SynchronizeResponseFiles(_assetsDirectory, imports.Add, ref rspPending);
+            Action prepareSidecar = () => DxMessagingBaseCallIgnoreSync.WriteSidecarOrThrow(sidecarPath, Array.Empty<string>(), imports.Add, ref sidecarPending);
+            Action prepareResponse = () => SetupCscRsp.SynchronizeResponseFiles(_assetsDirectory, imports.Add, ref rspPending);
             Assert.Throws<IOException>(
                 () =>
                     SetupCscRsp.PrepareCompilerInputs(
@@ -296,44 +226,22 @@ namespace DxMessaging.Tests.Editor
             File.SetLastWriteTimeUtc(_testRspFilePath, unchangedTime);
             imports.Clear();
 
-            SetupCscRsp.PrepareCompilerInputs(
-                true,
-                prepareSidecar,
-                prepareResponse,
-                () => { },
-                () => { },
-                ref sidecarPending,
-                ref rspPending
-            );
+            SetupCscRsp.PrepareCompilerInputs(true, prepareSidecar, prepareResponse, () => { }, () => { }, ref sidecarPending, ref rspPending);
 
             CollectionAssert.AreEqual(
                 new[] { DxMessagingBaseCallIgnoreSync.SidecarAssetPath, "Assets/csc.rsp" },
                 imports,
                 "Both queued imports must be retried after failed batch completion."
             );
-            Assert.AreEqual(
-                unchangedTime,
-                File.GetLastWriteTimeUtc(sidecarPath),
-                "Retry must not rewrite identical sidecar bytes."
-            );
-            Assert.AreEqual(
-                unchangedTime,
-                File.GetLastWriteTimeUtc(_testRspFilePath),
-                "Retry must not rewrite identical response-file bytes."
-            );
-            Assert.IsFalse(
-                sidecarPending || rspPending,
-                "A successful retry must clear both pending imports."
-            );
+            Assert.AreEqual(unchangedTime, File.GetLastWriteTimeUtc(sidecarPath), "Retry must not rewrite identical sidecar bytes.");
+            Assert.AreEqual(unchangedTime, File.GetLastWriteTimeUtc(_testRspFilePath), "Retry must not rewrite identical response-file bytes.");
+            Assert.IsFalse(sidecarPending || rspPending, "A successful retry must clear both pending imports.");
         }
 
         [Test]
         public void AFailedSidecarWriteStopsPreparationBeforeResponseFileMutation()
         {
-            string sidecarPath = Path.Combine(
-                _projectDirectory,
-                DxMessagingBaseCallIgnoreSync.SidecarAssetPath
-            );
+            string sidecarPath = Path.Combine(_projectDirectory, DxMessagingBaseCallIgnoreSync.SidecarAssetPath);
             Directory.CreateDirectory(sidecarPath);
             File.WriteAllText(_testRspFilePath, "-define:CONSUMER\n");
             bool sidecarPending = false;
@@ -343,19 +251,8 @@ namespace DxMessaging.Tests.Editor
                 () =>
                     SetupCscRsp.PrepareCompilerInputs(
                         true,
-                        () =>
-                            DxMessagingBaseCallIgnoreSync.WriteSidecarOrThrow(
-                                sidecarPath,
-                                Array.Empty<string>(),
-                                imports.Add,
-                                ref sidecarPending
-                            ),
-                        () =>
-                            SetupCscRsp.SynchronizeResponseFiles(
-                                _assetsDirectory,
-                                imports.Add,
-                                ref rspPending
-                            ),
+                        () => DxMessagingBaseCallIgnoreSync.WriteSidecarOrThrow(sidecarPath, Array.Empty<string>(), imports.Add, ref sidecarPending),
+                        () => SetupCscRsp.SynchronizeResponseFiles(_assetsDirectory, imports.Add, ref rspPending),
                         () => { },
                         () => { },
                         ref sidecarPending,
@@ -363,30 +260,14 @@ namespace DxMessaging.Tests.Editor
                     ),
                 "A real sidecar write error must propagate instead of being logged and ignored."
             );
-            Assert.IsEmpty(
-                imports,
-                "Failed sidecar persistence must not import either compiler input."
-            );
-            Assert.AreEqual(
-                "-define:CONSUMER\n",
-                File.ReadAllText(_testRspFilePath),
-                "A failed sidecar write must leave consumer response-file bytes untouched."
-            );
+            Assert.IsEmpty(imports, "Failed sidecar persistence must not import either compiler input.");
+            Assert.AreEqual("-define:CONSUMER\n", File.ReadAllText(_testRspFilePath), "A failed sidecar write must leave consumer response-file bytes untouched.");
         }
 
         public static IEnumerable<TestCaseData> ResponseFileMigrationCases()
         {
-            yield return new TestCaseData(
-                null,
-                null,
-                true,
-                new[] { SidecarArgument },
-                null,
-                1
-            ).SetName("creates the response file under Assets when the sidecar exists");
-            yield return new TestCaseData(null, null, false, null, null, 0).SetName(
-                "does not create an empty response file before sidecar generation"
-            );
+            yield return new TestCaseData(null, null, true, new[] { SidecarArgument }, null, 1).SetName("creates the response file under Assets when the sidecar exists");
+            yield return new TestCaseData(null, null, false, null, null, 0).SetName("does not create an empty response file before sidecar generation");
             yield return new TestCaseData(
                 new[] { "# consumer asset options", "-define:ASSET", LegacyAnalyzerArgument },
                 new[] { LegacyAnalyzerArgument + " -define:ROOT", SidecarArgument },
@@ -395,14 +276,9 @@ namespace DxMessaging.Tests.Editor
                 new[] { "-define:ROOT" },
                 1
             ).SetName("preserves consumer options in each location while migrating managed wiring");
-            yield return new TestCaseData(
-                null,
-                new[] { SidecarArgument, LegacyAnalyzerArgument },
-                true,
-                new[] { SidecarArgument },
-                null,
-                1
-            ).SetName("deletes a package-only root response file after migration");
+            yield return new TestCaseData(null, new[] { SidecarArgument, LegacyAnalyzerArgument }, true, new[] { SidecarArgument }, null, 1).SetName(
+                "deletes a package-only root response file after migration"
+            );
             yield return new TestCaseData(
                 null,
                 new[] { "  # root options", "  -define:ROOT", "", "-r:Other.dll" },
@@ -411,14 +287,7 @@ namespace DxMessaging.Tests.Editor
                 new[] { "  # root options", "  -define:ROOT", "", "-r:Other.dll" },
                 0
             ).SetName("leaves unrelated root response-file content untouched and inactive");
-            yield return new TestCaseData(
-                null,
-                Array.Empty<string>(),
-                false,
-                null,
-                Array.Empty<string>(),
-                0
-            ).SetName("does not delete an empty consumer root response file");
+            yield return new TestCaseData(null, Array.Empty<string>(), false, null, Array.Empty<string>(), 0).SetName("does not delete an empty consumer root response file");
             yield return new TestCaseData(
                 new[] { SidecarArgument, LegacyAnalyzerArgument },
                 new[] { SidecarArgument, LegacyAnalyzerArgument },
@@ -426,9 +295,7 @@ namespace DxMessaging.Tests.Editor
                 Array.Empty<string>(),
                 null,
                 1
-            ).SetName(
-                "removes stale managed options from both locations when the sidecar is missing"
-            );
+            ).SetName("removes stale managed options from both locations when the sidecar is missing");
             yield return new TestCaseData(
                 new[] { "-r:Other.dll", SidecarArgument },
                 new[] { "# consumer root comment", SidecarArgument },
@@ -478,10 +345,7 @@ namespace DxMessaging.Tests.Editor
                 imports,
                 $"Only the Unity asset path may be imported once per update: {context}."
             );
-            Assert.IsFalse(
-                importPending,
-                $"Successful imports must clear pending state: {context}."
-            );
+            Assert.IsFalse(importPending, $"Successful imports must clear pending state: {context}.");
 
             DateTime unchangedTime = new(2001, 2, 3, 4, 5, 6, DateTimeKind.Utc);
             foreach (string path in new[] { _testRspFilePath, rootRspPath })
@@ -492,20 +356,12 @@ namespace DxMessaging.Tests.Editor
                 }
             }
             SetupCscRsp.SynchronizeResponseFiles(_assetsDirectory, imports.Add, ref importPending);
-            Assert.AreEqual(
-                expectedImports,
-                imports.Count,
-                $"An unchanged sync must not reimport: {context}."
-            );
+            Assert.AreEqual(expectedImports, imports.Count, $"An unchanged sync must not reimport: {context}.");
             foreach (string path in new[] { _testRspFilePath, rootRspPath })
             {
                 if (File.Exists(path))
                 {
-                    Assert.AreEqual(
-                        unchangedTime,
-                        File.GetLastWriteTimeUtc(path),
-                        $"An unchanged sync must not rewrite {path}: {context}."
-                    );
+                    Assert.AreEqual(unchangedTime, File.GetLastWriteTimeUtc(path), $"An unchanged sync must not rewrite {path}: {context}.");
                 }
             }
         }
@@ -521,47 +377,21 @@ namespace DxMessaging.Tests.Editor
             bool importPending = false;
 
             Assert.Throws<IOException>(
-                () =>
-                    SetupCscRsp.SynchronizeResponseFiles(
-                        _assetsDirectory,
-                        imports.Add,
-                        ref importPending
-                    ),
+                () => SetupCscRsp.SynchronizeResponseFiles(_assetsDirectory, imports.Add, ref importPending),
                 "A directory at the destination must report a failed response-file write."
             );
 
-            AssertResponseFile(
-                rootRspPath,
-                new[] { SidecarArgument },
-                "Failed destination write must preserve the legacy file"
-            );
+            AssertResponseFile(rootRspPath, new[] { SidecarArgument }, "Failed destination write must preserve the legacy file");
             Assert.IsEmpty(imports, "A failed write must not import a response file.");
-            Assert.IsFalse(
-                importPending,
-                "No import is pending until the destination has been written."
-            );
-            Assert.IsEmpty(
-                Directory.GetFiles(_assetsDirectory, ".csc.rsp.*.tmp"),
-                "Failed writes must remove temporary response files."
-            );
+            Assert.IsFalse(importPending, "No import is pending until the destination has been written.");
+            Assert.IsEmpty(Directory.GetFiles(_assetsDirectory, ".csc.rsp.*.tmp"), "Failed writes must remove temporary response files.");
 
             Directory.Delete(_testRspFilePath);
             SetupCscRsp.SynchronizeResponseFiles(_assetsDirectory, imports.Add, ref importPending);
 
-            AssertResponseFile(
-                _testRspFilePath,
-                new[] { SidecarArgument },
-                "Retry must create the active response file"
-            );
-            Assert.IsFalse(
-                File.Exists(rootRspPath),
-                "Successful retry must retire the package-only root file."
-            );
-            CollectionAssert.AreEqual(
-                new[] { "Assets/csc.rsp" },
-                imports,
-                "Retry must import the asset once."
-            );
+            AssertResponseFile(_testRspFilePath, new[] { SidecarArgument }, "Retry must create the active response file");
+            Assert.IsFalse(File.Exists(rootRspPath), "Successful retry must retire the package-only root file.");
+            CollectionAssert.AreEqual(new[] { "Assets/csc.rsp" }, imports, "Retry must import the asset once.");
         }
 
         [Test]
@@ -572,69 +402,35 @@ namespace DxMessaging.Tests.Editor
             File.WriteAllLines(rootRspPath, new[] { SidecarArgument });
             bool importPending = false;
             Assert.Throws<IOException>(
-                () =>
-                    SetupCscRsp.SynchronizeResponseFiles(
-                        _assetsDirectory,
-                        _ => throw new IOException("Injected import failure"),
-                        ref importPending
-                    ),
+                () => SetupCscRsp.SynchronizeResponseFiles(_assetsDirectory, _ => throw new IOException("Injected import failure"), ref importPending),
                 "An import failure must remain observable to the setup error handler."
             );
 
-            Assert.IsTrue(
-                importPending,
-                "A written response file still needs its failed import retried."
-            );
-            AssertResponseFile(
-                _testRspFilePath,
-                new[] { SidecarArgument },
-                "Destination must exist before import"
-            );
-            AssertResponseFile(
-                rootRspPath,
-                new[] { SidecarArgument },
-                "Failed import must preserve legacy wiring"
-            );
+            Assert.IsTrue(importPending, "A written response file still needs its failed import retried.");
+            AssertResponseFile(_testRspFilePath, new[] { SidecarArgument }, "Destination must exist before import");
+            AssertResponseFile(rootRspPath, new[] { SidecarArgument }, "Failed import must preserve legacy wiring");
 
             List<string> imports = new();
             SetupCscRsp.SynchronizeResponseFiles(_assetsDirectory, imports.Add, ref importPending);
             Assert.IsFalse(importPending, "Successful retry must clear the pending import.");
-            Assert.IsFalse(
-                File.Exists(rootRspPath),
-                "Successful import must allow legacy cleanup."
-            );
+            Assert.IsFalse(File.Exists(rootRspPath), "Successful import must allow legacy cleanup.");
             SetupCscRsp.SynchronizeResponseFiles(_assetsDirectory, imports.Add, ref importPending);
-            CollectionAssert.AreEqual(
-                new[] { "Assets/csc.rsp" },
-                imports,
-                "An unchanged destination must retry the failed import once."
-            );
+            CollectionAssert.AreEqual(new[] { "Assets/csc.rsp" }, imports, "An unchanged destination must retry the failed import once.");
         }
 
         private void CreateSidecar()
         {
-            string sidecarPath = Path.Combine(
-                _projectDirectory,
-                DxMessagingBaseCallIgnoreSync.SidecarAssetPath
-            );
+            string sidecarPath = Path.Combine(_projectDirectory, DxMessagingBaseCallIgnoreSync.SidecarAssetPath);
             Directory.CreateDirectory(Path.GetDirectoryName(sidecarPath));
             File.WriteAllText(sidecarPath, "Consumer.IgnoredType");
         }
 
         private static void AssertResponseFile(string path, string[] expectedLines, string context)
         {
-            Assert.AreEqual(
-                expectedLines != null,
-                File.Exists(path),
-                $"Unexpected response-file presence at {path}: {context}."
-            );
+            Assert.AreEqual(expectedLines != null, File.Exists(path), $"Unexpected response-file presence at {path}: {context}.");
             if (expectedLines != null)
             {
-                CollectionAssert.AreEqual(
-                    expectedLines,
-                    File.ReadAllLines(path),
-                    $"Unexpected response-file contents at {path}: {context}."
-                );
+                CollectionAssert.AreEqual(expectedLines, File.ReadAllLines(path), $"Unexpected response-file contents at {path}: {context}.");
             }
         }
 
@@ -643,17 +439,8 @@ namespace DxMessaging.Tests.Editor
         public void InlineCommentsDoNotCountAsActiveSidecarWiring(string prefix)
         {
             string input = prefix + SidecarArgument;
-            string[] actual = SetupCscRsp.SynchronizeAdditionalFileForIgnoreListLines(
-                new[] { input },
-                DxMessagingBaseCallIgnoreSync.SidecarAssetPath,
-                true,
-                out bool modified
-            );
-            CollectionAssert.AreEqual(
-                new[] { input, SidecarArgument },
-                actual,
-                $"Commented sidecar options must stay inactive for prefix [{prefix}]."
-            );
+            string[] actual = SetupCscRsp.SynchronizeAdditionalFileForIgnoreListLines(new[] { input }, DxMessagingBaseCallIgnoreSync.SidecarAssetPath, true, out bool modified);
+            CollectionAssert.AreEqual(new[] { input, SidecarArgument }, actual, $"Commented sidecar options must stay inactive for prefix [{prefix}].");
             Assert.IsTrue(modified, $"Missing active wiring must be added for prefix [{prefix}].");
         }
 
@@ -661,28 +448,14 @@ namespace DxMessaging.Tests.Editor
         [TestCase(";")]
         public void MixedAnalyzerListsPreserveConsumerAnalyzers(string separator)
         {
-            string input =
-                "  /analyzer:WallstopStudios.DxMessaging.Analyzer.dll"
-                + separator
-                + "\"Other,Analyzer.dll\""
-                + separator
-                + "Third.dll  # consumer";
-            string[] actual = SetupCscRsp.CleanDxMessagingAnalyzerLines(
-                new[] { input },
-                out bool modified
-            );
+            string input = "  /analyzer:WallstopStudios.DxMessaging.Analyzer.dll" + separator + "\"Other,Analyzer.dll\"" + separator + "Third.dll  # consumer";
+            string[] actual = SetupCscRsp.CleanDxMessagingAnalyzerLines(new[] { input }, out bool modified);
             CollectionAssert.AreEqual(
-                new[]
-                {
-                    "  /analyzer:\"Other,Analyzer.dll\"" + separator + "Third.dll  # consumer",
-                },
+                new[] { "  /analyzer:\"Other,Analyzer.dll\"" + separator + "Third.dll  # consumer" },
                 actual,
                 $"Only managed paths may be removed from analyzer lists separated by [{separator}]."
             );
-            Assert.IsTrue(
-                modified,
-                $"The managed analyzer must be removed for separator [{separator}]."
-            );
+            Assert.IsTrue(modified, $"The managed analyzer must be removed for separator [{separator}].");
         }
 
         [TestCase("utf8", "\r\n")]
@@ -691,10 +464,7 @@ namespace DxMessaging.Tests.Editor
         [TestCase("utf16-be", "\n")]
         [TestCase("utf32-le", "\r")]
         [TestCase("utf32-be", "\r\n")]
-        public void SynchronizationPreservesConsumerEncodingAndWhitespace(
-            string encodingName,
-            string newline
-        )
+        public void SynchronizationPreservesConsumerEncodingAndWhitespace(string encodingName, string newline)
         {
             CreateSidecar();
             Encoding encoding = encodingName switch
@@ -710,11 +480,7 @@ namespace DxMessaging.Tests.Editor
             string original = "  # Consumer comment" + newline + " \t\n" + "  -define:FOO";
             File.WriteAllText(_testRspFilePath, original, encoding);
             string rootRspPath = Path.Combine(_projectDirectory, "csc.rsp");
-            File.WriteAllText(
-                rootRspPath,
-                original + newline + SidecarArgument + newline,
-                encoding
-            );
+            File.WriteAllText(rootRspPath, original + newline + SidecarArgument + newline, encoding);
             bool importPending = false;
             List<string> imports = new();
             SetupCscRsp.SynchronizeResponseFiles(_assetsDirectory, imports.Add, ref importPending);
@@ -733,36 +499,19 @@ namespace DxMessaging.Tests.Editor
                 $"Root content, mixed newlines, whitespace and BOM must survive migration: {context}."
             );
             SetupCscRsp.SynchronizeResponseFiles(_assetsDirectory, imports.Add, ref importPending);
-            CollectionAssert.AreEqual(
-                expectedBytes,
-                File.ReadAllBytes(_testRspFilePath),
-                $"A second sync must preserve identical bytes: {context}."
-            );
-            CollectionAssert.AreEqual(
-                new[] { "Assets/csc.rsp" },
-                imports,
-                $"A second sync must not import again: {context}."
-            );
+            CollectionAssert.AreEqual(expectedBytes, File.ReadAllBytes(_testRspFilePath), $"A second sync must preserve identical bytes: {context}.");
+            CollectionAssert.AreEqual(new[] { "Assets/csc.rsp" }, imports, $"A second sync must not import again: {context}.");
         }
 
         [TestCase(",", true)]
         [TestCase(";", true)]
         [TestCase(",", false)]
         [TestCase(";", false)]
-        public void MixedAdditionalFileListsPreserveConsumerFiles(
-            string separator,
-            bool sidecarExists
-        )
+        public void MixedAdditionalFileListsPreserveConsumerFiles(string separator, bool sidecarExists)
         {
-            string input =
-                "  /additionalfile:\"Other,File.txt\""
-                + separator
-                + "Assets/Editor/DxMessaging.BaseCallIgnore.txt"
-                + separator
-                + "Third.txt  # consumer";
+            string input = "  /additionalfile:\"Other,File.txt\"" + separator + "Assets/Editor/DxMessaging.BaseCallIgnore.txt" + separator + "Third.txt  # consumer";
             string retained = "  /additionalfile:\"Other,File.txt\"" + separator + "Third.txt";
-            string expected =
-                retained + (sidecarExists ? " " + SidecarArgument : "") + "  # consumer";
+            string expected = retained + (sidecarExists ? " " + SidecarArgument : "") + "  # consumer";
             string[] actual = SetupCscRsp.SynchronizeAdditionalFileForIgnoreListLines(
                 new[] { input },
                 DxMessagingBaseCallIgnoreSync.SidecarAssetPath,
@@ -770,26 +519,14 @@ namespace DxMessaging.Tests.Editor
                 out bool modified
             );
             string context = $"separator=[{separator}], sidecarExists={sidecarExists}";
-            CollectionAssert.AreEqual(
-                new[] { expected },
-                actual,
-                $"Consumer additional files must remain registered: {context}."
-            );
+            CollectionAssert.AreEqual(new[] { expected }, actual, $"Consumer additional files must remain registered: {context}.");
             Assert.IsTrue(modified, $"The managed option must be synchronized: {context}.");
             CollectionAssert.AreEqual(
                 actual,
-                SetupCscRsp.SynchronizeAdditionalFileForIgnoreListLines(
-                    actual,
-                    DxMessagingBaseCallIgnoreSync.SidecarAssetPath,
-                    sidecarExists,
-                    out bool modifiedAgain
-                ),
+                SetupCscRsp.SynchronizeAdditionalFileForIgnoreListLines(actual, DxMessagingBaseCallIgnoreSync.SidecarAssetPath, sidecarExists, out bool modifiedAgain),
                 $"List synchronization must be idempotent: {context}."
             );
-            Assert.IsFalse(
-                modifiedAgain,
-                $"A second pass must not change list contents: {context}."
-            );
+            Assert.IsFalse(modifiedAgain, $"A second pass must not change list contents: {context}.");
         }
 
         [TestCase("-r:Folder#Name.dll ")]
@@ -798,53 +535,27 @@ namespace DxMessaging.Tests.Editor
         public void HashesAndEscapedQuotesInsideArgumentsDoNotHideActiveOptions(string prefix)
         {
             string input = prefix + SidecarArgument;
-            string[] actual = SetupCscRsp.SynchronizeAdditionalFileForIgnoreListLines(
-                new[] { input },
-                DxMessagingBaseCallIgnoreSync.SidecarAssetPath,
-                true,
-                out bool modified
-            );
-            CollectionAssert.AreEqual(
-                new[] { input },
-                actual,
-                $"An embedded hash or escaped quote must not hide active options after [{prefix}]."
-            );
-            Assert.IsFalse(
-                modified,
-                $"Existing active options after [{prefix}] must remain unchanged."
-            );
+            string[] actual = SetupCscRsp.SynchronizeAdditionalFileForIgnoreListLines(new[] { input }, DxMessagingBaseCallIgnoreSync.SidecarAssetPath, true, out bool modified);
+            CollectionAssert.AreEqual(new[] { input }, actual, $"An embedded hash or escaped quote must not hide active options after [{prefix}].");
+            Assert.IsFalse(modified, $"Existing active options after [{prefix}] must remain unchanged.");
         }
 
         [TestCase("-a:OtherWallstopStudios.DxMessaging.Analyzer.dll")]
-        [TestCase(
-            "-a:Packages/com.wallstop-studios.dxmessaging.extension/Microsoft.CodeAnalysis.dll"
-        )]
-        [TestCase(
-            "-a:Assets/Plugins/Editor/WallstopStudios.DxMessaging.Custom/Microsoft.CodeAnalysis.dll"
-        )]
+        [TestCase("-a:Packages/com.wallstop-studios.dxmessaging.extension/Microsoft.CodeAnalysis.dll")]
+        [TestCase("-a:Assets/Plugins/Editor/WallstopStudios.DxMessaging.Custom/Microsoft.CodeAnalysis.dll")]
         [TestCase("-additionalfile:Assets/Consumer.DxMessaging.BaseCallIgnore.Notes.txt")]
         [TestCase("-additionalfile:Assets/DxMessaging.BaseCallIgnore/Consumer.txt")]
         public void ConsumerOptionsWithSimilarNamesArePreserved(string argument)
         {
-            string[] cleaned = SetupCscRsp.CleanDxMessagingAnalyzerLines(
-                new[] { argument },
-                out bool removedAnalyzer
-            );
+            string[] cleaned = SetupCscRsp.CleanDxMessagingAnalyzerLines(new[] { argument }, out bool removedAnalyzer);
             string[] synchronized = SetupCscRsp.SynchronizeAdditionalFileForIgnoreListLines(
                 cleaned,
                 DxMessagingBaseCallIgnoreSync.SidecarAssetPath,
                 false,
                 out bool removedSidecar
             );
-            CollectionAssert.AreEqual(
-                new[] { argument },
-                synchronized,
-                $"A similar name does not make a consumer option package-owned: [{argument}]."
-            );
-            Assert.IsFalse(
-                removedAnalyzer || removedSidecar,
-                $"No package-managed path was present in [{argument}]."
-            );
+            CollectionAssert.AreEqual(new[] { argument }, synchronized, $"A similar name does not make a consumer option package-owned: [{argument}].");
+            Assert.IsFalse(removedAnalyzer || removedSidecar, $"No package-managed path was present in [{argument}].");
         }
 
         private static byte[] CombineEncodingPreamble(Encoding encoding, string text)
@@ -912,31 +623,18 @@ namespace DxMessaging.Tests.Editor
             ).SetName("removes only DxMessaging analyzer tokens from mixed response-file lines");
 
             yield return new TestCaseData(
-                new[]
-                {
-                    @"# /analyzer:""Assets/Plugins/Editor/WallstopStudios.DxMessaging/WallstopStudios.DxMessaging.Analyzer.dll""",
-                },
-                new[]
-                {
-                    @"# /analyzer:""Assets/Plugins/Editor/WallstopStudios.DxMessaging/WallstopStudios.DxMessaging.Analyzer.dll""",
-                },
+                new[] { @"# /analyzer:""Assets/Plugins/Editor/WallstopStudios.DxMessaging/WallstopStudios.DxMessaging.Analyzer.dll""" },
+                new[] { @"# /analyzer:""Assets/Plugins/Editor/WallstopStudios.DxMessaging/WallstopStudios.DxMessaging.Analyzer.dll""" },
                 false
             ).SetName("preserves commented-out DxMessaging analyzer entries");
         }
 
         [TestCaseSource(nameof(CscRspCleanupCases))]
-        public void RemovesDxMessagingAnalyzerEntriesAndPreservesEverythingElse(
-            string[] inputLines,
-            string[] expectedLines,
-            bool expectedFoundStaleEntries
-        )
+        public void RemovesDxMessagingAnalyzerEntriesAndPreservesEverythingElse(string[] inputLines, string[] expectedLines, bool expectedFoundStaleEntries)
         {
             File.WriteAllLines(_testRspFilePath, inputLines);
 
-            string[] cleaned = SetupCscRsp.CleanDxMessagingAnalyzerLines(
-                File.ReadAllLines(_testRspFilePath),
-                out bool foundStaleEntries
-            );
+            string[] cleaned = SetupCscRsp.CleanDxMessagingAnalyzerLines(File.ReadAllLines(_testRspFilePath), out bool foundStaleEntries);
 
             CollectionAssert.AreEqual(expectedLines, cleaned);
             Assert.AreEqual(expectedFoundStaleEntries, foundStaleEntries);
@@ -947,26 +645,15 @@ namespace DxMessaging.Tests.Editor
             string sidecarPath = DxMessagingBaseCallIgnoreSync.SidecarAssetPath;
             string desiredLine = $@"-additionalfile:""{sidecarPath}""";
 
-            yield return new TestCaseData(
-                new[] { @"-r:""System.Runtime.dll""" },
-                true,
-                new[] { @"-r:""System.Runtime.dll""", desiredLine },
-                true
-            ).SetName("appends missing sidecar entry after deferred sidecar generation");
+            yield return new TestCaseData(new[] { @"-r:""System.Runtime.dll""" }, true, new[] { @"-r:""System.Runtime.dll""", desiredLine }, true).SetName(
+                "appends missing sidecar entry after deferred sidecar generation"
+            );
 
-            yield return new TestCaseData(
-                new[] { desiredLine },
-                true,
-                new[] { desiredLine },
-                false
-            ).SetName("keeps existing canonical sidecar entry");
+            yield return new TestCaseData(new[] { desiredLine }, true, new[] { desiredLine }, false).SetName("keeps existing canonical sidecar entry");
 
-            yield return new TestCaseData(
-                new[] { $@"# -additionalfile:""{sidecarPath}""" },
-                true,
-                new[] { $@"# -additionalfile:""{sidecarPath}""", desiredLine },
-                true
-            ).SetName("does not treat commented sidecar entry as active wiring");
+            yield return new TestCaseData(new[] { $@"# -additionalfile:""{sidecarPath}""" }, true, new[] { $@"# -additionalfile:""{sidecarPath}""", desiredLine }, true).SetName(
+                "does not treat commented sidecar entry as active wiring"
+            );
 
             yield return new TestCaseData(
                 new[]
@@ -983,60 +670,37 @@ namespace DxMessaging.Tests.Editor
             ).SetName("canonicalizes and deduplicates dash and slash sidecar entries");
 
             yield return new TestCaseData(
-                new[]
-                {
-                    @"/additionalfile:""Assets/DxMessaging.BaseCallIgnore.generated.txt""",
-                    @"-r:""System.Runtime.dll""",
-                },
+                new[] { @"/additionalfile:""Assets/DxMessaging.BaseCallIgnore.generated.txt""", @"-r:""System.Runtime.dll""" },
                 true,
                 new[] { @"-r:""System.Runtime.dll""", desiredLine },
                 true
             ).SetName("replaces stale slash-prefixed moved sidecar path");
 
             yield return new TestCaseData(
-                new[]
-                {
-                    @"""/additionalfile:Assets/Editor/DxMessaging.BaseCallIgnore.txt"" -define:FOO",
-                    @"-r:""System.Runtime.dll""",
-                },
+                new[] { @"""/additionalfile:Assets/Editor/DxMessaging.BaseCallIgnore.txt"" -define:FOO", @"-r:""System.Runtime.dll""" },
                 true,
                 new[] { $"{desiredLine} -define:FOO", @"-r:""System.Runtime.dll""" },
                 true
             ).SetName("canonicalizes whole-quoted sidecar token without dropping mixed options");
 
             yield return new TestCaseData(
-                new[]
-                {
-                    @"""/additionalfile:Assets/DxMessaging.BaseCallIgnore.generated.txt"" -define:FOO",
-                    @"-r:""System.Runtime.dll""",
-                },
+                new[] { @"""/additionalfile:Assets/DxMessaging.BaseCallIgnore.generated.txt"" -define:FOO", @"-r:""System.Runtime.dll""" },
                 true,
                 new[] { "-define:FOO", @"-r:""System.Runtime.dll""", desiredLine },
                 true
             ).SetName("removes whole-quoted stale sidecar token without dropping mixed options");
 
-            yield return new TestCaseData(
-                new[] { desiredLine, @"-r:""System.Runtime.dll""" },
-                false,
-                new[] { @"-r:""System.Runtime.dll""" },
-                true
-            ).SetName("removes sidecar entry when sidecar is absent");
+            yield return new TestCaseData(new[] { desiredLine, @"-r:""System.Runtime.dll""" }, false, new[] { @"-r:""System.Runtime.dll""" }, true).SetName(
+                "removes sidecar entry when sidecar is absent"
+            );
 
-            yield return new TestCaseData(
-                new[] { @"-r:""System.Runtime.dll""" },
-                false,
-                new[] { @"-r:""System.Runtime.dll""" },
-                false
-            ).SetName("does not modify unrelated lines when sidecar is absent");
+            yield return new TestCaseData(new[] { @"-r:""System.Runtime.dll""" }, false, new[] { @"-r:""System.Runtime.dll""" }, false).SetName(
+                "does not modify unrelated lines when sidecar is absent"
+            );
         }
 
         [TestCaseSource(nameof(AdditionalFileSyncCases))]
-        public void SynchronizesBaseCallIgnoreAdditionalFileEntry(
-            string[] inputLines,
-            bool sidecarExists,
-            string[] expectedLines,
-            bool expectedModified
-        )
+        public void SynchronizesBaseCallIgnoreAdditionalFileEntry(string[] inputLines, bool sidecarExists, string[] expectedLines, bool expectedModified)
         {
             string[] synchronized = SetupCscRsp.SynchronizeAdditionalFileForIgnoreListLines(
                 inputLines,
@@ -1084,10 +748,9 @@ namespace DxMessaging.Tests.Editor
                 true
             ).SetName("removes a folder containing the full known historical analyzer payload");
 
-            yield return new TestCaseData(
-                new[] { "WallstopStudios.DxMessaging.SourceGenerators.dll" },
-                true
-            ).SetName("removes a 2.x folder containing only the first-party source generator DLL");
+            yield return new TestCaseData(new[] { "WallstopStudios.DxMessaging.SourceGenerators.dll" }, true).SetName(
+                "removes a 2.x folder containing only the first-party source generator DLL"
+            );
 
             yield return new TestCaseData(
                 new[]
@@ -1106,14 +769,9 @@ namespace DxMessaging.Tests.Editor
                 true
             ).SetName("removes a 2.x folder containing historical Roslyn dependency DLLs");
 
-            yield return new TestCaseData(
-                new[]
-                {
-                    "WallstopStudios.DxMessaging.SourceGenerators.dll",
-                    "WallstopStudios.DxMessaging.Analyzer.dll",
-                },
-                true
-            ).SetName("removes a 3.x folder containing both first-party compiler DLLs");
+            yield return new TestCaseData(new[] { "WallstopStudios.DxMessaging.SourceGenerators.dll", "WallstopStudios.DxMessaging.Analyzer.dll" }, true).SetName(
+                "removes a 3.x folder containing both first-party compiler DLLs"
+            );
 
             yield return new TestCaseData(
                 new[]
@@ -1126,12 +784,7 @@ namespace DxMessaging.Tests.Editor
             ).SetName("matches known DLL names case-insensitively from platform paths");
 
             yield return new TestCaseData(
-                new[]
-                {
-                    "WallstopStudios.DxMessaging.SourceGenerators.dll",
-                    "WallstopStudios.DxMessaging.SourceGenerators.dll.meta",
-                    "ConsumerNotes.cs",
-                },
+                new[] { "WallstopStudios.DxMessaging.SourceGenerators.dll", "WallstopStudios.DxMessaging.SourceGenerators.dll.meta", "ConsumerNotes.cs" },
                 false
             ).SetName("preserves the folder when a consumer added a foreign file");
 
@@ -1148,66 +801,37 @@ namespace DxMessaging.Tests.Editor
             ).SetName("preserves the folder when a consumer added a foreign DLL");
 
             yield return new TestCaseData(
-                new[]
-                {
-                    "WallstopStudios.DxMessaging.SourceGenerators.dll",
-                    "WallstopStudios.DxMessaging.Analyzer.dll",
-                    "SomeOtherPlugin.dll.meta",
-                },
+                new[] { "WallstopStudios.DxMessaging.SourceGenerators.dll", "WallstopStudios.DxMessaging.Analyzer.dll", "SomeOtherPlugin.dll.meta" },
                 false
             ).SetName("preserves the folder when a consumer added a foreign DLL meta sidecar");
 
-            yield return new TestCaseData(
-                new[] { "WallstopStudios.DxMessaging.Analyzer.dll" },
-                false
-            ).SetName("preserves the folder when the source generator marker DLL is missing");
+            yield return new TestCaseData(new[] { "WallstopStudios.DxMessaging.Analyzer.dll" }, false).SetName(
+                "preserves the folder when the source generator marker DLL is missing"
+            );
+
+            yield return new TestCaseData(new[] { "WallstopStudios.DxMessaging.Analyzer.dll", "NestedFolder" }, false).SetName(
+                "preserves the folder when an entry is neither a .dll nor a .dll.meta"
+            );
 
             yield return new TestCaseData(
-                new[] { "WallstopStudios.DxMessaging.Analyzer.dll", "NestedFolder" },
-                false
-            ).SetName("preserves the folder when an entry is neither a .dll nor a .dll.meta");
-
-            yield return new TestCaseData(
-                new[]
-                {
-                    "WallstopStudios.DxMessaging.SourceGenerators.dll",
-                    "WallstopStudios.DxMessaging.Analyzer.dll",
-                    "wallstopstudios.dxmessaging.analyzer.dll",
-                },
+                new[] { "WallstopStudios.DxMessaging.SourceGenerators.dll", "WallstopStudios.DxMessaging.Analyzer.dll", "wallstopstudios.dxmessaging.analyzer.dll" },
                 false
             ).SetName("preserves the folder when duplicate DLL names differ only by case");
 
-            yield return new TestCaseData(Array.Empty<string>(), false).SetName(
-                "does nothing for an empty folder"
-            );
+            yield return new TestCaseData(Array.Empty<string>(), false).SetName("does nothing for an empty folder");
 
             yield return new TestCaseData(
-                new[]
-                {
-                    null,
-                    string.Empty,
-                    "WallstopStudios.DxMessaging.SourceGenerators.dll",
-                    "WallstopStudios.DxMessaging.Analyzer.dll",
-                },
+                new[] { null, string.Empty, "WallstopStudios.DxMessaging.SourceGenerators.dll", "WallstopStudios.DxMessaging.Analyzer.dll" },
                 true
             ).SetName("ignores null and empty entries from defensive callers");
 
-            yield return new TestCaseData(
-                new[] { "WallstopStudios.DxMessaging.Analyzer.dll.meta" },
-                false
-            ).SetName("does nothing when only orphaned known meta sidecars remain");
+            yield return new TestCaseData(new[] { "WallstopStudios.DxMessaging.Analyzer.dll.meta" }, false).SetName("does nothing when only orphaned known meta sidecars remain");
         }
 
         [TestCaseSource(nameof(LegacyAnalyzerCopyRemovalCases))]
-        public void RecognizesWhenLegacyAnalyzerCopyIsSafeToRemove(
-            string[] folderEntries,
-            bool expectedSafeToRemove
-        )
+        public void RecognizesWhenLegacyAnalyzerCopyIsSafeToRemove(string[] folderEntries, bool expectedSafeToRemove)
         {
-            Assert.AreEqual(
-                expectedSafeToRemove,
-                SetupCscRsp.IsLegacyAnalyzerCopySafeToRemove(folderEntries)
-            );
+            Assert.AreEqual(expectedSafeToRemove, SetupCscRsp.IsLegacyAnalyzerCopySafeToRemove(folderEntries));
         }
     }
 }

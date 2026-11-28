@@ -131,11 +131,7 @@ namespace DxMessaging.Tests.Runtime
             int actualTargeted = bus.RegisteredTargeted;
             int actualBroadcast = bus.RegisteredBroadcast;
 
-            if (
-                actualUntargeted == untargeted
-                && actualTargeted == targeted
-                && actualBroadcast == broadcast
-            )
+            if (actualUntargeted == untargeted && actualTargeted == targeted && actualBroadcast == broadcast)
             {
                 return;
             }
@@ -181,20 +177,8 @@ namespace DxMessaging.Tests.Runtime
                 callerLineNumber,
                 callerMemberName ?? "<unknown member>"
             );
-            string expected = string.Format(
-                CultureInfo.InvariantCulture,
-                "Untargeted={0}, Targeted={1}, Broadcast={2}",
-                expectedUntargeted,
-                expectedTargeted,
-                expectedBroadcast
-            );
-            string actual = string.Format(
-                CultureInfo.InvariantCulture,
-                "Untargeted={0}, Targeted={1}, Broadcast={2}",
-                actualUntargeted,
-                actualTargeted,
-                actualBroadcast
-            );
+            string expected = string.Format(CultureInfo.InvariantCulture, "Untargeted={0}, Targeted={1}, Broadcast={2}", expectedUntargeted, expectedTargeted, expectedBroadcast);
+            string actual = string.Format(CultureInfo.InvariantCulture, "Untargeted={0}, Targeted={1}, Broadcast={2}", actualUntargeted, actualTargeted, actualBroadcast);
 
             List<string> mismatches = new(3);
             AppendMismatch(mismatches, "Untargeted", expectedUntargeted, actualUntargeted);
@@ -202,24 +186,13 @@ namespace DxMessaging.Tests.Runtime
             AppendMismatch(mismatches, "Broadcast", expectedBroadcast, actualBroadcast);
 
             StringBuilder builder = new();
-            builder.AppendFormat(
-                CultureInfo.InvariantCulture,
-                "Registration counts mismatch on bus '{0}'{1}.",
-                busLabel,
-                contextSuffix
-            );
+            builder.AppendFormat(CultureInfo.InvariantCulture, "Registration counts mismatch on bus '{0}'{1}.", busLabel, contextSuffix);
             foreach (string line in mismatches)
             {
                 builder.Append(' ');
                 builder.Append(line);
             }
-            builder.AppendFormat(
-                CultureInfo.InvariantCulture,
-                " At {0}. Full triple: expected ({1}); actual ({2}).",
-                location,
-                expected,
-                actual
-            );
+            builder.AppendFormat(CultureInfo.InvariantCulture, " At {0}. Full triple: expected ({1}); actual ({2}).", location, expected, actual);
             if (includeBucketingReminder)
             {
                 builder.Append(
@@ -232,12 +205,7 @@ namespace DxMessaging.Tests.Runtime
             return builder.ToString();
         }
 
-        private static void AppendMismatch(
-            List<string> mismatches,
-            string bucket,
-            int expected,
-            int actual
-        )
+        private static void AppendMismatch(List<string> mismatches, string bucket, int expected, int actual)
         {
             if (expected == actual)
             {
@@ -246,17 +214,7 @@ namespace DxMessaging.Tests.Runtime
 
             int delta = actual - expected;
             string sign = 0 <= delta ? "+" : string.Empty;
-            mismatches.Add(
-                string.Format(
-                    CultureInfo.InvariantCulture,
-                    "{0}: expected {1}, actual {2} (delta {3}{4}).",
-                    bucket,
-                    expected,
-                    actual,
-                    sign,
-                    delta
-                )
-            );
+            mismatches.Add(string.Format(CultureInfo.InvariantCulture, "{0}: expected {1}, actual {2} (delta {3}{4}).", bucket, expected, actual, sign, delta));
         }
     }
 }

@@ -69,13 +69,7 @@ namespace DxMessaging.Editor.Analyzers
         /// (<c>OnApplicationFocus(bool focused)</c>, <c>OnApplicationPause(bool paused)</c>).
         /// All other guarded methods are zero-argument.
         /// </summary>
-        public static readonly HashSet<string> GuardedMethodsWithBoolSignature = new(
-            StringComparer.Ordinal
-        )
-        {
-            "OnApplicationFocus",
-            "OnApplicationPause",
-        };
+        public static readonly HashSet<string> GuardedMethodsWithBoolSignature = new(StringComparer.Ordinal) { "OnApplicationFocus", "OnApplicationPause" };
 
         /// <summary>
         /// Per-method consequence text shown by the inspector overlay HelpBox when an override
@@ -87,21 +81,13 @@ namespace DxMessaging.Editor.Analyzers
         /// guarded method, but a future contributor adding a new guarded method MUST update both.
         /// ASCII-only by policy.
         /// </summary>
-        public static readonly IReadOnlyDictionary<
-            string,
-            string
-        > MissingBaseCallMessageFormatsByMethod = new Dictionary<string, string>(
-            StringComparer.Ordinal
-        )
+        public static readonly IReadOnlyDictionary<string, string> MissingBaseCallMessageFormatsByMethod = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             {
                 "Awake",
                 "'{0}' overrides MessageAwareComponent.Awake but does not call base.Awake(); the message registration token will never be created and handlers cannot register."
             },
-            {
-                "OnEnable",
-                "'{0}' overrides MessageAwareComponent.OnEnable but does not call base.OnEnable(); handlers will not be re-enabled when this component is enabled."
-            },
+            { "OnEnable", "'{0}' overrides MessageAwareComponent.OnEnable but does not call base.OnEnable(); handlers will not be re-enabled when this component is enabled." },
             {
                 "OnDisable",
                 "'{0}' overrides MessageAwareComponent.OnDisable but does not call base.OnDisable(); handlers will not be disabled when this component is disabled, causing unwanted message processing."
@@ -141,25 +127,15 @@ namespace DxMessaging.Editor.Analyzers
         /// </summary>
         public static string GetMissingBaseConsequenceLine(string? methodName, string? typeDisplay)
         {
-            string format = MissingBaseCallMessageFormatsByMethod.TryGetValue(
-                methodName ?? string.Empty,
-                out string? perMethodFormat
-            )
+            string format = MissingBaseCallMessageFormatsByMethod.TryGetValue(methodName ?? string.Empty, out string? perMethodFormat)
                 ? perMethodFormat
                 : GenericMissingBaseCallMessageFormat;
-            return string.Format(
-                System.Globalization.CultureInfo.InvariantCulture,
-                format,
-                typeDisplay ?? string.Empty,
-                methodName ?? string.Empty
-            );
+            return string.Format(System.Globalization.CultureInfo.InvariantCulture, format, typeDisplay ?? string.Empty, methodName ?? string.Empty);
         }
 
-        private const string IgnoreAttributeFullName =
-            "DxMessaging.Core.Attributes.DxIgnoreMissingBaseCallAttribute";
+        private const string IgnoreAttributeFullName = "DxMessaging.Core.Attributes.DxIgnoreMissingBaseCallAttribute";
 
-        private const string MessageAwareComponentFullName =
-            "DxMessaging.Unity.MessageAwareComponent";
+        private const string MessageAwareComponentFullName = "DxMessaging.Unity.MessageAwareComponent";
 
         private static readonly Type[] BoolParameterTypes = { typeof(bool) };
 
@@ -206,10 +182,7 @@ namespace DxMessaging.Editor.Analyzers
         /// <c>Assets/Editor/DxMessaging.BaseCallIgnore.txt</c>, surfaced through
         /// <c>DxMessagingSettings._baseCallIgnoredTypes</c>). May be <c>null</c>.
         /// </param>
-        public static Dictionary<string, ScanEntry> Scan(
-            IEnumerable<Type?>? candidates,
-            IEnumerable<string>? ignoredTypeNames
-        )
+        public static Dictionary<string, ScanEntry> Scan(IEnumerable<Type?>? candidates, IEnumerable<string>? ignoredTypeNames)
         {
             Dictionary<string, ScanEntry> result = new(StringComparer.Ordinal);
             if (candidates is null)
@@ -217,9 +190,7 @@ namespace DxMessaging.Editor.Analyzers
                 return result;
             }
 
-            HashSet<string> projectIgnore = ignoredTypeNames is null
-                ? new HashSet<string>(StringComparer.Ordinal)
-                : new HashSet<string>(ignoredTypeNames, StringComparer.Ordinal);
+            HashSet<string> projectIgnore = ignoredTypeNames is null ? new HashSet<string>(StringComparer.Ordinal) : new HashSet<string>(ignoredTypeNames, StringComparer.Ordinal);
 
             foreach (Type? concrete in candidates)
             {
@@ -241,9 +212,7 @@ namespace DxMessaging.Editor.Analyzers
                 {
                     continue;
                 }
-                if (
-                    string.Equals(fullName, MessageAwareComponentFullName, StringComparison.Ordinal)
-                )
+                if (string.Equals(fullName, MessageAwareComponentFullName, StringComparison.Ordinal))
                 {
                     continue;
                 }
@@ -321,11 +290,7 @@ namespace DxMessaging.Editor.Analyzers
             return ignoredMethods;
         }
 
-        private static ScanEntry ScanOne(
-            Type concrete,
-            string fullName,
-            HashSet<string> methodLevelIgnore
-        )
+        private static ScanEntry ScanOne(Type concrete, string fullName, HashSet<string> methodLevelIgnore)
         {
             ScanEntry entry = new()
             {
@@ -342,12 +307,7 @@ namespace DxMessaging.Editor.Analyzers
             return entry;
         }
 
-        private static void ClassifyMethod(
-            Type concrete,
-            string methodName,
-            ScanEntry entry,
-            HashSet<string> methodLevelIgnore
-        )
+        private static void ClassifyMethod(Type concrete, string methodName, ScanEntry entry, HashSet<string> methodLevelIgnore)
         {
             if (methodLevelIgnore.Contains(methodName))
             {
@@ -393,8 +353,7 @@ namespace DxMessaging.Editor.Analyzers
                 overlay outcome (method listed in HelpBox).
             */
             bool isOverride = declared.GetBaseDefinition() != declared;
-            bool hasNewKeyword =
-                !isOverride && BaseHasSameNamedVirtual(concrete.BaseType, methodName);
+            bool hasNewKeyword = !isOverride && BaseHasSameNamedVirtual(concrete.BaseType, methodName);
 
             if (!isOverride)
             {
@@ -430,10 +389,7 @@ namespace DxMessaging.Editor.Analyzers
                     name so the helper does not need a hard reference to the Unity-only type.
                 */
                 Type? cursorDeclaring = cursorOverridden.DeclaringType;
-                if (
-                    cursorDeclaring != null
-                    && cursorDeclaring.FullName == "DxMessaging.Unity.MessageAwareComponent"
-                )
+                if (cursorDeclaring != null && cursorDeclaring.FullName == "DxMessaging.Unity.MessageAwareComponent")
                 {
                     return;
                 }
@@ -442,10 +398,7 @@ namespace DxMessaging.Editor.Analyzers
                     // Cross-assembly / abstract; assume clean (cannot inspect).
                     return;
                 }
-                bool ancestorCallsBase = BaseCallIlInspector.MethodIlContainsBaseCall(
-                    cursorOverridden,
-                    methodName
-                );
+                bool ancestorCallsBase = BaseCallIlInspector.MethodIlContainsBaseCall(cursorOverridden, methodName);
                 if (!ancestorCallsBase)
                 {
                     AddIfMissing(entry, methodName, "DXMSG010");
@@ -457,30 +410,12 @@ namespace DxMessaging.Editor.Analyzers
 
         private static MethodInfo? GetDeclaredZeroArgInstance(Type type, string methodName)
         {
-            return type.GetMethod(
-                methodName,
-                BindingFlags.Public
-                    | BindingFlags.NonPublic
-                    | BindingFlags.Instance
-                    | BindingFlags.DeclaredOnly,
-                null,
-                Type.EmptyTypes,
-                null
-            );
+            return type.GetMethod(methodName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly, null, Type.EmptyTypes, null);
         }
 
         private static MethodInfo? GetDeclaredBoolArgInstance(Type type, string methodName)
         {
-            return type.GetMethod(
-                methodName,
-                BindingFlags.Public
-                    | BindingFlags.NonPublic
-                    | BindingFlags.Instance
-                    | BindingFlags.DeclaredOnly,
-                null,
-                BoolParameterTypes,
-                null
-            );
+            return type.GetMethod(methodName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly, null, BoolParameterTypes, null);
         }
 
         /// <summary>
@@ -522,10 +457,7 @@ namespace DxMessaging.Editor.Analyzers
                 {
                     MethodInfo? m = baseType.GetMethod(
                         methodName,
-                        BindingFlags.Public
-                            | BindingFlags.NonPublic
-                            | BindingFlags.Instance
-                            | BindingFlags.DeclaredOnly,
+                        BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
                         null,
                         parameterTypes,
                         null
@@ -567,10 +499,7 @@ namespace DxMessaging.Editor.Analyzers
             {
                 MethodInfo? m = baseType.GetMethod(
                     derivedOverride.Name,
-                    BindingFlags.Public
-                        | BindingFlags.NonPublic
-                        | BindingFlags.Instance
-                        | BindingFlags.DeclaredOnly,
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
                     null,
                     signature,
                     null

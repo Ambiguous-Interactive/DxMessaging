@@ -281,11 +281,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             SimpleTargetedMessage message = new();
             RunRegistrationTest(
-                token =>
-                    token.RegisterGameObjectTargetedPostProcessor<SimpleTargetedMessage>(
-                        _test,
-                        Handle
-                    ),
+                token => token.RegisterGameObjectTargetedPostProcessor<SimpleTargetedMessage>(_test, Handle),
                 i =>
                 {
                     Assert.AreEqual(i, count);
@@ -399,11 +395,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             SimpleTargetedMessage message = new();
             RunRegistrationTest(
-                token =>
-                    token.RegisterComponentTargetedPostProcessor<SimpleTargetedMessage>(
-                        _component,
-                        Handle
-                    ),
+                token => token.RegisterComponentTargetedPostProcessor<SimpleTargetedMessage>(_component, Handle),
                 i =>
                 {
                     Assert.AreEqual(i, count);
@@ -556,10 +548,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             SimpleTargetedMessage message = new();
             RunRegistrationTest(
-                token =>
-                    token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>(
-                        Handle
-                    ),
+                token => token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>(Handle),
                 i =>
                 {
                     Assert.AreEqual(i, count);
@@ -597,10 +586,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             SimpleTargetedMessage message = new();
             RunRegistrationTest(
-                token =>
-                    token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>(
-                        Handle
-                    ),
+                token => token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>(Handle),
                 i =>
                 {
                     Assert.AreEqual(i, count);
@@ -714,11 +700,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             SimpleBroadcastMessage message = new();
             RunRegistrationTest(
-                token =>
-                    token.RegisterGameObjectBroadcastPostProcessor<SimpleBroadcastMessage>(
-                        _test,
-                        Handle
-                    ),
+                token => token.RegisterGameObjectBroadcastPostProcessor<SimpleBroadcastMessage>(_test, Handle),
                 i =>
                 {
                     Assert.AreEqual(i, count);
@@ -756,8 +738,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             SimpleBroadcastMessage message = new();
             RunRegistrationTest(
-                token =>
-                    token.RegisterComponentBroadcast<SimpleBroadcastMessage>(_component, Handle),
+                token => token.RegisterComponentBroadcast<SimpleBroadcastMessage>(_component, Handle),
                 i =>
                 {
                     Assert.AreEqual(i, count);
@@ -795,8 +776,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             SimpleBroadcastMessage message = new();
             RunRegistrationTest(
-                token =>
-                    token.RegisterComponentBroadcast<SimpleBroadcastMessage>(_component, Handle),
+                token => token.RegisterComponentBroadcast<SimpleBroadcastMessage>(_component, Handle),
                 i =>
                 {
                     Assert.AreEqual(i, count);
@@ -834,11 +814,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             SimpleBroadcastMessage message = new();
             RunRegistrationTest(
-                token =>
-                    token.RegisterComponentBroadcastPostProcessor<SimpleBroadcastMessage>(
-                        _component,
-                        Handle
-                    ),
+                token => token.RegisterComponentBroadcastPostProcessor<SimpleBroadcastMessage>(_component, Handle),
                 i =>
                 {
                     Assert.AreEqual(i, count);
@@ -991,10 +967,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             SimpleBroadcastMessage message = new();
             RunRegistrationTest(
-                token =>
-                    token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(
-                        Handle
-                    ),
+                token => token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(Handle),
                 i =>
                 {
                     Assert.AreEqual(i, count);
@@ -1032,10 +1005,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             SimpleBroadcastMessage message = new();
             RunRegistrationTest(
-                token =>
-                    token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(
-                        Handle
-                    ),
+                token => token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(Handle),
                 i =>
                 {
                     Assert.AreEqual(i, count);
@@ -1077,12 +1047,7 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleTargetedMessage targetedMessage = new();
             SimpleBroadcastMessage broadcastMessage = new();
             RunRegistrationTest(
-                token =>
-                    token.RegisterGlobalAcceptAll(
-                        HandleUntargeted,
-                        HandleTargeted,
-                        HandleBroadcast
-                    ),
+                token => token.RegisterGlobalAcceptAll(HandleUntargeted, HandleTargeted, HandleBroadcast),
                 i =>
                 {
                     Assert.AreEqual(i, targetedCount);
@@ -1155,12 +1120,7 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleTargetedMessage targetedMessage = new();
             SimpleBroadcastMessage broadcastMessage = new();
             RunRegistrationTest(
-                token =>
-                    token.RegisterGlobalAcceptAll(
-                        HandleUntargeted,
-                        HandleTargeted,
-                        HandleBroadcast
-                    ),
+                token => token.RegisterGlobalAcceptAll(HandleUntargeted, HandleTargeted, HandleBroadcast),
                 i =>
                 {
                     Assert.AreEqual(i, targetedCount);
@@ -1237,12 +1197,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     MessageRegistrationHandle handle = registration(_token);
                     bool neverSeen = handles.Add(handle);
-                    Assert.IsTrue(
-                        neverSeen,
-                        "Handle {0} at count {1} was a duplicate.",
-                        handle,
-                        neverSeen
-                    );
+                    Assert.IsTrue(neverSeen, "Handle {0} at count {1} was a duplicate.", handle, neverSeen);
                 }
 
                 for (int i = 0; i < 100; ++i)
@@ -1252,11 +1207,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
                 reset();
                 int expected = 0;
-                foreach (
-                    MessageRegistrationHandle handle in handles
-                        .OrderBy(_ => _random.Next())
-                        .ToList()
-                )
+                foreach (MessageRegistrationHandle handle in handles.OrderBy(_ => _random.Next()).ToList())
                 {
                     removalAssert(expected++);
                     handles.Remove(handle);

@@ -14,75 +14,36 @@ namespace DxMessaging.Tests.Runtime.AttributesOnly
         [TestCase(0, false, "unset")]
         [TestCase(42, true, "manual")]
         [TestCase(-1, false, "unset")]
-        public void GeneratedConstructorWorksWithoutUnityOrMessagingRuntime(
-            int count,
-            bool explicitLabel,
-            string expectedLabel
-        )
+        public void GeneratedConstructorWorksWithoutUnityOrMessagingRuntime(int count, bool explicitLabel, string expectedLabel)
         {
             RuleState state = explicitLabel ? new RuleState(count, "manual") : new RuleState(count);
-            Assert.That(
-                state.Count,
-                Is.EqualTo(count),
-                "The generated constructor assigns the rule value."
-            );
-            Assert.That(
-                state.Label,
-                Is.EqualTo(expectedLabel),
-                "Callers receive the stated optional default."
-            );
+            Assert.That(state.Count, Is.EqualTo(count), "The generated constructor assigns the rule value.");
+            Assert.That(state.Label, Is.EqualTo(expectedLabel), "Callers receive the stated optional default.");
         }
 
         /// <summary>Checks packaged constructors retain nested access and optional rule defaults.</summary>
         [TestCaseSource(nameof(NestedAccessibilityCases))]
         [Category("Fast")]
-        public void PackagedConstructorsPreserveNestedRuleAccess(
-            string access,
-            int expectedVisibility,
-            bool referenceType
-        )
+        public void PackagedConstructorsPreserveNestedRuleAccess(string access, int expectedVisibility, bool referenceType)
         {
-            string context =
-                $"access={access}; expectedVisibility={expectedVisibility}; referenceType={referenceType}";
+            string context = $"access={access}; expectedVisibility={expectedVisibility}; referenceType={referenceType}";
             NestedRuleObservation observation = NestedRuleContainers.Read(access, referenceType);
             Assert.That(observation.Count, Is.EqualTo(42), "Assigned rule value: " + context);
-            Assert.That(
-                observation.Label,
-                Is.EqualTo("nested"),
-                "Optional label default: " + context
-            );
-            Assert.That(
-                observation.ContainerVisibility,
-                Is.EqualTo(expectedVisibility),
-                "Container visibility: " + context
-            );
-            Assert.That(
-                observation.TargetVisibility,
-                Is.EqualTo(expectedVisibility),
-                "Target visibility: " + context
-            );
+            Assert.That(observation.Label, Is.EqualTo("nested"), "Optional label default: " + context);
+            Assert.That(observation.ContainerVisibility, Is.EqualTo(expectedVisibility), "Container visibility: " + context);
+            Assert.That(observation.TargetVisibility, Is.EqualTo(expectedVisibility), "Target visibility: " + context);
         }
 
         private static IEnumerable<TestCaseData> NestedAccessibilityCases()
         {
             // ECMA-335 II.23.1.15 defines the nested visibility values.
             foreach (
-                (string access, int visibility) in new[]
-                {
-                    ("public", 2),
-                    ("private", 3),
-                    ("protected", 4),
-                    ("internal", 5),
-                    ("protected internal", 7),
-                    ("private protected", 6),
-                }
+                (string access, int visibility) in new[] { ("public", 2), ("private", 3), ("protected", 4), ("internal", 5), ("protected internal", 7), ("private protected", 6) }
             )
             {
                 foreach (bool referenceType in new[] { false, true })
                 {
-                    yield return new TestCaseData(access, visibility, referenceType).SetName(
-                        $"PackagedConstructorsPreserveNestedRuleAccess({access},{referenceType})"
-                    );
+                    yield return new TestCaseData(access, visibility, referenceType).SetName($"PackagedConstructorsPreserveNestedRuleAccess({access},{referenceType})");
                 }
             }
         }
@@ -92,33 +53,14 @@ namespace DxMessaging.Tests.Runtime.AttributesOnly
         public void ConsumerAssemblyHasNoEngineRuntimeOrCompilerReferences()
         {
             Assembly consumer = typeof(RuleState).Assembly;
-            Assert.That(
-                consumer.GetName().Name,
-                Is.EqualTo("WallstopStudios.DxMessaging.Tests.Runtime.AttributesOnly")
-            );
+            Assert.That(consumer.GetName().Name, Is.EqualTo("WallstopStudios.DxMessaging.Tests.Runtime.AttributesOnly"));
             foreach (AssemblyName dependency in consumer.GetReferencedAssemblies())
             {
                 string name = dependency.Name;
-                Assert.That(
-                    name,
-                    Does.Not.StartWith("UnityEngine"),
-                    $"Rule consumer dependency: {name}"
-                );
-                Assert.That(
-                    name,
-                    Does.Not.StartWith("UnityEditor"),
-                    $"Rule consumer dependency: {name}"
-                );
-                Assert.That(
-                    name,
-                    Is.Not.EqualTo("WallstopStudios.DxMessaging"),
-                    $"Rule consumer dependency: {name}"
-                );
-                Assert.That(
-                    name,
-                    Does.Not.StartWith("Microsoft.CodeAnalysis"),
-                    $"Rule consumer dependency: {name}"
-                );
+                Assert.That(name, Does.Not.StartWith("UnityEngine"), $"Rule consumer dependency: {name}");
+                Assert.That(name, Does.Not.StartWith("UnityEditor"), $"Rule consumer dependency: {name}");
+                Assert.That(name, Is.Not.EqualTo("WallstopStudios.DxMessaging"), $"Rule consumer dependency: {name}");
+                Assert.That(name, Does.Not.StartWith("Microsoft.CodeAnalysis"), $"Rule consumer dependency: {name}");
             }
         }
     }
@@ -161,11 +103,7 @@ namespace DxMessaging.Tests.Runtime.AttributesOnly
                 "internal" => InternalEnvelope.Read(referenceType),
                 "protected internal" => ProtectedInternalEnvelope.Read(referenceType),
                 "private protected" => PrivateProtectedEnvelope.Read(referenceType),
-                _ => throw new ArgumentOutOfRangeException(
-                    nameof(access),
-                    access,
-                    "Unknown rule access"
-                ),
+                _ => throw new ArgumentOutOfRangeException(nameof(access), access, "Unknown rule access"),
             };
         }
 
@@ -194,20 +132,10 @@ namespace DxMessaging.Tests.Runtime.AttributesOnly
                 if (referenceType)
                 {
                     ClassRule classRule = new ClassRule(42);
-                    return new NestedRuleObservation(
-                        classRule.Count,
-                        classRule.Label,
-                        typeof(PublicEnvelope),
-                        typeof(ClassRule)
-                    );
+                    return new NestedRuleObservation(classRule.Count, classRule.Label, typeof(PublicEnvelope), typeof(ClassRule));
                 }
                 StructRule structRule = new StructRule(42);
-                return new NestedRuleObservation(
-                    structRule.Count,
-                    structRule.Label,
-                    typeof(PublicEnvelope),
-                    typeof(StructRule)
-                );
+                return new NestedRuleObservation(structRule.Count, structRule.Label, typeof(PublicEnvelope), typeof(StructRule));
             }
         }
 
@@ -236,20 +164,10 @@ namespace DxMessaging.Tests.Runtime.AttributesOnly
                 if (referenceType)
                 {
                     ClassRule classRule = new ClassRule(42);
-                    return new NestedRuleObservation(
-                        classRule.Count,
-                        classRule.Label,
-                        typeof(PrivateEnvelope),
-                        typeof(ClassRule)
-                    );
+                    return new NestedRuleObservation(classRule.Count, classRule.Label, typeof(PrivateEnvelope), typeof(ClassRule));
                 }
                 StructRule structRule = new StructRule(42);
-                return new NestedRuleObservation(
-                    structRule.Count,
-                    structRule.Label,
-                    typeof(PrivateEnvelope),
-                    typeof(StructRule)
-                );
+                return new NestedRuleObservation(structRule.Count, structRule.Label, typeof(PrivateEnvelope), typeof(StructRule));
             }
         }
 
@@ -278,20 +196,10 @@ namespace DxMessaging.Tests.Runtime.AttributesOnly
                 if (referenceType)
                 {
                     ClassRule classRule = new ClassRule(42);
-                    return new NestedRuleObservation(
-                        classRule.Count,
-                        classRule.Label,
-                        typeof(ProtectedEnvelope),
-                        typeof(ClassRule)
-                    );
+                    return new NestedRuleObservation(classRule.Count, classRule.Label, typeof(ProtectedEnvelope), typeof(ClassRule));
                 }
                 StructRule structRule = new StructRule(42);
-                return new NestedRuleObservation(
-                    structRule.Count,
-                    structRule.Label,
-                    typeof(ProtectedEnvelope),
-                    typeof(StructRule)
-                );
+                return new NestedRuleObservation(structRule.Count, structRule.Label, typeof(ProtectedEnvelope), typeof(StructRule));
             }
         }
 
@@ -320,20 +228,10 @@ namespace DxMessaging.Tests.Runtime.AttributesOnly
                 if (referenceType)
                 {
                     ClassRule classRule = new ClassRule(42);
-                    return new NestedRuleObservation(
-                        classRule.Count,
-                        classRule.Label,
-                        typeof(InternalEnvelope),
-                        typeof(ClassRule)
-                    );
+                    return new NestedRuleObservation(classRule.Count, classRule.Label, typeof(InternalEnvelope), typeof(ClassRule));
                 }
                 StructRule structRule = new StructRule(42);
-                return new NestedRuleObservation(
-                    structRule.Count,
-                    structRule.Label,
-                    typeof(InternalEnvelope),
-                    typeof(StructRule)
-                );
+                return new NestedRuleObservation(structRule.Count, structRule.Label, typeof(InternalEnvelope), typeof(StructRule));
             }
         }
 
@@ -362,20 +260,10 @@ namespace DxMessaging.Tests.Runtime.AttributesOnly
                 if (referenceType)
                 {
                     ClassRule classRule = new ClassRule(42);
-                    return new NestedRuleObservation(
-                        classRule.Count,
-                        classRule.Label,
-                        typeof(ProtectedInternalEnvelope),
-                        typeof(ClassRule)
-                    );
+                    return new NestedRuleObservation(classRule.Count, classRule.Label, typeof(ProtectedInternalEnvelope), typeof(ClassRule));
                 }
                 StructRule structRule = new StructRule(42);
-                return new NestedRuleObservation(
-                    structRule.Count,
-                    structRule.Label,
-                    typeof(ProtectedInternalEnvelope),
-                    typeof(StructRule)
-                );
+                return new NestedRuleObservation(structRule.Count, structRule.Label, typeof(ProtectedInternalEnvelope), typeof(StructRule));
             }
         }
 
@@ -404,20 +292,10 @@ namespace DxMessaging.Tests.Runtime.AttributesOnly
                 if (referenceType)
                 {
                     ClassRule classRule = new ClassRule(42);
-                    return new NestedRuleObservation(
-                        classRule.Count,
-                        classRule.Label,
-                        typeof(PrivateProtectedEnvelope),
-                        typeof(ClassRule)
-                    );
+                    return new NestedRuleObservation(classRule.Count, classRule.Label, typeof(PrivateProtectedEnvelope), typeof(ClassRule));
                 }
                 StructRule structRule = new StructRule(42);
-                return new NestedRuleObservation(
-                    structRule.Count,
-                    structRule.Label,
-                    typeof(PrivateProtectedEnvelope),
-                    typeof(StructRule)
-                );
+                return new NestedRuleObservation(structRule.Count, structRule.Label, typeof(PrivateProtectedEnvelope), typeof(StructRule));
             }
         }
     }

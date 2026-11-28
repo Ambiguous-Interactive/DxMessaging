@@ -33,15 +33,9 @@ namespace DxMessaging.Tests.Runtime.Core
     public sealed class OrderingAcrossEnableCyclesTests : MessagingTestBase
     {
         [Test]
-        public void SamePriorityOrderPreservedAcrossDisableEnableCycle(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void SamePriorityOrderPreservedAcrossDisableEnableCycle([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(SamePriorityOrderPreservedAcrossDisableEnableCycle) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(SamePriorityOrderPreservedAcrossDisableEnableCycle) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -53,11 +47,7 @@ namespace DxMessaging.Tests.Runtime.Core
             _ = RegisterOrderedHandler(scenario, token, hostId, order, "C");
 
             ScenarioCallbacks.EmitForKind(scenario, hostId);
-            Assert.AreEqual(
-                new[] { "A", "B", "C" },
-                order.ToArray(),
-                "Anchor: equal-priority handlers must run in registration order on the first emission."
-            );
+            Assert.AreEqual(new[] { "A", "B", "C" }, order.ToArray(), "Anchor: equal-priority handlers must run in registration order on the first emission.");
 
             order.Clear();
             token.Disable();
@@ -89,15 +79,9 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void SamePriorityOrderAfterRemovalAndReRegistrationWhileEnabled(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void SamePriorityOrderAfterRemovalAndReRegistrationWhileEnabled([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(SamePriorityOrderAfterRemovalAndReRegistrationWhileEnabled) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(SamePriorityOrderAfterRemovalAndReRegistrationWhileEnabled) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -105,21 +89,11 @@ namespace DxMessaging.Tests.Runtime.Core
 
             List<string> order = new();
             _ = RegisterOrderedHandler(scenario, token, hostId, order, "A");
-            MessageRegistrationHandle handleB = RegisterOrderedHandler(
-                scenario,
-                token,
-                hostId,
-                order,
-                "B"
-            );
+            MessageRegistrationHandle handleB = RegisterOrderedHandler(scenario, token, hostId, order, "B");
             _ = RegisterOrderedHandler(scenario, token, hostId, order, "C");
 
             ScenarioCallbacks.EmitForKind(scenario, hostId);
-            Assert.AreEqual(
-                new[] { "A", "B", "C" },
-                order.ToArray(),
-                "Anchor: equal-priority handlers must run in registration order before churn."
-            );
+            Assert.AreEqual(new[] { "A", "B", "C" }, order.ToArray(), "Anchor: equal-priority handlers must run in registration order before churn.");
 
             token.RemoveRegistration(handleB);
             _ = RegisterOrderedHandler(scenario, token, hostId, order, "D");
@@ -137,15 +111,10 @@ namespace DxMessaging.Tests.Runtime.Core
 
         [Test]
         public void SamePriorityOrderAfterChurnPreservedAcrossDisableEnableCycle(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario
         )
         {
-            GameObject host = new(
-                nameof(SamePriorityOrderAfterChurnPreservedAcrossDisableEnableCycle)
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(SamePriorityOrderAfterChurnPreservedAcrossDisableEnableCycle) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -153,21 +122,11 @@ namespace DxMessaging.Tests.Runtime.Core
 
             List<string> order = new();
             _ = RegisterOrderedHandler(scenario, token, hostId, order, "A");
-            MessageRegistrationHandle handleB = RegisterOrderedHandler(
-                scenario,
-                token,
-                hostId,
-                order,
-                "B"
-            );
+            MessageRegistrationHandle handleB = RegisterOrderedHandler(scenario, token, hostId, order, "B");
             _ = RegisterOrderedHandler(scenario, token, hostId, order, "C");
 
             ScenarioCallbacks.EmitForKind(scenario, hostId);
-            Assert.AreEqual(
-                new[] { "A", "B", "C" },
-                order.ToArray(),
-                "Anchor: equal-priority handlers must run in registration order before churn."
-            );
+            Assert.AreEqual(new[] { "A", "B", "C" }, order.ToArray(), "Anchor: equal-priority handlers must run in registration order before churn.");
 
             token.RemoveRegistration(handleB);
             _ = RegisterOrderedHandler(scenario, token, hostId, order, "D");
@@ -212,8 +171,7 @@ namespace DxMessaging.Tests.Runtime.Core
         /// </remarks>
         [UnityTest]
         public IEnumerator SamePriorityCrossComponentOrderPreservedAfterHandlerChurn(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario
         )
         {
             /*
@@ -222,46 +180,21 @@ namespace DxMessaging.Tests.Runtime.Core
                 It is deliberately NOT one of the handler hosts so destroying
                 host B cannot disturb the emission context.
             */
-            GameObject contextHost = new(
-                nameof(SamePriorityCrossComponentOrderPreservedAfterHandlerChurn)
-                    + "Context"
-                    + scenario.Kind
-            );
+            GameObject contextHost = new(nameof(SamePriorityCrossComponentOrderPreservedAfterHandlerChurn) + "Context" + scenario.Kind);
             _spawned.Add(contextHost);
             InstanceId contextId = contextHost;
 
-            GameObject hostA = new(
-                nameof(SamePriorityCrossComponentOrderPreservedAfterHandlerChurn)
-                    + "A"
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject hostA = new(nameof(SamePriorityCrossComponentOrderPreservedAfterHandlerChurn) + "A" + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(hostA);
-            MessageRegistrationToken tokenA = GetToken(
-                hostA.GetComponent<EmptyMessageAwareComponent>()
-            );
+            MessageRegistrationToken tokenA = GetToken(hostA.GetComponent<EmptyMessageAwareComponent>());
 
-            GameObject hostB = new(
-                nameof(SamePriorityCrossComponentOrderPreservedAfterHandlerChurn)
-                    + "B"
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject hostB = new(nameof(SamePriorityCrossComponentOrderPreservedAfterHandlerChurn) + "B" + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(hostB);
-            MessageRegistrationToken tokenB = GetToken(
-                hostB.GetComponent<EmptyMessageAwareComponent>()
-            );
+            MessageRegistrationToken tokenB = GetToken(hostB.GetComponent<EmptyMessageAwareComponent>());
 
-            GameObject hostC = new(
-                nameof(SamePriorityCrossComponentOrderPreservedAfterHandlerChurn)
-                    + "C"
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject hostC = new(nameof(SamePriorityCrossComponentOrderPreservedAfterHandlerChurn) + "C" + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(hostC);
-            MessageRegistrationToken tokenC = GetToken(
-                hostC.GetComponent<EmptyMessageAwareComponent>()
-            );
+            MessageRegistrationToken tokenC = GetToken(hostC.GetComponent<EmptyMessageAwareComponent>());
 
             List<string> order = new();
             _ = RegisterOrderedHandler(scenario, tokenA, contextId, order, "A");
@@ -272,8 +205,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(
                 new[] { "A", "B", "C" },
                 order.ToArray(),
-                "Anchor: equal-priority handlers on three DISTINCT components must run in "
-                    + "registration order on the first emission."
+                "Anchor: equal-priority handlers on three DISTINCT components must run in " + "registration order on the first emission."
             );
 
             /*
@@ -286,16 +218,9 @@ namespace DxMessaging.Tests.Runtime.Core
             UnityEngine.Object.Destroy(hostB);
             yield return null;
 
-            GameObject hostD = new(
-                nameof(SamePriorityCrossComponentOrderPreservedAfterHandlerChurn)
-                    + "D"
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject hostD = new(nameof(SamePriorityCrossComponentOrderPreservedAfterHandlerChurn) + "D" + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(hostD);
-            MessageRegistrationToken tokenD = GetToken(
-                hostD.GetComponent<EmptyMessageAwareComponent>()
-            );
+            MessageRegistrationToken tokenD = GetToken(hostD.GetComponent<EmptyMessageAwareComponent>());
             _ = RegisterOrderedHandler(scenario, tokenD, contextId, order, "D");
 
             order.Clear();
@@ -319,9 +244,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(
                 new[] { "A", "C", "D" },
                 order.ToArray(),
-                "Cross-component equal-priority order after churn must remain stable on "
-                    + "subsequent emissions (A, C, D), independent of any per-emission cache "
-                    + "rebuild."
+                "Cross-component equal-priority order after churn must remain stable on " + "subsequent emissions (A, C, D), independent of any per-emission cache " + "rebuild."
             );
             yield break;
         }
@@ -338,9 +261,7 @@ namespace DxMessaging.Tests.Runtime.Core
             string label
         )
         {
-            return ScenarioCallbacks.RegisterCountingHandler(scenario, token, context, () =>
-                order.Add(label)
-            );
+            return ScenarioCallbacks.RegisterCountingHandler(scenario, token, context, () => order.Add(label));
         }
     }
 }

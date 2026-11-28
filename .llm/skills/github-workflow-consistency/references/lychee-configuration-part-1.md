@@ -22,10 +22,8 @@ Continuation extracted from `lychee-configuration.md` to keep files within the r
 
 Before modifying `.lychee.toml`:
 
-- [ ] All field names are valid for the pinned lychee version (diff the upstream
-      example config when unsure)
-- [ ] `accept_timeouts` remains absent from `.lychee.toml`; timeout acceptance is CLI-only
-      in the `Lint docs links` job in `ci.yml`
+- [ ] All field names are valid for the pinned lychee version (diff the upstream example config when unsure)
+- [ ] `accept_timeouts` remains absent from `.lychee.toml`; timeout acceptance is CLI-only in the `Lint docs links` job in `ci.yml`
 - [ ] No deprecated field names used (check the mapping table above)
 - [ ] Boolean fields use `true`/`false`, not integers; `verbose` uses a string enum value
 
@@ -37,11 +35,9 @@ After a lychee version upgrade:
 
 ## See Also
 
-- [GitHub Actions Workflow Consistency](./workflow-consistency.md) -- consistent workflow
-  structure and security practices
-- [Link Quality and External URL Management](../../markdown-authoring/references/link-quality-guidelines.md) --
-  guidelines for maintaining documentation links
-  patterns and duplicate warning prevention
+- [GitHub Actions Workflow Consistency](./workflow-consistency.md) -- consistent workflow structure and security practices
+- [Link Quality and External URL Management](../../markdown-authoring/references/link-quality-guidelines.md) -- guidelines for maintaining documentation links patterns and
+  duplicate warning prevention
 
 ## Related Links
 

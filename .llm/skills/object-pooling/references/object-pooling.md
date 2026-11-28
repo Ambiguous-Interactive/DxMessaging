@@ -4,7 +4,8 @@
 
 ## Overview
 
-Object pooling is a creational pattern that pre-allocates and reuses objects instead of creating new instances each time they're needed. In messaging systems, this is critical because:
+Object pooling is a creational pattern that pre-allocates and reuses objects instead of creating new instances each time they're needed. In messaging systems, this is critical
+because:
 
 1. **High frequency**: Message systems often emit thousands of messages per frame
 1. **Short-lived objects**: Messages are typically consumed immediately and discarded
@@ -27,7 +28,8 @@ public void EmitDamageEvent(int damage, GameObject source)
 }
 ```
 
-In a game with 100 entities each emitting 10 messages per second, that's 1,000 allocations/second. Over 60 seconds, you've created 60,000 garbage objects, triggering multiple GC collections.
+In a game with 100 entities each emitting 10 messages per second, that's 1,000 allocations/second. Over 60 seconds, you've created 60,000 garbage objects, triggering multiple GC
+collections.
 
 **Symptoms**:
 

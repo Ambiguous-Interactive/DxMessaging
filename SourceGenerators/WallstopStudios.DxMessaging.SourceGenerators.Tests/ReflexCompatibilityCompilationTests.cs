@@ -22,16 +22,8 @@ internal sealed class ReflexCompatibilityCompilationTests
         string adapterSource = File.ReadAllText(adapterPath);
         string providerPath = LocateProviderSource();
         string providerSource = File.ReadAllText(providerPath);
-        Assert.That(
-            adapterSource,
-            Does.Contain(InjectedContainerField),
-            "The contract test must initialize the exact Reflex-injected field from production."
-        );
-        adapterSource = adapterSource.Replace(
-            InjectedContainerField,
-            InitializedContainerField,
-            StringComparison.Ordinal
-        );
+        Assert.That(adapterSource, Does.Contain(InjectedContainerField), "The contract test must initialize the exact Reflex-injected field from production.");
+        adapterSource = adapterSource.Replace(InjectedContainerField, InitializedContainerField, StringComparison.Ordinal);
 
         List<string> symbols = new() { "UNITY_2021_3_OR_NEWER", "REFLEX_PRESENT" };
         if (reflex14OrNewer)
@@ -39,37 +31,15 @@ internal sealed class ReflexCompatibilityCompilationTests
             symbols.Add("REFLEX_14_OR_NEWER");
         }
 
-        CSharpParseOptions parseOptions = new(
-            languageVersion: LanguageVersion.CSharp9,
-            documentationMode: DocumentationMode.Parse,
-            preprocessorSymbols: symbols
-        );
-        SyntaxTree adapterTree = CSharpSyntaxTree.ParseText(
-            adapterSource,
-            parseOptions,
-            path: adapterPath
-        );
-        SyntaxTree contractTree = CSharpSyntaxTree.ParseText(
-            ReflexApiContracts,
-            parseOptions,
-            path: "ReflexApiContracts.cs"
-        );
-        SyntaxTree providerTree = CSharpSyntaxTree.ParseText(
-            providerSource,
-            parseOptions,
-            path: providerPath
-        );
+        CSharpParseOptions parseOptions = new(languageVersion: LanguageVersion.CSharp9, documentationMode: DocumentationMode.Parse, preprocessorSymbols: symbols);
+        SyntaxTree adapterTree = CSharpSyntaxTree.ParseText(adapterSource, parseOptions, path: adapterPath);
+        SyntaxTree contractTree = CSharpSyntaxTree.ParseText(ReflexApiContracts, parseOptions, path: "ReflexApiContracts.cs");
+        SyntaxTree providerTree = CSharpSyntaxTree.ParseText(providerSource, parseOptions, path: providerPath);
         CSharpCompilation compilation = CSharpCompilation.Create(
-            assemblyName: reflex14OrNewer
-                ? "Reflex14CompatibilityContract"
-                : "ReflexPre14CompatibilityContract",
+            assemblyName: reflex14OrNewer ? "Reflex14CompatibilityContract" : "ReflexPre14CompatibilityContract",
             syntaxTrees: new[] { contractTree, providerTree, adapterTree },
             references: GeneratorTestUtilities.CompilationReferences,
-            options: new CSharpCompilationOptions(
-                OutputKind.DynamicallyLinkedLibrary,
-                warningLevel: 9999,
-                generalDiagnosticOption: ReportDiagnostic.Error
-            )
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, warningLevel: 9999, generalDiagnosticOption: ReportDiagnostic.Error)
         );
 
         ImmutableArray<Diagnostic> diagnostics = compilation.GetDiagnostics();
@@ -82,19 +52,10 @@ internal sealed class ReflexCompatibilityCompilationTests
 
     private static string LocateAdapterSource()
     {
-        string? current = Path.GetDirectoryName(
-            typeof(ReflexCompatibilityCompilationTests).Assembly.Location
-        ) ?? Directory.GetCurrentDirectory();
+        string? current = Path.GetDirectoryName(typeof(ReflexCompatibilityCompilationTests).Assembly.Location) ?? Directory.GetCurrentDirectory();
         for (int hop = 0; hop < 10 && current is not null; hop++)
         {
-            string candidate = Path.Combine(
-                current,
-                "Runtime",
-                "Unity",
-                "Integrations",
-                "Reflex",
-                "ReflexRegistrationInstaller.cs"
-            );
+            string candidate = Path.Combine(current, "Runtime", "Unity", "Integrations", "Reflex", "ReflexRegistrationInstaller.cs");
             if (File.Exists(candidate))
             {
                 return candidate;
@@ -103,30 +64,15 @@ internal sealed class ReflexCompatibilityCompilationTests
             current = Path.GetDirectoryName(current);
         }
 
-        return Path.Combine(
-            Directory.GetCurrentDirectory(),
-            "Runtime",
-            "Unity",
-            "Integrations",
-            "Reflex",
-            "ReflexRegistrationInstaller.cs"
-        );
+        return Path.Combine(Directory.GetCurrentDirectory(), "Runtime", "Unity", "Integrations", "Reflex", "ReflexRegistrationInstaller.cs");
     }
 
     private static string LocateProviderSource()
     {
-        string? current = Path.GetDirectoryName(
-            typeof(ReflexCompatibilityCompilationTests).Assembly.Location
-        ) ?? Directory.GetCurrentDirectory();
+        string? current = Path.GetDirectoryName(typeof(ReflexCompatibilityCompilationTests).Assembly.Location) ?? Directory.GetCurrentDirectory();
         for (int hop = 0; hop < 10 && current is not null; hop++)
         {
-            string candidate = Path.Combine(
-                current,
-                "Runtime",
-                "Core",
-                "MessageBus",
-                "IMessageBusProvider.cs"
-            );
+            string candidate = Path.Combine(current, "Runtime", "Core", "MessageBus", "IMessageBusProvider.cs");
             if (File.Exists(candidate))
             {
                 return candidate;
@@ -135,13 +81,7 @@ internal sealed class ReflexCompatibilityCompilationTests
             current = Path.GetDirectoryName(current);
         }
 
-        return Path.Combine(
-            Directory.GetCurrentDirectory(),
-            "Runtime",
-            "Core",
-            "MessageBus",
-            "IMessageBusProvider.cs"
-        );
+        return Path.Combine(Directory.GetCurrentDirectory(), "Runtime", "Core", "MessageBus", "IMessageBusProvider.cs");
     }
 
     private const string ReflexApiContracts = """

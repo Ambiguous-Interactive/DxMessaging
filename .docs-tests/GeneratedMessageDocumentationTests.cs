@@ -25,36 +25,19 @@ internal sealed class GeneratedMessageDocumentationTests
         string root = ResolveRoot();
         string path = Path.Combine(root, "README.md");
         CSharpParseOptions options = new(LanguageVersion.CSharp9);
-        CompilationUnitSyntax example = ReadSnippets(
-                path,
-                "## Dependency Injection (DI) Compatible",
-                "### Why use DI + Messaging?",
-                options
-            )
-            .Single();
+        CompilationUnitSyntax example = ReadSnippets(path, "## Dependency Injection (DI) Compatible", "### Why use DI + Messaging?", options).Single();
 
         byte[] runtime = RuntimeHashCompilationTests.CompilePortableRuntimeImage(false);
-        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
-            ?? throw new InvalidOperationException("Runtime references are unavailable.");
+        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") ?? throw new InvalidOperationException("Runtime references are unavailable.");
         CSharpCompilation input = CSharpCompilation.Create(
             "ReadmeDependencyInjectionExample",
             new[] { CSharpSyntaxTree.ParseText(example.ToFullString(), options, path) },
-            references
-                .Split(Path.PathSeparator)
-                .Select(file => MetadataReference.CreateFromFile(file))
-                .Append(MetadataReference.CreateFromImage(runtime)),
-            new CSharpCompilationOptions(
-                OutputKind.DynamicallyLinkedLibrary,
-                generalDiagnosticOption: ReportDiagnostic.Error
-            )
+            references.Split(Path.PathSeparator).Select(file => MetadataReference.CreateFromFile(file)).Append(MetadataReference.CreateFromImage(runtime)),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, generalDiagnosticOption: ReportDiagnostic.Error)
         );
         CSharpGeneratorDriver
             .Create(new[] { new DxMessageIdGenerator() }, parseOptions: options)
-            .RunGeneratorsAndUpdateCompilation(
-                input,
-                out Compilation generated,
-                out ImmutableArray<Diagnostic> diagnostics
-            );
+            .RunGeneratorsAndUpdateCompilation(input, out Compilation generated, out ImmutableArray<Diagnostic> diagnostics);
         Assert.That(diagnostics, Is.Empty, string.Join("\n", diagnostics));
         AssertCompiles(generated, "Compile the exact README example without additional imports.");
 
@@ -83,9 +66,7 @@ internal sealed class GeneratedMessageDocumentationTests
                 }
             }
             """;
-        Compilation runnable = generated.AddSyntaxTrees(
-            CSharpSyntaxTree.ParseText(probe, options, "ReadmeExampleProbe.cs")
-        );
+        Compilation runnable = generated.AddSyntaxTrees(CSharpSyntaxTree.ParseText(probe, options, "ReadmeExampleProbe.cs"));
         using MemoryStream image = new();
         Microsoft.CodeAnalysis.Emit.EmitResult emitted = runnable.Emit(image);
         Assert.That(emitted.Success, Is.True, string.Join("\n", emitted.Diagnostics));
@@ -96,15 +77,8 @@ internal sealed class GeneratedMessageDocumentationTests
             context.LoadFromStream(runtimeImage);
             image.Position = 0;
             Assembly exampleAssembly = context.LoadFromStream(image);
-            object? observed = exampleAssembly
-                .GetType("ReadmeExampleProbe", throwOnError: true)!
-                .GetMethod("Observe")!
-                .Invoke(null, null);
-            Assert.That(
-                observed,
-                Is.EqualTo(ExpectedReadmeServiceObservations),
-                "Delivery must follow activation, the chosen bus, and disposal. No registrations may remain."
-            );
+            object? observed = exampleAssembly.GetType("ReadmeExampleProbe", throwOnError: true)!.GetMethod("Observe")!.Invoke(null, null);
+            Assert.That(observed, Is.EqualTo(ExpectedReadmeServiceObservations), "Delivery must follow activation, the chosen bus, and disposal. No registrations may remain.");
         }
         finally
         {
@@ -112,42 +86,22 @@ internal sealed class GeneratedMessageDocumentationTests
         }
     }
 
-    [TestCase(
-        "Heal",
-        "## Why Use Attributes Instead of Manual Implementation",
-        "## Complete Example:"
-    )]
+    [TestCase("Heal", "## Why Use Attributes Instead of Manual Implementation", "## Complete Example:")]
     [TestCase("PlayerDamaged", "## Complete Example:", "## Advanced:")]
-    [TestCase(
-        "MyMessage",
-        "### \"Why `partial` when using attributes?\"",
-        "### \"Can I see the generated code?\""
-    )]
-    public void DocumentedGeneratedTypesExposeTheActualInterfaces(
-        string typeName,
-        string sectionStart,
-        string sectionEnd
-    )
+    [TestCase("MyMessage", "### \"Why `partial` when using attributes?\"", "### \"Can I see the generated code?\"")]
+    public void DocumentedGeneratedTypesExposeTheActualInterfaces(string typeName, string sectionStart, string sectionEnd)
     {
         string root = ResolveRoot();
         string path = Path.Combine(root, "docs", "reference", "helpers.md");
         string markdown = File.ReadAllText(path);
         int start = markdown.IndexOf(sectionStart, StringComparison.Ordinal);
         Assert.That(start, Is.GreaterThanOrEqualTo(0), sectionStart);
-        int end = markdown.IndexOf(
-            sectionEnd,
-            start + sectionStart.Length,
-            StringComparison.Ordinal
-        );
+        int end = markdown.IndexOf(sectionEnd, start + sectionStart.Length, StringComparison.Ordinal);
         Assert.That(end, Is.GreaterThan(start), sectionEnd);
         CSharpParseOptions options = new(LanguageVersion.CSharp9);
         CompilationUnitSyntax[] snippets = Regex
             .Matches(markdown[start..end], @"```csharp\s*\r?\n(?<code>[\s\S]*?)```")
-            .Select(match =>
-                CSharpSyntaxTree
-                    .ParseText(match.Groups["code"].Value, options)
-                    .GetCompilationUnitRoot()
-            )
+            .Select(match => CSharpSyntaxTree.ParseText(match.Groups["code"].Value, options).GetCompilationUnitRoot())
             .ToArray();
         TypeDeclarationSyntax[] declarations = snippets
             .SelectMany(snippet => snippet.Members.OfType<TypeDeclarationSyntax>())
@@ -159,20 +113,9 @@ internal sealed class GeneratedMessageDocumentationTests
         AssertCompiles(documented, "Documented public type: " + typeName);
 
         CSharpCompilation input = CreateCompilation(root, new[] { declarations[0] }, options);
-        GeneratorDriver driver = CSharpGeneratorDriver.Create(
-            new ISourceGenerator[] { new DxMessageIdGenerator(), new DxAutoConstructorGenerator() },
-            parseOptions: options
-        );
-        driver = driver.RunGeneratorsAndUpdateCompilation(
-            input,
-            out Compilation generated,
-            out ImmutableArray<Diagnostic> diagnostics
-        );
-        Assert.That(
-            driver.GetRunResult().Results.Select(result => result.Exception),
-            Has.All.Null,
-            typeName
-        );
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(new ISourceGenerator[] { new DxMessageIdGenerator(), new DxAutoConstructorGenerator() }, parseOptions: options);
+        driver = driver.RunGeneratorsAndUpdateCompilation(input, out Compilation generated, out ImmutableArray<Diagnostic> diagnostics);
+        Assert.That(driver.GetRunResult().Results.Select(result => result.Exception), Has.All.Null, typeName);
         Assert.That(diagnostics, Is.Empty, typeName + "\n" + string.Join("\n", diagnostics));
         AssertCompiles(generated, "Actual generated public type: " + typeName);
 
@@ -181,96 +124,23 @@ internal sealed class GeneratedMessageDocumentationTests
         Assert.That(documentedType, Is.Not.Null, typeName);
         Assert.That(generatedType, Is.Not.Null, typeName);
         Assert.That(
-            documentedType
-                .AllInterfaces.Select(type => type.ToDisplayString())
-                .OrderBy(name => name, StringComparer.Ordinal),
-            Is.EqualTo(
-                generatedType
-                    .AllInterfaces.Select(type => type.ToDisplayString())
-                    .OrderBy(name => name, StringComparer.Ordinal)
-            ),
-            "The documented generated type must expose the same interfaces as the shipped generator: "
-                + typeName
+            documentedType.AllInterfaces.Select(type => type.ToDisplayString()).OrderBy(name => name, StringComparer.Ordinal),
+            Is.EqualTo(generatedType.AllInterfaces.Select(type => type.ToDisplayString()).OrderBy(name => name, StringComparer.Ordinal)),
+            "The documented generated type must expose the same interfaces as the shipped generator: " + typeName
         );
     }
 
-    [TestCase(
-        "getting-started/getting-started.md",
-        "## Message Types",
-        "## Common Patterns",
-        "GamePaused",
-        "IUntargetedMessage"
-    )]
-    [TestCase(
-        "getting-started/getting-started.md",
-        "## Message Types",
-        "## Common Patterns",
-        "Heal",
-        "ITargetedMessage"
-    )]
-    [TestCase(
-        "getting-started/getting-started.md",
-        "## Message Types",
-        "## Common Patterns",
-        "EnemyDied",
-        "IBroadcastMessage"
-    )]
-    [TestCase(
-        "getting-started/visual-guide.md",
-        "### 1. Untargeted",
-        "### 2. Targeted",
-        "GamePaused",
-        "IUntargetedMessage"
-    )]
-    [TestCase(
-        "getting-started/visual-guide.md",
-        "### 2. Targeted",
-        "### 3. Broadcast",
-        "Heal",
-        "ITargetedMessage"
-    )]
-    [TestCase(
-        "getting-started/visual-guide.md",
-        "### 3. Broadcast",
-        "## The Message Journey",
-        "TookDamage",
-        "IBroadcastMessage"
-    )]
-    [TestCase(
-        "guides/patterns.md",
-        "##### Anti-pattern to avoid",
-        "### Pattern: Priority-Ordered Execution",
-        "HealthChanged",
-        "IBroadcastMessage"
-    )]
-    [TestCase(
-        "guides/patterns.md",
-        "##### Anti-pattern to avoid",
-        "### Pattern: Priority-Ordered Execution",
-        "ManaChanged",
-        "IBroadcastMessage"
-    )]
-    [TestCase(
-        "guides/patterns.md",
-        "##### Anti-pattern to avoid",
-        "### Pattern: Priority-Ordered Execution",
-        "GoldChanged",
-        "IBroadcastMessage"
-    )]
-    [TestCase(
-        "guides/patterns.md",
-        "##### Anti-pattern to avoid",
-        "### Pattern: Priority-Ordered Execution",
-        "PlayerStatsChanged",
-        "IBroadcastMessage"
-    )]
-    public void IntroductoryMessageDeclarationsCompileAgainstShippedContracts(
-        string page,
-        string sectionStart,
-        string sectionEnd,
-        string typeName,
-        string route
-    )
+    [TestCase("getting-started/getting-started.md", "## Message Types", "## Common Patterns", "GamePaused", "IUntargetedMessage")]
+    [TestCase("getting-started/getting-started.md", "## Message Types", "## Common Patterns", "Heal", "ITargetedMessage")]
+    [TestCase("getting-started/getting-started.md", "## Message Types", "## Common Patterns", "EnemyDied", "IBroadcastMessage")]
+    [TestCase("getting-started/visual-guide.md", "### 1. Untargeted", "### 2. Targeted", "GamePaused", "IUntargetedMessage")]
+    [TestCase("getting-started/visual-guide.md", "### 2. Targeted", "### 3. Broadcast", "Heal", "ITargetedMessage")]
+    [TestCase("getting-started/visual-guide.md", "### 3. Broadcast", "## The Message Journey", "TookDamage", "IBroadcastMessage")]
+    [TestCase("guides/patterns.md", "##### Anti-pattern to avoid", "### Pattern: Priority-Ordered Execution", "HealthChanged", "IBroadcastMessage")]
+    [TestCase("guides/patterns.md", "##### Anti-pattern to avoid", "### Pattern: Priority-Ordered Execution", "ManaChanged", "IBroadcastMessage")]
+    [TestCase("guides/patterns.md", "##### Anti-pattern to avoid", "### Pattern: Priority-Ordered Execution", "GoldChanged", "IBroadcastMessage")]
+    [TestCase("guides/patterns.md", "##### Anti-pattern to avoid", "### Pattern: Priority-Ordered Execution", "PlayerStatsChanged", "IBroadcastMessage")]
+    public void IntroductoryMessageDeclarationsCompileAgainstShippedContracts(string page, string sectionStart, string sectionEnd, string typeName, string route)
     {
         string root = ResolveRoot();
         string path = Path.Combine(root, "docs", page);
@@ -286,103 +156,37 @@ internal sealed class GeneratedMessageDocumentationTests
             .WithAttributeLists(default)
             .WithBaseList(
                 SyntaxFactory.BaseList(
-                    SyntaxFactory.SingletonSeparatedList<BaseTypeSyntax>(
-                        SyntaxFactory.SimpleBaseType(
-                            SyntaxFactory.ParseTypeName("DxMessaging.Core.Messages." + route)
-                        )
-                    )
+                    SyntaxFactory.SingletonSeparatedList<BaseTypeSyntax>(SyntaxFactory.SimpleBaseType(SyntaxFactory.ParseTypeName("DxMessaging.Core.Messages." + route)))
                 )
             )
-            .AddMembers(
-                SyntaxFactory.ParseMemberDeclaration(
-                    $"public System.Type MessageType => typeof({typeName});"
-                )!
-            );
-        AssertCompiles(
-            CreateCompilation(root, new[] { manual }, options),
-            "Handwritten route oracle: " + path + ": " + typeName
-        );
-        GeneratorDriver driver = CSharpGeneratorDriver.Create(
-            new ISourceGenerator[] { new DxMessageIdGenerator(), new DxAutoConstructorGenerator() },
-            parseOptions: options
-        );
-        driver = driver.RunGeneratorsAndUpdateCompilation(
-            CreateCompilation(root, declarations, options),
-            out Compilation generated,
-            out ImmutableArray<Diagnostic> diagnostics
-        );
-        Assert.That(
-            driver.GetRunResult().Results.Select(result => result.Exception),
-            Has.All.Null,
-            path + ": " + typeName
-        );
+            .AddMembers(SyntaxFactory.ParseMemberDeclaration($"public System.Type MessageType => typeof({typeName});")!);
+        AssertCompiles(CreateCompilation(root, new[] { manual }, options), "Handwritten route oracle: " + path + ": " + typeName);
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(new ISourceGenerator[] { new DxMessageIdGenerator(), new DxAutoConstructorGenerator() }, parseOptions: options);
+        driver = driver.RunGeneratorsAndUpdateCompilation(CreateCompilation(root, declarations, options), out Compilation generated, out ImmutableArray<Diagnostic> diagnostics);
+        Assert.That(driver.GetRunResult().Results.Select(result => result.Exception), Has.All.Null, path + ": " + typeName);
         Assert.That(diagnostics, Is.Empty, path + "\n" + string.Join("\n", diagnostics));
         AssertCompiles(generated, "Published route declaration: " + path + ": " + typeName);
         INamedTypeSymbol? message = generated.GetTypeByMetadataName(typeName);
         Assert.That(message, Is.Not.Null, path + ": " + typeName);
-        Assert.That(
-            message!.AllInterfaces.Select(type => type.ToDisplayString()),
-            Does.Contain("DxMessaging.Core.Messages." + route),
-            path + ": generated route contract"
-        );
+        Assert.That(message!.AllInterfaces.Select(type => type.ToDisplayString()), Does.Contain("DxMessaging.Core.Messages." + route), path + ": generated route contract");
     }
 
     [TestCase("### 1. Untargeted", "### 2. Targeted", "Emit", "RegisterUntargeted", false)]
-    [TestCase(
-        "### 2. Targeted",
-        "### 3. Broadcast",
-        "EmitGameObjectTargeted",
-        "RegisterGameObjectTargeted",
-        true
-    )]
-    [TestCase(
-        "### 3. Broadcast",
-        "## The Message Journey",
-        "EmitGameObjectBroadcast",
-        "RegisterGameObjectBroadcast",
-        true
-    )]
-    public void VisualGuideEmissionAndRegistrationUseTheSameRoute(
-        string sectionStart,
-        string sectionEnd,
-        string emitName,
-        string registerName,
-        bool explicitIdentity
-    )
+    [TestCase("### 2. Targeted", "### 3. Broadcast", "EmitGameObjectTargeted", "RegisterGameObjectTargeted", true)]
+    [TestCase("### 3. Broadcast", "## The Message Journey", "EmitGameObjectBroadcast", "RegisterGameObjectBroadcast", true)]
+    public void VisualGuideEmissionAndRegistrationUseTheSameRoute(string sectionStart, string sectionEnd, string emitName, string registerName, bool explicitIdentity)
     {
         string path = Path.Combine(ResolveRoot(), "docs", "getting-started", "visual-guide.md");
-        CompilationUnitSyntax[] snippets = ReadSnippets(
-            path,
-            sectionStart,
-            sectionEnd,
-            new CSharpParseOptions(LanguageVersion.CSharp9)
-        );
-        InvocationExpressionSyntax[] invocations = snippets
-            .SelectMany(unit => unit.DescendantNodes().OfType<InvocationExpressionSyntax>())
-            .ToArray();
+        CompilationUnitSyntax[] snippets = ReadSnippets(path, sectionStart, sectionEnd, new CSharpParseOptions(LanguageVersion.CSharp9));
+        InvocationExpressionSyntax[] invocations = snippets.SelectMany(unit => unit.DescendantNodes().OfType<InvocationExpressionSyntax>()).ToArray();
         InvocationExpressionSyntax[] emits = invocations
-            .Where(invocation =>
-                invocation.Expression is MemberAccessExpressionSyntax member
-                && member.Name.Identifier.ValueText == emitName
-            )
+            .Where(invocation => invocation.Expression is MemberAccessExpressionSyntax member && member.Name.Identifier.ValueText == emitName)
             .ToArray();
-        Assert.That(
-            emits,
-            Has.Length.EqualTo(1),
-            sectionStart + ": exactly one documented emission"
-        );
+        Assert.That(emits, Has.Length.EqualTo(1), sectionStart + ": exactly one documented emission");
         InvocationExpressionSyntax[] registrations = invocations
-            .Where(invocation =>
-                invocation.Expression is MemberAccessExpressionSyntax member
-                && member.Name.Identifier.ValueText == registerName
-            )
+            .Where(invocation => invocation.Expression is MemberAccessExpressionSyntax member && member.Name.Identifier.ValueText == registerName)
             .ToArray();
-        Assert.That(
-            registrations,
-            Has.Length.EqualTo(1),
-            sectionStart
-                + ": receiver must subscribe through the same route and identity kind as the sender"
-        );
+        Assert.That(registrations, Has.Length.EqualTo(1), sectionStart + ": receiver must subscribe through the same route and identity kind as the sender");
         if (explicitIdentity)
         {
             Assert.That(
@@ -407,17 +211,8 @@ internal sealed class GeneratedMessageDocumentationTests
             "#### Constructor restrictions",
             options
         );
-        Assert.That(
-            snippets,
-            Has.Length.EqualTo(2),
-            "Keep the before and after examples complete: " + context
-        );
-        CSharpCompilation input = CreateCompilation(
-                root,
-                snippets[useGenerator ? 1 : 0].Members.OfType<TypeDeclarationSyntax>(),
-                options,
-                "using UnityEngine;\n"
-            )
+        Assert.That(snippets, Has.Length.EqualTo(2), "Keep the before and after examples complete: " + context);
+        CSharpCompilation input = CreateCompilation(root, snippets[useGenerator ? 1 : 0].Members.OfType<TypeDeclarationSyntax>(), options, "using UnityEngine;\n")
             .AddSyntaxTrees(
                 CSharpSyntaxTree.ParseText(
                     """
@@ -438,28 +233,13 @@ internal sealed class GeneratedMessageDocumentationTests
             "Only the generated form needs the generator to supply its constructor: " + context
         );
         GeneratorDriver driver = CSharpGeneratorDriver
-            .Create(
-                generators: new ISourceGenerator[] { new DxAutoConstructorGenerator() },
-                parseOptions: options
-            )
-            .RunGeneratorsAndUpdateCompilation(
-                input,
-                out Compilation output,
-                out ImmutableArray<Diagnostic> diagnostics
-            );
-        Assert.That(
-            driver.GetRunResult().Results.Select(result => result.Exception),
-            Has.All.Null,
-            context
-        );
+            .Create(generators: new ISourceGenerator[] { new DxAutoConstructorGenerator() }, parseOptions: options)
+            .RunGeneratorsAndUpdateCompilation(input, out Compilation output, out ImmutableArray<Diagnostic> diagnostics);
+        Assert.That(driver.GetRunResult().Results.Select(result => result.Exception), Has.All.Null, context);
         Assert.That(diagnostics, Is.Empty, context);
         using MemoryStream image = new();
         Microsoft.CodeAnalysis.Emit.EmitResult emitted = output.Emit(image);
-        Assert.That(
-            emitted.Success,
-            Is.True,
-            context + "\n" + string.Join("\n", emitted.Diagnostics)
-        );
+        Assert.That(emitted.Success, Is.True, context + "\n" + string.Join("\n", emitted.Diagnostics));
         image.Position = 0;
         AssemblyLoadContext load = new("SerializedFieldDocumentation", isCollectible: true);
         try
@@ -467,24 +247,16 @@ internal sealed class GeneratedMessageDocumentationTests
             Assembly assembly = load.LoadFromStream(image);
             object prefab = Activator.CreateInstance(assembly.GetType("UnityEngine.GameObject")!)!;
             object value = useGenerator
-                ? assembly
-                    .GetType("ScreenPrefabExamples")!
-                    .GetMethod("Create")!
-                    .Invoke(null, new[] { (object)7, prefab })!
+                ? assembly.GetType("ScreenPrefabExamples")!.GetMethod("Create")!.Invoke(null, new[] { (object)7, prefab })!
                 : Activator.CreateInstance(assembly.GetType("ScreenPrefab")!, 7, prefab)!;
             Type type = value.GetType();
-            Assert.That(
-                type.Name,
-                Is.EqualTo("ScreenPrefab"),
-                "Preserve the declared type name: " + context
-            );
+            Assert.That(type.Name, Is.EqualTo("ScreenPrefab"), "Preserve the declared type name: " + context);
             Assert.That(type.GetProperty("Screen")!.GetValue(value), Is.EqualTo(7), context);
             Assert.That(type.GetProperty("Prefab")!.GetValue(value), Is.SameAs(prefab), context);
             Assert.That(type.GetProperty("Screen")!.CanWrite, Is.False, context);
             Assert.That(type.GetProperty("Prefab")!.CanWrite, Is.False, context);
             Assert.That(
-                type.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
-                    .Select(field => field.Name),
+                type.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public).Select(field => field.Name),
                 Is.EquivalentTo(SerializedStorageFieldNames),
                 context
             );
@@ -495,38 +267,20 @@ internal sealed class GeneratedMessageDocumentationTests
         }
     }
 
-    private static CompilationUnitSyntax[] ReadSnippets(
-        string path,
-        string sectionStart,
-        string sectionEnd,
-        CSharpParseOptions options
-    )
+    private static CompilationUnitSyntax[] ReadSnippets(string path, string sectionStart, string sectionEnd, CSharpParseOptions options)
     {
         string markdown = File.ReadAllText(path);
         int start = markdown.IndexOf(sectionStart, StringComparison.Ordinal);
         Assert.That(start, Is.GreaterThanOrEqualTo(0), path + ": " + sectionStart);
-        int end = markdown.IndexOf(
-            sectionEnd,
-            start + sectionStart.Length,
-            StringComparison.Ordinal
-        );
+        int end = markdown.IndexOf(sectionEnd, start + sectionStart.Length, StringComparison.Ordinal);
         Assert.That(end, Is.GreaterThan(start), path + ": " + sectionEnd);
         return Regex
             .Matches(markdown[start..end], @"```csharp\s*\r?\n(?<code>[\s\S]*?)```")
-            .Select(match =>
-                CSharpSyntaxTree
-                    .ParseText(match.Groups["code"].Value, options)
-                    .GetCompilationUnitRoot()
-            )
+            .Select(match => CSharpSyntaxTree.ParseText(match.Groups["code"].Value, options).GetCompilationUnitRoot())
             .ToArray();
     }
 
-    private static CSharpCompilation CreateCompilation(
-        string root,
-        IEnumerable<TypeDeclarationSyntax> declarations,
-        CSharpParseOptions options,
-        string additionalUsings = ""
-    )
+    private static CSharpCompilation CreateCompilation(string root, IEnumerable<TypeDeclarationSyntax> declarations, CSharpParseOptions options, string additionalUsings = "")
     {
         string[] contracts =
         {
@@ -552,18 +306,12 @@ internal sealed class GeneratedMessageDocumentationTests
             + additionalUsings
             + string.Join("\n", declarations.Select(declaration => declaration.ToFullString()));
         trees.Add(CSharpSyntaxTree.ParseText(source, options, "PublishedExample.cs"));
-        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
-            ?? throw new InvalidOperationException("Runtime references are unavailable.");
+        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") ?? throw new InvalidOperationException("Runtime references are unavailable.");
         return CSharpCompilation.Create(
             "PublishedMessageExample",
             trees,
-            references
-                .Split(Path.PathSeparator)
-                .Select(path => MetadataReference.CreateFromFile(path)),
-            new CSharpCompilationOptions(
-                OutputKind.DynamicallyLinkedLibrary,
-                generalDiagnosticOption: ReportDiagnostic.Error
-            )
+            references.Split(Path.PathSeparator).Select(path => MetadataReference.CreateFromFile(path)),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, generalDiagnosticOption: ReportDiagnostic.Error)
         );
     }
 
@@ -571,11 +319,7 @@ internal sealed class GeneratedMessageDocumentationTests
     {
         using MemoryStream image = new();
         Microsoft.CodeAnalysis.Emit.EmitResult result = compilation.Emit(image);
-        Assert.That(
-            result.Success,
-            Is.True,
-            context + "\n" + string.Join("\n", result.Diagnostics)
-        );
+        Assert.That(result.Success, Is.True, context + "\n" + string.Join("\n", result.Diagnostics));
     }
 
     private static string ResolveRoot()
@@ -585,9 +329,6 @@ internal sealed class GeneratedMessageDocumentationTests
         {
             root = root.Parent;
         }
-        return root?.FullName
-            ?? throw new DirectoryNotFoundException(
-                "Find the repository containing the documentation tests."
-            );
+        return root?.FullName ?? throw new DirectoryNotFoundException("Find the repository containing the documentation tests.");
     }
 }

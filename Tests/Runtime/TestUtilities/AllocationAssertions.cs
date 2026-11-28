@@ -70,9 +70,7 @@ namespace DxMessaging.Tests.Runtime
             */
             lambdaUnderTest();
 
-            ConstraintResult measurement = new AllocatingGCMemoryConstraint().ApplyTo(
-                lambdaUnderTest
-            );
+            ConstraintResult measurement = new AllocatingGCMemoryConstraint().ApplyTo(lambdaUnderTest);
             if (measurement.IsSuccess)
             {
                 /*
@@ -85,9 +83,7 @@ namespace DxMessaging.Tests.Runtime
                 {
                     writer.WriteLine(failureContext());
                 }
-                Assert.Fail(
-                    $"{label}: expected zero GC allocations across {measuredIterations} iterations.\n{writer}"
-                );
+                Assert.Fail($"{label}: expected zero GC allocations across {measuredIterations} iterations.\n{writer}");
             }
 
             Assert.That(measurement.IsSuccess, Is.False, label);

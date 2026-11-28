@@ -23,17 +23,11 @@ namespace DxMessaging.Tests.Runtime.Core
 
         private static IEnumerable<TestCaseData> Cases()
         {
-            foreach (
-                MessageScenario scenario in MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext
-            )
+            foreach (MessageScenario scenario in MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext)
             {
                 foreach (bool action in new[] { false, true })
                 {
-                    if (
-                        scenario.Kind == MessageKind.Untargeted
-                        && scenario.UsePostProcessor
-                        && action
-                    )
+                    if (scenario.Kind == MessageKind.Untargeted && scenario.UsePostProcessor && action)
                     {
                         continue;
                     }
@@ -61,26 +55,14 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private static TestCaseData Case(
-            MessageScenario scenario,
-            bool action,
-            bool global,
-            bool retarget,
-            bool enableInside
-        ) =>
+        private static TestCaseData Case(MessageScenario scenario, bool action, bool global, bool retarget, bool enableInside) =>
             new TestCaseData(scenario, action, global, retarget, enableInside).SetName(
                 $"DiagnosticOrigin_{scenario.Kind}_Post{scenario.UsePostProcessor}_Action{action}_Global{global}_Retarget{retarget}"
                     + (enableInside ? "_EnableInsideTrue" : string.Empty)
             );
 
         [TestCaseSource(nameof(Cases))]
-        public void SuccessfulDisablePreservesTheOriginUntilTheCallbackReturns(
-            MessageScenario scenario,
-            bool action,
-            bool global,
-            bool retarget,
-            bool enableInside
-        )
+        public void SuccessfulDisablePreservesTheOriginUntilTheCallbackReturns(MessageScenario scenario, bool action, bool global, bool retarget, bool enableInside)
         {
             string label = $"[{scenario.Kind}] action={action},global={global},retarget={retarget}";
             bool previousDebug = MessagingDebug.enabled;
@@ -89,14 +71,8 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageBus replacement = new MessageBus { DiagnosticsMode = true };
             MessageBus neutral = new MessageBus();
             using LeakWatcher oldLeaks = new LeakWatcher(original, label: label + ": original");
-            using LeakWatcher newLeaks = new LeakWatcher(
-                replacement,
-                label: label + ": replacement"
-            );
-            MessageHandler handler = new MessageHandler(new InstanceId(982), neutral)
-            {
-                active = true,
-            };
+            using LeakWatcher newLeaks = new LeakWatcher(replacement, label: label + ": replacement");
+            MessageHandler handler = new MessageHandler(new InstanceId(982), neutral) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, original);
             token.DiagnosticMode = true;
             bool armed = true;
@@ -113,10 +89,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     token.Disable();
                     if (retarget)
                     {
-                        token.RetargetMessageBus(
-                            replacement,
-                            MessageBusRebindMode.PreserveRegistrations
-                        );
+                        token.RetargetMessageBus(replacement, MessageBusRebindMode.PreserveRegistrations);
                     }
                     if (enableInside)
                     {
@@ -126,72 +99,30 @@ namespace DxMessaging.Tests.Runtime.Core
             };
             try
             {
-                MessageRegistrationHandle handle = global
-                    ? RegisterGlobal(token, action, callback)
-                    : RegisterHandler(token, scenario, action, callback);
+                MessageRegistrationHandle handle = global ? RegisterGlobal(token, action, callback) : RegisterHandler(token, scenario, action, callback);
                 if (enableInside)
                 {
                     Warm(retarget ? replacement : original);
                 }
                 token.Enable();
-                Assert.That(
-                    MessageBusInspection.CountLiveRegistrations(original),
-                    Is.EqualTo(1),
-                    label + ": actual original registration"
-                );
+                Assert.That(MessageBusInspection.CountLiveRegistrations(original), Is.EqualTo(1), label + ": actual original registration");
                 Emit(original, scenario);
                 Assert.That(calls, Is.EqualTo(1), label + ": exactly one original callback");
-                Assert.That(
-                    token.Enabled,
-                    Is.EqualTo(enableInside),
-                    label + ": expected state after optional callback re-enable"
-                );
-                Assert.That(
-                    MessageBusInspection.CountLiveRegistrations(original),
-                    Is.EqualTo(enableInside && !retarget ? 1 : 0),
-                    label + ": consumed original cleanup"
-                );
+                Assert.That(token.Enabled, Is.EqualTo(enableInside), label + ": expected state after optional callback re-enable");
+                Assert.That(MessageBusInspection.CountLiveRegistrations(original), Is.EqualTo(enableInside && !retarget ? 1 : 0), label + ": consumed original cleanup");
                 Assert.That(
                     MessageBusInspection.CountLiveRegistrations(replacement),
                     Is.EqualTo(enableInside && retarget ? 1 : 0),
                     label + ": only explicit re-enable activates rebound staging"
                 );
-                Assert.That(
-                    token._metadata.Count,
-                    Is.EqualTo(1),
-                    label + ": original staged handle survives"
-                );
-                Assert.That(
-                    token._emissionBuffer.Count,
-                    Is.EqualTo(1),
-                    label + ": one diagnosed original delivery"
-                );
+                Assert.That(token._metadata.Count, Is.EqualTo(1), label + ": original staged handle survives");
+                Assert.That(token._emissionBuffer.Count, Is.EqualTo(1), label + ": one diagnosed original delivery");
                 MessageEmissionData first = token._emissionBuffer[0];
-                Assert.That(
-                    0L < observedOrigins[0],
-                    Is.True,
-                    label + ": positive originating emission ID"
-                );
-                Assert.That(
-                    first.traceId,
-                    Is.EqualTo(observedOrigins[0]),
-                    label + ": preserve in-flight origin after disable/retarget"
-                );
-                Assert.That(
-                    first.registrationHandle,
-                    Is.EqualTo(handle),
-                    label + ": observing original handle"
-                );
-                Assert.That(
-                    first.message.MessageType,
-                    Is.EqualTo(typeof(ProbeMessage)),
-                    label + ": diagnosed payload type"
-                );
-                Assert.That(
-                    token._callCounts[handle],
-                    Is.EqualTo(1),
-                    label + ": original call count"
-                );
+                Assert.That(0L < observedOrigins[0], Is.True, label + ": positive originating emission ID");
+                Assert.That(first.traceId, Is.EqualTo(observedOrigins[0]), label + ": preserve in-flight origin after disable/retarget");
+                Assert.That(first.registrationHandle, Is.EqualTo(handle), label + ": observing original handle");
+                Assert.That(first.message.MessageType, Is.EqualTo(typeof(ProbeMessage)), label + ": diagnosed payload type");
+                Assert.That(token._callCounts[handle], Is.EqualTo(1), label + ": original call count");
                 MessageBus next = retarget ? replacement : original;
                 if (!enableInside)
                 {
@@ -202,56 +133,20 @@ namespace DxMessaging.Tests.Runtime.Core
                 token.Enable();
                 Emit(next, scenario);
                 Assert.That(calls, Is.EqualTo(2), label + ": staged callback replays once");
-                Assert.That(
-                    token._emissionBuffer.Count,
-                    Is.EqualTo(2),
-                    label + ": both diagnosed deliveries retained"
-                );
+                Assert.That(token._emissionBuffer.Count, Is.EqualTo(2), label + ": both diagnosed deliveries retained");
                 MessageEmissionData second = token._emissionBuffer[1];
-                Assert.That(
-                    observedOrigins[0] < observedOrigins[1],
-                    Is.True,
-                    label + ": deliberately distinct next emission ID"
-                );
-                Assert.That(
-                    second.traceId,
-                    Is.EqualTo(observedOrigins[1]),
-                    label + ": fresh registration has its own actual origin"
-                );
-                Assert.That(
-                    second.registrationHandle,
-                    Is.EqualTo(handle),
-                    label + ": same staged handle after enable"
-                );
-                Assert.That(
-                    token._callCounts[handle],
-                    Is.EqualTo(2),
-                    label + ": exact cumulative delivery count"
-                );
+                Assert.That(observedOrigins[0] < observedOrigins[1], Is.True, label + ": deliberately distinct next emission ID");
+                Assert.That(second.traceId, Is.EqualTo(observedOrigins[1]), label + ": fresh registration has its own actual origin");
+                Assert.That(second.registrationHandle, Is.EqualTo(handle), label + ": same staged handle after enable");
+                Assert.That(token._callCounts[handle], Is.EqualTo(2), label + ": exact cumulative delivery count");
                 token.Dispose();
-                Assert.That(
-                    MessageBusInspection.CountLiveRegistrations(original),
-                    Is.Zero,
-                    label + ": final original cleanup"
-                );
-                Assert.That(
-                    MessageBusInspection.CountLiveRegistrations(replacement),
-                    Is.Zero,
-                    label + ": final replacement cleanup"
-                );
+                Assert.That(MessageBusInspection.CountLiveRegistrations(original), Is.Zero, label + ": final original cleanup");
+                Assert.That(MessageBusInspection.CountLiveRegistrations(replacement), Is.Zero, label + ": final replacement cleanup");
                 Assert.That(token._metadata.Count, Is.Zero, label + ": disposal clears staging");
-                Assert.That(
-                    token._emissionBuffer.Count,
-                    Is.Zero,
-                    label + ": disposal clears diagnostic history"
-                );
+                Assert.That(token._emissionBuffer.Count, Is.Zero, label + ": disposal clears diagnostic history");
                 Emit(original, scenario);
                 Emit(replacement, scenario);
-                Assert.That(
-                    calls,
-                    Is.EqualTo(2),
-                    label + ": disposed callbacks stay absent on both buses"
-                );
+                Assert.That(calls, Is.EqualTo(2), label + ": disposed callbacks stay absent on both buses");
             }
             finally
             {
@@ -276,16 +171,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     for (int diagnostics = 0; diagnostics < 4; diagnostics++)
                     {
-                        yield return new TestCaseData(
-                            single.Arguments[0],
-                            single.Arguments[1],
-                            single.Arguments[2],
-                            single.Arguments[3],
-                            nesting,
-                            diagnostics
-                        ).SetName(
-                            single.TestName
-                                + $"_FrozenPeer_Nesting{nesting}_Diagnostics{diagnostics}"
+                        yield return new TestCaseData(single.Arguments[0], single.Arguments[1], single.Arguments[2], single.Arguments[3], nesting, diagnostics).SetName(
+                            single.TestName + $"_FrozenPeer_Nesting{nesting}_Diagnostics{diagnostics}"
                         );
                     }
                 }
@@ -298,14 +185,7 @@ namespace DxMessaging.Tests.Runtime.Core
         /// must retain their binding bus through nested replay and diagnostic toggles.
         /// </remarks>
         [TestCaseSource(nameof(PeerCases))]
-        public void FrozenPeersKeepTheirBindingOriginAcrossNestedReplay(
-            MessageScenario scenario,
-            bool action,
-            bool global,
-            bool retarget,
-            int nesting,
-            int diagnostics
-        )
+        public void FrozenPeersKeepTheirBindingOriginAcrossNestedReplay(MessageScenario scenario, bool action, bool global, bool retarget, int nesting, int diagnostics)
         {
             ExerciseFrozenPeers(scenario, action, global, retarget, nesting, diagnostics, 0);
         }
@@ -343,39 +223,18 @@ namespace DxMessaging.Tests.Runtime.Core
             ExerciseFrozenPeers(scenario, action, global, retarget, nesting, diagnostics, strategy);
         }
 
-        private static void ExerciseFrozenPeers(
-            MessageScenario scenario,
-            bool action,
-            bool global,
-            bool retarget,
-            int nesting,
-            int diagnostics,
-            int strategy
-        )
+        private static void ExerciseFrozenPeers(MessageScenario scenario, bool action, bool global, bool retarget, int nesting, int diagnostics, int strategy)
         {
-            string label =
-                $"{scenario},action={action},global={global},retarget={retarget},nesting={nesting},diagnostics={diagnostics},strategy={strategy}";
+            string label = $"{scenario},action={action},global={global},retarget={retarget},nesting={nesting},diagnostics={diagnostics},strategy={strategy}";
             bool previousDebug = MessagingDebug.enabled;
             MessagingDebug.enabled = false;
             MessageBus original = new MessageBus();
             MessageBus replacement = new MessageBus();
             MessageBus neutral = new MessageBus();
             using LeakWatcher oldLeaks = new LeakWatcher(original, label: label + ": original");
-            using LeakWatcher newLeaks = new LeakWatcher(
-                replacement,
-                label: label + ": replacement"
-            );
-            MessageHandler handler = new MessageHandler(
-                new InstanceId(983),
-                strategy == 2 ? original : neutral
-            )
-            {
-                active = true,
-            };
-            MessageRegistrationToken token = MessageRegistrationToken.Create(
-                handler,
-                strategy == 2 ? null : original
-            );
+            using LeakWatcher newLeaks = new LeakWatcher(replacement, label: label + ": replacement");
+            MessageHandler handler = new MessageHandler(new InstanceId(983), strategy == 2 ? original : neutral) { active = true };
+            MessageRegistrationToken token = MessageRegistrationToken.Create(handler, strategy == 2 ? null : original);
             token.DiagnosticMode = diagnostics == 0 || diagnostics == 2;
             MessageBus observedBus = original;
             MessageBus finalBus = retarget ? replacement : original;
@@ -432,10 +291,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 if (strategy == 0)
                 {
                     token.Disable();
-                    token.RetargetMessageBus(
-                        destination,
-                        MessageBusRebindMode.PreserveRegistrations
-                    );
+                    token.RetargetMessageBus(destination, MessageBusRebindMode.PreserveRegistrations);
                     token.Enable();
                 }
                 else if (strategy == 1)
@@ -451,137 +307,57 @@ namespace DxMessaging.Tests.Runtime.Core
             try
             {
                 Warm(replacement);
-                first = global
-                    ? RegisterGlobal(token, action, firstCallback)
-                    : RegisterHandler(token, scenario, action, firstCallback);
-                peer = global
-                    ? RegisterGlobal(token, action, peerCallback)
-                    : RegisterHandler(token, scenario, action, peerCallback);
+                first = global ? RegisterGlobal(token, action, firstCallback) : RegisterHandler(token, scenario, action, firstCallback);
+                peer = global ? RegisterGlobal(token, action, peerCallback) : RegisterHandler(token, scenario, action, peerCallback);
                 token.Enable();
                 Emit(original, scenario);
-                Assert.That(
-                    firstCalls,
-                    Is.EqualTo(1 + nesting),
-                    label + ": all running/nested A callbacks"
-                );
-                Assert.That(
-                    peerCalls,
-                    Is.EqualTo(1 + nesting),
-                    label + ": all pending/nested B callbacks"
-                );
+                Assert.That(firstCalls, Is.EqualTo(1 + nesting), label + ": all running/nested A callbacks");
+                Assert.That(peerCalls, Is.EqualTo(1 + nesting), label + ": all pending/nested B callbacks");
                 string[] expectedOrder =
                     nesting == 0 ? new[] { "A", "B" }
                     : nesting == 1 ? new[] { "A", "A", "B", "B" }
                     : new[] { "A", "A", "B", "A", "B", "B" };
-                Assert.That(
-                    calls,
-                    Is.EqualTo(expectedOrder),
-                    label + ": frozen outer peer follows nested emissions"
-                );
+                Assert.That(calls, Is.EqualTo(expectedOrder), label + ": frozen outer peer follows nested emissions");
                 Assert.That(token.Enabled, Is.True, label + ": replay remains enabled");
-                Assert.That(
-                    token._metadata.Count,
-                    Is.EqualTo(2),
-                    label + ": both original handles stay staged"
-                );
-                Assert.That(
-                    MessageBusInspection.CountLiveRegistrations(original),
-                    Is.EqualTo(ReferenceEquals(finalBus, original) ? 2 : 0),
-                    label + ": final original bus route"
-                );
+                Assert.That(token._metadata.Count, Is.EqualTo(2), label + ": both original handles stay staged");
+                Assert.That(MessageBusInspection.CountLiveRegistrations(original), Is.EqualTo(ReferenceEquals(finalBus, original) ? 2 : 0), label + ": final original bus route");
                 Assert.That(
                     MessageBusInspection.CountLiveRegistrations(replacement),
                     Is.EqualTo(ReferenceEquals(finalBus, replacement) ? 2 : 0),
                     label + ": final replacement bus route"
                 );
-                Assert.That(
-                    token._emissionBuffer.Count,
-                    Is.EqualTo(expectedTraces.Count),
-                    label + ": exact post-callback diagnostic toggle semantics"
-                );
-                Assert.That(
-                    token._callCounts.Count,
-                    Is.EqualTo(diagnostics < 2 ? 2 : 0),
-                    label + ": diagnostic state materializes only when recorded"
-                );
+                Assert.That(token._emissionBuffer.Count, Is.EqualTo(expectedTraces.Count), label + ": exact post-callback diagnostic toggle semantics");
+                Assert.That(token._callCounts.Count, Is.EqualTo(diagnostics < 2 ? 2 : 0), label + ": diagnostic state materializes only when recorded");
                 if (diagnostics < 2)
                 {
-                    Assert.That(
-                        token._callCounts[first],
-                        Is.EqualTo(1 + nesting),
-                        label + ": exact A diagnostic count"
-                    );
-                    Assert.That(
-                        token._callCounts[peer],
-                        Is.EqualTo(1 + nesting),
-                        label + ": exact B diagnostic count"
-                    );
+                    Assert.That(token._callCounts[first], Is.EqualTo(1 + nesting), label + ": exact A diagnostic count");
+                    Assert.That(token._callCounts[peer], Is.EqualTo(1 + nesting), label + ": exact B diagnostic count");
                 }
                 token.DiagnosticMode = true;
                 observedBus = finalBus;
                 Emit(finalBus, scenario);
-                Assert.That(
-                    firstCalls,
-                    Is.EqualTo(2 + nesting),
-                    label + ": fresh A on latest binding"
-                );
-                Assert.That(
-                    peerCalls,
-                    Is.EqualTo(2 + nesting),
-                    label + ": fresh B on latest binding"
-                );
-                Assert.That(
-                    token._emissionBuffer.Count,
-                    Is.EqualTo(expectedTraces.Count),
-                    label + ": fresh records appended"
-                );
+                Assert.That(firstCalls, Is.EqualTo(2 + nesting), label + ": fresh A on latest binding");
+                Assert.That(peerCalls, Is.EqualTo(2 + nesting), label + ": fresh B on latest binding");
+                Assert.That(token._emissionBuffer.Count, Is.EqualTo(expectedTraces.Count), label + ": fresh records appended");
                 for (int i = 0; i < expectedTraces.Count; i++)
                 {
-                    Assert.That(
-                        expectedTraces[i],
-                        Is.GreaterThan(0L),
-                        label + $": positive independent origin {i}"
-                    );
-                    Assert.That(
-                        token._emissionBuffer[i].registrationHandle,
-                        Is.EqualTo(expectedHandles[i]),
-                        label + $": original callback handle {i}"
-                    );
+                    Assert.That(expectedTraces[i], Is.GreaterThan(0L), label + $": positive independent origin {i}");
+                    Assert.That(token._emissionBuffer[i].registrationHandle, Is.EqualTo(expectedHandles[i]), label + $": original callback handle {i}");
                 }
                 List<long> actualTraces = new List<long>();
                 for (int i = 0; i < token._emissionBuffer.Count; i++)
                 {
                     actualTraces.Add(token._emissionBuffer[i].traceId);
                 }
-                Assert.That(
-                    actualTraces,
-                    Is.EqualTo(expectedTraces),
-                    label + ": immutable running and pending binding origins"
-                );
+                Assert.That(actualTraces, Is.EqualTo(expectedTraces), label + ": immutable running and pending binding origins");
                 token.Dispose();
                 Assert.That(token._metadata.Count, Is.Zero, label + ": disposal clears staging");
-                Assert.That(
-                    token._callCounts.Count,
-                    Is.Zero,
-                    label + ": disposal clears call counts"
-                );
-                Assert.That(
-                    token._emissionBuffer.Count,
-                    Is.Zero,
-                    label + ": disposal clears history"
-                );
+                Assert.That(token._callCounts.Count, Is.Zero, label + ": disposal clears call counts");
+                Assert.That(token._emissionBuffer.Count, Is.Zero, label + ": disposal clears history");
                 Emit(original, scenario);
                 Emit(replacement, scenario);
-                Assert.That(
-                    firstCalls,
-                    Is.EqualTo(2 + nesting),
-                    label + ": stale original/rebound A removed"
-                );
-                Assert.That(
-                    peerCalls,
-                    Is.EqualTo(2 + nesting),
-                    label + ": stale original/rebound B removed"
-                );
+                Assert.That(firstCalls, Is.EqualTo(2 + nesting), label + ": stale original/rebound A removed");
+                Assert.That(peerCalls, Is.EqualTo(2 + nesting), label + ": stale original/rebound B removed");
             }
             finally
             {
@@ -606,48 +382,29 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     foreach (bool diagnostics in new[] { false, true })
                     {
-                        yield return new TestCaseData(
-                            single.Arguments[0],
-                            single.Arguments[1],
-                            single.Arguments[2],
-                            mode,
-                            diagnostics
-                        ).SetName(single.TestName + $"_Lifecycle{mode}_Diagnostics{diagnostics}");
+                        yield return new TestCaseData(single.Arguments[0], single.Arguments[1], single.Arguments[2], mode, diagnostics).SetName(
+                            single.TestName + $"_Lifecycle{mode}_Diagnostics{diagnostics}"
+                        );
                     }
                 }
             }
         }
 
         [TestCaseSource(nameof(LifecycleCases))]
-        public void ReboundBindingsPreserveExceptionResetAndStaleHandleContracts(
-            MessageScenario scenario,
-            bool action,
-            bool global,
-            int mode,
-            bool diagnostics
-        )
+        public void ReboundBindingsPreserveExceptionResetAndStaleHandleContracts(MessageScenario scenario, bool action, bool global, int mode, bool diagnostics)
         {
-            string label =
-                $"{scenario},action={action},global={global},mode={mode},diagnostics={diagnostics}";
+            string label = $"{scenario},action={action},global={global},mode={mode},diagnostics={diagnostics}";
             bool previousDebug = MessagingDebug.enabled;
             MessagingDebug.enabled = false;
             MessageBus original = new MessageBus();
             MessageBus replacement = new MessageBus();
             MessageBus neutral = new MessageBus();
             using LeakWatcher oldLeaks = new LeakWatcher(original, label: label + ": original");
-            using LeakWatcher newLeaks = new LeakWatcher(
-                replacement,
-                label: label + ": replacement"
-            );
-            MessageHandler handler = new MessageHandler(new InstanceId(984), neutral)
-            {
-                active = true,
-            };
+            using LeakWatcher newLeaks = new LeakWatcher(replacement, label: label + ": replacement");
+            MessageHandler handler = new MessageHandler(new InstanceId(984), neutral) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, original);
             token.DiagnosticMode = diagnostics;
-            InvalidOperationException sentinel = new InvalidOperationException(
-                "Expected rebound callback failure."
-            );
+            InvalidOperationException sentinel = new InvalidOperationException("Expected rebound callback failure.");
             bool armed = true;
             int firstCalls = 0;
             int peerCalls = 0;
@@ -677,12 +434,8 @@ namespace DxMessaging.Tests.Runtime.Core
             try
             {
                 Warm(replacement);
-                MessageRegistrationHandle first = global
-                    ? RegisterGlobal(token, action, firstCallback)
-                    : RegisterHandler(token, scenario, action, firstCallback);
-                MessageRegistrationHandle peer = global
-                    ? RegisterGlobal(token, action, peerCallback)
-                    : RegisterHandler(token, scenario, action, peerCallback);
+                MessageRegistrationHandle first = global ? RegisterGlobal(token, action, firstCallback) : RegisterHandler(token, scenario, action, firstCallback);
+                MessageRegistrationHandle peer = global ? RegisterGlobal(token, action, peerCallback) : RegisterHandler(token, scenario, action, peerCallback);
                 token.Enable();
                 Exception caught = null;
                 try
@@ -693,142 +446,56 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     caught = exception;
                 }
-                Assert.That(
-                    caught,
-                    Is.SameAs(mode == 0 ? sentinel : null),
-                    label + ": exact user exception propagates"
-                );
-                Assert.That(
-                    outerOrigin,
-                    Is.GreaterThan(0L),
-                    label + ": actual original dispatch entered"
-                );
+                Assert.That(caught, Is.SameAs(mode == 0 ? sentinel : null), label + ": exact user exception propagates");
+                Assert.That(outerOrigin, Is.GreaterThan(0L), label + ": actual original dispatch entered");
                 Assert.That(firstCalls, Is.EqualTo(1), label + ": first callback entered once");
-                Assert.That(
-                    peerCalls,
-                    Is.EqualTo(mode == 2 ? 1 : 0),
-                    label + ": throw and reset suppress pending peer"
-                );
+                Assert.That(peerCalls, Is.EqualTo(mode == 2 ? 1 : 0), label + ": throw and reset suppress pending peer");
                 Assert.That(token.Enabled, Is.True, label + ": rebound token remains active");
-                Assert.That(
-                    token._metadata.Count,
-                    Is.EqualTo(2),
-                    label + ": both callbacks remain staged"
-                );
-                Assert.That(
-                    MessageBusInspection.CountLiveRegistrations(original),
-                    Is.Zero,
-                    label + ": no stale original route"
-                );
-                Assert.That(
-                    MessageBusInspection.CountLiveRegistrations(replacement),
-                    Is.EqualTo(2),
-                    label + ": both rebound callbacks live"
-                );
+                Assert.That(token._metadata.Count, Is.EqualTo(2), label + ": both callbacks remain staged");
+                Assert.That(MessageBusInspection.CountLiveRegistrations(original), Is.Zero, label + ": no stale original route");
+                Assert.That(MessageBusInspection.CountLiveRegistrations(replacement), Is.EqualTo(2), label + ": both rebound callbacks live");
                 int originalRecords = diagnostics && mode != 0 ? (mode == 2 ? 2 : 1) : 0;
-                Assert.That(
-                    token._emissionBuffer.Count,
-                    Is.EqualTo(originalRecords),
-                    label + ": only successful callbacks recorded"
-                );
+                Assert.That(token._emissionBuffer.Count, Is.EqualTo(originalRecords), label + ": only successful callbacks recorded");
                 List<long> initialTraces = new List<long>();
                 for (int i = 0; i < originalRecords; i++)
                 {
                     initialTraces.Add(token._emissionBuffer[i].traceId);
-                    Assert.That(
-                        token._emissionBuffer[i].registrationHandle,
-                        Is.EqualTo(i == 0 ? first : peer),
-                        label + $": completed original handle {i}"
-                    );
+                    Assert.That(token._emissionBuffer[i].registrationHandle, Is.EqualTo(i == 0 ? first : peer), label + $": completed original handle {i}");
                 }
                 MessageRegistrationHandle fresh = first;
                 if (mode == 2)
                 {
                     token.RemoveRegistration(first);
-                    fresh = global
-                        ? RegisterGlobal(token, action, firstCallback)
-                        : RegisterHandler(token, scenario, action, firstCallback);
-                    Assert.That(
-                        fresh.Slot,
-                        Is.EqualTo(first.Slot),
-                        label + ": actual staging slot reused"
-                    );
-                    Assert.That(
-                        fresh,
-                        Is.Not.EqualTo(first),
-                        label + ": reused slot has a fresh identity"
-                    );
+                    fresh = global ? RegisterGlobal(token, action, firstCallback) : RegisterHandler(token, scenario, action, firstCallback);
+                    Assert.That(fresh.Slot, Is.EqualTo(first.Slot), label + ": actual staging slot reused");
+                    Assert.That(fresh, Is.Not.EqualTo(first), label + ": reused slot has a fresh identity");
                     token.RemoveRegistration(first);
-                    Assert.That(
-                        token._metadata.ContainsKey(fresh),
-                        Is.True,
-                        label + ": stale removal preserves new staging"
-                    );
-                    Assert.That(
-                        token._metadata.ContainsKey(first),
-                        Is.False,
-                        label + ": old handle stays absent"
-                    );
+                    Assert.That(token._metadata.ContainsKey(fresh), Is.True, label + ": stale removal preserves new staging");
+                    Assert.That(token._metadata.ContainsKey(first), Is.False, label + ": old handle stays absent");
                 }
                 Emit(replacement, scenario);
                 Assert.That(firstCalls, Is.EqualTo(2), label + ": fresh callback on rebound bus");
-                Assert.That(
-                    peerCalls,
-                    Is.EqualTo(mode == 2 ? 2 : 1),
-                    label + ": fresh peer survives exception/reset/stale cleanup"
-                );
-                Assert.That(
-                    token._callCounts.Count,
-                    Is.EqualTo(diagnostics ? 2 : 0),
-                    label + ": exact diagnostic handle set"
-                );
+                Assert.That(peerCalls, Is.EqualTo(mode == 2 ? 2 : 1), label + ": fresh peer survives exception/reset/stale cleanup");
+                Assert.That(token._callCounts.Count, Is.EqualTo(diagnostics ? 2 : 0), label + ": exact diagnostic handle set");
                 if (diagnostics)
                 {
                     int start = token._emissionBuffer.Count - 2;
-                    Assert.That(
-                        start,
-                        Is.GreaterThanOrEqualTo(0),
-                        label + ": two fresh records available"
-                    );
-                    Assert.That(
-                        token._emissionBuffer[start].registrationHandle,
-                        Is.EqualTo(mode == 2 ? peer : fresh),
-                        label + ": fresh first record identity"
-                    );
-                    Assert.That(
-                        token._emissionBuffer[start + 1].registrationHandle,
-                        Is.EqualTo(mode == 2 ? fresh : peer),
-                        label + ": fresh second record identity"
-                    );
-                    Assert.That(
-                        token._emissionBuffer[start].traceId,
-                        Is.EqualTo(replacement.EmissionId),
-                        label + ": latest bus first origin"
-                    );
-                    Assert.That(
-                        token._emissionBuffer[start + 1].traceId,
-                        Is.EqualTo(replacement.EmissionId),
-                        label + ": latest bus second origin"
-                    );
+                    Assert.That(start, Is.GreaterThanOrEqualTo(0), label + ": two fresh records available");
+                    Assert.That(token._emissionBuffer[start].registrationHandle, Is.EqualTo(mode == 2 ? peer : fresh), label + ": fresh first record identity");
+                    Assert.That(token._emissionBuffer[start + 1].registrationHandle, Is.EqualTo(mode == 2 ? fresh : peer), label + ": fresh second record identity");
+                    Assert.That(token._emissionBuffer[start].traceId, Is.EqualTo(replacement.EmissionId), label + ": latest bus first origin");
+                    Assert.That(token._emissionBuffer[start + 1].traceId, Is.EqualTo(replacement.EmissionId), label + ": latest bus second origin");
                 }
                 List<long> expectedInitial = new List<long>();
                 for (int i = 0; i < originalRecords; i++)
                 {
                     expectedInitial.Add(mode == 1 ? 0L : outerOrigin);
                 }
-                Assert.That(
-                    initialTraces,
-                    Is.EqualTo(expectedInitial),
-                    label + ": original trace preserved with existing reset semantics"
-                );
+                Assert.That(initialTraces, Is.EqualTo(expectedInitial), label + ": original trace preserved with existing reset semantics");
                 token.Dispose();
                 Assert.That(token._metadata.Count, Is.Zero, label + ": disposal clears staging");
                 Assert.That(token._callCounts.Count, Is.Zero, label + ": disposal clears counts");
-                Assert.That(
-                    token._emissionBuffer.Count,
-                    Is.Zero,
-                    label + ": disposal clears history"
-                );
+                Assert.That(token._emissionBuffer.Count, Is.Zero, label + ": disposal clears history");
             }
             finally
             {
@@ -850,9 +517,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 int lifecycle = (int)testCase.Arguments[3];
                 bool diagnostics = (bool)testCase.Arguments[4];
                 bool fastLane = action == global && diagnostics == (lifecycle != 0);
-                yield return testCase
-                    .SetName(testCase.TestName + "_BindingLifetime")
-                    .SetCategory(fastLane ? "FastRetention" : "Exhaustive");
+                yield return testCase.SetName(testCase.TestName + "_BindingLifetime").SetCategory(fastLane ? "FastRetention" : "Exhaustive");
             }
         }
 
@@ -861,16 +526,9 @@ namespace DxMessaging.Tests.Runtime.Core
 #if !UNITY_2021_3_OR_NEWER
         [NonParallelizable]
 #endif
-        public void CompletedSnapshotsReleaseReplacedBindingsAndTheirBus(
-            MessageScenario scenario,
-            bool action,
-            bool global,
-            int mode,
-            bool diagnostics
-        )
+        public void CompletedSnapshotsReleaseReplacedBindingsAndTheirBus(MessageScenario scenario, bool action, bool global, int mode, bool diagnostics)
         {
-            string label =
-                $"{scenario},action={action},global={global},mode={mode},diagnostics={diagnostics}";
+            string label = $"{scenario},action={action},global={global},mode={mode},diagnostics={diagnostics}";
             bool previousDebug = MessagingDebug.enabled;
             MessagingDebug.enabled = false;
             MessageBus neutral = new MessageBus();
@@ -879,57 +537,20 @@ namespace DxMessaging.Tests.Runtime.Core
             BindingLifetime graph = null;
             try
             {
-                graph = CreateBindingLifetime(
-                    scenario,
-                    action,
-                    global,
-                    mode,
-                    diagnostics,
-                    neutral,
-                    replacement
-                );
+                graph = CreateBindingLifetime(scenario, action, global, mode, diagnostics, neutral, replacement);
                 for (int i = 0; i < 3; i++)
                 {
                     GC.Collect();
                     GC.WaitForPendingFinalizers();
                     GC.Collect();
                 }
-                Assert.That(
-                    graph.ReusedOnSameBus,
-                    Is.True,
-                    label + ": same-bus replay reuses exact binding"
-                );
-                Assert.That(
-                    graph.ReplacedOnDifferentBus,
-                    Is.EqualTo(mode == 0),
-                    label + ": different-bus replay replaces exact binding"
-                );
-                Assert.That(
-                    graph.Binding.IsAlive,
-                    Is.EqualTo(mode == 1),
-                    label
-                        + ": replaced/removed binding collects; disabled staging retains positive control"
-                );
-                Assert.That(
-                    graph.Bus.IsAlive,
-                    Is.EqualTo(mode == 1),
-                    label + ": obsolete binding bus follows its owner lifetime"
-                );
-                Assert.That(
-                    graph.Counter.Calls,
-                    Is.EqualTo(mode == 0 ? 3 : 2),
-                    label + ": actual delivery on both activations"
-                );
-                Assert.That(
-                    graph.Token.Enabled,
-                    Is.EqualTo(mode == 0),
-                    label + ": expected final activation"
-                );
-                Assert.That(
-                    graph.Token._metadata.Count,
-                    Is.EqualTo(mode == 2 ? 0 : 1),
-                    label + ": only retained staging can replay"
-                );
+                Assert.That(graph.ReusedOnSameBus, Is.True, label + ": same-bus replay reuses exact binding");
+                Assert.That(graph.ReplacedOnDifferentBus, Is.EqualTo(mode == 0), label + ": different-bus replay replaces exact binding");
+                Assert.That(graph.Binding.IsAlive, Is.EqualTo(mode == 1), label + ": replaced/removed binding collects; disabled staging retains positive control");
+                Assert.That(graph.Bus.IsAlive, Is.EqualTo(mode == 1), label + ": obsolete binding bus follows its owner lifetime");
+                Assert.That(graph.Counter.Calls, Is.EqualTo(mode == 0 ? 3 : 2), label + ": actual delivery on both activations");
+                Assert.That(graph.Token.Enabled, Is.EqualTo(mode == 0), label + ": expected final activation");
+                Assert.That(graph.Token._metadata.Count, Is.EqualTo(mode == 2 ? 0 : 1), label + ": only retained staging can replay");
                 graph.Token.Enable();
                 Emit(replacement, scenario);
                 Assert.That(
@@ -942,21 +563,9 @@ namespace DxMessaging.Tests.Runtime.Core
                     label + ": surviving staging replays its original callback"
                 );
                 graph.Token.Dispose();
-                Assert.That(
-                    graph.Token._metadata.Count,
-                    Is.Zero,
-                    label + ": disposal clears staging"
-                );
-                Assert.That(
-                    graph.Token._callCounts.Count,
-                    Is.Zero,
-                    label + ": disposal clears counts"
-                );
-                Assert.That(
-                    graph.Token._emissionBuffer.Count,
-                    Is.Zero,
-                    label + ": disposal clears history"
-                );
+                Assert.That(graph.Token._metadata.Count, Is.Zero, label + ": disposal clears staging");
+                Assert.That(graph.Token._callCounts.Count, Is.Zero, label + ": disposal clears counts");
+                Assert.That(graph.Token._emissionBuffer.Count, Is.Zero, label + ": disposal clears history");
             }
             finally
             {
@@ -974,9 +583,7 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [System.Runtime.CompilerServices.MethodImpl(
-            System.Runtime.CompilerServices.MethodImplOptions.NoInlining
-        )]
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
         private static BindingLifetime CreateBindingLifetime(
             MessageScenario scenario,
             bool action,
@@ -988,34 +595,19 @@ namespace DxMessaging.Tests.Runtime.Core
         )
         {
             MessageBus original = new MessageBus();
-            MessageHandler handler = new MessageHandler(new InstanceId(985), neutral)
-            {
-                active = true,
-            };
-            using LeakWatcher leaks = LeakWatcher.WatchWithSlots(
-                original,
-                handler: handler,
-                label: "binding lifetime original"
-            );
+            MessageHandler handler = new MessageHandler(new InstanceId(985), neutral) { active = true };
+            using LeakWatcher leaks = LeakWatcher.WatchWithSlots(original, handler: handler, label: "binding lifetime original");
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, original);
             token.DiagnosticMode = diagnostics;
             BindingCounter counter = new BindingCounter();
-            MessageRegistrationHandle handle = global
-                ? RegisterGlobal(token, action, counter.Receive)
-                : RegisterHandler(token, scenario, action, counter.Receive);
+            MessageRegistrationHandle handle = global ? RegisterGlobal(token, action, counter.Receive) : RegisterHandler(token, scenario, action, counter.Receive);
             token.Enable();
             Emit(original, scenario);
-            object registration = MessageBusInspection.ReadField(
-                ((Array)MessageBusInspection.ReadField(token, "_slots")).GetValue(handle.Slot),
-                "Registration"
-            );
+            object registration = MessageBusInspection.ReadField(((Array)MessageBusInspection.ReadField(token, "_slots")).GetValue(handle.Slot), "Registration");
             object binding = MessageBusInspection.ReadField(registration, "_binding");
             token.Disable();
             token.Enable();
-            bool reused = ReferenceEquals(
-                binding,
-                MessageBusInspection.ReadField(registration, "_binding")
-            );
+            bool reused = ReferenceEquals(binding, MessageBusInspection.ReadField(registration, "_binding"));
             Emit(original, scenario);
             token.Disable();
             token.RetargetMessageBus(replacement, MessageBusRebindMode.PreserveRegistrations);
@@ -1023,10 +615,7 @@ namespace DxMessaging.Tests.Runtime.Core
             if (mode == 0)
             {
                 token.Enable();
-                replaced = !ReferenceEquals(
-                    binding,
-                    MessageBusInspection.ReadField(registration, "_binding")
-                );
+                replaced = !ReferenceEquals(binding, MessageBusInspection.ReadField(registration, "_binding"));
                 Emit(replacement, scenario);
             }
             else if (mode == 2)
@@ -1070,20 +659,12 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 if ((bool)single.Arguments[3] && (bool)single.Arguments[4])
                 {
-                    yield return new TestCaseData(
-                        single.Arguments[0],
-                        single.Arguments[1],
-                        single.Arguments[2]
-                    ).SetName(single.TestName + "_ReboundEmitZeroAlloc");
+                    yield return new TestCaseData(single.Arguments[0], single.Arguments[1], single.Arguments[2]).SetName(single.TestName + "_ReboundEmitZeroAlloc");
                 }
             }
         }
 
-        internal static Action CreateReboundAllocationEmit(
-            MessageBus bus,
-            MessageScenario scenario,
-            bool global
-        )
+        internal static Action CreateReboundAllocationEmit(MessageBus bus, MessageScenario scenario, bool global)
         {
             if (!global)
             {
@@ -1135,20 +716,12 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        internal static MessageRegistrationHandle RegisterHandler(
-            MessageRegistrationToken token,
-            MessageScenario scenario,
-            bool action,
-            Action record
-        )
+        internal static MessageRegistrationHandle RegisterHandler(MessageRegistrationToken token, MessageScenario scenario, bool action, Action record)
         {
             Action<ProbeMessage> scalar = _ => record();
             Action<InstanceId, ProbeMessage> context = (_, __) => record();
             MessageHandler.FastHandler<ProbeMessage> fast = (in ProbeMessage _) => record();
-            MessageHandler.FastHandlerWithContext<ProbeMessage> fastContext = (
-                in InstanceId _,
-                in ProbeMessage __
-            ) => record();
+            MessageHandler.FastHandlerWithContext<ProbeMessage> fastContext = (in InstanceId _, in ProbeMessage __) => record();
             return (scenario.Kind, scenario.UsePostProcessor, action) switch
             {
                 (MessageKind.Untargeted, false, true) => token.RegisterUntargeted(scalar),
@@ -1156,49 +729,25 @@ namespace DxMessaging.Tests.Runtime.Core
                 (MessageKind.Untargeted, true, _) => token.RegisterUntargetedPostProcessor(fast),
                 (MessageKind.Targeted, false, true) => token.RegisterTargeted(Context, scalar),
                 (MessageKind.Targeted, false, false) => token.RegisterTargeted(Context, fast),
-                (MessageKind.Targeted, true, true) => token.RegisterTargetedPostProcessor(
-                    Context,
-                    scalar
-                ),
-                (MessageKind.Targeted, true, false) => token.RegisterTargetedPostProcessor(
-                    Context,
-                    fast
-                ),
+                (MessageKind.Targeted, true, true) => token.RegisterTargetedPostProcessor(Context, scalar),
+                (MessageKind.Targeted, true, false) => token.RegisterTargetedPostProcessor(Context, fast),
                 (MessageKind.Broadcast, false, true) => token.RegisterBroadcast(Context, scalar),
                 (MessageKind.Broadcast, false, false) => token.RegisterBroadcast(Context, fast),
-                (MessageKind.Broadcast, true, true) => token.RegisterBroadcastPostProcessor(
-                    Context,
-                    scalar
-                ),
-                (MessageKind.Broadcast, true, false) => token.RegisterBroadcastPostProcessor(
-                    Context,
-                    fast
-                ),
-                (MessageKind.TargetedWithoutTargeting, false, true) =>
-                    token.RegisterTargetedWithoutTargeting(context),
-                (MessageKind.TargetedWithoutTargeting, false, false) =>
-                    token.RegisterTargetedWithoutTargeting(fastContext),
-                (MessageKind.TargetedWithoutTargeting, true, true) =>
-                    token.RegisterTargetedWithoutTargetingPostProcessor(context),
-                (MessageKind.TargetedWithoutTargeting, true, false) =>
-                    token.RegisterTargetedWithoutTargetingPostProcessor(fastContext),
-                (MessageKind.BroadcastWithoutSource, false, true) =>
-                    token.RegisterBroadcastWithoutSource(context),
-                (MessageKind.BroadcastWithoutSource, false, false) =>
-                    token.RegisterBroadcastWithoutSource(fastContext),
-                (MessageKind.BroadcastWithoutSource, true, true) =>
-                    token.RegisterBroadcastWithoutSourcePostProcessor(context),
-                (MessageKind.BroadcastWithoutSource, true, false) =>
-                    token.RegisterBroadcastWithoutSourcePostProcessor(fastContext),
+                (MessageKind.Broadcast, true, true) => token.RegisterBroadcastPostProcessor(Context, scalar),
+                (MessageKind.Broadcast, true, false) => token.RegisterBroadcastPostProcessor(Context, fast),
+                (MessageKind.TargetedWithoutTargeting, false, true) => token.RegisterTargetedWithoutTargeting(context),
+                (MessageKind.TargetedWithoutTargeting, false, false) => token.RegisterTargetedWithoutTargeting(fastContext),
+                (MessageKind.TargetedWithoutTargeting, true, true) => token.RegisterTargetedWithoutTargetingPostProcessor(context),
+                (MessageKind.TargetedWithoutTargeting, true, false) => token.RegisterTargetedWithoutTargetingPostProcessor(fastContext),
+                (MessageKind.BroadcastWithoutSource, false, true) => token.RegisterBroadcastWithoutSource(context),
+                (MessageKind.BroadcastWithoutSource, false, false) => token.RegisterBroadcastWithoutSource(fastContext),
+                (MessageKind.BroadcastWithoutSource, true, true) => token.RegisterBroadcastWithoutSourcePostProcessor(context),
+                (MessageKind.BroadcastWithoutSource, true, false) => token.RegisterBroadcastWithoutSourcePostProcessor(fastContext),
                 _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
             };
         }
 
-        internal static MessageRegistrationHandle RegisterGlobal(
-            MessageRegistrationToken token,
-            bool action,
-            Action record
-        )
+        internal static MessageRegistrationHandle RegisterGlobal(MessageRegistrationToken token, bool action, Action record)
         {
             if (action)
             {
@@ -1215,18 +764,12 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
-        private readonly struct ProbeMessage
-            : IUntargetedMessage,
-                ITargetedMessage,
-                IBroadcastMessage
+        private readonly struct ProbeMessage : IUntargetedMessage, ITargetedMessage, IBroadcastMessage
         {
             public Type MessageType => typeof(ProbeMessage);
         }
 
-        private sealed class GlobalProbeMessage
-            : IUntargetedMessage,
-                ITargetedMessage,
-                IBroadcastMessage
+        private sealed class GlobalProbeMessage : IUntargetedMessage, ITargetedMessage, IBroadcastMessage
         {
             public Type MessageType => typeof(GlobalProbeMessage);
         }

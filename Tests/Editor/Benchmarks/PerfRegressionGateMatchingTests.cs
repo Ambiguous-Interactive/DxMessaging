@@ -19,39 +19,19 @@ namespace DxMessaging.Tests.Editor.Benchmarks
     public sealed class PerfRegressionGateMatchingTests
     {
         private const string Scenario = "UntargetedFlood_OneHandler";
-        private const string Platform =
-            "Editor PlayMode Mono x64 Release (WindowsEditor; Unity 6000.3.16f1)";
+        private const string Platform = "Editor PlayMode Mono x64 Release (WindowsEditor; Unity 6000.3.16f1)";
 
         [Test]
         public void FindBaselineWithUnsetCommitMatchesOnScenarioAndPlatform()
         {
-            BaselineRow expected = BaselineRow.ForTest(
-                Scenario,
-                Platform,
-                "baseline",
-                emitsPerSecond: 12_000_000d,
-                gcAllocations: 0,
-                wallClockMs: 5000d
-            );
+            BaselineRow expected = BaselineRow.ForTest(Scenario, Platform, "baseline", emitsPerSecond: 12_000_000d, gcAllocations: 0, wallClockMs: 5000d);
             List<BaselineRow> rows = new()
             {
-                BaselineRow.ForTest(
-                    "TargetedFlood_OneListener",
-                    Platform,
-                    "baseline",
-                    emitsPerSecond: 9_000_000d,
-                    gcAllocations: 0,
-                    wallClockMs: 5000d
-                ),
+                BaselineRow.ForTest("TargetedFlood_OneListener", Platform, "baseline", emitsPerSecond: 9_000_000d, gcAllocations: 0, wallClockMs: 5000d),
                 expected,
             };
 
-            BaselineRow match = PerfRegressionSmokeTests.FindBaseline(
-                rows,
-                Scenario,
-                Platform,
-                baselineCommit: null
-            );
+            BaselineRow match = PerfRegressionSmokeTests.FindBaseline(rows, Scenario, Platform, baselineCommit: null);
 
             Assert.AreEqual(expected.Scenario, match.Scenario);
             Assert.AreEqual(expected.Platform, match.Platform);
@@ -75,12 +55,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             );
             List<BaselineRow> rows = new() { expected };
 
-            BaselineRow match = PerfRegressionSmokeTests.FindBaseline(
-                rows,
-                Scenario,
-                Platform,
-                baselineCommit: string.Empty
-            );
+            BaselineRow match = PerfRegressionSmokeTests.FindBaseline(rows, Scenario, Platform, baselineCommit: string.Empty);
 
             Assert.AreEqual(expected.Commit, match.Commit);
             Assert.AreEqual(expected.EmitsPerSecond, match.EmitsPerSecond);
@@ -98,22 +73,10 @@ namespace DxMessaging.Tests.Editor.Benchmarks
                 gcAllocations: 0,
                 wallClockMs: 5000d
             );
-            BaselineRow expected = BaselineRow.ForTest(
-                Scenario,
-                Platform,
-                TargetCommit,
-                emitsPerSecond: 12_000_000d,
-                gcAllocations: 0,
-                wallClockMs: 5000d
-            );
+            BaselineRow expected = BaselineRow.ForTest(Scenario, Platform, TargetCommit, emitsPerSecond: 12_000_000d, gcAllocations: 0, wallClockMs: 5000d);
             List<BaselineRow> rows = new() { other, expected };
 
-            BaselineRow match = PerfRegressionSmokeTests.FindBaseline(
-                rows,
-                Scenario,
-                Platform,
-                TargetCommit
-            );
+            BaselineRow match = PerfRegressionSmokeTests.FindBaseline(rows, Scenario, Platform, TargetCommit);
 
             Assert.AreEqual(TargetCommit, match.Commit);
             Assert.AreEqual(expected.EmitsPerSecond, match.EmitsPerSecond);
@@ -123,22 +86,10 @@ namespace DxMessaging.Tests.Editor.Benchmarks
         public void FindBaselineWithConfiguredCommitIsCaseInsensitive()
         {
             const string RowCommit = "ABCDEF1234567890ABCDEF1234567890ABCDEF12";
-            BaselineRow expected = BaselineRow.ForTest(
-                Scenario,
-                Platform,
-                RowCommit,
-                emitsPerSecond: 12_000_000d,
-                gcAllocations: 0,
-                wallClockMs: 5000d
-            );
+            BaselineRow expected = BaselineRow.ForTest(Scenario, Platform, RowCommit, emitsPerSecond: 12_000_000d, gcAllocations: 0, wallClockMs: 5000d);
             List<BaselineRow> rows = new() { expected };
 
-            BaselineRow match = PerfRegressionSmokeTests.FindBaseline(
-                rows,
-                Scenario,
-                Platform,
-                RowCommit.ToLowerInvariant()
-            );
+            BaselineRow match = PerfRegressionSmokeTests.FindBaseline(rows, Scenario, Platform, RowCommit.ToLowerInvariant());
 
             Assert.AreEqual(RowCommit, match.Commit);
         }
@@ -153,24 +104,10 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             */
             List<BaselineRow> rows = new()
             {
-                BaselineRow.ForTest(
-                    "TargetedFlood_OneListener",
-                    Platform,
-                    "baseline",
-                    emitsPerSecond: 9_000_000d,
-                    gcAllocations: 0,
-                    wallClockMs: 5000d
-                ),
+                BaselineRow.ForTest("TargetedFlood_OneListener", Platform, "baseline", emitsPerSecond: 9_000_000d, gcAllocations: 0, wallClockMs: 5000d),
             };
 
-            Assert.Throws<IgnoreException>(() =>
-                PerfRegressionSmokeTests.FindBaseline(
-                    rows,
-                    Scenario,
-                    Platform,
-                    baselineCommit: null
-                )
-            );
+            Assert.Throws<IgnoreException>(() => PerfRegressionSmokeTests.FindBaseline(rows, Scenario, Platform, baselineCommit: null));
         }
 
         [Test]
@@ -183,66 +120,41 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             const string TargetCommit = "feedface00000000000000000000000000000000";
             List<BaselineRow> rows = new()
             {
-                BaselineRow.ForTest(
-                    Scenario,
-                    Platform,
-                    "0000000000000000000000000000000000000000",
-                    emitsPerSecond: 12_000_000d,
-                    gcAllocations: 0,
-                    wallClockMs: 5000d
-                ),
+                BaselineRow.ForTest(Scenario, Platform, "0000000000000000000000000000000000000000", emitsPerSecond: 12_000_000d, gcAllocations: 0, wallClockMs: 5000d),
             };
 
-            Assert.Throws<IgnoreException>(() =>
-                PerfRegressionSmokeTests.FindBaseline(rows, Scenario, Platform, TargetCommit)
-            );
+            Assert.Throws<IgnoreException>(() => PerfRegressionSmokeTests.FindBaseline(rows, Scenario, Platform, TargetCommit));
         }
 
         [Test]
         public void GetBaselineCommitReturnsNullWhenEnvironmentVariableIsUnset()
         {
-            string original = Environment.GetEnvironmentVariable(
-                PerfRegressionSmokeTests.BaselineCommitEnvVar
-            );
+            string original = Environment.GetEnvironmentVariable(PerfRegressionSmokeTests.BaselineCommitEnvVar);
             try
             {
-                Environment.SetEnvironmentVariable(
-                    PerfRegressionSmokeTests.BaselineCommitEnvVar,
-                    null
-                );
+                Environment.SetEnvironmentVariable(PerfRegressionSmokeTests.BaselineCommitEnvVar, null);
 
                 Assert.IsNull(PerfRegressionSmokeTests.GetBaselineCommit());
             }
             finally
             {
-                Environment.SetEnvironmentVariable(
-                    PerfRegressionSmokeTests.BaselineCommitEnvVar,
-                    original
-                );
+                Environment.SetEnvironmentVariable(PerfRegressionSmokeTests.BaselineCommitEnvVar, original);
             }
         }
 
         [Test]
         public void GetBaselineCommitReturnsNullWhenEnvironmentVariableIsWhitespace()
         {
-            string original = Environment.GetEnvironmentVariable(
-                PerfRegressionSmokeTests.BaselineCommitEnvVar
-            );
+            string original = Environment.GetEnvironmentVariable(PerfRegressionSmokeTests.BaselineCommitEnvVar);
             try
             {
-                Environment.SetEnvironmentVariable(
-                    PerfRegressionSmokeTests.BaselineCommitEnvVar,
-                    "   "
-                );
+                Environment.SetEnvironmentVariable(PerfRegressionSmokeTests.BaselineCommitEnvVar, "   ");
 
                 Assert.IsNull(PerfRegressionSmokeTests.GetBaselineCommit());
             }
             finally
             {
-                Environment.SetEnvironmentVariable(
-                    PerfRegressionSmokeTests.BaselineCommitEnvVar,
-                    original
-                );
+                Environment.SetEnvironmentVariable(PerfRegressionSmokeTests.BaselineCommitEnvVar, original);
             }
         }
 
@@ -254,21 +166,9 @@ namespace DxMessaging.Tests.Editor.Benchmarks
                 and are excluded from the gate (report-only); the local smoke gate skips them
                 via IsReportOnlyColdDispatch before running any measurement window.
             */
-            Assert.IsTrue(
-                PerfRegressionSmokeTests.IsReportOnlyColdDispatch(
-                    DispatchBenchmarkScenario.UntargetedFirstDispatchCold
-                )
-            );
-            Assert.IsTrue(
-                PerfRegressionSmokeTests.IsReportOnlyColdDispatch(
-                    DispatchBenchmarkScenario.TargetedFirstDispatchCold
-                )
-            );
-            Assert.IsTrue(
-                PerfRegressionSmokeTests.IsReportOnlyColdDispatch(
-                    DispatchBenchmarkScenario.BroadcastFirstDispatchCold
-                )
-            );
+            Assert.IsTrue(PerfRegressionSmokeTests.IsReportOnlyColdDispatch(DispatchBenchmarkScenario.UntargetedFirstDispatchCold));
+            Assert.IsTrue(PerfRegressionSmokeTests.IsReportOnlyColdDispatch(DispatchBenchmarkScenario.TargetedFirstDispatchCold));
+            Assert.IsTrue(PerfRegressionSmokeTests.IsReportOnlyColdDispatch(DispatchBenchmarkScenario.BroadcastFirstDispatchCold));
         }
 
         [Test]
@@ -279,45 +179,25 @@ namespace DxMessaging.Tests.Editor.Benchmarks
                 wall-clock branch), so it is NOT report-only. Neither is any throughput
                 scenario nor the cold registration flood.
             */
-            Assert.IsFalse(
-                PerfRegressionSmokeTests.IsReportOnlyColdDispatch(
-                    DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit
-                )
-            );
-            Assert.IsFalse(
-                PerfRegressionSmokeTests.IsReportOnlyColdDispatch(
-                    DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus
-                )
-            );
-            Assert.IsFalse(
-                PerfRegressionSmokeTests.IsReportOnlyColdDispatch(
-                    DispatchBenchmarkScenario.UntargetedFloodOneHandler
-                )
-            );
+            Assert.IsFalse(PerfRegressionSmokeTests.IsReportOnlyColdDispatch(DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit));
+            Assert.IsFalse(PerfRegressionSmokeTests.IsReportOnlyColdDispatch(DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus));
+            Assert.IsFalse(PerfRegressionSmokeTests.IsReportOnlyColdDispatch(DispatchBenchmarkScenario.UntargetedFloodOneHandler));
         }
 
         [Test]
         public void GetBaselineCommitReturnsConfiguredValueWhenEnvironmentVariableIsSet()
         {
             const string ConfiguredCommit = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
-            string original = Environment.GetEnvironmentVariable(
-                PerfRegressionSmokeTests.BaselineCommitEnvVar
-            );
+            string original = Environment.GetEnvironmentVariable(PerfRegressionSmokeTests.BaselineCommitEnvVar);
             try
             {
-                Environment.SetEnvironmentVariable(
-                    PerfRegressionSmokeTests.BaselineCommitEnvVar,
-                    ConfiguredCommit
-                );
+                Environment.SetEnvironmentVariable(PerfRegressionSmokeTests.BaselineCommitEnvVar, ConfiguredCommit);
 
                 Assert.AreEqual(ConfiguredCommit, PerfRegressionSmokeTests.GetBaselineCommit());
             }
             finally
             {
-                Environment.SetEnvironmentVariable(
-                    PerfRegressionSmokeTests.BaselineCommitEnvVar,
-                    original
-                );
+                Environment.SetEnvironmentVariable(PerfRegressionSmokeTests.BaselineCommitEnvVar, original);
             }
         }
     }

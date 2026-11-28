@@ -41,10 +41,7 @@ namespace DxMessaging.Tests.Runtime.Core
         /// method-&gt;sink reverse mapping is exercised for every handler registration method.
         /// </summary>
         [Test]
-        public void HandlerOverDeregistrationLogsError(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void HandlerOverDeregistrationLogsError([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             GameObject go = new($"{nameof(HandlerOverDeregistrationLogsError)}_{scenario.Kind}");
             _spawned.Add(go);
@@ -59,37 +56,27 @@ namespace DxMessaging.Tests.Runtime.Core
                     {
                         case MessageKind.Untargeted:
                         {
-                            MessageBusRegistration reg =
-                                bus.RegisterUntargeted<SimpleUntargetedMessage>(handler);
+                            MessageBusRegistration reg = bus.RegisterUntargeted<SimpleUntargetedMessage>(handler);
                             bus.Deregister<SimpleUntargetedMessage>(in reg);
                             bus.Deregister<SimpleUntargetedMessage>(in reg);
                             break;
                         }
                         case MessageKind.Targeted:
                         {
-                            MessageBusRegistration reg =
-                                bus.RegisterTargeted<SimpleTargetedMessage>(context, handler);
+                            MessageBusRegistration reg = bus.RegisterTargeted<SimpleTargetedMessage>(context, handler);
                             bus.Deregister<SimpleTargetedMessage>(in reg);
                             bus.Deregister<SimpleTargetedMessage>(in reg);
                             break;
                         }
                         case MessageKind.Broadcast:
                         {
-                            MessageBusRegistration reg =
-                                bus.RegisterSourcedBroadcast<SimpleBroadcastMessage>(
-                                    context,
-                                    handler
-                                );
+                            MessageBusRegistration reg = bus.RegisterSourcedBroadcast<SimpleBroadcastMessage>(context, handler);
                             bus.Deregister<SimpleBroadcastMessage>(in reg);
                             bus.Deregister<SimpleBroadcastMessage>(in reg);
                             break;
                         }
                         default:
-                            throw new ArgumentOutOfRangeException(
-                                nameof(scenario),
-                                scenario.Kind,
-                                "Unsupported message kind."
-                            );
+                            throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                     }
                 },
                 $"{scenario.Kind} handler"
@@ -102,14 +89,9 @@ namespace DxMessaging.Tests.Runtime.Core
         /// entries of the method-&gt;sink reverse table.
         /// </summary>
         [Test]
-        public void PostProcessorOverDeregistrationLogsError(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void PostProcessorOverDeregistrationLogsError([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject go = new(
-                $"{nameof(PostProcessorOverDeregistrationLogsError)}_{scenario.Kind}"
-            );
+            GameObject go = new($"{nameof(PostProcessorOverDeregistrationLogsError)}_{scenario.Kind}");
             _spawned.Add(go);
             MessageHandler handler = new(go) { active = true };
             InstanceId context = go;
@@ -122,42 +104,27 @@ namespace DxMessaging.Tests.Runtime.Core
                     {
                         case MessageKind.Untargeted:
                         {
-                            MessageBusRegistration reg =
-                                bus.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
-                                    handler
-                                );
+                            MessageBusRegistration reg = bus.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(handler);
                             bus.Deregister<SimpleUntargetedMessage>(in reg);
                             bus.Deregister<SimpleUntargetedMessage>(in reg);
                             break;
                         }
                         case MessageKind.Targeted:
                         {
-                            MessageBusRegistration reg =
-                                bus.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
-                                    context,
-                                    handler
-                                );
+                            MessageBusRegistration reg = bus.RegisterTargetedPostProcessor<SimpleTargetedMessage>(context, handler);
                             bus.Deregister<SimpleTargetedMessage>(in reg);
                             bus.Deregister<SimpleTargetedMessage>(in reg);
                             break;
                         }
                         case MessageKind.Broadcast:
                         {
-                            MessageBusRegistration reg =
-                                bus.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(
-                                    context,
-                                    handler
-                                );
+                            MessageBusRegistration reg = bus.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(context, handler);
                             bus.Deregister<SimpleBroadcastMessage>(in reg);
                             bus.Deregister<SimpleBroadcastMessage>(in reg);
                             break;
                         }
                         default:
-                            throw new ArgumentOutOfRangeException(
-                                nameof(scenario),
-                                scenario.Kind,
-                                "Unsupported message kind."
-                            );
+                            throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                     }
                 },
                 $"{scenario.Kind} post-processor"
@@ -170,10 +137,7 @@ namespace DxMessaging.Tests.Runtime.Core
         /// <see cref="RegistrationMethod.Interceptor"/>).
         /// </summary>
         [Test]
-        public void InterceptorOverDeregistrationLogsError(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void InterceptorOverDeregistrationLogsError([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             AssertOverDeregistrationLogged(
                 handler: null,
@@ -183,48 +147,34 @@ namespace DxMessaging.Tests.Runtime.Core
                     {
                         case MessageKind.Untargeted:
                         {
-                            MessageBusRegistration reg = bus.RegisterUntargetedInterceptor(
-                                (ref SimpleUntargetedMessage _) => true
-                            );
+                            MessageBusRegistration reg = bus.RegisterUntargetedInterceptor((ref SimpleUntargetedMessage _) => true);
                             bus.Deregister<SimpleUntargetedMessage>(in reg);
                             bus.Deregister<SimpleUntargetedMessage>(in reg);
                             break;
                         }
                         case MessageKind.Targeted:
                         {
-                            MessageBusRegistration reg = bus.RegisterTargetedInterceptor(
-                                (ref InstanceId _, ref SimpleTargetedMessage _) => true
-                            );
+                            MessageBusRegistration reg = bus.RegisterTargetedInterceptor((ref InstanceId _, ref SimpleTargetedMessage _) => true);
                             bus.Deregister<SimpleTargetedMessage>(in reg);
                             bus.Deregister<SimpleTargetedMessage>(in reg);
                             break;
                         }
                         case MessageKind.Broadcast:
                         {
-                            MessageBusRegistration reg = bus.RegisterBroadcastInterceptor(
-                                (ref InstanceId _, ref SimpleBroadcastMessage _) => true
-                            );
+                            MessageBusRegistration reg = bus.RegisterBroadcastInterceptor((ref InstanceId _, ref SimpleBroadcastMessage _) => true);
                             bus.Deregister<SimpleBroadcastMessage>(in reg);
                             bus.Deregister<SimpleBroadcastMessage>(in reg);
                             break;
                         }
                         default:
-                            throw new ArgumentOutOfRangeException(
-                                nameof(scenario),
-                                scenario.Kind,
-                                "Unsupported message kind."
-                            );
+                            throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                     }
                 },
                 label: $"{scenario.Kind} interceptor"
             );
         }
 
-        private static void AssertOverDeregistrationLogged(
-            MessageHandler handler,
-            Action<IMessageBus> act,
-            string label
-        )
+        private static void AssertOverDeregistrationLogged(MessageHandler handler, Action<IMessageBus> act, string label)
         {
             List<string> logs = new();
             Action<LogLevel, string> previous = MessagingDebug.LogFunction;
@@ -233,14 +183,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 MessagingDebug.LogFunction = (level, msg) => logs.Add($"{level}:{msg}");
                 act(MessageHandler.MessageBus);
 
-                bool saw = logs.Exists(l =>
-                    l.Contains("Error:") && l.Contains("over-deregistration")
-                );
-                Assert.IsTrue(
-                    saw,
-                    $"Expected an error log indicating over-deregistration for {label}. Got: "
-                        + string.Join(" | ", logs)
-                );
+                bool saw = logs.Exists(l => l.Contains("Error:") && l.Contains("over-deregistration"));
+                Assert.IsTrue(saw, $"Expected an error log indicating over-deregistration for {label}. Got: " + string.Join(" | ", logs));
             }
             finally
             {

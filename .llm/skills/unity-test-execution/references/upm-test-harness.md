@@ -2,7 +2,8 @@
 
 # UPM Test Harness
 
-> **One-line summary**: CI generates a thin Unity host project in a runner-local, scope-isolated directory; its only job is to import the package via a local `file:` dependency and expose its `Tests/` asmdefs through the UPM `testables` field.
+> **One-line summary**: CI generates a thin Unity host project in a runner-local, scope-isolated directory; its only job is to import the package via a local `file:` dependency and
+> expose its `Tests/` asmdefs through the UPM `testables` field.
 
 ## When to Use
 
@@ -14,7 +15,8 @@
 ## When NOT to Use
 
 - Editing source files for the package itself. Those live at the repo root (`Runtime/`, `Editor/`, `Tests/`); this harness only references them.
-- Adding regular `Assets/` content to the repo. The generated CI project may create temporary `Assets/Editor/` configuration code under `.artifacts/`, but no Unity project assets belong in the package root.
+- Adding regular `Assets/` content to the repo. The generated CI project may create temporary `Assets/Editor/` configuration code under `.artifacts/`, but no Unity project assets
+  belong in the package root.
 
 ## Architecture
 
@@ -39,7 +41,8 @@ repo-root/
     +-- Builds/                   # gitignored, native standalone player output lands here
 ```
 
-The shape is deliberate. UPM resolves the local `file:` dependency to the repo root, the package surfaces its asmdefs, and the `testables` array tells Unity Test Framework to scan that package's Tests assemblies. The checked-in repo remains a package, not a Unity project.
+The shape is deliberate. UPM resolves the local `file:` dependency to the repo root, the package surfaces its asmdefs, and the `testables` array tells Unity Test Framework to scan
+that package's Tests assemblies. The checked-in repo remains a package, not a Unity project.
 
 ## Key Files
 
@@ -64,15 +67,13 @@ The generated manifest shape:
 
 ## Committed Local Project
 
-`.unity-test-project` is a separate local host pinned to the release Editor version. Its
-`file:../..` dependency resolves from `Packages/` to the repository root. Keep its Editor revision,
-package sources, and locked dependency maps consistent with that exact Editor distribution.
-Use compatible registry packages for Test Framework and NUnit; newer Editors can embed versions
-that the release Editor does not contain. Check package minimum Editor versions before upgrading
-IDE integrations, and retain every transitive dependency declared by enabled built-in modules.
+`.unity-test-project` is a separate local host pinned to the release Editor version. Its `file:../..` dependency resolves from `Packages/` to the repository root. Keep its Editor
+revision, package sources, and locked dependency maps consistent with that exact Editor distribution. Use compatible registry packages for Test Framework and NUnit; newer Editors
+can embed versions that the release Editor does not contain. Check package minimum Editor versions before upgrading IDE integrations, and retain every transitive dependency
+declared by enabled built-in modules.
 
-The CI runner creates its own manifest. `-GenerateOnly` checks that generated project shape;
-it does not resolve or import the committed local project. Verify a clean local import separately.
+The CI runner creates its own manifest. `-GenerateOnly` checks that generated project shape; it does not resolve or import the committed local project. Verify a clean local import
+separately.
 
 ## What to Commit vs Gitignore
 
@@ -91,7 +92,8 @@ Generated and ignored:
 - `$RUNNER_WORKSPACE/dxm-u/{t,b,p}/**/UserSettings/`
 - `$RUNNER_WORKSPACE/dxm-c/**`
 
-Each fixed runner reuses its own project in place. Test (`t`), benchmark (`b`), and performance (`p`) scopes are separate so incompatible package graphs never share a `Library`. The workflows do not transfer `Library` through `actions/cache`; measured post-job uploads were slower than rebuilding and PR caches could not seed the default branch.
+Each fixed runner reuses its own project in place. Test (`t`), benchmark (`b`), and performance (`p`) scopes are separate so incompatible package graphs never share a `Library`.
+The workflows do not transfer `Library` through `actions/cache`; measured post-job uploads were slower than rebuilding and PR caches could not seed the default branch.
 
 ## Adding a New Test Asmdef
 
@@ -105,11 +107,12 @@ The `testables` field exposes every asmdef under the package's `Tests/` director
    node scripts/unity/lib/asmdef-discovery.js
    ```
 
-1. Confirm the new tests execute locally via the MCP loop: run the EditMode suite
-   through `DxMcpTestRunner.Run` over `Unity_RunCommand` against the host editor
-   (see [Unity MCP Test Loop](../../unity-mcp-test-loop/references/mcp-test-loop.md)).
+1. Confirm the new tests execute locally via the MCP loop: run the EditMode suite through `DxMcpTestRunner.Run` over `Unity_RunCommand` against the host editor (see
+   [Unity MCP Test Loop](../../unity-mcp-test-loop/references/mcp-test-loop.md)).
 
-If the new asmdef is a perf or DI-integration suite, name it accordingly (`*Benchmarks*`, `*Allocations*`, `*Comparisons*`, `*VContainer*`, `*Zenject*`, `*Reflex*`). The classification regex in `scripts/unity/lib/asmdef-discovery.js` will excluded it from the default include list. See [unity-perf-test-isolation](../../benchmark-methodology/references/unity-perf-test-isolation.md).
+If the new asmdef is a perf or DI-integration suite, name it accordingly (`*Benchmarks*`, `*Allocations*`, `*Comparisons*`, `*VContainer*`, `*Zenject*`, `*Reflex*`). The
+classification regex in `scripts/unity/lib/asmdef-discovery.js` will excluded it from the default include list. See
+[unity-perf-test-isolation](../../benchmark-methodology/references/unity-perf-test-isolation.md).
 
 ## Adding a Test Dependency
 
@@ -119,7 +122,8 @@ When a new test suite needs an additional UPM package (a DI container, a third-p
 1. Re-run the CI runner in `-GenerateOnly` mode to inspect the generated manifest.
 1. Re-run the Unity suite to confirm the new dependency loads cleanly.
 
-Avoid adding heavyweight runtime dependencies unless the corresponding tests can opt in via the `--include-integrations` flag. The default suite stays lean for local runs and for the active Unity gate (direct Unity on self-hosted Windows).
+Avoid adding heavyweight runtime dependencies unless the corresponding tests can opt in via the `--include-integrations` flag. The default suite stays lean for local runs and for
+the active Unity gate (direct Unity on self-hosted Windows).
 
 ## See Also
 

@@ -24,46 +24,29 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
     [Category("ComparisonContract")]
     public sealed class ExternalComparisonContractTests
     {
-        private static IEnumerable<TestCaseData> BridgeCases() =>
-            ComparisonBridgeContract.IdentityCases(ExternalComparisonRoster.Bridges);
+        private static IEnumerable<TestCaseData> BridgeCases() => ComparisonBridgeContract.IdentityCases(ExternalComparisonRoster.Bridges);
 
-        private static IEnumerable<TestCaseData> BridgeScenarioCases() =>
-            ComparisonBridgeContract.EmitOnceAccountingCases(ExternalComparisonRoster.Bridges);
+        private static IEnumerable<TestCaseData> BridgeScenarioCases() => ComparisonBridgeContract.EmitOnceAccountingCases(ExternalComparisonRoster.Bridges);
 
         [Test]
         [TestCaseSource(nameof(BridgeCases))]
-        public void BridgeHasConsistentTechIdentity(
-            string rosterKey,
-            Func<IMessagingTechBridge> factory
-        )
+        public void BridgeHasConsistentTechIdentity(string rosterKey, Func<IMessagingTechBridge> factory)
         {
             ComparisonBridgeContract.AssertTechIdentity(rosterKey, factory);
         }
 
         [Test]
         [TestCaseSource(nameof(BridgeScenarioCases))]
-        public void SupportedScenarioEmitOnceAdvancesProgressByDeclaredFanOut(
-            string rosterKey,
-            Func<IMessagingTechBridge> factory,
-            ComparisonScenario scenario
-        )
+        public void SupportedScenarioEmitOnceAdvancesProgressByDeclaredFanOut(string rosterKey, Func<IMessagingTechBridge> factory, ComparisonScenario scenario)
         {
             ComparisonBridgeContract.AssertEmitOnceAccounting(rosterKey, factory, scenario);
         }
 
         [Test]
         [TestCaseSource(nameof(BridgeScenarioCases))]
-        public void StructScenarioDispatchesNonPrimitiveStructPayload(
-            string rosterKey,
-            Func<IMessagingTechBridge> factory,
-            ComparisonScenario scenario
-        )
+        public void StructScenarioDispatchesNonPrimitiveStructPayload(string rosterKey, Func<IMessagingTechBridge> factory, ComparisonScenario scenario)
         {
-            ComparisonBridgeContract.AssertStructScenarioPayloadFidelity(
-                rosterKey,
-                factory,
-                scenario
-            );
+            ComparisonBridgeContract.AssertStructScenarioPayloadFidelity(rosterKey, factory, scenario);
         }
 
         [Test]
@@ -72,10 +55,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
         [TestCase("MessagePipe", ComparisonScenario.InterceptedPostProcessingDispatch)]
         [TestCase("UniRx", ComparisonScenario.FilteredDispatch)]
         [TestCase("ZenjectSignalBus", ComparisonScenario.KeyedToOneOfMany)]
-        public void BridgeSupportsItsIdiomaticComparisonScenario(
-            string rosterKey,
-            ComparisonScenario scenario
-        )
+        public void BridgeSupportsItsIdiomaticComparisonScenario(string rosterKey, ComparisonScenario scenario)
         {
             using IMessagingTechBridge bridge = ExternalComparisonRoster.Create(rosterKey);
 
@@ -116,9 +96,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                 {
                     foreach (bool structPayload in new[] { false, true })
                     {
-                        yield return new TestCaseData(mutation, keyed, structPayload).SetName(
-                            $"MessagePipeMutationTrace({mutation},keyed={keyed},struct={structPayload})"
-                        );
+                        yield return new TestCaseData(mutation, keyed, structPayload).SetName($"MessagePipeMutationTrace({mutation},keyed={keyed},struct={structPayload})");
                     }
                 }
             }
@@ -135,11 +113,9 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
             }
         }
 
-        private static IEnumerable<TestCaseData> SurvivorCases() =>
-            ShapePopulationCases(new[] { 0, 8, 15 });
+        private static IEnumerable<TestCaseData> SurvivorCases() => ShapePopulationCases(new[] { 0, 8, 15 });
 
-        private static IEnumerable<TestCaseData> EmptyPopulationCases() =>
-            ShapePopulationCases(new[] { 4, 8, 16 });
+        private static IEnumerable<TestCaseData> EmptyPopulationCases() => ShapePopulationCases(new[] { 4, 8, 16 });
 
         private static IEnumerable<TestCaseData> ShapePopulationCases(int[] values)
         {
@@ -156,11 +132,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
         }
 
         [TestCaseSource(nameof(MutationCases))]
-        public void MessagePipeMutationHasPinnedArrayTrace(
-            Mutation mutation,
-            bool keyed,
-            bool structPayload
-        )
+        public void MessagePipeMutationHasPinnedArrayTrace(Mutation mutation, bool keyed, bool structPayload)
         {
             using PipeProbe probe = CreatePipe(keyed, structPayload, mutation.ToString());
             ExecuteMutation(probe, mutation);
@@ -250,10 +222,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                             throw new InvalidOperationException("intentional callback failure");
                     }
                 });
-                if (
-                    mutation == Mutation.AddAtFullCapacity
-                    || mutation == Mutation.GrowThenRemovePending
-                )
+                if (mutation == Mutation.AddAtFullCapacity || mutation == Mutation.GrowThenRemovePending)
                 {
                     probe.Add("B");
                     probe.Add("C");
@@ -271,10 +240,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
             }
             if (mutation == Mutation.ThrowThenPublish)
             {
-                InvalidOperationException error = Assert.Throws<InvalidOperationException>(
-                    () => probe.Publish(1),
-                    probe.Context
-                );
+                InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => probe.Publish(1), probe.Context);
                 Assert.AreEqual("intentional callback failure", error.Message, probe.Context);
             }
             else
@@ -285,11 +251,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
         }
 
         [TestCaseSource(nameof(SurvivorCases))]
-        public void MessagePipeFragmentationRetainsPhysicalCapacity(
-            bool keyed,
-            bool structPayload,
-            int survivor
-        )
+        public void MessagePipeFragmentationRetainsPhysicalCapacity(bool keyed, bool structPayload, int survivor)
         {
             using PipeProbe probe = CreatePipe(keyed, structPayload, $"survivor={survivor}");
             for (int index = 0; index < 16; index++)
@@ -331,10 +293,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
             }
             probe.AssertShape(16, 16);
             probe.Publish(2);
-            probe.AssertTrace(
-                "S0:1 S2:1 S4:1 S6:1 S8:1 S10:1 S12:1 S14:1 "
-                    + "S0:2 N1:2 S2:2 N3:2 S4:2 N5:2 S6:2 N7:2 S8:2 N9:2 S10:2 N11:2 S12:2 N13:2 S14:2 N15:2"
-            );
+            probe.AssertTrace("S0:1 S2:1 S4:1 S6:1 S8:1 S10:1 S12:1 S14:1 " + "S0:2 N1:2 S2:2 N3:2 S4:2 N5:2 S6:2 N7:2 S8:2 N9:2 S10:2 N11:2 S12:2 N13:2 S14:2 N15:2");
         }
 
         [TestCaseSource(nameof(ShapeCases))]
@@ -361,17 +320,9 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
         }
 
         [TestCaseSource(nameof(EmptyPopulationCases))]
-        public void MessagePipeEmptySubscriptionStorageHasPinnedShape(
-            bool keyed,
-            bool structPayload,
-            int population
-        )
+        public void MessagePipeEmptySubscriptionStorageHasPinnedShape(bool keyed, bool structPayload, int population)
         {
-            using PipeProbe probe = CreatePipe(
-                keyed,
-                structPayload,
-                $"empty population={population}"
-            );
+            using PipeProbe probe = CreatePipe(keyed, structPayload, $"empty population={population}");
             for (int index = 0; index < population; index++)
             {
                 probe.Add("S" + index);
@@ -409,16 +360,9 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
         }
 
         [TestCaseSource(nameof(ShapeCases))]
-        public void MessagePipeCoreDisposalKeepsCapturedCallbacksAndKeyedHolder(
-            bool keyed,
-            bool structPayload
-        )
+        public void MessagePipeCoreDisposalKeepsCapturedCallbacksAndKeyedHolder(bool keyed, bool structPayload)
         {
-            using PipeProbe probe = CreatePipe(
-                keyed,
-                structPayload,
-                "core disposal during publish"
-            );
+            using PipeProbe probe = CreatePipe(keyed, structPayload, "core disposal during publish");
             probe.Add("A", message => probe.DisposeCore());
             probe.Add("B");
             probe.Publish(1);
@@ -432,10 +376,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
         }
 
         [TestCaseSource(nameof(ShapeCases))]
-        public void MessagePipeDefaultDiagnosticsTrackLifecycleWithoutStackCapture(
-            bool keyed,
-            bool structPayload
-        )
+        public void MessagePipeDefaultDiagnosticsTrackLifecycleWithoutStackCapture(bool keyed, bool structPayload)
         {
             using PipeProbe probe = CreatePipe(keyed, structPayload, "default diagnostics");
             probe.AssertDiagnostics(0, false);
@@ -460,10 +401,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
         }
 
         [TestCaseSource(nameof(ShapeCases))]
-        public void MessagePipeNestedMiddlewareThrowPreservesExceptionAndLaterPublish(
-            bool keyed,
-            bool structPayload
-        )
+        public void MessagePipeNestedMiddlewareThrowPreservesExceptionAndLaterPublish(bool keyed, bool structPayload)
         {
             using PipeProbe probe = CreatePipe(keyed, structPayload, "nested middleware throw");
             InvalidOperationException sentinel = new("Intentional nested callback failure.");
@@ -480,10 +418,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
             });
             probe.Add("B");
             Assert.AreEqual(2, probe.SubscribeCount, probe.Context);
-            InvalidOperationException caught = Assert.Throws<InvalidOperationException>(
-                () => probe.Publish(1),
-                probe.Context
-            );
+            InvalidOperationException caught = Assert.Throws<InvalidOperationException>(() => probe.Publish(1), probe.Context);
             Assert.AreSame(sentinel, caught, probe.Context);
             probe.AssertTrace("before:1 A:1 before:2 A:2");
             Assert.AreEqual(2, probe.SubscribeCount, probe.Context);
@@ -521,18 +456,12 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                     if (missing)
                     {
                         Assert.AreEqual(LogLevel.Info, logs[0].Level);
-                        Assert.AreEqual(
-                            $"Could not find a matching untargeted broadcast handler for Message: {payload}.",
-                            logs[0].Message
-                        );
+                        Assert.AreEqual($"Could not find a matching untargeted broadcast handler for Message: {payload}.", logs[0].Message);
                     }
                 }
                 Emit(0, 0, true);
                 CollectionAssert.IsEmpty(callbacks);
-                MessageRegistrationHandle handle =
-                    token.RegisterUntargeted<ComparisonStructPayload>(
-                        (in ComparisonStructPayload payload) => callbacks.Add(payload.Value)
-                    );
+                MessageRegistrationHandle handle = token.RegisterUntargeted<ComparisonStructPayload>((in ComparisonStructPayload payload) => callbacks.Add(payload.Value));
                 token.Enable();
                 handler.active = false;
                 Emit(1, 1, false);
@@ -567,12 +496,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
 
         private static PipeProbe CreatePipe(bool keyed, bool structPayload, string detail) =>
             structPayload
-                ? new PipeProbe<ComparisonStructPayload>(
-                    keyed,
-                    detail,
-                    value => new ComparisonStructPayload(value),
-                    payload => payload.Value
-                )
+                ? new PipeProbe<ComparisonStructPayload>(keyed, detail, value => new ComparisonStructPayload(value), payload => payload.Value)
                 : new PipeProbe<int>(keyed, detail, value => value, payload => payload);
 
         private abstract class TraceProbe : IDisposable
@@ -605,10 +529,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                 }
                 if (failures != null)
                 {
-                    throw new AggregateException(
-                        Context + " subscription cleanup failed",
-                        failures
-                    );
+                    throw new AggregateException(Context + " subscription cleanup failed", failures);
                 }
             }
 
@@ -620,8 +541,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                 callback?.Invoke(value);
             }
 
-            internal void AssertTrace(string expected) =>
-                Assert.AreEqual(expected, string.Join(" ", _trace), Context);
+            internal void AssertTrace(string expected) => Assert.AreEqual(expected, string.Join(" ", _trace), Context);
 
             public abstract void Dispose();
         }
@@ -634,8 +554,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
             private bool _coreDisposed;
 
             protected PipeProbe(bool keyed, string detail, Type payload)
-                : base($"MessagePipe keyed={keyed}, payload={payload.Name}, {detail}") =>
-                _keyed = keyed;
+                : base($"MessagePipe keyed={keyed}, payload={payload.Name}, {detail}") => _keyed = keyed;
 
             internal abstract void AddFiltered(string name, Action<int> callback);
 
@@ -643,29 +562,24 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
             {
                 Assert.AreEqual(subscriptions, Diagnostics.SubscribeCount, Context);
                 Assert.AreEqual(0, Diagnostics.GetCapturedStackTraces().Length, Context);
-                System.Reflection.MethodInfo method =
-                    typeof(MessagePipe.MessagePipeDiagnosticsInfo).GetMethod(
-                        "CheckAndResetDirty",
-                        System.Reflection.BindingFlags.Instance
-                            | System.Reflection.BindingFlags.NonPublic
-                    );
+                System.Reflection.MethodInfo method = typeof(MessagePipe.MessagePipeDiagnosticsInfo).GetMethod(
+                    "CheckAndResetDirty",
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic
+                );
                 Assert.IsNotNull(method, Context + " pinned dirty method missing");
                 Assert.AreEqual(dirty, (bool)method.Invoke(Diagnostics, null), Context);
             }
 
             internal int SubscribeCount => Diagnostics.SubscribeCount;
             internal int GroupCount => _keyed ? Groups.Count : 0;
-            private System.Collections.IDictionary Groups =>
-                (System.Collections.IDictionary)ReadField(Core, "handlerGroup");
+            private System.Collections.IDictionary Groups => (System.Collections.IDictionary)ReadField(Core, "handlerGroup");
 
             private object Holder(int key) => _keyed ? Groups[key] : Core;
 
             private Array Values(int key)
             {
                 object holder = Holder(key);
-                return holder == null
-                    ? Array.Empty<object>()
-                    : (Array)ReadField(ReadField(holder, "handlers"), "values");
+                return holder == null ? Array.Empty<object>() : (Array)ReadField(ReadField(holder, "handlers"), "values");
             }
 
             internal int[] OccupiedSlots(int key = 0)
@@ -685,19 +599,10 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
             internal void AssertShape(int live, int capacity, int key = 0)
             {
                 object holder = Holder(key);
-                int actualLive =
-                    holder == null ? 0 : (int)ReadField(ReadField(holder, "handlers"), "count");
+                int actualLive = holder == null ? 0 : (int)ReadField(ReadField(holder, "handlers"), "count");
                 Assert.AreEqual(live, actualLive, $"{Context}, key={key}, live references");
-                Assert.AreEqual(
-                    capacity,
-                    Values(key).Length,
-                    $"{Context}, key={key}, physical capacity"
-                );
-                Assert.AreEqual(
-                    live,
-                    OccupiedSlots(key).Length,
-                    $"{Context}, key={key}, occupied slots"
-                );
+                Assert.AreEqual(capacity, Values(key).Length, $"{Context}, key={key}, physical capacity");
+                Assert.AreEqual(live, OccupiedSlots(key).Length, $"{Context}, key={key}, occupied slots");
             }
 
             internal void DisposeCore()
@@ -713,11 +618,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                     RemoveAll();
                     Assert.AreEqual(0, SubscribeCount, Context + " subscription cleanup");
                     // Core disposal retains empty keyed holders; subscription disposal normally removes them.
-                    Assert.AreEqual(
-                        _keyed && _coreDisposed ? 1 : 0,
-                        GroupCount,
-                        Context + " holder cleanup"
-                    );
+                    Assert.AreEqual(_keyed && _coreDisposed ? 1 : 0, GroupCount, Context + " holder cleanup");
                 }
                 finally
                 {
@@ -727,17 +628,8 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
 
             private static object ReadField(object value, string name)
             {
-                System.Reflection.FieldInfo field = value
-                    .GetType()
-                    .GetField(
-                        name,
-                        System.Reflection.BindingFlags.Instance
-                            | System.Reflection.BindingFlags.NonPublic
-                    );
-                Assert.IsNotNull(
-                    field,
-                    $"Pinned MessagePipe field missing: {value.GetType().FullName}.{name}"
-                );
+                System.Reflection.FieldInfo field = value.GetType().GetField(name, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+                Assert.IsNotNull(field, $"Pinned MessagePipe field missing: {value.GetType().FullName}.{name}");
                 return field.GetValue(value);
             }
         }
@@ -768,19 +660,11 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                 }
                 IServiceProvider provider = builder.BuildServiceProvider();
                 Diagnostics = provider.GetRequiredService<MessagePipe.MessagePipeDiagnosticsInfo>();
-                Assert.IsFalse(
-                    provider
-                        .GetRequiredService<MessagePipe.MessagePipeOptions>()
-                        .EnableCaptureStackTrace,
-                    Context
-                );
+                Assert.IsFalse(provider.GetRequiredService<MessagePipe.MessagePipeOptions>().EnableCaptureStackTrace, Context);
                 if (keyed)
                 {
                     _keyedPublisher = provider.GetRequiredService<MessagePipe.IPublisher<int, T>>();
-                    _keyedSubscriber = provider.GetRequiredService<MessagePipe.ISubscriber<
-                        int,
-                        T
-                    >>();
+                    _keyedSubscriber = provider.GetRequiredService<MessagePipe.ISubscriber<int, T>>();
                     Core = provider.GetRequiredService<MessagePipe.MessageBrokerCore<int, T>>();
                 }
                 else
@@ -791,31 +675,14 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                 }
             }
 
-            internal override void Add(string name, Action<int> callback = null, int key = 0) =>
-                Subscribe(name, callback, key, Array.Empty<MessagePipe.MessageHandlerFilter<T>>());
+            internal override void Add(string name, Action<int> callback = null, int key = 0) => Subscribe(name, callback, key, Array.Empty<MessagePipe.MessageHandlerFilter<T>>());
 
-            internal override void AddFiltered(string name, Action<int> callback) =>
-                Subscribe(
-                    name,
-                    callback,
-                    0,
-                    new MessagePipe.MessageHandlerFilter<T>[] { new Around(this) }
-                );
+            internal override void AddFiltered(string name, Action<int> callback) => Subscribe(name, callback, 0, new MessagePipe.MessageHandlerFilter<T>[] { new Around(this) });
 
-            private void Subscribe(
-                string name,
-                Action<int> callback,
-                int key,
-                MessagePipe.MessageHandlerFilter<T>[] filters
-            )
+            private void Subscribe(string name, Action<int> callback, int key, MessagePipe.MessageHandlerFilter<T>[] filters)
             {
                 Action<T> handler = payload => Record(name, _value(payload), callback);
-                Subscriptions.Add(
-                    name,
-                    _keyedSubscriber != null
-                        ? _keyedSubscriber.Subscribe(key, handler, filters)
-                        : _subscriber.Subscribe(handler, filters)
-                );
+                Subscriptions.Add(name, _keyedSubscriber != null ? _keyedSubscriber.Subscribe(key, handler, filters) : _subscriber.Subscribe(handler, filters));
             }
 
             private sealed class Around : MessagePipe.MessageHandlerFilter<T>
@@ -847,10 +714,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
 
         private sealed class DxProbe : TraceProbe
         {
-            private readonly DxMessaging.Core.MessageBus.MessageBus _bus = new()
-            {
-                DiagnosticsMode = false,
-            };
+            private readonly DxMessaging.Core.MessageBus.MessageBus _bus = new() { DiagnosticsMode = false };
 
             internal DxProbe(string detail)
                 : base("DxMessaging exact struct, " + detail) { }
@@ -858,20 +722,11 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
             internal override void Add(string name, Action<int> callback = null, int key = 0)
             {
                 Assert.AreEqual(0, key, Context + " supports only the untargeted counterpart");
-                DxMessaging.Core.MessageHandler handler = new(
-                    new DxMessaging.Core.InstanceId(48000 + Subscriptions.Count),
-                    _bus
-                )
-                {
-                    active = true,
-                };
-                DxMessaging.Core.MessageRegistrationToken token =
-                    DxMessaging.Core.MessageRegistrationToken.Create(handler, _bus);
+                DxMessaging.Core.MessageHandler handler = new(new DxMessaging.Core.InstanceId(48000 + Subscriptions.Count), _bus) { active = true };
+                DxMessaging.Core.MessageRegistrationToken token = DxMessaging.Core.MessageRegistrationToken.Create(handler, _bus);
                 token.DiagnosticMode = false;
                 Subscriptions.Add(name, token);
-                _ = token.RegisterUntargeted<ComparisonStructPayload>(
-                    (in ComparisonStructPayload payload) => Record(name, payload.Value, callback)
-                );
+                _ = token.RegisterUntargeted<ComparisonStructPayload>((in ComparisonStructPayload payload) => Record(name, payload.Value, callback));
                 token.Enable();
             }
 

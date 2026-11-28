@@ -1,14 +1,11 @@
 # Cross-Platform Script Compatibility
 
-> **One-line summary**: Ensure scripts work correctly across Windows, macOS, and Linux by handling
-> case-sensitive paths and covering each script with platform-specific tests.
+> **One-line summary**: Ensure scripts work correctly across Windows, macOS, and Linux by handling case-sensitive paths and covering each script with platform-specific tests.
 
 ## Overview
 
-Scripts that work locally on Windows or macOS often fail in CI/CD environments running Linux.
-The most common cause is **filename case sensitivity** -- Linux filesystems are case-sensitive while
-Windows and macOS are case-insensitive by default. This skill documents patterns to prevent these
-issues and ensure all scripts have proper test coverage.
+Scripts that work locally on Windows or macOS often fail in CI/CD environments running Linux. The most common cause is **filename case sensitivity** -- Linux filesystems are
+case-sensitive while Windows and macOS are case-insensitive by default. This skill documents patterns to prevent these issues and ensure all scripts have proper test coverage.
 
 ## Solution
 
@@ -22,8 +19,7 @@ issues and ensure all scripts have proper test coverage.
 
 ### The Problem
 
-Linux filesystems (ext4, XFS, etc.) distinguish between `File.txt` and `file.txt` as completely
-different files. Windows (NTFS) and macOS (APFS) treat them as the same file.
+Linux filesystems (ext4, XFS, etc.) distinguish between `File.txt` and `file.txt` as completely different files. Windows (NTFS) and macOS (APFS) treat them as the same file.
 
 #### Real-World Example from PR #144
 
@@ -35,8 +31,7 @@ $bannerPath = Join-Path $repoRoot "docs/images/dxmessaging-banner.svg"
 # This works on Windows/macOS but fails on Linux CI!
 ```
 
-The script used `dxmessaging-banner.svg` but the actual file was `DxMessaging-banner.svg`.
-This passed all local tests but failed in the GitHub Actions CI environment.
+The script used `dxmessaging-banner.svg` but the actual file was `DxMessaging-banner.svg`. This passed all local tests but failed in the GitHub Actions CI environment.
 
 ### Prevention Strategies
 
@@ -120,77 +115,52 @@ wsl pwsh -File scripts/unity/export-unitypackage.ps1
 
 ## Stub executables on Windows: PE-binary requirement
 
-Linux and macOS execute scripts with a shebang via kernel `execve` dispatch
-regardless of file extension: a file named `Unity.exe` whose contents are
-`#!/usr/bin/env sh\n...` runs as a shell script when chmod-executable. Windows
-`CreateProcess()` does NOT honor shebangs and instead requires:
+Linux and macOS execute scripts with a shebang via kernel `execve` dispatch regardless of file extension: a file named `Unity.exe` whose contents are `#!/usr/bin/env sh\n...` runs
+as a shell script when chmod-executable. Windows `CreateProcess()` does NOT honor shebangs and instead requires:
 
 - `.exe` / `.com` files to be valid PE binaries
 - `.bat` / `.cmd` files to be batch text
 - Anything else to be routed through an interpreter explicitly
 
-Spawning a shebang-bodied `Unity.exe` on Windows fails with
-_"The specified executable is not a valid application for this OS platform"_,
-and the surrounding script aborts. The class of failure is invisible on
-Linux/macOS CI and only surfaces on Windows runners.
+Spawning a shebang-bodied `Unity.exe` on Windows fails with _"The specified executable is not a valid application for this OS platform"_, and the surrounding script aborts. The
+class of failure is invisible on Linux/macOS CI and only surfaces on Windows runners.
 
 Two acceptable patterns in tests that need a fake Unity binary:
 
-1. **Bypass the native startup probe** by setting
-   `DXM_UNITY_SKIP_NATIVE_STARTUP_PROBE=1` in the spawn env. This is the
-   preferred path when only the surrounding `ensure-editor.ps1` logic is under
-   test (module install/repair/quarantine/host-env hermeticity). The early-
-   return gate lives in `Ensure-UnityNativeStartupHealthy` in
+1. **Bypass the native startup probe** by setting `DXM_UNITY_SKIP_NATIVE_STARTUP_PROBE=1` in the spawn env. This is the preferred path when only the surrounding `ensure-editor.ps1`
+   logic is under test (module install/repair/quarantine/host-env hermeticity). The early- return gate lives in `Ensure-UnityNativeStartupHealthy` in
    `scripts/unity/ensure-editor.ps1`.
-1. **Use a real PE-shaped stub**: on Windows write a `.cmd` companion file and
-   reroute through it instead of writing a shebang `.exe`.
+1. **Use a real PE-shaped stub**: on Windows write a `.cmd` companion file and reroute through it instead of writing a shebang `.exe`.
 
-Any test that drives `ensure-editor.ps1` with a fake `Unity.exe` must reference
-`DXM_UNITY_SKIP_NATIVE_STARTUP_PROBE` or carry the comment escape hatch
+Any test that drives `ensure-editor.ps1` with a fake `Unity.exe` must reference `DXM_UNITY_SKIP_NATIVE_STARTUP_PROBE` or carry the comment escape hatch
 `// @allow-unity-native-probe`.
 
-Production CI never sets `DXM_UNITY_SKIP_NATIVE_STARTUP_PROBE`; the probe and
-auto-repair behavior in `Ensure-UnityNativeStartupHealthy` is unchanged for real
-Unity editors.
+Production CI never sets `DXM_UNITY_SKIP_NATIVE_STARTUP_PROBE`; the probe and auto-repair behavior in `Ensure-UnityNativeStartupHealthy` is unchanged for real Unity editors.
 
 ## Host DLL state in PowerShell tests
 
-Tests for Windows loader diagnostics must not infer missing DLLs from
-`DXM_UNITY_FAKE_IMPORTS` alone. That override supplies a fake Unity import list,
-but `Test-UnityImportResolution` still resolves those names against the native
-host: on Windows, `KERNEL32.dll` can resolve through KnownDLLs and
-`VCRUNTIME140.dll` / `MSVCP140.dll` can resolve from System32 when the Visual C++
-Redistributable is installed.
+Tests for Windows loader diagnostics must not infer missing DLLs from `DXM_UNITY_FAKE_IMPORTS` alone. That override supplies a fake Unity import list, but
+`Test-UnityImportResolution` still resolves those names against the native host: on Windows, `KERNEL32.dll` can resolve through KnownDLLs and `VCRUNTIME140.dll` / `MSVCP140.dll`
+can resolve from System32 when the Visual C++ Redistributable is installed.
 
-When a test needs the `MISSING DLL(s):` annotation branch, force the missing
-bucket with `DXM_UNITY_FAKE_MISSING_IMPORTS` or use synthetic DLL names that
-cannot resolve on any supported host. Reserve `DXM_UNITY_FAKE_IMPORTS` alone for
-tests that are explicitly about the import-list or all-imports-resolve branches.
+When a test needs the `MISSING DLL(s):` annotation branch, force the missing bucket with `DXM_UNITY_FAKE_MISSING_IMPORTS` or use synthetic DLL names that cannot resolve on any
+supported host. Reserve `DXM_UNITY_FAKE_IMPORTS` alone for tests that are explicitly about the import-list or all-imports-resolve branches.
 
 ## Cross-drive path containment (Windows)
 
-`path.relative(dir, file)` does NOT always return a `..`-prefixed path. On
-DIFFERENT Windows drives -- the common hook case (repo on `D:\`, `os.tmpdir()` on
-`C:\`) -- it returns the ABSOLUTE target (`C:\Users\...`), so `rel.startsWith("..")`
-is `false` for a genuinely-outside path (mislabeled INSIDE), and its negation is
-wrong for "inside" too (UNC and 8.3-short-name paths also break a raw compare).
-Never hand-roll it -- use `isPathInsideDirectory` / `isPathOutsideDirectory` /
-`isOutsideRelative` from `scripts/lib/path-classifier.js`, which add the
-`path.isAbsolute` branch plus symlink-resolve + case-fold on Windows
-(`isOutsideRelative(rel)` is `""`->false, else `..` / `..`+sep / absolute). If you
-truly cannot use the helper, pair with `path.isAbsolute(rel)` (idiom
-`!rel.startsWith("..") && !path.isAbsolute(rel)`).
+`path.relative(dir, file)` does NOT always return a `..`-prefixed path. On DIFFERENT Windows drives -- the common hook case (repo on `D:\`, `os.tmpdir()` on `C:\`) -- it returns
+the ABSOLUTE target (`C:\Users\...`), so `rel.startsWith("..")` is `false` for a genuinely-outside path (mislabeled INSIDE), and its negation is wrong for "inside" too (UNC and
+8.3-short-name paths also break a raw compare). Never hand-roll it -- use `isPathInsideDirectory` / `isPathOutsideDirectory` / `isOutsideRelative` from
+`scripts/lib/path-classifier.js`, which add the `path.isAbsolute` branch plus symlink-resolve + case-fold on Windows (`isOutsideRelative(rel)` is `""`->false, else `..` / `..`+sep
+/ absolute). If you truly cannot use the helper, pair with `path.isAbsolute(rel)` (idiom `!rel.startsWith("..") && !path.isAbsolute(rel)`).
 
 ## Local tar archive operands
 
-GNU tar treats an archive operand containing an unqualified colon as a remote
-archive spec. On Windows this makes `tar -f C:\Temp\package.tgz` fail before it
-opens the local file. Do not pass raw absolute paths to `tar -f`.
+GNU tar treats an archive operand containing an unqualified colon as a remote archive spec. On Windows this makes `tar -f C:\Temp\package.tgz` fail before it opens the local file.
+Do not pass raw absolute paths to `tar -f`.
 
-For local archive paths, resolve the file once, set the subprocess `cwd` to the
-archive directory, and pass `./<basename>` as the archive operand. In this repo,
-use `buildLocalTarArchiveSpec()` from `scripts/validate-npm-meta.js` for npm
-tarball validation, and add `path.win32` coverage when touching this behavior.
+For local archive paths, resolve the file once, set the subprocess `cwd` to the archive directory, and pass `./<basename>` as the archive operand. In this repo, use
+`buildLocalTarArchiveSpec()` from `scripts/validate-npm-meta.js` for npm tarball validation, and add `path.win32` coverage when touching this behavior.
 
 ## Validation Checklist
 

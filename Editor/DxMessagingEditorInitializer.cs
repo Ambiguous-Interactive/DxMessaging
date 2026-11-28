@@ -30,10 +30,7 @@ namespace DxMessaging.Editor
 
         private static void OnPlayModeStateChanged(PlayModeStateChange stateChange)
         {
-            if (
-                stateChange == PlayModeStateChange.EnteredEditMode
-                || stateChange == PlayModeStateChange.ExitingEditMode
-            )
+            if (stateChange == PlayModeStateChange.EnteredEditMode || stateChange == PlayModeStateChange.ExitingEditMode)
             {
                 ApplyEditorSettings();
             }
@@ -79,9 +76,7 @@ namespace DxMessaging.Editor
                 return;
             }
             s_ensureSettingsAssetScheduled = true;
-            DxMessagingEditorIdle.ScheduleAssetDatabaseMutation(
-                EnsureSettingsAssetThenApplyGlobals
-            );
+            DxMessagingEditorIdle.ScheduleAssetDatabaseMutation(EnsureSettingsAssetThenApplyGlobals);
         }
 
         private static void EnsureSettingsAssetThenApplyGlobals()
@@ -99,10 +94,7 @@ namespace DxMessaging.Editor
             }
             catch (Exception ex)
             {
-                DxMessagingEditorLog.LogWarning(
-                    "Deferred settings initialization failed; will retry on the next editor settings refresh.",
-                    ex
-                );
+                DxMessagingEditorLog.LogWarning("Deferred settings initialization failed; will retry on the next editor settings refresh.", ex);
             }
         }
 
@@ -130,12 +122,7 @@ namespace DxMessaging.Editor
                 ensure callback re-enters this method with the realized asset, so an initial null
                 never permanently suppresses an explicitly unsuppressed settings asset.
             */
-            if (
-                s_playModeWarningIssued
-                || settings == null
-                || settings.SuppressDomainReloadWarning
-                || !IsDomainReloadDisabled()
-            )
+            if (s_playModeWarningIssued || settings == null || settings.SuppressDomainReloadWarning || !IsDomainReloadDisabled())
             {
                 return;
             }
@@ -146,9 +133,7 @@ namespace DxMessaging.Editor
 
         private static bool IsDomainReloadDisabled()
         {
-            return EditorSettings.enterPlayModeOptionsEnabled
-                && (EditorSettings.enterPlayModeOptions & EnterPlayModeOptions.DisableDomainReload)
-                    != 0;
+            return EditorSettings.enterPlayModeOptionsEnabled && (EditorSettings.enterPlayModeOptions & EnterPlayModeOptions.DisableDomainReload) != 0;
         }
     }
 #endif

@@ -11,9 +11,7 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
         protected override void RegisterMessageHandlers()
         {
             base.RegisterMessageHandlers();
-            _ = _messageRegistrationToken.RegisterUntargeted(
-                (in GenericUntargetedMessage<int> _) => Debug.Log("Received generic int message.")
-            );
+            _ = _messageRegistrationToken.RegisterUntargeted((in GenericUntargetedMessage<int> _) => Debug.Log("Received generic int message."));
         }
     }
 }

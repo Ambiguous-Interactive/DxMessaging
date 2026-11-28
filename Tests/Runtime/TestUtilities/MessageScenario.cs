@@ -22,23 +22,13 @@ namespace DxMessaging.Tests.Runtime
 
         public bool DiagnosticsEnabled { get; }
 
-        public MessageScenario(
-            MessageKind kind,
-            bool useInterceptor = false,
-            bool usePostProcessor = false,
-            bool diagnosticsEnabled = false
-        )
+        public MessageScenario(MessageKind kind, bool useInterceptor = false, bool usePostProcessor = false, bool diagnosticsEnabled = false)
         {
             Kind = kind;
             UseInterceptor = useInterceptor;
             UsePostProcessor = usePostProcessor;
             DiagnosticsEnabled = diagnosticsEnabled;
-            DisplayName = ComposeDisplayName(
-                kind,
-                useInterceptor,
-                usePostProcessor,
-                diagnosticsEnabled
-            );
+            DisplayName = ComposeDisplayName(kind, useInterceptor, usePostProcessor, diagnosticsEnabled);
         }
 
         public static MessageScenario Untargeted()
@@ -68,32 +58,17 @@ namespace DxMessaging.Tests.Runtime
 
         public MessageScenario WithInterceptor(bool useInterceptor)
         {
-            return new MessageScenario(
-                Kind,
-                useInterceptor: useInterceptor,
-                usePostProcessor: UsePostProcessor,
-                diagnosticsEnabled: DiagnosticsEnabled
-            );
+            return new MessageScenario(Kind, useInterceptor: useInterceptor, usePostProcessor: UsePostProcessor, diagnosticsEnabled: DiagnosticsEnabled);
         }
 
         public MessageScenario WithPostProcessor(bool usePostProcessor)
         {
-            return new MessageScenario(
-                Kind,
-                useInterceptor: UseInterceptor,
-                usePostProcessor: usePostProcessor,
-                diagnosticsEnabled: DiagnosticsEnabled
-            );
+            return new MessageScenario(Kind, useInterceptor: UseInterceptor, usePostProcessor: usePostProcessor, diagnosticsEnabled: DiagnosticsEnabled);
         }
 
         public MessageScenario WithDiagnostics(bool diagnosticsEnabled)
         {
-            return new MessageScenario(
-                Kind,
-                useInterceptor: UseInterceptor,
-                usePostProcessor: UsePostProcessor,
-                diagnosticsEnabled: diagnosticsEnabled
-            );
+            return new MessageScenario(Kind, useInterceptor: UseInterceptor, usePostProcessor: UsePostProcessor, diagnosticsEnabled: diagnosticsEnabled);
         }
 
         public override string ToString()
@@ -113,10 +88,7 @@ namespace DxMessaging.Tests.Runtime
                 return true;
             }
 
-            return Kind == other.Kind
-                && UseInterceptor == other.UseInterceptor
-                && UsePostProcessor == other.UsePostProcessor
-                && DiagnosticsEnabled == other.DiagnosticsEnabled;
+            return Kind == other.Kind && UseInterceptor == other.UseInterceptor && UsePostProcessor == other.UsePostProcessor && DiagnosticsEnabled == other.DiagnosticsEnabled;
         }
 
         public override bool Equals(object obj)
@@ -136,12 +108,7 @@ namespace DxMessaging.Tests.Runtime
             }
         }
 
-        private static string ComposeDisplayName(
-            MessageKind kind,
-            bool useInterceptor,
-            bool usePostProcessor,
-            bool diagnosticsEnabled
-        )
+        private static string ComposeDisplayName(MessageKind kind, bool useInterceptor, bool usePostProcessor, bool diagnosticsEnabled)
         {
             StringBuilder builder = new StringBuilder(kind.ToString());
             if (useInterceptor)

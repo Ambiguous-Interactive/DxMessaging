@@ -4,11 +4,13 @@
 
 ---
 
-This section explains the core concepts behind DxMessaging. **Concepts** are the foundational ideas and mental models that inform how you design and structure your messaging -- understanding these will help you make better architectural decisions and avoid common pitfalls.
+This section explains the core concepts behind DxMessaging. **Concepts** are the foundational ideas and mental models that inform how you design and structure your messaging --
+understanding these will help you make better architectural decisions and avoid common pitfalls.
 
 ## Start Here
 
-- **[Mental Model](mental-model.md)** -- How to think about DxMessaging. Covers the philosophy, the three message types with analogies, tokens and lifecycle, and when to use what. Read this first.
+- **[Mental Model](mental-model.md)** -- How to think about DxMessaging. Covers the philosophy, the three message types with analogies, tokens and lifecycle, and when to use what.
+  Read this first.
 
 ## Core Concepts
 

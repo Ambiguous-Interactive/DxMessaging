@@ -11,13 +11,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
     using global::Unity.Jobs;
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-    public unsafe delegate void NumericBatchDelegate(
-        int count,
-        NativeNumericPayload* input,
-        long* output,
-        int* mode,
-        int rounds
-    );
+    public unsafe delegate void NumericBatchDelegate(int count, NativeNumericPayload* input, long* output, int* mode, int rounds);
 
     public enum PureBatchPath
     {
@@ -32,50 +26,26 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
     [BurstCompile]
     public static unsafe class PureBatchKernels
     {
-        public static void Managed(
-            int count,
-            NativeNumericPayload* input,
-            long* output,
-            int* mode,
-            int rounds
-        )
+        public static void Managed(int count, NativeNumericPayload* input, long* output, int* mode, int rounds)
         {
             Process(count, input, output, mode, rounds);
         }
 
         [BurstCompile(CompileSynchronously = true)]
-        public static void Direct(
-            int count,
-            NativeNumericPayload* input,
-            long* output,
-            int* mode,
-            int rounds
-        )
+        public static void Direct(int count, NativeNumericPayload* input, long* output, int* mode, int rounds)
         {
             Process(count, input, output, mode, rounds);
         }
 
         [BurstCompile(CompileSynchronously = true, DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NumericBatchDelegate))]
-        public static void Pointer(
-            int count,
-            NativeNumericPayload* input,
-            long* output,
-            int* mode,
-            int rounds
-        )
+        public static void Pointer(int count, NativeNumericPayload* input, long* output, int* mode, int rounds)
         {
             Process(count, input, output, mode, rounds);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void Process(
-            int count,
-            NativeNumericPayload* input,
-            long* output,
-            int* mode,
-            int rounds
-        )
+        public static void Process(int count, NativeNumericPayload* input, long* output, int* mode, int rounds)
         {
             int managed = 0;
             NativeProducerMode.MarkManaged(ref managed);
@@ -91,10 +61,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
         {
             unchecked
             {
-                ulong value =
-                    (ulong)payload.Value
-                    + (ulong)((long)payload.Producer * 97)
-                    + (ulong)(long)payload.Sequence;
+                ulong value = (ulong)payload.Value + (ulong)((long)payload.Producer * 97) + (ulong)(long)payload.Sequence;
                 for (int round = 0; round < rounds; ++round)
                 {
                     value = (value ^ (value >> 17)) * 6364136223846793005UL + 1442695040888963407UL;
@@ -132,23 +99,11 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                 int count = System.Math.Min(Batch, Count - offset);
                 if (UsePointer)
                 {
-                    Function.Invoke(
-                        count,
-                        input + offset + 1,
-                        output + offset + 1,
-                        modes + entry,
-                        Rounds
-                    );
+                    Function.Invoke(count, input + offset + 1, output + offset + 1, modes + entry, Rounds);
                 }
                 else
                 {
-                    PureBatchKernels.Process(
-                        count,
-                        input + offset + 1,
-                        output + offset + 1,
-                        modes + entry,
-                        Rounds
-                    );
+                    PureBatchKernels.Process(count, input + offset + 1, output + offset + 1, modes + entry, Rounds);
                 }
                 ++entry;
             }

@@ -33,10 +33,7 @@ namespace DxMessaging.Tests.Runtime.Core
         private const int ContextInstanceId = 43;
         private const int Emissions = 3;
 
-        private static MessageRegistrationToken NewDiagnosticToken(
-            out MessageBus bus,
-            out MessageHandler handler
-        )
+        private static MessageRegistrationToken NewDiagnosticToken(out MessageBus bus, out MessageHandler handler)
         {
             bus = new MessageBus();
             handler = new MessageHandler(new InstanceId(OwnerInstanceId), bus) { active = true };
@@ -51,10 +48,7 @@ namespace DxMessaging.Tests.Runtime.Core
             registration whose closure never ran has no entry (count 0). TryGetValue
             keeps this dependency-free (no CollectionExtensions.GetValueOrDefault).
         */
-        private static int CallCount(
-            MessageRegistrationToken token,
-            MessageRegistrationHandle handle
-        )
+        private static int CallCount(MessageRegistrationToken token, MessageRegistrationHandle handle)
         {
             token._callCounts.TryGetValue(handle, out int count);
             return count;
@@ -67,11 +61,7 @@ namespace DxMessaging.Tests.Runtime.Core
             InstanceId target = new(ContextInstanceId);
 
             int ran = 0;
-            MessageRegistrationHandle handle =
-                token.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
-                    target,
-                    (SimpleTargetedMessage _) => ++ran
-                );
+            MessageRegistrationHandle handle = token.RegisterTargetedPostProcessor<SimpleTargetedMessage>(target, (SimpleTargetedMessage _) => ++ran);
 
             for (int i = 0; i < Emissions; ++i)
             {
@@ -96,10 +86,7 @@ namespace DxMessaging.Tests.Runtime.Core
             InstanceId target = new(ContextInstanceId);
 
             int ran = 0;
-            MessageRegistrationHandle handle =
-                token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>(
-                    (InstanceId _, SimpleTargetedMessage _) => ++ran
-                );
+            MessageRegistrationHandle handle = token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>((InstanceId _, SimpleTargetedMessage _) => ++ran);
 
             for (int i = 0; i < Emissions; ++i)
             {
@@ -107,11 +94,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 message.EmitTargeted(target, bus);
             }
 
-            Assert.AreEqual(
-                Emissions,
-                ran,
-                "Control: the targeted-without-targeting post-processor must have run."
-            );
+            Assert.AreEqual(Emissions, ran, "Control: the targeted-without-targeting post-processor must have run.");
             Assert.AreEqual(
                 Emissions,
                 CallCount(token, handle),
@@ -128,11 +111,7 @@ namespace DxMessaging.Tests.Runtime.Core
             InstanceId source = new(ContextInstanceId);
 
             int ran = 0;
-            MessageRegistrationHandle handle =
-                token.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(
-                    source,
-                    (SimpleBroadcastMessage _) => ++ran
-                );
+            MessageRegistrationHandle handle = token.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(source, (SimpleBroadcastMessage _) => ++ran);
 
             for (int i = 0; i < Emissions; ++i)
             {
@@ -144,8 +123,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(
                 Emissions,
                 CallCount(token, handle),
-                "The diagnostics-augmented flat invoker (not the raw Action handler) must be the "
-                    + "live dispatch target for the collapsed sourced-broadcast post-processor."
+                "The diagnostics-augmented flat invoker (not the raw Action handler) must be the " + "live dispatch target for the collapsed sourced-broadcast post-processor."
             );
         }
 
@@ -156,10 +134,7 @@ namespace DxMessaging.Tests.Runtime.Core
             InstanceId source = new(ContextInstanceId);
 
             int ran = 0;
-            MessageRegistrationHandle handle =
-                token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(
-                    (InstanceId _, SimpleBroadcastMessage _) => ++ran
-                );
+            MessageRegistrationHandle handle = token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>((InstanceId _, SimpleBroadcastMessage _) => ++ran);
 
             for (int i = 0; i < Emissions; ++i)
             {
@@ -167,11 +142,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 message.EmitBroadcast(source, bus);
             }
 
-            Assert.AreEqual(
-                Emissions,
-                ran,
-                "Control: the broadcast-without-source post-processor must have run."
-            );
+            Assert.AreEqual(Emissions, ran, "Control: the broadcast-without-source post-processor must have run.");
             Assert.AreEqual(
                 Emissions,
                 CallCount(token, handle),

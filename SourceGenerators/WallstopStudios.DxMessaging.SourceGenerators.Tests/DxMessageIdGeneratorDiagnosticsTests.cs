@@ -12,11 +12,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Tests;
 [TestFixture]
 internal sealed class DxMessageIdGeneratorDiagnosticsTests
 {
-    private static readonly string[] Il2CppPreprocessorSymbols =
-    {
-        "ENABLE_IL2CPP",
-        "UNITY_2021_3_OR_NEWER",
-    };
+    private static readonly string[] Il2CppPreprocessorSymbols = { "ENABLE_IL2CPP", "UNITY_2021_3_OR_NEWER" };
 
     [Test]
     public void GeneratorsUseUnity2021CompatibleClassicSourceGeneratorApi()
@@ -29,19 +25,12 @@ internal sealed class DxMessageIdGeneratorDiagnosticsTests
 
     [TestCase(typeof(DxMessageIdGenerator), "source generator")]
     [TestCase(typeof(MessageAwareComponentBaseCallAnalyzer), "analyzer")]
-    public void ShippedCompilerHostAssembliesReferenceUnity2021CompatibleRoslyn(
-        Type compilerHostType,
-        string label
-    )
+    public void ShippedCompilerHostAssembliesReferenceUnity2021CompatibleRoslyn(Type compilerHostType, string label)
     {
         Version expectedVersion = new(3, 8, 0, 0);
         AssemblyName[] references = compilerHostType.Assembly.GetReferencedAssemblies();
-        Version? codeAnalysisVersion = references
-            .Single(reference => reference.Name == "Microsoft.CodeAnalysis")
-            .Version;
-        Version? csharpVersion = references
-            .Single(reference => reference.Name == "Microsoft.CodeAnalysis.CSharp")
-            .Version;
+        Version? codeAnalysisVersion = references.Single(reference => reference.Name == "Microsoft.CodeAnalysis").Version;
+        Version? csharpVersion = references.Single(reference => reference.Name == "Microsoft.CodeAnalysis.CSharp").Version;
 
         Assert.Multiple(() =>
         {
@@ -127,16 +116,8 @@ public readonly partial struct MyMessage<T> { }
 
         GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxMessageId(source);
 
-        Assert.That(
-            result.Results[0].Diagnostics,
-            Is.Empty,
-            "A generic message struct must not produce diagnostics."
-        );
-        AssertGeneratedSourceContains(
-            result,
-            "MyMessage<T>",
-            "Generic message struct should generate a partial declaration with its type parameter."
-        );
+        Assert.That(result.Results[0].Diagnostics, Is.Empty, "A generic message struct must not produce diagnostics.");
+        AssertGeneratedSourceContains(result, "MyMessage<T>", "Generic message struct should generate a partial declaration with its type parameter.");
         AssertGeneratedSourceParses(result);
     }
 
@@ -154,16 +135,8 @@ public readonly partial struct MyMessage<T1, T2> { }
 
         GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxMessageId(source);
 
-        Assert.That(
-            result.Results[0].Diagnostics,
-            Is.Empty,
-            "A multi-parameter generic message struct must not produce diagnostics."
-        );
-        AssertGeneratedSourceContains(
-            result,
-            "MyMessage<T1, T2>",
-            "Generic message struct should generate a partial declaration with all of its type parameters."
-        );
+        Assert.That(result.Results[0].Diagnostics, Is.Empty, "A multi-parameter generic message struct must not produce diagnostics.");
+        AssertGeneratedSourceContains(result, "MyMessage<T1, T2>", "Generic message struct should generate a partial declaration with all of its type parameters.");
         AssertGeneratedSourceParses(result);
     }
 
@@ -181,16 +154,8 @@ public readonly partial struct MyMessage<T> where T : struct { }
 
         GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxMessageId(source);
 
-        Assert.That(
-            result.Results[0].Diagnostics,
-            Is.Empty,
-            "A generic message struct with a constraint must not produce diagnostics."
-        );
-        AssertGeneratedSourceContains(
-            result,
-            "MyMessage<T>",
-            "Generic message struct should generate the partial declaration with its type parameter."
-        );
+        Assert.That(result.Results[0].Diagnostics, Is.Empty, "A generic message struct with a constraint must not produce diagnostics.");
+        AssertGeneratedSourceContains(result, "MyMessage<T>", "Generic message struct should generate the partial declaration with its type parameter.");
         AssertGeneratedSourceParses(result);
     }
 
@@ -218,16 +183,8 @@ public readonly partial record struct MyRecordMessage(int Value);
 
         GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxMessageId(source);
 
-        Assert.That(
-            result.Results[0].Diagnostics,
-            Is.Empty,
-            "A record struct message must not produce diagnostics."
-        );
-        AssertGeneratedSourceContains(
-            result,
-            "record struct MyRecordMessage",
-            "The generator should emit a partial record struct declaration."
-        );
+        Assert.That(result.Results[0].Diagnostics, Is.Empty, "A record struct message must not produce diagnostics.");
+        AssertGeneratedSourceContains(result, "record struct MyRecordMessage", "The generator should emit a partial record struct declaration.");
         AssertGeneratedSourceParses(result);
     }
 
@@ -260,21 +217,9 @@ public partial class A
 
         GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxMessageId(source);
 
-        Assert.That(
-            result.Results[0].Diagnostics,
-            Is.Empty,
-            "A message nested in three partial containers must not produce diagnostics."
-        );
-        AssertGeneratedSourceContains(
-            result,
-            "partial struct M",
-            "The generator should emit a partial declaration for the inner message type."
-        );
-        AssertGeneratedSourceContains(
-            result,
-            "partial class A",
-            "The generator should re-open the outermost container as partial."
-        );
+        Assert.That(result.Results[0].Diagnostics, Is.Empty, "A message nested in three partial containers must not produce diagnostics.");
+        AssertGeneratedSourceContains(result, "partial struct M", "The generator should emit a partial declaration for the inner message type.");
+        AssertGeneratedSourceContains(result, "partial class A", "The generator should re-open the outermost container as partial.");
         AssertGeneratedSourceParses(result);
     }
 
@@ -306,16 +251,8 @@ public partial class A
         GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxMessageId(source);
         Diagnostic[] diagnostics = result.Results[0].Diagnostics.ToArray();
 
-        Assert.That(
-            diagnostics,
-            Has.Some.Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG003"),
-            "DXMSG003 should fire when ANY container in the chain is non-partial."
-        );
-        Assert.That(
-            diagnostics,
-            Has.Some.Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG004"),
-            "DXMSG004 should suggest making the non-partial container partial."
-        );
+        Assert.That(diagnostics, Has.Some.Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG003"), "DXMSG003 should fire when ANY container in the chain is non-partial.");
+        Assert.That(diagnostics, Has.Some.Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG004"), "DXMSG004 should suggest making the non-partial container partial.");
     }
 
     /*
@@ -340,11 +277,7 @@ public readonly partial struct Conflicting { }
         GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxMessageId(source);
         Diagnostic[] diagnostics = result.Results[0].Diagnostics.ToArray();
 
-        Assert.That(
-            diagnostics,
-            Has.Some.Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG002"),
-            "DXMSG002 should fire for [DxUntargetedMessage] + [DxTargetedMessage]."
-        );
+        Assert.That(diagnostics, Has.Some.Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG002"), "DXMSG002 should fire for [DxUntargetedMessage] + [DxTargetedMessage].");
     }
 
     [Test]
@@ -363,11 +296,7 @@ public readonly partial struct Conflicting { }
         GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxMessageId(source);
         Diagnostic[] diagnostics = result.Results[0].Diagnostics.ToArray();
 
-        Assert.That(
-            diagnostics,
-            Has.Some.Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG002"),
-            "DXMSG002 should fire for [DxUntargetedMessage] + [DxBroadcastMessage]."
-        );
+        Assert.That(diagnostics, Has.Some.Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG002"), "DXMSG002 should fire for [DxUntargetedMessage] + [DxBroadcastMessage].");
     }
 
     [Test]
@@ -386,11 +315,7 @@ public readonly partial struct Conflicting { }
         GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxMessageId(source);
         Diagnostic[] diagnostics = result.Results[0].Diagnostics.ToArray();
 
-        Assert.That(
-            diagnostics,
-            Has.Some.Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG002"),
-            "DXMSG002 should fire for [DxTargetedMessage] + [DxBroadcastMessage]."
-        );
+        Assert.That(diagnostics, Has.Some.Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG002"), "DXMSG002 should fire for [DxTargetedMessage] + [DxBroadcastMessage].");
     }
 
     [Test]
@@ -410,11 +335,7 @@ public readonly partial struct Conflicting { }
         GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxMessageId(source);
         Diagnostic[] diagnostics = result.Results[0].Diagnostics.ToArray();
 
-        Assert.That(
-            diagnostics,
-            Has.Some.Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG002"),
-            "DXMSG002 should fire when all three Dx message attributes are present."
-        );
+        Assert.That(diagnostics, Has.Some.Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG002"), "DXMSG002 should fire when all three Dx message attributes are present.");
     }
 
     /*
@@ -447,16 +368,8 @@ public partial struct M
 
         GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxMessageId(source);
 
-        Assert.That(
-            result.Results[0].Diagnostics,
-            Is.Empty,
-            "A message struct with nullable reference fields must not produce diagnostics."
-        );
-        AssertGeneratedSourceContains(
-            result,
-            "partial struct M",
-            "The generator should emit a partial declaration even when the user struct has nullable fields."
-        );
+        Assert.That(result.Results[0].Diagnostics, Is.Empty, "A message struct with nullable reference fields must not produce diagnostics.");
+        AssertGeneratedSourceContains(result, "partial struct M", "The generator should emit a partial declaration even when the user struct has nullable fields.");
         AssertGeneratedSourceParses(result);
     }
 
@@ -488,11 +401,7 @@ public readonly partial struct AttributedBroadcast { }
         string generated = GetGeneratedSource(result);
 
         Assert.That(result.Results[0].Diagnostics, Is.Empty);
-        Assert.That(
-            generated,
-            Does.Contain("#if ENABLE_IL2CPP && UNITY_2021_3_OR_NEWER"),
-            "AOT bridge code must stay behind IL2CPP/Unity guards."
-        );
+        Assert.That(generated, Does.Contain("#if ENABLE_IL2CPP && UNITY_2021_3_OR_NEWER"), "AOT bridge code must stay behind IL2CPP/Unity guards.");
         Assert.That(generated, Does.Contain("RegisterAotUntargetedBridge"));
         Assert.That(generated, Does.Contain("RegisterAotTargetedBridge"));
         Assert.That(generated, Does.Contain("RegisterAotSourcedBridge"));
@@ -539,14 +448,8 @@ public readonly struct AlphaManual : IUntargetedMessage<AlphaManual> { }
 
         GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxMessageId(source);
         string generated = GetGeneratedSource(result);
-        int alphaIndex = generated.IndexOf(
-            "__DxMessagingAotUntargetedBridge_0_global__Sample_AlphaManual",
-            StringComparison.Ordinal
-        );
-        int zuluIndex = generated.IndexOf(
-            "__DxMessagingAotUntargetedBridge_1_global__Sample_ZuluManual",
-            StringComparison.Ordinal
-        );
+        int alphaIndex = generated.IndexOf("__DxMessagingAotUntargetedBridge_0_global__Sample_AlphaManual", StringComparison.Ordinal);
+        int zuluIndex = generated.IndexOf("__DxMessagingAotUntargetedBridge_1_global__Sample_ZuluManual", StringComparison.Ordinal);
 
         Assert.That(result.Results[0].Diagnostics, Is.Empty);
         Assert.That(alphaIndex, Is.GreaterThanOrEqualTo(0));
@@ -573,11 +476,7 @@ public readonly struct ManualGeneric<T> : IUntargetedMessage<ManualGeneric<T>> {
         string generated = GetGeneratedSource(result);
 
         Assert.That(result.Results[0].Diagnostics, Is.Empty);
-        Assert.That(
-            generated,
-            Does.Not.Contain("RuntimeInitializeOnLoadMethod"),
-            "Open generic definitions cannot root a concrete IL2CPP bridge."
-        );
+        Assert.That(generated, Does.Not.Contain("RuntimeInitializeOnLoadMethod"), "Open generic definitions cannot root a concrete IL2CPP bridge.");
         Assert.That(generated, Does.Not.Contain("RegisterAotUntargetedBridge"));
         AssertGeneratedOutputCompilesForIl2Cpp(source);
     }
@@ -598,10 +497,7 @@ public readonly partial struct Conflicting { }
         GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxMessageId(source);
         string generated = GetGeneratedSource(result);
 
-        Assert.That(
-            result.Results[0].Diagnostics,
-            Has.Some.Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG002")
-        );
+        Assert.That(result.Results[0].Diagnostics, Has.Some.Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG002"));
         Assert.That(generated, Does.Not.Contain("DxMessagingIl2CppMessageRegistrar"));
         Assert.That(generated, Does.Not.Contain("RegisterAot"));
     }
@@ -647,18 +543,10 @@ public readonly struct Omnibus : IUntargetedMessage, ITargetedMessage, IBroadcas
     [TestCase("Sample", "@class", "@event<@for>", "@while", "@switch")]
     [TestCase("@namespace", "Message", "", "", "value")]
     [TestCase("Sample", "\u03a9", "\u0394", "\u03a3", "\u03c6")]
-    public void GeneratedDeclarationsPreserveEscapedIdentifiers(
-        string namespaceName,
-        string typeName,
-        string containerName,
-        string typeParameter,
-        string fieldName
-    )
+    public void GeneratedDeclarationsPreserveEscapedIdentifiers(string namespaceName, string typeName, string containerName, string typeParameter, string fieldName)
     {
         string typeParameters = string.IsNullOrEmpty(typeParameter) ? "" : $"<{typeParameter}>";
-        string containerOpen = string.IsNullOrEmpty(containerName)
-            ? ""
-            : $"public partial class {containerName} {{";
+        string containerOpen = string.IsNullOrEmpty(containerName) ? "" : $"public partial class {containerName} {{";
         string containerClose = string.IsNullOrEmpty(containerName) ? "" : "}";
         string source = $$"""
 using DxMessaging.Core.Attributes;
@@ -680,16 +568,10 @@ public readonly partial struct {{typeName}}{{typeParameters}}
             result.Results.SelectMany(static run => run.GeneratedSources),
             Is.Not.Empty,
             "A valid attributed declaration must produce source. Diagnostics:\n"
-                + string.Join(
-                    "\n",
-                    result.Diagnostics.Select(static diagnostic => diagnostic.ToString())
-                )
+                + string.Join("\n", result.Diagnostics.Select(static diagnostic => diagnostic.ToString()))
                 + string.Join("\n", result.Results.Select(static run => run.Exception?.ToString()))
         );
-        Diagnostic[] errors = GeneratorTestUtilities
-            .CompileGeneratedOutput(source, result)
-            .Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
-            .ToArray();
+        Diagnostic[] errors = GeneratorTestUtilities.CompileGeneratedOutput(source, result).Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error).ToArray();
         Assert.That(
             errors,
             Is.Empty,
@@ -714,12 +596,7 @@ public readonly partial struct {{typeName}}{{typeParameters}}
     [TestCase("T", "Outer_T_", true, true)]
     [TestCase("T", "DifferentPacket", false, false)]
     [TestCase("T", "DifferentOuter", true, true)]
-    public void DistinctTypeNamesKeepGeneratedFilesSeparate(
-        string typeParameter,
-        string nongenericName,
-        bool nested,
-        bool reversed
-    )
+    public void DistinctTypeNamesKeepGeneratedFilesSeparate(string typeParameter, string nongenericName, bool nested, bool reversed)
     {
         string parameters = nested ? "" : $"<{typeParameter}>";
         string first = $$"""
@@ -750,16 +627,9 @@ public readonly partial struct {{secondType}}
         Assert.That(
             result.Results.Select(static run => run.Exception),
             Has.All.Null,
-            "Distinct attributed types must not abort generation. Diagnostics:\n"
-                + string.Join(
-                    "\n",
-                    result.Diagnostics.Select(static diagnostic => diagnostic.ToString())
-                )
+            "Distinct attributed types must not abort generation. Diagnostics:\n" + string.Join("\n", result.Diagnostics.Select(static diagnostic => diagnostic.ToString()))
         );
-        Diagnostic[] errors = GeneratorTestUtilities
-            .CompileGeneratedOutput(source, result)
-            .Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
-            .ToArray();
+        Diagnostic[] errors = GeneratorTestUtilities.CompileGeneratedOutput(source, result).Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error).ToArray();
         Assert.That(
             errors,
             Is.Empty,
@@ -777,10 +647,7 @@ public readonly partial struct {{secondType}}
 
     private static string GetGeneratedSource(GeneratorDriverRunResult result)
     {
-        return string.Join(
-            "\n",
-            result.Results.SelectMany(r => r.GeneratedSources).Select(g => g.SourceText.ToString())
-        );
+        return string.Join("\n", result.Results.SelectMany(r => r.GeneratedSources).Select(g => g.SourceText.ToString()));
     }
 
     private static int CountOccurrences(string text, string value)
@@ -814,11 +681,7 @@ public readonly partial struct {{secondType}}
     /// <summary>Roots the selected closed type before any typed runtime use.</summary>
     /// <remarks>2026-11-11: Generic definitions previously produced no startup AOT registration.</remarks>
     [TestCaseSource(nameof(ClosedGenericMessageCases))]
-    public void AssemblySelectionRootsClosedGenericMessages(
-        string kind,
-        string shape,
-        bool attributed
-    )
+    public void AssemblySelectionRootsClosedGenericMessages(string kind, string shape, bool attributed)
     {
         string marker = attributed ? $"[Dx{kind}Message]" : string.Empty;
         string contract = attributed ? string.Empty : $": I{kind}Message<ClosedMessage<T>>";
@@ -863,22 +726,10 @@ namespace Sample
         GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxMessageId(source);
         string generated = GetGeneratedSource(result);
         Assert.That(result.Diagnostics, Is.Empty, source);
+        Assert.That(CountOccurrences(generated, "RegisterAotUntargetedBridge"), Is.EqualTo(2), source);
         Assert.That(
-            CountOccurrences(generated, "RegisterAotUntargetedBridge"),
-            Is.EqualTo(2),
-            source
-        );
-        Assert.That(
-            generated.IndexOf(
-                "typeof(global::Sample.Container<bool>.Message<bool>)",
-                StringComparison.Ordinal
-            ),
-            Is.LessThan(
-                generated.IndexOf(
-                    "typeof(global::Sample.Container<bool>.Message<int>)",
-                    StringComparison.Ordinal
-                )
-            ),
+            generated.IndexOf("typeof(global::Sample.Container<bool>.Message<bool>)", StringComparison.Ordinal),
+            Is.LessThan(generated.IndexOf("typeof(global::Sample.Container<bool>.Message<int>)", StringComparison.Ordinal)),
             source
         );
         string normalizedSource = source.Replace("\r\n", "\n", StringComparison.Ordinal);
@@ -887,11 +738,7 @@ namespace Sample
             "[assembly: DxAotMessage(typeof(Sample.Container<bool>.Message<bool>))]\n[assembly: DxAotMessage(typeof(Sample.Container<bool>.Message<int>))]",
             StringComparison.Ordinal
         );
-        Assert.That(
-            reordered,
-            Is.Not.EqualTo(normalizedSource),
-            "The ordering control must actually change the assembly selections."
-        );
+        Assert.That(reordered, Is.Not.EqualTo(normalizedSource), "The ordering control must actually change the assembly selections.");
         Assert.That(
             GetGeneratedSource(GeneratorTestUtilities.RunDxMessageId(reordered)),
             Is.EqualTo(generated),
@@ -920,16 +767,8 @@ namespace Sample
 }
 """;
         GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxMessageId(source);
-        Assert.That(
-            result.Diagnostics,
-            Has.Exactly(1).Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG014"),
-            expression
-        );
-        Assert.That(
-            GetGeneratedSource(result),
-            Does.Not.Contain("DxMessagingIl2CppMessageRegistrar"),
-            expression
-        );
+        Assert.That(result.Diagnostics, Has.Exactly(1).Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG014"), expression);
+        Assert.That(GetGeneratedSource(result), Does.Not.Contain("DxMessagingIl2CppMessageRegistrar"), expression);
     }
 
     /// <summary>Checks one bridge per implemented route for a multi-interface selection.</summary>
@@ -952,11 +791,7 @@ namespace Sample
         Assert.That(result.Diagnostics, Is.Empty, source);
         foreach (string kind in new[] { "Untargeted", "Targeted", "Sourced" })
         {
-            Assert.That(
-                CountOccurrences(generated, $"RegisterAot{kind}Bridge"),
-                Is.EqualTo(1),
-                kind
-            );
+            Assert.That(CountOccurrences(generated, $"RegisterAot{kind}Bridge"), Is.EqualTo(1), kind);
         }
         AssertGeneratedOutputCompilesForIl2Cpp(source);
     }
@@ -976,11 +811,7 @@ namespace Sample
         GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxMessageId(source);
         string generated = GetGeneratedSource(result);
         Assert.That(result.Diagnostics, Is.Empty, source);
-        Assert.That(
-            CountOccurrences(generated, "RegisterAotUntargetedBridge"),
-            Is.EqualTo(1),
-            source
-        );
+        Assert.That(CountOccurrences(generated, "RegisterAotUntargetedBridge"), Is.EqualTo(1), source);
         Assert.That(generated, Does.Not.Contain("DxMessagingIl2CppMessageRegistrar"), source);
         AssertGeneratedOutputCompilesForIl2Cpp(source);
     }
@@ -1005,65 +836,34 @@ namespace Sample
 }
 """;
         GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxMessageId(source);
-        Assert.That(
-            result.Diagnostics,
-            Has.Exactly(1).Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG014"),
-            selected
-        );
-        Assert.That(
-            GetGeneratedSource(result),
-            Does.Not.Contain("DxMessagingIl2CppMessageRegistrar"),
-            selected
-        );
+        Assert.That(result.Diagnostics, Has.Exactly(1).Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG014"), selected);
+        Assert.That(GetGeneratedSource(result), Does.Not.Contain("DxMessagingIl2CppMessageRegistrar"), selected);
     }
 
     /// <summary>Checks closed registration in an assembly containing only selections for externally declared messages.</summary>
     [Test]
     public void AssemblyOnlyConsumerRootsReferencedGenericMessage()
     {
-        PortableExecutableReference referencedAssembly =
-            GeneratorTestUtilities.CompileBaseCallAnalyzerParent(
-                """
+        PortableExecutableReference referencedAssembly = GeneratorTestUtilities.CompileBaseCallAnalyzerParent(
+            """
 namespace External
 {
     public readonly struct Message<T> : DxMessaging.Core.Messages.IUntargetedMessage<Message<T>> { }
 }
 """
-            );
-        CSharpParseOptions options = new(
-            LanguageVersion.CSharp9,
-            preprocessorSymbols: Il2CppPreprocessorSymbols
         );
-        string source =
-            "[assembly: DxMessaging.Core.Attributes.DxAotMessage(typeof(External.Message<bool>))]";
+        CSharpParseOptions options = new(LanguageVersion.CSharp9, preprocessorSymbols: Il2CppPreprocessorSymbols);
+        string source = "[assembly: DxMessaging.Core.Attributes.DxAotMessage(typeof(External.Message<bool>))]";
         CSharpCompilation compilation = CSharpCompilation.Create(
             "AssemblyOnlyConsumer",
             new[] { CSharpSyntaxTree.ParseText(source, options) },
             GeneratorTestUtilities.CompilationReferences.Add(referencedAssembly),
-            new CSharpCompilationOptions(
-                OutputKind.DynamicallyLinkedLibrary,
-                generalDiagnosticOption: ReportDiagnostic.Error
-            )
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, generalDiagnosticOption: ReportDiagnostic.Error)
         );
-        GeneratorDriver driver = CSharpGeneratorDriver.Create(
-            new[] { new DxMessageIdGenerator() },
-            parseOptions: options
-        );
-        driver = driver.RunGeneratorsAndUpdateCompilation(
-            compilation,
-            out Compilation output,
-            out System.Collections.Immutable.ImmutableArray<Diagnostic> diagnostics
-        );
-        Assert.That(
-            diagnostics,
-            Is.Empty,
-            "A referenced closed message must be accepted without any local type declarations."
-        );
-        Assert.That(
-            output.GetDiagnostics(),
-            Is.Empty,
-            "The cross-assembly startup registrar must compile without warnings."
-        );
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(new[] { new DxMessageIdGenerator() }, parseOptions: options);
+        driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out Compilation output, out System.Collections.Immutable.ImmutableArray<Diagnostic> diagnostics);
+        Assert.That(diagnostics, Is.Empty, "A referenced closed message must be accepted without any local type declarations.");
+        Assert.That(output.GetDiagnostics(), Is.Empty, "The cross-assembly startup registrar must compile without warnings.");
         Assert.That(
             GetGeneratedSource(driver.GetRunResult()),
             Does.Contain("typeof(global::External.Message<bool>)"),
@@ -1082,54 +882,24 @@ namespace External
     [TestCase("Untargeted", "Targeted", false)]
     [TestCase("Targeted", "Broadcast", false)]
     [TestCase("Broadcast", "Untargeted", false)]
-    public void ReferencedMarkedMessagesRequireTheirActualRoute(
-        string marker,
-        string implemented,
-        bool valid
-    )
+    public void ReferencedMarkedMessagesRequireTheirActualRoute(string marker, string implemented, bool valid)
     {
-        string inheritance =
-            implemented.Length == 0
-                ? ""
-                : $" : DxMessaging.Core.Messages.I{implemented}Message<MarkedMessage<T>>";
+        string inheritance = implemented.Length == 0 ? "" : $" : DxMessaging.Core.Messages.I{implemented}Message<MarkedMessage<T>>";
         PortableExecutableReference external = GeneratorTestUtilities.CompileBaseCallAnalyzerParent(
             $"namespace External {{ [DxMessaging.Core.Attributes.Dx{marker}Message] public readonly struct MarkedMessage<T>{inheritance} {{ }} }}"
         );
-        CSharpParseOptions options = new(
-            LanguageVersion.CSharp9,
-            preprocessorSymbols: Il2CppPreprocessorSymbols
-        );
+        CSharpParseOptions options = new(LanguageVersion.CSharp9, preprocessorSymbols: Il2CppPreprocessorSymbols);
         CSharpCompilation compilation = CSharpCompilation.Create(
             "ExternalMarkedConsumer",
-            new[]
-            {
-                CSharpSyntaxTree.ParseText(
-                    "[assembly: DxMessaging.Core.Attributes.DxAotMessage(typeof(External.MarkedMessage<bool>))]",
-                    options
-                ),
-            },
+            new[] { CSharpSyntaxTree.ParseText("[assembly: DxMessaging.Core.Attributes.DxAotMessage(typeof(External.MarkedMessage<bool>))]", options) },
             GeneratorTestUtilities.CompilationReferences.Add(external),
-            new CSharpCompilationOptions(
-                OutputKind.DynamicallyLinkedLibrary,
-                generalDiagnosticOption: ReportDiagnostic.Error
-            )
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, generalDiagnosticOption: ReportDiagnostic.Error)
         );
-        GeneratorDriver driver = CSharpGeneratorDriver.Create(
-            new[] { new DxMessageIdGenerator() },
-            parseOptions: options
-        );
-        driver = driver.RunGeneratorsAndUpdateCompilation(
-            compilation,
-            out Compilation output,
-            out System.Collections.Immutable.ImmutableArray<Diagnostic> diagnostics
-        );
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(new[] { new DxMessageIdGenerator() }, parseOptions: options);
+        driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out Compilation output, out System.Collections.Immutable.ImmutableArray<Diagnostic> diagnostics);
         if (valid)
         {
-            Assert.That(
-                diagnostics,
-                Is.Empty,
-                $"{marker}/{implemented}: an external implemented route must be accepted."
-            );
+            Assert.That(diagnostics, Is.Empty, $"{marker}/{implemented}: an external implemented route must be accepted.");
             Assert.That(
                 GetGeneratedSource(driver.GetRunResult()),
                 Does.Contain("typeof(global::External.MarkedMessage<bool>)"),
@@ -1149,11 +919,7 @@ namespace External
                 "Rejected external types must not produce invalid bridges."
             );
         }
-        Assert.That(
-            output.GetDiagnostics(),
-            Is.Empty,
-            $"{marker}/{implemented}: generated consumer output must compile cleanly."
-        );
+        Assert.That(output.GetDiagnostics(), Is.Empty, $"{marker}/{implemented}: generated consumer output must compile cleanly.");
     }
 
     private static void AssertGeneratedOutputCompilesForIl2Cpp(string source)
@@ -1163,19 +929,10 @@ namespace External
             .Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
             .ToArray();
 
-        Assert.That(
-            errors,
-            Is.Empty,
-            "Generated IL2CPP output must compile cleanly. Errors:\n"
-                + string.Join("\n", errors.Select(static diagnostic => diagnostic.ToString()))
-        );
+        Assert.That(errors, Is.Empty, "Generated IL2CPP output must compile cleanly. Errors:\n" + string.Join("\n", errors.Select(static diagnostic => diagnostic.ToString())));
     }
 
-    private static void AssertGeneratedSourceContains(
-        GeneratorDriverRunResult result,
-        string fragment,
-        string failureMessage
-    )
+    private static void AssertGeneratedSourceContains(GeneratorDriverRunResult result, string fragment, string failureMessage)
     {
         /*
             Walk every generated tree, concatenate text, then assert. Roslyn's GeneratedSources is
@@ -1192,22 +949,14 @@ namespace External
             This catches indentation, accessibility, and type-param mismatch regressions that surface
             as parse-level diagnostics, but does NOT perform a full compile against referenced types.
         */
-        Assert.That(
-            result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error),
-            Is.Empty,
-            "Generator must not surface compile-error diagnostics."
-        );
+        Assert.That(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error), Is.Empty, "Generator must not surface compile-error diagnostics.");
 
         foreach (GeneratorRunResult r in result.Results)
         {
             foreach (GeneratedSourceResult g in r.GeneratedSources)
             {
                 SyntaxTree tree = CSharpSyntaxTree.ParseText(g.SourceText);
-                Assert.That(
-                    tree.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error),
-                    Is.Empty,
-                    $"Generated file '{g.HintName}' has parse errors."
-                );
+                Assert.That(tree.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error), Is.Empty, $"Generated file '{g.HintName}' has parse errors.");
             }
         }
     }

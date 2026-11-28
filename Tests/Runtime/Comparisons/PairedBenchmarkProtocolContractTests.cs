@@ -14,22 +14,13 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         [Test]
         public void PublishedDefaultsBalanceEveryPositionAndRetainMinimumActiveTime()
         {
-            Assert.AreEqual(
-                4,
-                BenchmarkProtocol.PairedMeasurementCycles,
-                "Published evidence and its fail-closed validator require four raw cycles."
-            );
+            Assert.AreEqual(4, BenchmarkProtocol.PairedMeasurementCycles, "Published evidence and its fail-closed validator require four raw cycles.");
             Assert.AreEqual(
                 2_500,
-                BenchmarkProtocol.PairedMeasurementCycles
-                    * BenchmarkProtocol.PairedMinimumCycleActiveMilliseconds,
+                BenchmarkProtocol.PairedMeasurementCycles * BenchmarkProtocol.PairedMinimumCycleActiveMilliseconds,
                 "Each workload must retain at least 2.5 seconds of measured active time."
             );
-            Assert.AreEqual(
-                3d,
-                BenchmarkProtocol.PairedMaterialityBandPercent,
-                "The paired evidence band must remain aligned with the candidate verdict gate."
-            );
+            Assert.AreEqual(3d, BenchmarkProtocol.PairedMaterialityBandPercent, "The paired evidence band must remain aligned with the candidate verdict gate.");
         }
 
         [Test]
@@ -52,16 +43,8 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 minimum.TotalSeconds,
                 "The faster workload must keep repeating after the slower side reaches the minimum."
             );
-            Assert.GreaterOrEqual(
-                measurement.Cycles[0].Second.ElapsedSeconds,
-                minimum.TotalSeconds,
-                "The slower workload must also reach the minimum active time."
-            );
-            Assert.AreEqual(
-                firstCalls,
-                secondCalls,
-                "Every completed ABBA/BAAB super-cycle must retain equal batch counts."
-            );
+            Assert.GreaterOrEqual(measurement.Cycles[0].Second.ElapsedSeconds, minimum.TotalSeconds, "The slower workload must also reach the minimum active time.");
+            Assert.AreEqual(firstCalls, secondCalls, "Every completed ABBA/BAAB super-cycle must retain equal batch counts.");
         }
 
         [Test]
@@ -78,58 +61,21 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             );
 
             CollectionAssert.AreEqual(
-                new[]
-                {
-                    'A',
-                    'B',
-                    'B',
-                    'A',
-                    'B',
-                    'A',
-                    'A',
-                    'B',
-                    'A',
-                    'B',
-                    'B',
-                    'A',
-                    'B',
-                    'A',
-                    'A',
-                    'B',
-                },
+                new[] { 'A', 'B', 'B', 'A', 'B', 'A', 'A', 'B', 'A', 'B', 'B', 'A', 'B', 'A', 'A', 'B' },
                 order,
                 "Every paired cycle must use the predeclared ABBA then BAAB batch order."
             );
-            Assert.AreEqual(
-                80,
-                measurement.First.TotalOperations,
-                "Eight retained first-workload batches must contribute every reported operation."
-            );
-            Assert.AreEqual(
-                160,
-                measurement.Second.TotalOperations,
-                "Eight retained second-workload batches must contribute every reported operation."
-            );
-            Assert.AreEqual(
-                2,
-                measurement.CycleRatios.Count,
-                "The protocol must retain one raw ratio for every cycle."
-            );
-            Assert.IsFalse(
-                measurement.CycleRatios is double[],
-                "Callers must not be able to cast retained cycle evidence back to a mutable array."
-            );
+            Assert.AreEqual(80, measurement.First.TotalOperations, "Eight retained first-workload batches must contribute every reported operation.");
+            Assert.AreEqual(160, measurement.Second.TotalOperations, "Eight retained second-workload batches must contribute every reported operation.");
+            Assert.AreEqual(2, measurement.CycleRatios.Count, "The protocol must retain one raw ratio for every cycle.");
+            Assert.IsFalse(measurement.CycleRatios is double[], "Callers must not be able to cast retained cycle evidence back to a mutable array.");
             Assert.Throws<NotSupportedException>(
                 () => ((IList<double>)measurement.CycleRatios)[0] = 999d,
                 "Retained raw cycle evidence must reject mutation through IList<double>."
             );
-            Assert.IsFalse(
-                measurement.Cycles is PairedCycleMeasurement[],
-                "Callers must not be able to cast retained cycle measurements to a mutable array."
-            );
+            Assert.IsFalse(measurement.Cycles is PairedCycleMeasurement[], "Callers must not be able to cast retained cycle measurements to a mutable array.");
             Assert.Throws<NotSupportedException>(
-                () =>
-                    ((IList<PairedCycleMeasurement>)measurement.Cycles)[0] = measurement.Cycles[0],
+                () => ((IList<PairedCycleMeasurement>)measurement.Cycles)[0] = measurement.Cycles[0],
                 "Retained cycle measurements must reject mutation through IList<T>."
             );
         }
@@ -153,16 +99,8 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 order,
                 "The complementary selector must run BAAB then ABBA without changing either workload."
             );
-            Assert.AreEqual(
-                40,
-                measurement.First.TotalOperations,
-                "The complementary order must retain all four first-workload batches."
-            );
-            Assert.AreEqual(
-                80,
-                measurement.Second.TotalOperations,
-                "The complementary order must retain all four second-workload batches."
-            );
+            Assert.AreEqual(40, measurement.First.TotalOperations, "The complementary order must retain all four first-workload batches.");
+            Assert.AreEqual(80, measurement.Second.TotalOperations, "The complementary order must retain all four second-workload batches.");
         }
 
         [TestCase(null, false)]
@@ -171,11 +109,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         [TestCase("BAABABBA", true)]
         public void PilotOrderSelectorAcceptsOnlyDeclaredOrders(string order, bool expected)
         {
-            Assert.AreEqual(
-                expected,
-                PairedComparisonHarness.ResolveComplementaryOrder(order),
-                "The pilot selector must preserve the legacy default and accept its complement."
-            );
+            Assert.AreEqual(expected, PairedComparisonHarness.ResolveComplementaryOrder(order), "The pilot selector must preserve the legacy default and accept its complement.");
         }
 
         [TestCase("abba baab")]
@@ -194,15 +128,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         public void MeasurePairedRejectsNonPositiveCycleCount(int cycles)
         {
             Assert.Throws<ArgumentOutOfRangeException>(
-                () =>
-                    BenchmarkProtocol.MeasurePaired(
-                        null,
-                        () => 1,
-                        null,
-                        () => 1,
-                        cycles,
-                        TimeSpan.FromTicks(1)
-                    ),
+                () => BenchmarkProtocol.MeasurePaired(null, () => 1, null, () => 1, cycles, TimeSpan.FromTicks(1)),
                 $"Cycle count {cycles} must fail before the paired measurement starts."
             );
         }
@@ -212,15 +138,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         public void MeasurePairedRejectsNonPositiveCycleActiveDuration(long durationTicks)
         {
             Assert.Throws<ArgumentOutOfRangeException>(
-                () =>
-                    BenchmarkProtocol.MeasurePaired(
-                        null,
-                        () => 1,
-                        null,
-                        () => 1,
-                        cycles: 1,
-                        minimumCycleActiveDuration: TimeSpan.FromTicks(durationTicks)
-                    ),
+                () => BenchmarkProtocol.MeasurePaired(null, () => 1, null, () => 1, cycles: 1, minimumCycleActiveDuration: TimeSpan.FromTicks(durationTicks)),
                 "A non-positive paired cycle duration must fail before measurement starts."
             );
         }
@@ -235,15 +153,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             }
 
             Assert.Throws<ArgumentOutOfRangeException>(
-                () =>
-                    BenchmarkProtocol.MeasurePaired(
-                        null,
-                        () => 1,
-                        null,
-                        () => 1,
-                        cycles: 1,
-                        minimumCycleActiveDuration: TimeSpan.MaxValue
-                    ),
+                () => BenchmarkProtocol.MeasurePaired(null, () => 1, null, () => 1, cycles: 1, minimumCycleActiveDuration: TimeSpan.MaxValue),
                 "A duration beyond the stopwatch range must fail instead of collapsing to one tick."
             );
         }
@@ -272,15 +182,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         public void MeasurePairedRejectsNonPositiveBatchOperationCount(int operations)
         {
             Assert.Throws<InvalidOperationException>(
-                () =>
-                    BenchmarkProtocol.MeasurePaired(
-                        null,
-                        () => operations,
-                        null,
-                        () => 1,
-                        cycles: 1,
-                        minimumCycleActiveDuration: TimeSpan.FromTicks(1)
-                    ),
+                () => BenchmarkProtocol.MeasurePaired(null, () => operations, null, () => 1, cycles: 1, minimumCycleActiveDuration: TimeSpan.FromTicks(1)),
                 $"Batch operation count {operations} must fail instead of producing a false rate."
             );
         }
@@ -294,15 +196,10 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         [TestCase(ComparisonScenario.GlobalToManySubscribers, 0)]
         [TestCase(ComparisonScenario.KeyedToOneOfMany, 0)]
         [TestCase(ComparisonScenario.SubscribeUnsubscribeChurn, 0)]
-        public void PilotCpuWorkTouchesOnlyDeclaredTargets(
-            ComparisonScenario scenario,
-            int expected
-        )
+        public void PilotCpuWorkTouchesOnlyDeclaredTargets(ComparisonScenario scenario, int expected)
         {
             string prior = Environment.GetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH");
-            string priorVector = Environment.GetEnvironmentVariable(
-                "DXM_PILOT_CPU_WORK_BY_SCENARIO"
-            );
+            string priorVector = Environment.GetEnvironmentVariable("DXM_PILOT_CPU_WORK_BY_SCENARIO");
             try
             {
                 Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH", "7");
@@ -322,9 +219,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         public void PilotPairRequiresExplicitWorkAssignmentWhileOtherContractsDefaultToZero()
         {
             string prior = Environment.GetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH");
-            string priorVector = Environment.GetEnvironmentVariable(
-                "DXM_PILOT_CPU_WORK_BY_SCENARIO"
-            );
+            string priorVector = Environment.GetEnvironmentVariable("DXM_PILOT_CPU_WORK_BY_SCENARIO");
             try
             {
                 Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH", null);
@@ -332,15 +227,11 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 using DxMessagingBridge bridge = new();
                 bridge.Prepare(ComparisonScenario.GlobalToOneSubscriber);
                 Assert.AreEqual(0, bridge.PilotCpuWorkIterationsPerBatch);
-                Assert.Throws<InvalidOperationException>(() =>
-                    PairedComparisonHarness.RequirePilotCpuWorkAssignment()
-                );
+                Assert.Throws<InvalidOperationException>(() => PairedComparisonHarness.RequirePilotCpuWorkAssignment());
                 Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH", "0");
                 Assert.DoesNotThrow(() => PairedComparisonHarness.RequirePilotCpuWorkAssignment());
                 Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_BY_SCENARIO", "1,2,3,4,5");
-                Assert.Throws<InvalidOperationException>(() =>
-                    PairedComparisonHarness.RequirePilotCpuWorkAssignment()
-                );
+                Assert.Throws<InvalidOperationException>(() => PairedComparisonHarness.RequirePilotCpuWorkAssignment());
                 Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH", null);
                 Assert.DoesNotThrow(() => PairedComparisonHarness.RequirePilotCpuWorkAssignment());
             }
@@ -358,22 +249,14 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         [TestCase(ComparisonScenario.InterceptedPostProcessingDispatch, 55)]
         [TestCase(ComparisonScenario.GlobalToManySubscribers, 0)]
         [TestCase(ComparisonScenario.KeyedToOneOfMany, 0)]
-        public void PilotCpuWorkVectorUsesOnlyItsDeclaredTarget(
-            ComparisonScenario scenario,
-            int expected
-        )
+        public void PilotCpuWorkVectorUsesOnlyItsDeclaredTarget(ComparisonScenario scenario, int expected)
         {
             string prior = Environment.GetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH");
-            string priorVector = Environment.GetEnvironmentVariable(
-                "DXM_PILOT_CPU_WORK_BY_SCENARIO"
-            );
+            string priorVector = Environment.GetEnvironmentVariable("DXM_PILOT_CPU_WORK_BY_SCENARIO");
             try
             {
                 Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH", null);
-                Environment.SetEnvironmentVariable(
-                    "DXM_PILOT_CPU_WORK_BY_SCENARIO",
-                    "11,22,33,44,55"
-                );
+                Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_BY_SCENARIO", "11,22,33,44,55");
                 using DxMessagingBridge bridge = new();
                 bridge.Prepare(scenario);
                 Assert.AreEqual(expected, bridge.PilotCpuWorkIterationsPerBatch);
@@ -393,17 +276,13 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         public void PilotCpuWorkVectorRejectsMalformedAssignments(string assignment)
         {
             string prior = Environment.GetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH");
-            string priorVector = Environment.GetEnvironmentVariable(
-                "DXM_PILOT_CPU_WORK_BY_SCENARIO"
-            );
+            string priorVector = Environment.GetEnvironmentVariable("DXM_PILOT_CPU_WORK_BY_SCENARIO");
             try
             {
                 Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH", null);
                 Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_BY_SCENARIO", assignment);
                 using DxMessagingBridge bridge = new();
-                Assert.Throws<InvalidOperationException>(() =>
-                    bridge.Prepare(ComparisonScenario.GlobalToOneSubscriber)
-                );
+                Assert.Throws<InvalidOperationException>(() => bridge.Prepare(ComparisonScenario.GlobalToOneSubscriber));
             }
             finally
             {
@@ -416,17 +295,13 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         public void PilotCpuWorkRejectsUnassignedWorkLevel()
         {
             string prior = Environment.GetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH");
-            string priorVector = Environment.GetEnvironmentVariable(
-                "DXM_PILOT_CPU_WORK_BY_SCENARIO"
-            );
+            string priorVector = Environment.GetEnvironmentVariable("DXM_PILOT_CPU_WORK_BY_SCENARIO");
             try
             {
                 Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH", "invalid");
                 Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_BY_SCENARIO", null);
                 using DxMessagingBridge bridge = new();
-                Assert.Throws<InvalidOperationException>(() =>
-                    bridge.Prepare(ComparisonScenario.GlobalToOneSubscriber)
-                );
+                Assert.Throws<InvalidOperationException>(() => bridge.Prepare(ComparisonScenario.GlobalToOneSubscriber));
             }
             finally
             {

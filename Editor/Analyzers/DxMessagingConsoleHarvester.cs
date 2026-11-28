@@ -95,9 +95,7 @@ namespace DxMessaging.Editor.Analyzers
         private const string ReportDirectoryName = "DxMessaging";
         private const double PollIntervalSeconds = 0.25;
 
-        private static readonly Dictionary<string, BaseCallReportEntry> SnapshotInternal = new(
-            StringComparer.Ordinal
-        );
+        private static readonly Dictionary<string, BaseCallReportEntry> SnapshotInternal = new(StringComparer.Ordinal);
 
         // The Editor thread owns applied compiler reports and the merged snapshot.
         private static readonly BaseCallReportAggregator.CompilerReports _compilerReports = new();
@@ -113,10 +111,7 @@ namespace DxMessaging.Editor.Analyzers
         /*
             Holds the latest CompilerMessage report for each assembly since the last idle drain.
         */
-        private static readonly Dictionary<
-            string,
-            Dictionary<string, ParsedTypeReport>
-        > _pendingByAssembly = new(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, Dictionary<string, ParsedTypeReport>> _pendingByAssembly = new(StringComparer.OrdinalIgnoreCase);
 
         private static double _lastTickTime;
         private static int _lastSettingsRevision = -1;
@@ -177,8 +172,7 @@ namespace DxMessaging.Editor.Analyzers
         /// paths (the inspector overlay) -- this property exists for callers that need to enumerate
         /// the full snapshot.
         /// </remarks>
-        public static IReadOnlyDictionary<string, BaseCallReportEntry> Snapshot =>
-            new Dictionary<string, BaseCallReportEntry>(SnapshotInternal, StringComparer.Ordinal);
+        public static IReadOnlyDictionary<string, BaseCallReportEntry> Snapshot => new Dictionary<string, BaseCallReportEntry>(SnapshotInternal, StringComparer.Ordinal);
 
         /// <summary>
         /// <c>true</c> as long as the harvester has at least one functioning data source.
@@ -232,10 +226,7 @@ namespace DxMessaging.Editor.Analyzers
             }
             catch (Exception ex)
             {
-                DxMessagingEditorLog.LogWarning(
-                    "DxMessagingConsoleHarvester failed to initialize.",
-                    ex
-                );
+                DxMessagingEditorLog.LogWarning("DxMessagingConsoleHarvester failed to initialize.", ex);
                 IsAvailable = false;
             }
         }
@@ -305,9 +296,7 @@ namespace DxMessaging.Editor.Analyzers
             catch (Exception ex)
             {
                 LogExceptionOnce("scanner", "BaseCallTypeScanner.Scan threw.", ex);
-                scannerEntries = new Dictionary<string, BaseCallReportEntry>(
-                    StringComparer.Ordinal
-                );
+                scannerEntries = new Dictionary<string, BaseCallReportEntry>(StringComparer.Ordinal);
             }
 
             /*
@@ -315,10 +304,7 @@ namespace DxMessaging.Editor.Analyzers
                 fully replaces the snapshot. Build the new map up-front from the scanner's output;
                 we will add compiler warnings below if the user opted in.
             */
-            Dictionary<string, BaseCallReportEntry> nextSnapshot = new(
-                scannerEntries,
-                StringComparer.Ordinal
-            );
+            Dictionary<string, BaseCallReportEntry> nextSnapshot = new(scannerEntries, StringComparer.Ordinal);
 
             bool useBridge = settings != null && settings._useConsoleBridge;
 
@@ -333,10 +319,7 @@ namespace DxMessaging.Editor.Analyzers
                     }
                     else
                     {
-                        drained = new Dictionary<string, Dictionary<string, ParsedTypeReport>>(
-                            _pendingByAssembly,
-                            StringComparer.OrdinalIgnoreCase
-                        );
+                        drained = new Dictionary<string, Dictionary<string, ParsedTypeReport>>(_pendingByAssembly, StringComparer.OrdinalIgnoreCase);
                         _pendingByAssembly.Clear();
                     }
                 }
@@ -349,8 +332,7 @@ namespace DxMessaging.Editor.Analyzers
                 */
                 try
                 {
-                    Dictionary<string, BaseCallReportEntryDto> bridgeSnapshot =
-                        _compilerReports.BuildMergedSnapshot(null);
+                    Dictionary<string, BaseCallReportEntryDto> bridgeSnapshot = _compilerReports.BuildMergedSnapshot(null);
                     UnionBridgeIntoSnapshot(bridgeSnapshot, nextSnapshot);
                 }
                 catch (Exception ex)
@@ -402,10 +384,7 @@ namespace DxMessaging.Editor.Analyzers
             a subclass the scanner couldn't classify because its IL was stripped). The first non-
             empty file path / line wins, matching the bridge's pre-existing semantics.
         */
-        private static void UnionBridgeIntoSnapshot(
-            Dictionary<string, BaseCallReportEntryDto> bridgeSnapshot,
-            Dictionary<string, BaseCallReportEntry> scannerSnapshot
-        )
+        private static void UnionBridgeIntoSnapshot(Dictionary<string, BaseCallReportEntryDto> bridgeSnapshot, Dictionary<string, BaseCallReportEntry> scannerSnapshot)
         {
             if (bridgeSnapshot is null || bridgeSnapshot.Count == 0)
             {
@@ -433,20 +412,14 @@ namespace DxMessaging.Editor.Analyzers
                 }
                 foreach (string method in dto.MissingBaseFor)
                 {
-                    if (
-                        !string.IsNullOrEmpty(method)
-                        && !existing.missingBaseFor.Contains(method, StringComparer.Ordinal)
-                    )
+                    if (!string.IsNullOrEmpty(method) && !existing.missingBaseFor.Contains(method, StringComparer.Ordinal))
                     {
                         existing.missingBaseFor.Add(method);
                     }
                 }
                 foreach (string id in dto.DiagnosticIds)
                 {
-                    if (
-                        !string.IsNullOrEmpty(id)
-                        && !existing.diagnosticIds.Contains(id, StringComparer.Ordinal)
-                    )
+                    if (!string.IsNullOrEmpty(id) && !existing.diagnosticIds.Contains(id, StringComparer.Ordinal))
                     {
                         existing.diagnosticIds.Add(id);
                     }
@@ -459,9 +432,7 @@ namespace DxMessaging.Editor.Analyzers
             }
         }
 
-        private static void ApplyCompilerMessageDrain(
-            Dictionary<string, Dictionary<string, ParsedTypeReport>> drained
-        )
+        private static void ApplyCompilerMessageDrain(Dictionary<string, Dictionary<string, ParsedTypeReport>> drained)
         {
             if (drained is null || drained.Count == 0)
             {
@@ -507,10 +478,7 @@ namespace DxMessaging.Editor.Analyzers
             }
         }
 
-        private static void OnAssemblyCompilationFinished(
-            string assemblyPath,
-            CompilerMessage[] messages
-        )
+        private static void OnAssemblyCompilationFinished(string assemblyPath, CompilerMessage[] messages)
         {
             /*
                 Each assembly supplies its own messages. Parse those messages here and defer
@@ -524,26 +492,14 @@ namespace DxMessaging.Editor.Analyzers
                     foreach (CompilerMessage compilerMessage in messages)
                     {
                         string body = compilerMessage.message;
-                        if (
-                            !BaseCallLogMessageParser.IsDiagnosticCandidate(body)
-                            || BaseCallLogMessageParser.ParseLine(body) is not ParsedEntry entry
-                        )
+                        if (!BaseCallLogMessageParser.IsDiagnosticCandidate(body) || BaseCallLogMessageParser.ParseLine(body) is not ParsedEntry entry)
                         {
                             continue;
                         }
 
-                        if (
-                            string.IsNullOrEmpty(entry.FilePath)
-                            && !string.IsNullOrEmpty(compilerMessage.file)
-                        )
+                        if (string.IsNullOrEmpty(entry.FilePath) && !string.IsNullOrEmpty(compilerMessage.file))
                         {
-                            entry = new ParsedEntry(
-                                entry.DiagnosticId,
-                                entry.TypeFullName,
-                                entry.MethodName,
-                                compilerMessage.file,
-                                Math.Max(0, compilerMessage.line)
-                            );
+                            entry = new ParsedEntry(entry.DiagnosticId, entry.TypeFullName, entry.MethodName, compilerMessage.file, Math.Max(0, compilerMessage.line));
                         }
 
                         BaseCallLogMessageParser.AddEntry(aggregated, entry);
@@ -562,11 +518,7 @@ namespace DxMessaging.Editor.Analyzers
             }
             catch (Exception ex)
             {
-                LogExceptionOnce(
-                    "compilation-parse",
-                    $"Failed to parse CompilerMessage payload for {assemblyPath}.",
-                    ex
-                );
+                LogExceptionOnce("compilation-parse", $"Failed to parse CompilerMessage payload for {assemblyPath}.", ex);
             }
 
             /*
@@ -676,13 +628,8 @@ namespace DxMessaging.Editor.Analyzers
                 BaseCallReportFile file = new()
                 {
                     version = 1,
-                    generatedAt = DateTime.UtcNow.ToString(
-                        "yyyy-MM-ddTHH:mm:ssZ",
-                        CultureInfo.InvariantCulture
-                    ),
-                    types = SnapshotInternal
-                        .Values.OrderBy(e => e.typeName, StringComparer.Ordinal)
-                        .ToList(),
+                    generatedAt = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
+                    types = SnapshotInternal.Values.OrderBy(e => e.typeName, StringComparer.Ordinal).ToList(),
                 };
 
                 string json = JsonUtility.ToJson(file, prettyPrint: true);
@@ -736,10 +683,8 @@ namespace DxMessaging.Editor.Analyzers
 
         internal static string GetReportFilePath()
         {
-            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."))
-                .Replace("\\", "/");
-            return Path.Combine(projectRoot, "Library", ReportDirectoryName, ReportFileName)
-                .Replace("\\", "/");
+            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, "..")).Replace("\\", "/");
+            return Path.Combine(projectRoot, "Library", ReportDirectoryName, ReportFileName).Replace("\\", "/");
         }
 
         private static void EnsureDirectoryExists(string absolutePath)

@@ -56,60 +56,24 @@ namespace DxMessaging.Tests.Editor.Contract
         {
             ("_untargetedHandlers", nameof(TypedSlotIndex.UntargetedHandleDefault)),
             ("_untargetedFastHandlers", nameof(TypedSlotIndex.UntargetedHandleFast)),
-            (
-                "_untargetedPostProcessingHandlers",
-                nameof(TypedSlotIndex.UntargetedPostProcessDefault)
-            ),
-            (
-                "_untargetedPostProcessingFastHandlers",
-                nameof(TypedSlotIndex.UntargetedPostProcessFast)
-            ),
+            ("_untargetedPostProcessingHandlers", nameof(TypedSlotIndex.UntargetedPostProcessDefault)),
+            ("_untargetedPostProcessingFastHandlers", nameof(TypedSlotIndex.UntargetedPostProcessFast)),
             ("_targetedHandlers", nameof(TypedSlotIndex.TargetedHandleDefault)),
             ("_targetedFastHandlers", nameof(TypedSlotIndex.TargetedHandleFast)),
-            (
-                "_targetedWithoutTargetingHandlers",
-                nameof(TypedSlotIndex.TargetedHandleWithoutContext)
-            ),
-            (
-                "_fastTargetedWithoutTargetingHandlers",
-                nameof(TypedSlotIndex.TargetedHandleWithoutContextFast)
-            ),
+            ("_targetedWithoutTargetingHandlers", nameof(TypedSlotIndex.TargetedHandleWithoutContext)),
+            ("_fastTargetedWithoutTargetingHandlers", nameof(TypedSlotIndex.TargetedHandleWithoutContextFast)),
             ("_targetedPostProcessingHandlers", nameof(TypedSlotIndex.TargetedPostProcessDefault)),
             ("_targetedPostProcessingFastHandlers", nameof(TypedSlotIndex.TargetedPostProcessFast)),
-            (
-                "_targetedWithoutTargetingPostProcessingHandlers",
-                nameof(TypedSlotIndex.TargetedPostProcessWithoutContext)
-            ),
-            (
-                "_fastTargetedWithoutTargetingPostProcessingHandlers",
-                nameof(TypedSlotIndex.TargetedPostProcessWithoutContextFast)
-            ),
+            ("_targetedWithoutTargetingPostProcessingHandlers", nameof(TypedSlotIndex.TargetedPostProcessWithoutContext)),
+            ("_fastTargetedWithoutTargetingPostProcessingHandlers", nameof(TypedSlotIndex.TargetedPostProcessWithoutContextFast)),
             ("_broadcastHandlers", nameof(TypedSlotIndex.BroadcastHandleDefault)),
             ("_broadcastFastHandlers", nameof(TypedSlotIndex.BroadcastHandleFast)),
-            (
-                "_broadcastWithoutSourceHandlers",
-                nameof(TypedSlotIndex.BroadcastHandleWithoutContext)
-            ),
-            (
-                "_fastBroadcastWithoutSourceHandlers",
-                nameof(TypedSlotIndex.BroadcastHandleWithoutContextFast)
-            ),
-            (
-                "_broadcastPostProcessingHandlers",
-                nameof(TypedSlotIndex.BroadcastPostProcessDefault)
-            ),
-            (
-                "_broadcastPostProcessingFastHandlers",
-                nameof(TypedSlotIndex.BroadcastPostProcessFast)
-            ),
-            (
-                "_broadcastWithoutSourcePostProcessingHandlers",
-                nameof(TypedSlotIndex.BroadcastPostProcessWithoutContext)
-            ),
-            (
-                "_fastBroadcastWithoutSourcePostProcessingHandlers",
-                nameof(TypedSlotIndex.BroadcastPostProcessWithoutContextFast)
-            ),
+            ("_broadcastWithoutSourceHandlers", nameof(TypedSlotIndex.BroadcastHandleWithoutContext)),
+            ("_fastBroadcastWithoutSourceHandlers", nameof(TypedSlotIndex.BroadcastHandleWithoutContextFast)),
+            ("_broadcastPostProcessingHandlers", nameof(TypedSlotIndex.BroadcastPostProcessDefault)),
+            ("_broadcastPostProcessingFastHandlers", nameof(TypedSlotIndex.BroadcastPostProcessFast)),
+            ("_broadcastWithoutSourcePostProcessingHandlers", nameof(TypedSlotIndex.BroadcastPostProcessWithoutContext)),
+            ("_fastBroadcastWithoutSourcePostProcessingHandlers", nameof(TypedSlotIndex.BroadcastPostProcessWithoutContextFast)),
         };
 
         private static readonly string[] LegacyGlobalFieldNames =
@@ -148,12 +112,7 @@ namespace DxMessaging.Tests.Editor.Contract
         {
             object handler = MakeFreshTypedHandler();
             Array slots = ReadArrayField(handler, "_slots");
-            Assert.AreEqual(
-                TypedSlotIndex.Length,
-                slots.Length,
-                "_slots.Length must equal TypedSlotIndex.Length so every "
-                    + "constant indexes a valid slot."
-            );
+            Assert.AreEqual(TypedSlotIndex.Length, slots.Length, "_slots.Length must equal TypedSlotIndex.Length so every " + "constant indexes a valid slot.");
         }
 
         [Test]
@@ -161,40 +120,23 @@ namespace DxMessaging.Tests.Editor.Contract
         {
             object handler = MakeFreshTypedHandler(typeof(IMessage));
             Array slots = ReadArrayField(handler, "_globalSlots");
-            Assert.AreEqual(
-                TypedGlobalSlotIndex.Length,
-                slots.Length,
-                "TypedHandler<IMessage> must expose one slot for every global index."
-            );
+            Assert.AreEqual(TypedGlobalSlotIndex.Length, slots.Length, "TypedHandler<IMessage> must expose one slot for every global index.");
         }
 
         [Test]
         public void TypedSlotIndexConstantsAreUniqueAndContiguousZeroBased()
         {
             int[] values = ReadConstantValues(typeof(TypedSlotIndex));
-            Assert.AreEqual(
-                values.Length,
-                values.Distinct().Count(),
-                $"TypedSlotIndex constants must have unique values; got [{string.Join(",", values)}]"
-            );
+            Assert.AreEqual(values.Length, values.Distinct().Count(), $"TypedSlotIndex constants must have unique values; got [{string.Join(",", values)}]");
             int[] expected = Enumerable.Range(0, TypedSlotIndex.Length).ToArray();
-            CollectionAssert.AreEqual(
-                expected,
-                values,
-                "TypedSlotIndex constants (excluding Length) must be the "
-                    + "contiguous zero-based range [0, Length)."
-            );
+            CollectionAssert.AreEqual(expected, values, "TypedSlotIndex constants (excluding Length) must be the " + "contiguous zero-based range [0, Length).");
         }
 
         [Test]
         public void TypedGlobalSlotIndexConstantsAreUniqueAndContiguousZeroBased()
         {
             int[] values = ReadConstantValues(typeof(TypedGlobalSlotIndex));
-            Assert.AreEqual(
-                values.Length,
-                values.Distinct().Count(),
-                $"TypedGlobalSlotIndex constants must have unique values; got [{string.Join(",", values)}]"
-            );
+            Assert.AreEqual(values.Length, values.Distinct().Count(), $"TypedGlobalSlotIndex constants must have unique values; got [{string.Join(",", values)}]");
             int[] expected = Enumerable.Range(0, TypedGlobalSlotIndex.Length).ToArray();
             CollectionAssert.AreEqual(expected, values);
         }
@@ -207,25 +149,15 @@ namespace DxMessaging.Tests.Editor.Contract
             Array slots = ReadArrayField(handler, "_slots");
             for (int i = 0; i < slots.Length; ++i)
             {
-                Assert.IsNull(
-                    slots.GetValue(i),
-                    "_slots["
-                        + i
-                        + "] must be null on a fresh TypedHandler<T>; slots populate lazily "
-                        + "on first registration."
-                );
+                Assert.IsNull(slots.GetValue(i), "_slots[" + i + "] must be null on a fresh TypedHandler<T>; slots populate lazily " + "on first registration.");
             }
 
             Array globalSlots = ReadArrayField(handler, "_globalSlots");
-            Assert.Zero(
-                globalSlots.Length,
-                "Ordinary TypedHandler<T> instances cannot use global registration slots."
-            );
+            Assert.Zero(globalSlots.Length, "Ordinary TypedHandler<T> instances cannot use global registration slots.");
             Assert.AreSame(
                 Array.Empty<TypedGlobalSlot>(),
                 globalSlots,
-                "Ordinary TypedHandler<T> instances must share Array.Empty<TypedGlobalSlot>() "
-                    + "instead of allocating a distinct zero-length array."
+                "Ordinary TypedHandler<T> instances must share Array.Empty<TypedGlobalSlot>() " + "instead of allocating a distinct zero-length array."
             );
             for (int i = 0; i < globalSlots.Length; ++i)
             {
@@ -239,17 +171,10 @@ namespace DxMessaging.Tests.Editor.Contract
             object handler = MakeFreshTypedHandler(typeof(IMessage));
             Array globalSlots = ReadArrayField(handler, "_globalSlots");
 
-            Assert.AreEqual(
-                TypedGlobalSlotIndex.Length,
-                globalSlots.Length,
-                "TypedHandler<IMessage> must retain every global registration slot."
-            );
+            Assert.AreEqual(TypedGlobalSlotIndex.Length, globalSlots.Length, "TypedHandler<IMessage> must retain every global registration slot.");
             for (int i = 0; i < globalSlots.Length; ++i)
             {
-                Assert.IsNull(
-                    globalSlots.GetValue(i),
-                    "_globalSlots[" + i + "] must populate lazily on first registration."
-                );
+                Assert.IsNull(globalSlots.GetValue(i), "_globalSlots[" + i + "] must populate lazily on first registration.");
             }
         }
 
@@ -260,76 +185,44 @@ namespace DxMessaging.Tests.Editor.Contract
 
             Assert.IsInstanceOf<ITypedHandlerSlotSweeper>(
                 handler,
-                "TypedHandler<T> must expose an erased sweep surface so "
-                    + "MessageCache<object> callers can reset empty typed slots without reflection."
+                "TypedHandler<T> must expose an erased sweep surface so " + "MessageCache<object> callers can reset empty typed slots without reflection."
             );
         }
 
         [Test]
         public void LegacyNamedFieldsAreDeletedAfterSlotMigration()
         {
-            Type typedHandlerOpen = typeof(MessageHandler).GetNestedType(
-                "TypedHandler`1",
-                BindingFlags.NonPublic
-            );
-            Assert.IsNotNull(
-                typedHandlerOpen,
-                "MessageHandler.TypedHandler<T> nested type must exist."
-            );
+            Type typedHandlerOpen = typeof(MessageHandler).GetNestedType("TypedHandler`1", BindingFlags.NonPublic);
+            Assert.IsNotNull(typedHandlerOpen, "MessageHandler.TypedHandler<T> nested type must exist.");
             Type closed = typedHandlerOpen.MakeGenericType(typeof(ProbeMessage));
 
-            FieldInfo[] declaredFields = closed.GetFields(
-                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
-            );
+            FieldInfo[] declaredFields = closed.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
             HashSet<string> declaredFieldNames = new(declaredFields.Select(f => f.Name));
             HashSet<string> indexConstantNames = new(
                 typeof(TypedSlotIndex)
                     .GetFields(BindingFlags.Public | BindingFlags.Static)
-                    .Where(f =>
-                        f.IsLiteral && !f.IsInitOnly && f.Name != nameof(TypedSlotIndex.Length)
-                    )
+                    .Where(f => f.IsLiteral && !f.IsInitOnly && f.Name != nameof(TypedSlotIndex.Length))
                     .Select(f => f.Name)
             );
 
             Assert.AreEqual(
                 LegacySlotMap.Length,
                 indexConstantNames.Count,
-                "TypedSlotIndex constant count drift detected. Update LegacySlotMap "
-                    + "in this test file in lockstep with the TypedSlotIndex table."
+                "TypedSlotIndex constant count drift detected. Update LegacySlotMap " + "in this test file in lockstep with the TypedSlotIndex table."
             );
-            Assert.AreEqual(
-                TypedSlotIndex.Length,
-                LegacySlotMap.Length,
-                "LegacySlotMap row count must equal TypedSlotIndex.Length."
-            );
-            Assert.AreEqual(
-                LegacySlotMap.Length,
-                LegacySlotMap.Select(x => x.FieldName).Distinct().Count(),
-                "LegacySlotMap must not duplicate FieldName."
-            );
-            Assert.AreEqual(
-                LegacySlotMap.Length,
-                LegacySlotMap.Select(x => x.ConstantName).Distinct().Count(),
-                "LegacySlotMap must not duplicate ConstantName."
-            );
+            Assert.AreEqual(TypedSlotIndex.Length, LegacySlotMap.Length, "LegacySlotMap row count must equal TypedSlotIndex.Length.");
+            Assert.AreEqual(LegacySlotMap.Length, LegacySlotMap.Select(x => x.FieldName).Distinct().Count(), "LegacySlotMap must not duplicate FieldName.");
+            Assert.AreEqual(LegacySlotMap.Length, LegacySlotMap.Select(x => x.ConstantName).Distinct().Count(), "LegacySlotMap must not duplicate ConstantName.");
 
             foreach ((string fieldName, string constantName) in LegacySlotMap)
             {
                 Assert.IsFalse(
                     declaredFieldNames.Contains(fieldName),
-                    "TypedHandler<T> must not redeclare legacy typed field '"
-                        + fieldName
-                        + "' because typed storage owns that slot."
+                    "TypedHandler<T> must not redeclare legacy typed field '" + fieldName + "' because typed storage owns that slot."
                 );
-                Assert.IsTrue(
-                    indexConstantNames.Contains(constantName),
-                    "TypedSlotIndex must declare constant '" + constantName + "'."
-                );
-                FieldInfo constant = typeof(TypedSlotIndex).GetField(
-                    constantName,
-                    BindingFlags.Public | BindingFlags.Static
-                );
+                Assert.IsTrue(indexConstantNames.Contains(constantName), "TypedSlotIndex must declare constant '" + constantName + "'.");
+                FieldInfo constant = typeof(TypedSlotIndex).GetField(constantName, BindingFlags.Public | BindingFlags.Static);
                 Assert.AreEqual(
                     Array.IndexOf(LegacySlotMap, (fieldName, constantName)),
                     (int)constant.GetRawConstantValue(),
@@ -341,9 +234,7 @@ namespace DxMessaging.Tests.Editor.Contract
             {
                 Assert.IsFalse(
                     declaredFieldNames.Contains(fieldName),
-                    "TypedHandler<T> must not redeclare legacy global field '"
-                        + fieldName
-                        + "' because typed global storage owns that slot."
+                    "TypedHandler<T> must not redeclare legacy global field '" + fieldName + "' because typed global storage owns that slot."
                 );
             }
 
@@ -351,9 +242,7 @@ namespace DxMessaging.Tests.Editor.Contract
             {
                 Assert.IsFalse(
                     declaredFieldNames.Contains(fieldName),
-                    "TypedHandler<T> must not redeclare legacy dispatch-link field '"
-                        + fieldName
-                        + "' because typed dispatch storage owns that slot."
+                    "TypedHandler<T> must not redeclare legacy dispatch-link field '" + fieldName + "' because typed dispatch storage owns that slot."
                 );
             }
         }
@@ -367,14 +256,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 "AddUntargetedHandler",
                 BindingFlags.Instance | BindingFlags.Public,
                 binder: null,
-                types: new[]
-                {
-                    typeof(Action<ProbeMessage>),
-                    typeof(Action<ProbeMessage>),
-                    typeof(MessageBusRegistration),
-                    typeof(int),
-                    typeof(IMessageBus),
-                },
+                types: new[] { typeof(Action<ProbeMessage>), typeof(Action<ProbeMessage>), typeof(MessageBusRegistration), typeof(int), typeof(IMessageBus) },
                 modifiers: null
             );
             Assert.IsNotNull(addMethod, "AddUntargetedHandler(Action<T>) must exist.");
@@ -382,16 +264,10 @@ namespace DxMessaging.Tests.Editor.Contract
             MessageBus bus = new MessageBus();
             Action<ProbeMessage> original = _ => { };
             Action<ProbeMessage> augmented = _ => { };
-            Action firstDeregistration = ToDeregistrationAction(
-                addMethod.Invoke(handler, new object[] { original, augmented, null, 17, bus })
-            );
-            Action secondDeregistration = ToDeregistrationAction(
-                addMethod.Invoke(handler, new object[] { original, augmented, null, 17, bus })
-            );
+            Action firstDeregistration = ToDeregistrationAction(addMethod.Invoke(handler, new object[] { original, augmented, null, 17, bus }));
+            Action secondDeregistration = ToDeregistrationAction(addMethod.Invoke(handler, new object[] { original, augmented, null, 17, bus }));
             Action<ProbeMessage> otherOriginal = _ => { };
-            Action distinctDeregistration = ToDeregistrationAction(
-                addMethod.Invoke(handler, new object[] { otherOriginal, augmented, null, 19, bus })
-            );
+            Action distinctDeregistration = ToDeregistrationAction(addMethod.Invoke(handler, new object[] { otherOriginal, augmented, null, 19, bus }));
 
             Array slots = ReadArrayField(handler, "_slots");
             object populated = slots.GetValue(TypedSlotIndex.UntargetedHandleDefault);
@@ -407,11 +283,7 @@ namespace DxMessaging.Tests.Editor.Contract
             Assert.IsNull(slots.GetValue(TypedSlotIndex.TargetedHandleDefault));
 
             firstDeregistration();
-            Assert.AreEqual(
-                2,
-                slot.liveCount,
-                "Partial deregistration of a duplicate handler must not decrement liveCount."
-            );
+            Assert.AreEqual(2, slot.liveCount, "Partial deregistration of a duplicate handler must not decrement liveCount.");
             secondDeregistration();
             Assert.AreEqual(1, slot.liveCount);
             secondDeregistration();
@@ -424,25 +296,13 @@ namespace DxMessaging.Tests.Editor.Contract
         [Test]
         public void ExternalSweepResetsEmptyUntargetedSlotAndInvalidatesStaleDeregistration()
         {
-            DxMessaging.Core.MessageBus.MessageBus bus =
-                new DxMessaging.Core.MessageBus.MessageBus();
-            MessageHandler handler = new MessageHandler(new InstanceId(0x5033_0101), bus)
-            {
-                active = true,
-            };
+            DxMessaging.Core.MessageBus.MessageBus bus = new DxMessaging.Core.MessageBus.MessageBus();
+            MessageHandler handler = new MessageHandler(new InstanceId(0x5033_0101), bus) { active = true };
             Action<ProbeMessage> original = _ => { };
-            Action deregistration = (
-                handler.RegisterUntargetedMessageHandler(
-                    original,
-                    original,
-                    priority: 17,
-                    messageBus: bus
-                )
-            ).AsAction();
+            Action deregistration = (handler.RegisterUntargetedMessageHandler(original, original, priority: 17, messageBus: bus)).AsAction();
             object typedHandler = ReadTypedHandler<ProbeMessage>(handler, bus);
             Array slots = ReadArrayField(typedHandler, "_slots");
-            TypedSlot<ProbeMessage> slot =
-                (TypedSlot<ProbeMessage>)slots.GetValue(TypedSlotIndex.UntargetedHandleDefault);
+            TypedSlot<ProbeMessage> slot = (TypedSlot<ProbeMessage>)slots.GetValue(TypedSlotIndex.UntargetedHandleDefault);
 
             deregistration();
             long versionBeforeReset = slot.version;
@@ -453,36 +313,25 @@ namespace DxMessaging.Tests.Editor.Contract
             Assert.Greater(
                 slot.version,
                 versionBeforeReset,
-                "External sweep must call Reset(), not Clear(), so stale deregistration "
-                    + "closures observe a monotonic slot version bump."
+                "External sweep must call Reset(), not Clear(), so stale deregistration " + "closures observe a monotonic slot version bump."
             );
 
-            Action newDeregistration = (
-                handler.RegisterUntargetedMessageHandler(
-                    original,
-                    original,
-                    priority: 17,
-                    messageBus: bus
-                )
-            ).AsAction();
+            Action newDeregistration = (handler.RegisterUntargetedMessageHandler(original, original, priority: 17, messageBus: bus)).AsAction();
             object newTypedHandler = ReadTypedHandler<ProbeMessage>(handler, bus);
             Assert.AreNotSame(
                 typedHandler,
                 newTypedHandler,
-                "External sweep removes an empty typed-handler wrapper, so a later "
-                    + "registration must allocate a replacement wrapper."
+                "External sweep removes an empty typed-handler wrapper, so a later " + "registration must allocate a replacement wrapper."
             );
             Array newSlots = ReadArrayField(newTypedHandler, "_slots");
-            TypedSlot<ProbeMessage> newSlot =
-                (TypedSlot<ProbeMessage>)newSlots.GetValue(TypedSlotIndex.UntargetedHandleDefault);
+            TypedSlot<ProbeMessage> newSlot = (TypedSlot<ProbeMessage>)newSlots.GetValue(TypedSlotIndex.UntargetedHandleDefault);
             Assert.AreEqual(1, newSlot.liveCount);
 
             deregistration();
             Assert.AreEqual(
                 1,
                 newSlot.liveCount,
-                "A stale deregistration captured before external sweep must not affect "
-                    + "a later registration that reused the same typed handler."
+                "A stale deregistration captured before external sweep must not affect " + "a later registration that reused the same typed handler."
             );
 
             newDeregistration();
@@ -492,26 +341,14 @@ namespace DxMessaging.Tests.Editor.Contract
         [Test]
         public void ExternalSweepPreservesActiveUntargetedSlotAndDispatch()
         {
-            DxMessaging.Core.MessageBus.MessageBus bus =
-                new DxMessaging.Core.MessageBus.MessageBus();
-            MessageHandler handler = new MessageHandler(new InstanceId(0x5033_0102), bus)
-            {
-                active = true,
-            };
+            DxMessaging.Core.MessageBus.MessageBus bus = new DxMessaging.Core.MessageBus.MessageBus();
+            MessageHandler handler = new MessageHandler(new InstanceId(0x5033_0102), bus) { active = true };
             int handled = 0;
             Action<ProbeMessage> callback = _ => handled++;
-            Action deregistration = (
-                handler.RegisterUntargetedMessageHandler(
-                    callback,
-                    callback,
-                    priority: 17,
-                    messageBus: bus
-                )
-            ).AsAction();
+            Action deregistration = (handler.RegisterUntargetedMessageHandler(callback, callback, priority: 17, messageBus: bus)).AsAction();
             object typedHandler = ReadTypedHandler<ProbeMessage>(handler, bus);
             Array slots = ReadArrayField(typedHandler, "_slots");
-            TypedSlot<ProbeMessage> slot =
-                (TypedSlot<ProbeMessage>)slots.GetValue(TypedSlotIndex.UntargetedHandleDefault);
+            TypedSlot<ProbeMessage> slot = (TypedSlot<ProbeMessage>)slots.GetValue(TypedSlotIndex.UntargetedHandleDefault);
 
             int resetCount = handler.ResetEmptyTypedSlotsForSweep(bus);
             ProbeMessage message = new ProbeMessage();
@@ -536,15 +373,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 "AddTargetedHandler",
                 BindingFlags.Instance | BindingFlags.Public,
                 binder: null,
-                types: new[]
-                {
-                    typeof(InstanceId),
-                    typeof(Action<ProbeMessage>),
-                    typeof(Action<ProbeMessage>),
-                    typeof(MessageBusRegistration),
-                    typeof(int),
-                    typeof(IMessageBus),
-                },
+                types: new[] { typeof(InstanceId), typeof(Action<ProbeMessage>), typeof(Action<ProbeMessage>), typeof(MessageBusRegistration), typeof(int), typeof(IMessageBus) },
                 modifiers: null
             );
             Assert.IsNotNull(addMethod, "AddTargetedHandler(Action<T>) must exist.");
@@ -553,14 +382,10 @@ namespace DxMessaging.Tests.Editor.Contract
             InstanceId target = new InstanceId(0x5033_0001);
             Action<ProbeMessage> original = _ => { };
             Action<ProbeMessage> augmented = _ => { };
-            _ = addMethod.Invoke(
-                handler,
-                new object[] { target, original, augmented, null, 17, bus }
-            );
+            _ = addMethod.Invoke(handler, new object[] { target, original, augmented, null, 17, bus });
 
             Array slots = ReadArrayField(handler, "_slots");
-            TypedSlot<ProbeMessage> slot =
-                (TypedSlot<ProbeMessage>)slots.GetValue(TypedSlotIndex.TargetedHandleDefault);
+            TypedSlot<ProbeMessage> slot = (TypedSlot<ProbeMessage>)slots.GetValue(TypedSlotIndex.TargetedHandleDefault);
             Assert.IsNotNull(slot);
             Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>> outer = slot.byContext;
             Dictionary<int, IHandlerActionCache> inner = outer[target];
@@ -568,10 +393,8 @@ namespace DxMessaging.Tests.Editor.Contract
             slot.Reset();
             Assert.IsNull(slot.byContext);
 
-            Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>> rentedAgainOuter =
-                DxPools.TypedHandlerContextDicts.Rent();
-            Dictionary<int, IHandlerActionCache> rentedAgainInner =
-                DxPools.TypedHandlerPriorityDicts.Rent();
+            Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>> rentedAgainOuter = DxPools.TypedHandlerContextDicts.Rent();
+            Dictionary<int, IHandlerActionCache> rentedAgainInner = DxPools.TypedHandlerPriorityDicts.Rent();
             try
             {
                 Assert.AreSame(outer, rentedAgainOuter);
@@ -589,28 +412,14 @@ namespace DxMessaging.Tests.Editor.Contract
         {
             _ = DxPools.TrimAll(force: true);
 
-            DxMessaging.Core.MessageBus.MessageBus bus =
-                new DxMessaging.Core.MessageBus.MessageBus();
-            MessageHandler handler = new MessageHandler(new InstanceId(0x5033_0103), bus)
-            {
-                active = true,
-            };
+            DxMessaging.Core.MessageBus.MessageBus bus = new DxMessaging.Core.MessageBus.MessageBus();
+            MessageHandler handler = new MessageHandler(new InstanceId(0x5033_0103), bus) { active = true };
             InstanceId target = new InstanceId(0x5033_0104);
             Action<ProbeTargetedMessage> original = _ => { };
-            Action deregistration = (
-                handler.RegisterTargetedMessageHandler(
-                    target,
-                    original,
-                    original,
-                    priority: 17,
-                    messageBus: bus
-                )
-            ).AsAction();
+            Action deregistration = (handler.RegisterTargetedMessageHandler(target, original, original, priority: 17, messageBus: bus)).AsAction();
             object typedHandler = ReadTypedHandler<ProbeTargetedMessage>(handler, bus);
             Array slots = ReadArrayField(typedHandler, "_slots");
-            TypedSlot<ProbeTargetedMessage> slot =
-                (TypedSlot<ProbeTargetedMessage>)
-                    slots.GetValue(TypedSlotIndex.TargetedHandleDefault);
+            TypedSlot<ProbeTargetedMessage> slot = (TypedSlot<ProbeTargetedMessage>)slots.GetValue(TypedSlotIndex.TargetedHandleDefault);
             Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>> outer = slot.byContext;
             Dictionary<int, IHandlerActionCache> inner = outer[target];
 
@@ -621,10 +430,8 @@ namespace DxMessaging.Tests.Editor.Contract
             Assert.IsNull(slots.GetValue(TypedSlotIndex.TargetedHandleDefault));
             Assert.IsNull(slot.byContext);
 
-            Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>> rentedAgainOuter =
-                DxPools.TypedHandlerContextDicts.Rent();
-            Dictionary<int, IHandlerActionCache> rentedAgainInner =
-                DxPools.TypedHandlerPriorityDicts.Rent();
+            Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>> rentedAgainOuter = DxPools.TypedHandlerContextDicts.Rent();
+            Dictionary<int, IHandlerActionCache> rentedAgainInner = DxPools.TypedHandlerPriorityDicts.Rent();
             try
             {
                 Assert.AreSame(outer, rentedAgainOuter);
@@ -642,46 +449,27 @@ namespace DxMessaging.Tests.Editor.Contract
         {
             _ = DxPools.TrimAll(force: true);
 
-            MethodInfo addMethod = FindTargetedActionRegisterMethod(
-                MakeFreshTypedHandler().GetType()
-            );
+            MethodInfo addMethod = FindTargetedActionRegisterMethod(MakeFreshTypedHandler().GetType());
             InstanceId target = new InstanceId(0x5033_0002);
             MessageBus bus = new MessageBus();
             Action<ProbeMessage> original = _ => { };
             Action<ProbeMessage> augmented = _ => { };
 
             object oldHandler = MakeFreshTypedHandler();
-            Action oldDeregistration = ToDeregistrationAction(
-                addMethod.Invoke(
-                    oldHandler,
-                    new object[] { target, original, augmented, null, 17, bus }
-                )
-            );
-            TypedSlot<ProbeMessage> oldSlot =
-                (TypedSlot<ProbeMessage>)
-                    ReadArrayField(oldHandler, "_slots")
-                        .GetValue(TypedSlotIndex.TargetedHandleDefault);
+            Action oldDeregistration = ToDeregistrationAction(addMethod.Invoke(oldHandler, new object[] { target, original, augmented, null, 17, bus }));
+            TypedSlot<ProbeMessage> oldSlot = (TypedSlot<ProbeMessage>)ReadArrayField(oldHandler, "_slots").GetValue(TypedSlotIndex.TargetedHandleDefault);
             oldSlot.Reset();
 
             object newHandler = MakeFreshTypedHandler();
-            Action newDeregistration = ToDeregistrationAction(
-                addMethod.Invoke(
-                    newHandler,
-                    new object[] { target, original, augmented, null, 17, bus }
-                )
-            );
-            TypedSlot<ProbeMessage> newSlot =
-                (TypedSlot<ProbeMessage>)
-                    ReadArrayField(newHandler, "_slots")
-                        .GetValue(TypedSlotIndex.TargetedHandleDefault);
+            Action newDeregistration = ToDeregistrationAction(addMethod.Invoke(newHandler, new object[] { target, original, augmented, null, 17, bus }));
+            TypedSlot<ProbeMessage> newSlot = (TypedSlot<ProbeMessage>)ReadArrayField(newHandler, "_slots").GetValue(TypedSlotIndex.TargetedHandleDefault);
             Assert.AreEqual(1, newSlot.liveCount);
 
             oldDeregistration();
             Assert.AreEqual(
                 1,
                 newSlot.liveCount,
-                "A stale deregistration captured before Reset() must not remove handlers "
-                    + "from a later slot that rented the same dictionaries."
+                "A stale deregistration captured before Reset() must not remove handlers " + "from a later slot that rented the same dictionaries."
             );
 
             newDeregistration();
@@ -698,32 +486,19 @@ namespace DxMessaging.Tests.Editor.Contract
                 "AddGlobalUntargetedHandler",
                 BindingFlags.Instance | BindingFlags.Public,
                 binder: null,
-                types: new[]
-                {
-                    typeof(Action<IUntargetedMessage>),
-                    typeof(Action<IUntargetedMessage>),
-                    typeof(IMessageBus),
-                },
+                types: new[] { typeof(Action<IUntargetedMessage>), typeof(Action<IUntargetedMessage>), typeof(IMessageBus) },
                 modifiers: null
             );
-            Assert.IsNotNull(
-                addMethod,
-                "AddGlobalUntargetedHandler(Action<IUntargetedMessage>) must exist."
-            );
+            Assert.IsNotNull(addMethod, "AddGlobalUntargetedHandler(Action<IUntargetedMessage>) must exist.");
 
             MessageBus bus = new MessageBus();
             Action<IUntargetedMessage> original = _ => { };
             Action<IUntargetedMessage> augmented = _ => { };
-            Action deregistration = ToDeregistrationAction(
-                addMethod.Invoke(handler, new object[] { original, augmented, bus })
-            );
+            Action deregistration = ToDeregistrationAction(addMethod.Invoke(handler, new object[] { original, augmented, bus }));
 
             Array globalSlots = ReadArrayField(handler, "_globalSlots");
             object populated = globalSlots.GetValue(TypedGlobalSlotIndex.UntargetedDefault);
-            Assert.IsNotNull(
-                populated,
-                "Global untargeted default registration must populate its slot."
-            );
+            Assert.IsNotNull(populated, "Global untargeted default registration must populate its slot.");
             TypedGlobalSlot slot = (TypedGlobalSlot)populated;
             Assert.AreEqual(1, slot.liveCount);
             Assert.IsNotNull(slot.cache);
@@ -739,34 +514,17 @@ namespace DxMessaging.Tests.Editor.Contract
         [Test]
         public void ExternalSweepResetsEmptyGlobalSlots()
         {
-            DxMessaging.Core.MessageBus.MessageBus bus =
-                new DxMessaging.Core.MessageBus.MessageBus();
-            MessageHandler handler = new MessageHandler(new InstanceId(0x5033_0105), bus)
-            {
-                active = true,
-            };
+            DxMessaging.Core.MessageBus.MessageBus bus = new DxMessaging.Core.MessageBus.MessageBus();
+            MessageHandler handler = new MessageHandler(new InstanceId(0x5033_0105), bus) { active = true };
             Action<IUntargetedMessage> untargeted = _ => { };
             Action<InstanceId, ITargetedMessage> targeted = (_, _) => { };
             Action<InstanceId, IBroadcastMessage> broadcast = (_, _) => { };
-            Action deregistration = (
-                handler.RegisterGlobalAcceptAll(
-                    untargeted,
-                    untargeted,
-                    targeted,
-                    targeted,
-                    broadcast,
-                    broadcast,
-                    messageBus: bus
-                )
-            ).AsAction();
+            Action deregistration = (handler.RegisterGlobalAcceptAll(untargeted, untargeted, targeted, targeted, broadcast, broadcast, messageBus: bus)).AsAction();
             object typedHandler = ReadTypedHandler<IMessage>(handler, bus);
             Array globalSlots = ReadArrayField(typedHandler, "_globalSlots");
-            TypedGlobalSlot untargetedSlot = (TypedGlobalSlot)
-                globalSlots.GetValue(TypedGlobalSlotIndex.UntargetedDefault);
-            TypedGlobalSlot targetedSlot = (TypedGlobalSlot)
-                globalSlots.GetValue(TypedGlobalSlotIndex.TargetedDefault);
-            TypedGlobalSlot broadcastSlot = (TypedGlobalSlot)
-                globalSlots.GetValue(TypedGlobalSlotIndex.BroadcastDefault);
+            TypedGlobalSlot untargetedSlot = (TypedGlobalSlot)globalSlots.GetValue(TypedGlobalSlotIndex.UntargetedDefault);
+            TypedGlobalSlot targetedSlot = (TypedGlobalSlot)globalSlots.GetValue(TypedGlobalSlotIndex.TargetedDefault);
+            TypedGlobalSlot broadcastSlot = (TypedGlobalSlot)globalSlots.GetValue(TypedGlobalSlotIndex.BroadcastDefault);
 
             deregistration();
             int resetCount = handler.ResetEmptyTypedSlotsForSweep(bus);
@@ -789,24 +547,14 @@ namespace DxMessaging.Tests.Editor.Contract
                 "AddGlobalUntargetedHandler",
                 BindingFlags.Instance | BindingFlags.Public,
                 binder: null,
-                types: new[]
-                {
-                    typeof(Action<IUntargetedMessage>),
-                    typeof(Action<IUntargetedMessage>),
-                    typeof(IMessageBus),
-                },
+                types: new[] { typeof(Action<IUntargetedMessage>), typeof(Action<IUntargetedMessage>), typeof(IMessageBus) },
                 modifiers: null
             );
-            Assert.IsNotNull(
-                addMethod,
-                "AddGlobalUntargetedHandler(Action<IUntargetedMessage>) must exist."
-            );
+            Assert.IsNotNull(addMethod, "AddGlobalUntargetedHandler(Action<IUntargetedMessage>) must exist.");
             MessageBus bus = new MessageBus();
             Action<IUntargetedMessage> original = _ => { };
             Action<IUntargetedMessage> augmented = _ => { };
-            Action staleDeregistration = ToDeregistrationAction(
-                addMethod.Invoke(typedHandler, new object[] { original, augmented, bus })
-            );
+            Action staleDeregistration = ToDeregistrationAction(addMethod.Invoke(typedHandler, new object[] { original, augmented, bus }));
             Array globalSlots = ReadArrayField(typedHandler, "_globalSlots");
 
             staleDeregistration();
@@ -814,19 +562,15 @@ namespace DxMessaging.Tests.Editor.Contract
             Assert.AreEqual(1, resetCount);
             Assert.IsNull(globalSlots.GetValue(TypedGlobalSlotIndex.UntargetedDefault));
 
-            Action newDeregistration = ToDeregistrationAction(
-                addMethod.Invoke(typedHandler, new object[] { original, augmented, bus })
-            );
-            TypedGlobalSlot newUntargetedSlot = (TypedGlobalSlot)
-                globalSlots.GetValue(TypedGlobalSlotIndex.UntargetedDefault);
+            Action newDeregistration = ToDeregistrationAction(addMethod.Invoke(typedHandler, new object[] { original, augmented, bus }));
+            TypedGlobalSlot newUntargetedSlot = (TypedGlobalSlot)globalSlots.GetValue(TypedGlobalSlotIndex.UntargetedDefault);
             Assert.AreEqual(1, newUntargetedSlot.liveCount);
 
             staleDeregistration();
             Assert.AreEqual(
                 1,
                 newUntargetedSlot.liveCount,
-                "A stale global deregistration captured before external sweep must not "
-                    + "decrement a later TypedGlobalSlot registration."
+                "A stale global deregistration captured before external sweep must not " + "decrement a later TypedGlobalSlot registration."
             );
 
             newDeregistration();
@@ -840,14 +584,8 @@ namespace DxMessaging.Tests.Editor.Contract
 
         private static object MakeFreshTypedHandler(Type messageType)
         {
-            Type typedHandlerOpen = typeof(MessageHandler).GetNestedType(
-                "TypedHandler`1",
-                BindingFlags.NonPublic
-            );
-            Assert.IsNotNull(
-                typedHandlerOpen,
-                "MessageHandler.TypedHandler<T> nested type must exist."
-            );
+            Type typedHandlerOpen = typeof(MessageHandler).GetNestedType("TypedHandler`1", BindingFlags.NonPublic);
+            Assert.IsNotNull(typedHandlerOpen, "MessageHandler.TypedHandler<T> nested type must exist.");
             Type closed = typedHandlerOpen.MakeGenericType(messageType);
             return Activator.CreateInstance(closed, nonPublic: true);
         }
@@ -858,15 +596,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 "AddTargetedHandler",
                 BindingFlags.Instance | BindingFlags.Public,
                 binder: null,
-                types: new[]
-                {
-                    typeof(InstanceId),
-                    typeof(Action<ProbeMessage>),
-                    typeof(Action<ProbeMessage>),
-                    typeof(MessageBusRegistration),
-                    typeof(int),
-                    typeof(IMessageBus),
-                },
+                types: new[] { typeof(InstanceId), typeof(Action<ProbeMessage>), typeof(Action<ProbeMessage>), typeof(MessageBusRegistration), typeof(int), typeof(IMessageBus) },
                 modifiers: null
             );
             Assert.IsNotNull(addMethod, "AddTargetedHandler(Action<T>) must exist.");
@@ -876,21 +606,14 @@ namespace DxMessaging.Tests.Editor.Contract
         private static Action ToDeregistrationAction(object state)
         {
             Assert.IsNotNull(state, "Registration must return teardown state.");
-            MethodInfo deregister = state
-                .GetType()
-                .GetMethod("Deregister", BindingFlags.Instance | BindingFlags.NonPublic);
+            MethodInfo deregister = state.GetType().GetMethod("Deregister", BindingFlags.Instance | BindingFlags.NonPublic);
             Assert.IsNotNull(deregister, "Teardown state must expose Deregister internally.");
             return () => deregister.Invoke(state, null);
         }
 
         private static Array ReadArrayField(object handler, string name)
         {
-            FieldInfo field = handler
-                .GetType()
-                .GetField(
-                    name,
-                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
-                );
+            FieldInfo field = handler.GetType().GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             Assert.IsNotNull(field, "TypedHandler<T> must declare field '" + name + "'.");
             object value = field.GetValue(handler);
             Assert.IsNotNull(value, "TypedHandler<T>.{0} must be non-null on construction.", name);
@@ -900,15 +623,8 @@ namespace DxMessaging.Tests.Editor.Contract
         private static object ReadTypedHandler<TMessage>(MessageHandler handler, IMessageBus bus)
             where TMessage : IMessage
         {
-            Assert.IsTrue(
-                handler._handlersByTypeByMessageBus.ContainsKey(
-                    bus.RegisteredGlobalSequentialIndex
-                ),
-                "The handler must retain a cache for the registered bus."
-            );
-            bool exists = handler
-                ._handlersByTypeByMessageBus[bus.RegisteredGlobalSequentialIndex]
-                .TryGetValue<TMessage>(out object typedHandler);
+            Assert.IsTrue(handler._handlersByTypeByMessageBus.ContainsKey(bus.RegisteredGlobalSequentialIndex), "The handler must retain a cache for the registered bus.");
+            bool exists = handler._handlersByTypeByMessageBus[bus.RegisteredGlobalSequentialIndex].TryGetValue<TMessage>(out object typedHandler);
             Assert.IsTrue(exists, "Typed handler for " + typeof(TMessage).Name + " must exist.");
             Assert.IsNotNull(typedHandler);
             return typedHandler;

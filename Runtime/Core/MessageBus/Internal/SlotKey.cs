@@ -81,27 +81,15 @@ namespace DxMessaging.Core.MessageBus.Internal
             byte v = (byte)variant;
             if (KindMask < k)
             {
-                throw new ArgumentOutOfRangeException(
-                    nameof(kind),
-                    k,
-                    "DispatchKind must fit in 4 bits (0..15)."
-                );
+                throw new ArgumentOutOfRangeException(nameof(kind), k, "DispatchKind must fit in 4 bits (0..15).");
             }
             if (PhaseMask < p)
             {
-                throw new ArgumentOutOfRangeException(
-                    nameof(phase),
-                    p,
-                    "DispatchPhase must fit in 1 bit (0..1)."
-                );
+                throw new ArgumentOutOfRangeException(nameof(phase), p, "DispatchPhase must fit in 1 bit (0..1).");
             }
             if (VariantMask < v)
             {
-                throw new ArgumentOutOfRangeException(
-                    nameof(variant),
-                    v,
-                    "DispatchVariant must fit in 3 bits (0..7)."
-                );
+                throw new ArgumentOutOfRangeException(nameof(variant), v, "DispatchVariant must fit in 3 bits (0..7).");
             }
             byte packed = (byte)((k << KindShift) | (p << PhaseShift) | v);
             if (packed == NonePacked)

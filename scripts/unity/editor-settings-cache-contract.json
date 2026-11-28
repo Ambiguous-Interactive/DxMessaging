@@ -76,18 +76,7 @@
   "schemas": {
     "idle": {
       "type": "object",
-      "required": [
-        "observedUtc",
-        "frameworkActive",
-        "playing",
-        "compiling",
-        "updating",
-        "mainStage",
-        "observationError",
-        "frameworkErrors",
-        "activeScene",
-        "scenes"
-      ],
+      "required": ["observedUtc", "frameworkActive", "playing", "compiling", "updating", "mainStage", "observationError", "frameworkErrors", "activeScene", "scenes"],
       "properties": {
         "observedUtc": {
           "type": "string",
@@ -162,14 +151,7 @@
     },
     "result": {
       "type": "object",
-      "required": [
-        "passCount",
-        "failCount",
-        "skipCount",
-        "inconclusiveCount",
-        "durationSeconds",
-        "nodes"
-      ],
+      "required": ["passCount", "failCount", "skipCount", "inconclusiveCount", "durationSeconds", "nodes"],
       "properties": {
         "passCount": {
           "type": "integer",
@@ -231,13 +213,7 @@
     },
     "source": {
       "type": "object",
-      "required": [
-        "sourceCommit",
-        "sourceTree",
-        "allOtherTrackedUnityAssetsIdentical",
-        "overlay",
-        "packageRestored"
-      ],
+      "required": ["sourceCommit", "sourceTree", "allOtherTrackedUnityAssetsIdentical", "overlay", "packageRestored"],
       "properties": {
         "sourceCommit": {
           "type": "string",
@@ -414,13 +390,7 @@
     },
     "restoration": {
       "type": "object",
-      "required": [
-        "newFixtureLoaded",
-        "scratchFolders",
-        "sampleFixtureCreated",
-        "restoredSourceUtc",
-        "assemblyUtc"
-      ],
+      "required": ["newFixtureLoaded", "scratchFolders", "sampleFixtureCreated", "restoredSourceUtc", "assemblyUtc"],
       "properties": {
         "newFixtureLoaded": {
           "const": false

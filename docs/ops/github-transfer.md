@@ -5,13 +5,11 @@ description: Manual steps for moving DxMessaging to Ambiguous-Interactive
 
 # GitHub Transfer
 
-Use this checklist when transferring or verifying the repository under
-`Ambiguous-Interactive/DxMessaging`.
+Use this checklist when transferring or verifying the repository under `Ambiguous-Interactive/DxMessaging`.
 
 ## Before Transfer
 
-1. Confirm the target organization has an owner who can accept transferred
-   repositories.
+1. Confirm the target organization has an owner who can accept transferred repositories.
 1. Confirm the target repository name remains `DxMessaging`.
 1. Confirm the package ID remains `com.wallstop-studios.dxmessaging`.
 1. Record public state in the local ignored runbook:
@@ -19,21 +17,18 @@ Use this checklist when transferring or verifying the repository under
    - latest version tag
    - required workflow names
    - public package pages
-1. Do not record personal access tokens, recovery codes, private emails,
-   screenshots, or publisher account IDs.
+1. Do not record personal access tokens, recovery codes, private emails, screenshots, or publisher account IDs.
 
 ## Transfer
 
 1. Transfer the repository through GitHub repository settings.
 1. Accept the transfer in the `Ambiguous-Interactive` organization.
-1. Confirm the repository URL is
-   `https://github.com/Ambiguous-Interactive/DxMessaging`.
+1. Confirm the repository URL is `https://github.com/Ambiguous-Interactive/DxMessaging`.
 1. Confirm existing tags and GitHub Releases are still visible.
 1. Confirm old links redirect, but do not rely on redirects in tracked files.
 
-GitHub states that webhooks, services, secrets, and deploy keys remain
-associated with a transferred repository. Treat that as a starting point, not a
-verification result. Recheck every automation binding after the transfer.
+GitHub states that webhooks, services, secrets, and deploy keys remain associated with a transferred repository. Treat that as a starting point, not a verification result. Recheck
+every automation binding after the transfer.
 
 ## Repository Identity Surfaces
 
@@ -90,6 +85,5 @@ Use HTTPS instead of SSH if that is the maintainer's normal GitHub setup.
 - npm Trusted Publishing remains bound to the old repository.
 - OpenUPM metadata still indexes the old repository.
 - Dependabot still assigns or requests review from old-owner accounts.
-- Release Drafter creates unprefixed tags while release workflow expects
-  `vX.Y.Z`.
+- Release Drafter creates unprefixed tags while release workflow expects `vX.Y.Z`.
 - Maintainers rely on old redirects and miss stale links in package metadata.

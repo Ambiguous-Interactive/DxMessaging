@@ -4,7 +4,8 @@
 
 ## Overview
 
-Unity coroutines frequently use `yield return new WaitForSeconds(x)`, creating a new object each time. Since `WaitForSeconds` is reusable after completion, we can cache instances by duration to achieve zero-allocation coroutines.
+Unity coroutines frequently use `yield return new WaitForSeconds(x)`, creating a new object each time. Since `WaitForSeconds` is reusable after completion, we can cache instances
+by duration to achieve zero-allocation coroutines.
 
 ## Problem Statement
 

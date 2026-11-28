@@ -41,17 +41,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             TestContext.Out.WriteLine(result.ToCsvRow());
         }
 
-        public static HandlerCardinalityBenchmarkResult RunScenario(
-            HandlerCardinalityBenchmarkCase benchmarkCase
-        )
+        public static HandlerCardinalityBenchmarkResult RunScenario(HandlerCardinalityBenchmarkCase benchmarkCase)
         {
-            using HandlerCardinalityState state = new(
-                benchmarkCase.Cardinality,
-                benchmarkCase.Operation
-            );
-            int warmupOperations = IsDispatch(benchmarkCase.Operation)
-                ? BenchmarkProtocol.WarmupEmits
-                : ChurnWarmupOperations;
+            using HandlerCardinalityState state = new(benchmarkCase.Cardinality, benchmarkCase.Operation);
+            int warmupOperations = IsDispatch(benchmarkCase.Operation) ? BenchmarkProtocol.WarmupEmits : ChurnWarmupOperations;
             BenchmarkMeasurement measurement = BenchmarkProtocol.Measure(
                 () => state.RunMany(benchmarkCase.Operation, warmupOperations),
                 () =>
@@ -61,26 +54,15 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 }
             );
 
-            int expectedFanOut = IsSameHandler(benchmarkCase.Operation)
-                ? 1
-                : benchmarkCase.Cardinality;
+            int expectedFanOut = IsSameHandler(benchmarkCase.Operation) ? 1 : benchmarkCase.Cardinality;
             if (IsDispatch(benchmarkCase.Operation))
             {
-                long expectedCalls =
-                    (long)expectedFanOut * (warmupOperations + measurement.TotalEmittedOperations);
-                Assert.AreEqual(
-                    expectedCalls,
-                    state.Calls,
-                    $"{benchmarkCase.Key} changed dispatch fan-out during measurement."
-                );
+                long expectedCalls = (long)expectedFanOut * (warmupOperations + measurement.TotalEmittedOperations);
+                Assert.AreEqual(expectedCalls, state.Calls, $"{benchmarkCase.Key} changed dispatch fan-out during measurement.");
             }
             else
             {
-                Assert.AreEqual(
-                    0,
-                    state.Calls,
-                    $"{benchmarkCase.Key} churn must not invoke handlers."
-                );
+                Assert.AreEqual(0, state.Calls, $"{benchmarkCase.Key} churn must not invoke handlers.");
             }
 
             HandlerCardinalityObservation observation = state.Observe();
@@ -116,14 +98,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             );
         }
 
-        internal static HandlerCardinalityObservation RunOnceForContract(
-            HandlerCardinalityBenchmarkCase benchmarkCase
-        )
+        internal static HandlerCardinalityObservation RunOnceForContract(HandlerCardinalityBenchmarkCase benchmarkCase)
         {
-            using HandlerCardinalityState state = new(
-                benchmarkCase.Cardinality,
-                benchmarkCase.Operation
-            );
+            using HandlerCardinalityState state = new(benchmarkCase.Cardinality, benchmarkCase.Operation);
             if (IsDispatch(benchmarkCase.Operation))
             {
                 state.RunMany(benchmarkCase.Operation, 1);
@@ -142,14 +119,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             || operation == HandlerCardinalityOperation.SameHandlerDispatch;
 
         private static bool IsSameHandler(HandlerCardinalityOperation operation) =>
-            operation == HandlerCardinalityOperation.SameHandlerDispatch
-            || operation == HandlerCardinalityOperation.SameHandlerChurn;
+            operation == HandlerCardinalityOperation.SameHandlerDispatch || operation == HandlerCardinalityOperation.SameHandlerChurn;
 
         private static IEnumerable<TestCaseData> BenchmarkCases()
         {
-            foreach (
-                HandlerCardinalityBenchmarkCase benchmarkCase in HandlerCardinalityScenarios.All
-            )
+            foreach (HandlerCardinalityBenchmarkCase benchmarkCase in HandlerCardinalityScenarios.All)
             {
                 yield return new TestCaseData(benchmarkCase).SetName(benchmarkCase.Key);
             }
@@ -177,18 +151,13 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 }
 
                 _sameHandlerShape = IsSameHandler(operation);
-                _distinctPriorityShape =
-                    operation == HandlerCardinalityOperation.PriorityDispatch
-                    || operation == HandlerCardinalityOperation.PriorityChurn;
+                _distinctPriorityShape = operation == HandlerCardinalityOperation.PriorityDispatch || operation == HandlerCardinalityOperation.PriorityChurn;
                 _registryScope = MessageBusInspection.IsolateIdleSweepRegistryForBenchmark();
                 MessageRegistrationToken token = null;
                 try
                 {
                     _bus = new MessageBus { DiagnosticsMode = false };
-                    _messageHandler = new MessageHandler(new InstanceId(0x4843_0001), _bus)
-                    {
-                        active = true,
-                    };
+                    _messageHandler = new MessageHandler(new InstanceId(0x4843_0001), _bus) { active = true };
                     token = MessageRegistrationToken.Create(_messageHandler, _bus);
                     _token = token;
                     _token.DiagnosticMode = false;
@@ -266,26 +235,14 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 _calls = 0;
                 CardinalityMessage message = default;
                 _bus.UntargetedBroadcast(ref message);
-                return new HandlerCardinalityObservation(
-                    checked((int)_calls),
-                    _token._metadata.Count,
-                    _bus.OccupiedTypeSlots,
-                    ObserveBusPriorityStorage(),
-                    ObserveStorage()
-                );
+                return new HandlerCardinalityObservation(checked((int)_calls), _token._metadata.Count, _bus.OccupiedTypeSlots, ObserveBusPriorityStorage(), ObserveStorage());
             }
 
             internal PriorityStorageObservation ObserveBusPriorityStorage()
             {
-                if (
-                    !_bus.TryObserveUntargetedPriorityStorageForBenchmark<CardinalityMessage>(
-                        out PriorityStorageObservation storage
-                    )
-                )
+                if (!_bus.TryObserveUntargetedPriorityStorageForBenchmark<CardinalityMessage>(out PriorityStorageObservation storage))
                 {
-                    throw new InvalidOperationException(
-                        "The benchmark must materialize bus-side untargeted priority storage."
-                    );
+                    throw new InvalidOperationException("The benchmark must materialize bus-side untargeted priority storage.");
                 }
                 return storage;
             }
@@ -301,19 +258,14 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     )
                 )
                 {
-                    throw new InvalidOperationException(
-                        "The benchmark must materialize priority zero storage."
-                    );
+                    throw new InvalidOperationException("The benchmark must materialize priority zero storage.");
                 }
                 return storage;
             }
 
             private MessageRegistrationHandle Register(int index)
             {
-                return _token.RegisterUntargeted<CardinalityMessage>(
-                    _sameHandlerShape ? _sameHandler : _handlers[index],
-                    priority: _distinctPriorityShape ? index : 0
-                );
+                return _token.RegisterUntargeted<CardinalityMessage>(_sameHandlerShape ? _sameHandler : _handlers[index], priority: _distinctPriorityShape ? index : 0);
             }
 
             private void HandleSame(in CardinalityMessage message)
@@ -370,9 +322,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             TestContext.Out.WriteLine(result.ToCsvRow());
         }
 
-        public static HandlerStorageConstructionBenchmarkResult RunScenario(
-            HandlerStorageConstructionKind kind
-        )
+        public static HandlerStorageConstructionBenchmarkResult RunScenario(HandlerStorageConstructionKind kind)
         {
             ValidateFreshConstruction(kind);
 
@@ -384,25 +334,15 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 int constructed = ConstructBatch(kind, ConstructionSamples);
                 long endTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
                 s_constructionSink = null;
-                Assert.AreEqual(
-                    ConstructionSamples,
-                    constructed,
-                    $"Construction kind {kind} must construct the requested sample count."
-                );
-                double elapsedSeconds =
-                    (endTimestamp - startTimestamp)
-                    / (double)System.Diagnostics.Stopwatch.Frequency;
+                Assert.AreEqual(ConstructionSamples, constructed, $"Construction kind {kind} must construct the requested sample count.");
+                double elapsedSeconds = (endTimestamp - startTimestamp) / (double)System.Diagnostics.Stopwatch.Frequency;
                 minElapsedSeconds = Math.Min(minElapsedSeconds, elapsedSeconds);
             }
 
             AllocationProbe.MinimumMeasurement<int> allocation;
             try
             {
-                allocation = AllocationProbe.MeasureMinWithDiagnostics(
-                    AllocationAttempts,
-                    null,
-                    () => ConstructBatch(kind, ConstructionSamples)
-                );
+                allocation = AllocationProbe.MeasureMinWithDiagnostics(AllocationAttempts, null, () => ConstructBatch(kind, ConstructionSamples));
             }
             finally
             {
@@ -414,8 +354,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 Assert.AreEqual(
                     ConstructionSamples,
                     allocation.Diagnostics,
-                    $"Construction kind {kind} must construct the reported sample count in the "
-                        + "selected allocation attempt."
+                    $"Construction kind {kind} must construct the reported sample count in the " + "selected allocation attempt."
                 );
             }
 
@@ -436,23 +375,19 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 case HandlerStorageConstructionKind.HandlerCache:
                     for (int index = 0; index < count; ++index)
                     {
-                        s_constructionSink =
-                            new MessageHandler.HandlerActionCache<MessageHandler.FastHandler<StorageConstructionMessage>>();
+                        s_constructionSink = new MessageHandler.HandlerActionCache<MessageHandler.FastHandler<StorageConstructionMessage>>();
                     }
                     return count;
                 case HandlerStorageConstructionKind.PrioritySlot:
                     for (int index = 0; index < count; ++index)
                     {
-                        s_constructionSink = new TypedSlot<StorageConstructionMessage>(
-                            requiresContext: false
-                        );
+                        s_constructionSink = new TypedSlot<StorageConstructionMessage>(requiresContext: false);
                     }
                     return count;
                 case HandlerStorageConstructionKind.OrdinaryTypedHandler:
                     for (int index = 0; index < count; ++index)
                     {
-                        s_constructionSink =
-                            new MessageHandler.TypedHandler<StorageConstructionMessage>();
+                        s_constructionSink = new MessageHandler.TypedHandler<StorageConstructionMessage>();
                     }
                     return count;
                 case HandlerStorageConstructionKind.GlobalTypedHandler:
@@ -468,39 +403,18 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         private static void ValidateFreshConstruction(HandlerStorageConstructionKind kind)
         {
-            Assert.AreEqual(
-                1,
-                ConstructBatch(kind, 1),
-                $"Construction kind {kind} must create one fresh storage owner."
-            );
+            Assert.AreEqual(1, ConstructBatch(kind, 1), $"Construction kind {kind} must create one fresh storage owner.");
             if (kind == HandlerStorageConstructionKind.OrdinaryTypedHandler)
             {
-                MessageHandler.TypedHandler<StorageConstructionMessage> handler =
-                    (MessageHandler.TypedHandler<StorageConstructionMessage>)s_constructionSink;
-                Assert.AreEqual(
-                    TypedSlotIndex.Length,
-                    handler._slots.Length,
-                    $"Construction kind {kind} must retain every ordinary typed slot."
-                );
-                Assert.Zero(
-                    handler._globalSlots.Length,
-                    $"Construction kind {kind} must omit global registration slots."
-                );
+                MessageHandler.TypedHandler<StorageConstructionMessage> handler = (MessageHandler.TypedHandler<StorageConstructionMessage>)s_constructionSink;
+                Assert.AreEqual(TypedSlotIndex.Length, handler._slots.Length, $"Construction kind {kind} must retain every ordinary typed slot.");
+                Assert.Zero(handler._globalSlots.Length, $"Construction kind {kind} must omit global registration slots.");
             }
             else if (kind == HandlerStorageConstructionKind.GlobalTypedHandler)
             {
-                MessageHandler.TypedHandler<IMessage> handler =
-                    (MessageHandler.TypedHandler<IMessage>)s_constructionSink;
-                Assert.AreEqual(
-                    TypedSlotIndex.Length,
-                    handler._slots.Length,
-                    $"Construction kind {kind} must retain every ordinary typed slot."
-                );
-                Assert.AreEqual(
-                    TypedGlobalSlotIndex.Length,
-                    handler._globalSlots.Length,
-                    $"Construction kind {kind} must retain every global registration slot."
-                );
+                MessageHandler.TypedHandler<IMessage> handler = (MessageHandler.TypedHandler<IMessage>)s_constructionSink;
+                Assert.AreEqual(TypedSlotIndex.Length, handler._slots.Length, $"Construction kind {kind} must retain every ordinary typed slot.");
+                Assert.AreEqual(TypedGlobalSlotIndex.Length, handler._globalSlots.Length, $"Construction kind {kind} must retain every global registration slot.");
             }
             s_constructionSink = null;
         }
@@ -510,8 +424,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
     public readonly struct HandlerStorageConstructionBenchmarkResult
     {
-        public const string CsvHeader =
-            "scenario,constructionsPerSecond,gcAllocations,wallClockMs,gcAllocatedBytes,samples";
+        public const string CsvHeader = "scenario,constructionsPerSecond,gcAllocations,wallClockMs,gcAllocatedBytes,samples";
 
         public HandlerStorageConstructionBenchmarkResult(
             HandlerStorageConstructionKind kind,
@@ -581,22 +494,13 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         private static HandlerCardinalityBenchmarkCase[] BuildCases()
         {
-            HandlerCardinalityBenchmarkCase[] cases = new HandlerCardinalityBenchmarkCase[
-                Cardinalities.Length * Operations.Length
-            ];
+            HandlerCardinalityBenchmarkCase[] cases = new HandlerCardinalityBenchmarkCase[Cardinalities.Length * Operations.Length];
             int writeIndex = 0;
             for (int operationIndex = 0; operationIndex < Operations.Length; ++operationIndex)
             {
-                for (
-                    int cardinalityIndex = 0;
-                    cardinalityIndex < Cardinalities.Length;
-                    ++cardinalityIndex
-                )
+                for (int cardinalityIndex = 0; cardinalityIndex < Cardinalities.Length; ++cardinalityIndex)
                 {
-                    cases[writeIndex++] = new HandlerCardinalityBenchmarkCase(
-                        Operations[operationIndex],
-                        Cardinalities[cardinalityIndex]
-                    );
+                    cases[writeIndex++] = new HandlerCardinalityBenchmarkCase(Operations[operationIndex], Cardinalities[cardinalityIndex]);
                 }
             }
             return cases;
@@ -605,10 +509,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
     public readonly struct HandlerCardinalityBenchmarkCase
     {
-        public HandlerCardinalityBenchmarkCase(
-            HandlerCardinalityOperation operation,
-            int cardinality
-        )
+        public HandlerCardinalityBenchmarkCase(HandlerCardinalityOperation operation, int cardinality)
         {
             Operation = operation;
             Cardinality = cardinality;

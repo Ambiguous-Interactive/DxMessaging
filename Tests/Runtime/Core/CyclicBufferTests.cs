@@ -16,11 +16,7 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             CyclicBuffer<int> buf = new(3) { 0, 1, 2 };
 
-            Assert.AreEqual(
-                3,
-                buf.Count,
-                "Count should reflect number of elements added up to capacity."
-            );
+            Assert.AreEqual(3, buf.Count, "Count should reflect number of elements added up to capacity.");
             Assert.AreEqual(0, buf[0], "Oldest element should be at index 0 before wrap.");
             Assert.AreEqual(1, buf[1], "Next element should be index 1.");
             Assert.AreEqual(2, buf[2], "Newest element should be index 2 before wrap.");
@@ -79,71 +75,29 @@ namespace DxMessaging.Tests.Runtime.Core
                 buffer.Add(i);
             }
 
-            Assert.AreEqual(
-                expectedCount,
-                buffer.Count,
-                $"Buffer with capacity {capacity} after adding {itemsToAdd} items."
-            );
+            Assert.AreEqual(expectedCount, buffer.Count, $"Buffer with capacity {capacity} after adding {itemsToAdd} items.");
 
             // Verify the most recent items are retained (if any)
             if (0 < expectedCount)
             {
                 int expectedNewest = itemsToAdd - 1;
-                Assert.AreEqual(
-                    expectedNewest,
-                    buffer[expectedCount - 1],
-                    "Most recent item should be preserved."
-                );
+                Assert.AreEqual(expectedNewest, buffer[expectedCount - 1], "Most recent item should be preserved.");
             }
         }
 
         [Test]
-        [TestCase(
-            new[] { 1, 2, 3 },
-            1,
-            new[] { 2, 3 },
-            Description = "Remove first element by value",
-            TestName = nameof(RemoveBehaviorDataDriven) + "(FirstElement)"
-        )]
-        [TestCase(
-            new[] { 1, 2, 3 },
-            2,
-            new[] { 1, 3 },
-            Description = "Remove middle element by value",
-            TestName = nameof(RemoveBehaviorDataDriven) + "(MiddleElement)"
-        )]
-        [TestCase(
-            new[] { 1, 2, 3 },
-            3,
-            new[] { 1, 2 },
-            Description = "Remove last element by value",
-            TestName = nameof(RemoveBehaviorDataDriven) + "(LastElement)"
-        )]
-        [TestCase(
-            new[] { 1, 2, 3 },
-            99,
-            new[] { 1, 2, 3 },
-            Description = "Remove non-existent element",
-            TestName = nameof(RemoveBehaviorDataDriven) + "(MissingElement)"
-        )]
-        [TestCase(
-            new[] { 1 },
-            1,
-            new int[0],
-            Description = "Remove only element",
-            TestName = nameof(RemoveBehaviorDataDriven) + "(OnlyElement)"
-        )]
+        [TestCase(new[] { 1, 2, 3 }, 1, new[] { 2, 3 }, Description = "Remove first element by value", TestName = nameof(RemoveBehaviorDataDriven) + "(FirstElement)")]
+        [TestCase(new[] { 1, 2, 3 }, 2, new[] { 1, 3 }, Description = "Remove middle element by value", TestName = nameof(RemoveBehaviorDataDriven) + "(MiddleElement)")]
+        [TestCase(new[] { 1, 2, 3 }, 3, new[] { 1, 2 }, Description = "Remove last element by value", TestName = nameof(RemoveBehaviorDataDriven) + "(LastElement)")]
+        [TestCase(new[] { 1, 2, 3 }, 99, new[] { 1, 2, 3 }, Description = "Remove non-existent element", TestName = nameof(RemoveBehaviorDataDriven) + "(MissingElement)")]
+        [TestCase(new[] { 1 }, 1, new int[0], Description = "Remove only element", TestName = nameof(RemoveBehaviorDataDriven) + "(OnlyElement)")]
         public void RemoveBehaviorDataDriven(int[] initial, int toRemove, int[] expected)
         {
             CyclicBuffer<int> buffer = new(initial.Length, initial);
             bool wasRemoved = buffer.Remove(toRemove);
 
             bool shouldHaveBeenRemoved = initial.Contains(toRemove);
-            Assert.AreEqual(
-                shouldHaveBeenRemoved,
-                wasRemoved,
-                $"Remove({toRemove}) should return {shouldHaveBeenRemoved} for initial buffer [{string.Join(", ", initial)}]."
-            );
+            Assert.AreEqual(shouldHaveBeenRemoved, wasRemoved, $"Remove({toRemove}) should return {shouldHaveBeenRemoved} for initial buffer [{string.Join(", ", initial)}].");
 
             Assert.AreEqual(
                 expected.Length,
@@ -167,29 +121,14 @@ namespace DxMessaging.Tests.Runtime.Core
             Description = "Remove first occurrence of duplicate",
             TestName = nameof(RemoveDuplicatesBehavior) + "(FirstDuplicate)"
         )]
-        [TestCase(
-            new[] { 2, 2, 2 },
-            2,
-            new[] { 2, 2 },
-            Description = "Remove first of all duplicates",
-            TestName = nameof(RemoveDuplicatesBehavior) + "(AllDuplicates)"
-        )]
-        [TestCase(
-            new[] { 1, 1, 1 },
-            1,
-            new[] { 1, 1 },
-            Description = "Remove first of identical elements",
-            TestName = nameof(RemoveDuplicatesBehavior) + "(IdenticalElements)"
-        )]
+        [TestCase(new[] { 2, 2, 2 }, 2, new[] { 2, 2 }, Description = "Remove first of all duplicates", TestName = nameof(RemoveDuplicatesBehavior) + "(AllDuplicates)")]
+        [TestCase(new[] { 1, 1, 1 }, 1, new[] { 1, 1 }, Description = "Remove first of identical elements", TestName = nameof(RemoveDuplicatesBehavior) + "(IdenticalElements)")]
         public void RemoveDuplicatesBehavior(int[] initial, int toRemove, int[] expected)
         {
             CyclicBuffer<int> buffer = new(initial.Length, initial);
             bool wasRemoved = buffer.Remove(toRemove);
 
-            Assert.IsTrue(
-                wasRemoved,
-                $"Remove({toRemove}) should return true when element exists in [{string.Join(", ", initial)}]."
-            );
+            Assert.IsTrue(wasRemoved, $"Remove({toRemove}) should return true when element exists in [{string.Join(", ", initial)}].");
 
             Assert.AreEqual(
                 expected.Length,
@@ -222,65 +161,31 @@ namespace DxMessaging.Tests.Runtime.Core
             object missing = new();
             CyclicBuffer<object> buffer = new(3) { first, second };
 
-            Assert.IsFalse(
-                buffer.Remove(missing),
-                "Control failed: missing item should not remove."
-            );
-            Assert.AreEqual(
-                0,
-                ((List<object>)MessageBusInspection.ReadField(buffer, "_cache")).Count,
-                "Failed Remove must clear the scratch cache."
-            );
+            Assert.IsFalse(buffer.Remove(missing), "Control failed: missing item should not remove.");
+            Assert.AreEqual(0, ((List<object>)MessageBusInspection.ReadField(buffer, "_cache")).Count, "Failed Remove must clear the scratch cache.");
 
-            Assert.AreEqual(
-                0,
-                buffer.RemoveAll(_ => false),
-                "Control failed: RemoveAll should remove nothing."
-            );
-            Assert.AreEqual(
-                0,
-                ((List<object>)MessageBusInspection.ReadField(buffer, "_cache")).Count,
-                "No-op RemoveAll must clear the scratch cache."
-            );
+            Assert.AreEqual(0, buffer.RemoveAll(_ => false), "Control failed: RemoveAll should remove nothing.");
+            Assert.AreEqual(0, ((List<object>)MessageBusInspection.ReadField(buffer, "_cache")).Count, "No-op RemoveAll must clear the scratch cache.");
 
             Assert.Throws<InvalidOperationException>(
                 () => buffer.Remove(first, new ThrowingEqualityComparer<object>()),
                 "Control failed: throwing comparer must surface its exception."
             );
-            Assert.AreEqual(
-                0,
-                ((List<object>)MessageBusInspection.ReadField(buffer, "_cache")).Count,
-                "Throwing Remove comparer must clear the scratch cache."
-            );
+            Assert.AreEqual(0, ((List<object>)MessageBusInspection.ReadField(buffer, "_cache")).Count, "Throwing Remove comparer must clear the scratch cache.");
 
             Assert.Throws<InvalidOperationException>(
-                () =>
-                    buffer.RemoveAll(_ =>
-                        throw new InvalidOperationException("Predicate failure.")
-                    ),
+                () => buffer.RemoveAll(_ => throw new InvalidOperationException("Predicate failure.")),
                 "Control failed: throwing predicate must surface its exception."
             );
-            Assert.AreEqual(
-                0,
-                ((List<object>)MessageBusInspection.ReadField(buffer, "_cache")).Count,
-                "Throwing RemoveAll predicate must clear the scratch cache."
-            );
+            Assert.AreEqual(0, ((List<object>)MessageBusInspection.ReadField(buffer, "_cache")).Count, "Throwing RemoveAll predicate must clear the scratch cache.");
 
             Assert.IsTrue(buffer.Remove(first), "Control failed: existing item should remove.");
-            Assert.AreEqual(
-                0,
-                ((List<object>)MessageBusInspection.ReadField(buffer, "_cache")).Count,
-                "Successful Remove must clear the scratch cache after rebuilding."
-            );
+            Assert.AreEqual(0, ((List<object>)MessageBusInspection.ReadField(buffer, "_cache")).Count, "Successful Remove must clear the scratch cache after rebuilding.");
 
             buffer.Add(first);
             buffer.Clear();
             Assert.AreEqual(0, buffer.Count, "Control failed: Clear must empty the buffer.");
-            Assert.AreEqual(
-                0,
-                ((List<object>)MessageBusInspection.ReadField(buffer, "_cache")).Count,
-                "Clear must clear the scratch cache."
-            );
+            Assert.AreEqual(0, ((List<object>)MessageBusInspection.ReadField(buffer, "_cache")).Count, "Clear must clear the scratch cache.");
         }
 
         [Test]
@@ -301,24 +206,13 @@ namespace DxMessaging.Tests.Runtime.Core
             // Buffer has wrapped, now contains [2, 3, 4] logically
 
             int[] beforeRemove = buffer.ToArray();
-            Assert.AreEqual(
-                new[] { 2, 3, 4 },
-                beforeRemove,
-                $"Before remove, wrapped buffer should be [2, 3, 4] but was [{string.Join(", ", beforeRemove)}]."
-            );
+            Assert.AreEqual(new[] { 2, 3, 4 }, beforeRemove, $"Before remove, wrapped buffer should be [2, 3, 4] but was [{string.Join(", ", beforeRemove)}].");
 
             bool wasRemoved = buffer.Remove(toRemove);
-            Assert.IsTrue(
-                wasRemoved,
-                $"Remove({toRemove}) should return true for wrapped buffer containing {toRemove}."
-            );
+            Assert.IsTrue(wasRemoved, $"Remove({toRemove}) should return true for wrapped buffer containing {toRemove}.");
 
             int[] afterRemove = buffer.ToArray();
-            Assert.AreEqual(
-                expected.Length,
-                buffer.Count,
-                $"Count after Remove({toRemove}) from wrapped buffer should be {expected.Length}, but was {buffer.Count}."
-            );
+            Assert.AreEqual(expected.Length, buffer.Count, $"Count after Remove({toRemove}) from wrapped buffer should be {expected.Length}, but was {buffer.Count}.");
             CollectionAssert.AreEqual(
                 expected,
                 afterRemove,
@@ -334,10 +228,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             // Should find and remove "BANANA" using case-insensitive comparison
             bool wasRemoved = buffer.Remove("BANANA", StringComparer.OrdinalIgnoreCase);
-            Assert.IsTrue(
-                wasRemoved,
-                "Remove with case-insensitive comparer should find 'BANANA' matching 'Banana'."
-            );
+            Assert.IsTrue(wasRemoved, "Remove with case-insensitive comparer should find 'BANANA' matching 'Banana'.");
 
             string[] afterRemove = buffer.ToArray();
             Assert.AreEqual(2, buffer.Count, "Count should be 2 after removal.");
@@ -350,10 +241,7 @@ namespace DxMessaging.Tests.Runtime.Core
             // Should NOT find "banana" using default (case-sensitive) comparison
             buffer.Add("Durian");
             wasRemoved = buffer.Remove("APPLE"); // default comparer is case-sensitive
-            Assert.IsFalse(
-                wasRemoved,
-                "Remove with default comparer should NOT find 'APPLE' when buffer contains 'Apple'."
-            );
+            Assert.IsFalse(wasRemoved, "Remove with default comparer should NOT find 'APPLE' when buffer contains 'Apple'.");
             Assert.AreEqual(3, buffer.Count, "Count should remain 3 when element not found.");
         }
 
@@ -396,16 +284,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 fromEnumeration.Add(item);
             }
 
-            CollectionAssert.AreEqual(
-                new[] { 2, 4 },
-                fromToArray,
-                "ToArray() should return [2, 4]"
-            );
-            CollectionAssert.AreEqual(
-                fromToArray,
-                fromEnumeration.ToArray(),
-                "Enumeration should match ToArray()"
-            );
+            CollectionAssert.AreEqual(new[] { 2, 4 }, fromToArray, "ToArray() should return [2, 4]");
+            CollectionAssert.AreEqual(fromToArray, fromEnumeration.ToArray(), "Enumeration should match ToArray()");
         }
 
         [Test]

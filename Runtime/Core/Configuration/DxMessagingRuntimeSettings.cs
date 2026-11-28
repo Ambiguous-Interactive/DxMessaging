@@ -23,10 +23,7 @@ namespace DxMessaging.Core.Configuration
     /// Field changes raise <see cref="SettingsChanged"/>; consumers should
     /// re-read derived state on the event.
     /// </remarks>
-    [CreateAssetMenu(
-        fileName = ResourceName,
-        menuName = "Wallstop Studios/DxMessaging/Runtime Settings"
-    )]
+    [CreateAssetMenu(fileName = ResourceName, menuName = "Wallstop Studios/DxMessaging/Runtime Settings")]
     public sealed class DxMessagingRuntimeSettings : ScriptableObject
     {
         /// <summary>Resource name (no extension) used by <c>Resources.Load</c>.</summary>
@@ -56,9 +53,7 @@ namespace DxMessaging.Core.Configuration
         internal int _bufferMaxDistinctEntries = DefaultBufferMaxDistinctEntries;
 
         [SerializeField]
-        [Tooltip(
-            "When true, shared collection pools use LRU eviction; otherwise pools behave as a bounded LIFO stack. See BufferUseLruEviction."
-        )]
+        [Tooltip("When true, shared collection pools use LRU eviction; otherwise pools behave as a bounded LIFO stack. See BufferUseLruEviction.")]
         internal bool _bufferUseLruEviction = true;
 
         [SerializeField]
@@ -88,9 +83,7 @@ namespace DxMessaging.Core.Configuration
         internal int _messageBufferSize = IMessageBus.DefaultMessageBufferSize;
 
         [SerializeField]
-        [Tooltip(
-            "Maximum registration-history entries per bus. Oldest entries are overwritten; zero disables storage. See RegistrationLogCapacity."
-        )]
+        [Tooltip("Maximum registration-history entries per bus. Oldest entries are overwritten; zero disables storage. See RegistrationLogCapacity.")]
         [Min(0)]
         internal int _registrationLogCapacity = RegistrationLog.DefaultCapacity;
 
@@ -153,8 +146,7 @@ namespace DxMessaging.Core.Configuration
         }
 
 #if UNITY_EDITOR
-        private static readonly ConcurrentQueue<DxMessagingRuntimeSettings> PendingValidations =
-            new ConcurrentQueue<DxMessagingRuntimeSettings>();
+        private static readonly ConcurrentQueue<DxMessagingRuntimeSettings> PendingValidations = new ConcurrentQueue<DxMessagingRuntimeSettings>();
 
         [NonSerialized]
         private int _validationPending;
@@ -201,10 +193,7 @@ namespace DxMessaging.Core.Configuration
 
         private static void ProcessPendingValidations()
         {
-            if (
-                UnityEditor.EditorApplication.isUpdating
-                || UnityEditor.EditorApplication.isCompiling
-            )
+            if (UnityEditor.EditorApplication.isUpdating || UnityEditor.EditorApplication.isCompiling)
             {
                 return;
             }
@@ -232,10 +221,7 @@ namespace DxMessaging.Core.Configuration
         private void ApplyValidatedSettings()
         {
             string assetPath = UnityEditor.AssetDatabase.GetAssetPath(this);
-            if (
-                !string.IsNullOrEmpty(assetPath)
-                && assetPath.IndexOf("/Resources/", StringComparison.OrdinalIgnoreCase) < 0
-            )
+            if (!string.IsNullOrEmpty(assetPath) && assetPath.IndexOf("/Resources/", StringComparison.OrdinalIgnoreCase) < 0)
             {
                 Debug.LogWarning(
                     "[DxMessaging] Runtime settings asset is not under a Resources/ folder; Resources.Load will not find it. Move it under Assets/Resources/ or use the 'Assets/Create/Wallstop Studios/DxMessaging/Runtime Settings (in Resources)' menu.",

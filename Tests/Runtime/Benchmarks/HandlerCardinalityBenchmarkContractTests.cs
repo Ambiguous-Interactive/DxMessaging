@@ -23,44 +23,30 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 HandlerCardinalityOperation.SameHandlerChurn,
             };
 
-            Assert.AreEqual(
-                operations.Length * cardinalities.Length,
-                HandlerCardinalityScenarios.All.Count
-            );
+            Assert.AreEqual(operations.Length * cardinalities.Length, HandlerCardinalityScenarios.All.Count);
             foreach (HandlerCardinalityOperation operation in operations)
             {
                 foreach (int cardinality in cardinalities)
                 {
                     Assert.That(
                         HandlerCardinalityScenarios.All,
-                        Has.Exactly(1)
-                            .Matches<HandlerCardinalityBenchmarkCase>(benchmarkCase =>
-                                benchmarkCase.Operation == operation
-                                && benchmarkCase.Cardinality == cardinality
-                            )
+                        Has.Exactly(1).Matches<HandlerCardinalityBenchmarkCase>(benchmarkCase => benchmarkCase.Operation == operation && benchmarkCase.Cardinality == cardinality)
                     );
                 }
             }
         }
 
         [TestCaseSource(nameof(Cases))]
-        public void OneOperationPreservesFanOutAndLiveTopology(
-            HandlerCardinalityBenchmarkCase benchmarkCase
-        )
+        public void OneOperationPreservesFanOutAndLiveTopology(HandlerCardinalityBenchmarkCase benchmarkCase)
         {
-            HandlerCardinalityObservation observation =
-                HandlerCardinalityBenchmarks.RunOnceForContract(benchmarkCase);
+            HandlerCardinalityObservation observation = HandlerCardinalityBenchmarks.RunOnceForContract(benchmarkCase);
             bool sameHandler =
-                benchmarkCase.Operation == HandlerCardinalityOperation.SameHandlerDispatch
-                || benchmarkCase.Operation == HandlerCardinalityOperation.SameHandlerChurn;
+                benchmarkCase.Operation == HandlerCardinalityOperation.SameHandlerDispatch || benchmarkCase.Operation == HandlerCardinalityOperation.SameHandlerChurn;
             Assert.AreEqual(sameHandler ? 1 : benchmarkCase.Cardinality, observation.DispatchCalls);
             Assert.AreEqual(benchmarkCase.Cardinality, observation.LiveRegistrations);
             Assert.AreEqual(1, observation.OccupiedTypeSlots);
-            bool distinctPriority =
-                benchmarkCase.Operation == HandlerCardinalityOperation.PriorityDispatch
-                || benchmarkCase.Operation == HandlerCardinalityOperation.PriorityChurn;
-            int expectedHandlerEntries =
-                sameHandler || distinctPriority ? 1 : benchmarkCase.Cardinality;
+            bool distinctPriority = benchmarkCase.Operation == HandlerCardinalityOperation.PriorityDispatch || benchmarkCase.Operation == HandlerCardinalityOperation.PriorityChurn;
+            int expectedHandlerEntries = sameHandler || distinctPriority ? 1 : benchmarkCase.Cardinality;
             int expectedPriorityEntries = distinctPriority ? benchmarkCase.Cardinality : 1;
             PriorityStorageObservation busStorage = observation.BusPriorityStorage;
             Assert.AreEqual(expectedPriorityEntries, busStorage.Entries);
@@ -89,18 +75,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         [TestCase(2, false)]
         [TestCase(3, true)]
-        public void HandlerStorageObservationReportsInlineSpillBoundary(
-            int cardinality,
-            bool expectedSpill
-        )
+        public void HandlerStorageObservationReportsInlineSpillBoundary(int cardinality, bool expectedSpill)
         {
-            HandlerCardinalityObservation observation =
-                HandlerCardinalityBenchmarks.RunOnceForContract(
-                    new HandlerCardinalityBenchmarkCase(
-                        HandlerCardinalityOperation.HandlerDispatch,
-                        cardinality
-                    )
-                );
+            HandlerCardinalityObservation observation = HandlerCardinalityBenchmarks.RunOnceForContract(
+                new HandlerCardinalityBenchmarkCase(HandlerCardinalityOperation.HandlerDispatch, cardinality)
+            );
             HandlerCacheStorageObservation storage = observation.Storage;
             Assert.AreEqual(cardinality, storage.HandlerEntries);
             Assert.AreEqual(2 < cardinality, expectedSpill);
@@ -129,10 +108,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         }
 
         private static bool UsesRegistrationSlotArena =>
-            typeof(MessageRegistrationHandle).GetProperty(
-                "Slot",
-                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic
-            ) != null;
+            typeof(MessageRegistrationHandle).GetProperty("Slot", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic) != null;
 
         [Test]
         public void ResultSchemaKeepsCsvAndStructuredLogTopologyAligned()
@@ -215,15 +191,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 },
                 new ArraySegment<string>(header, 0, 19)
             );
-            CollectionAssert.AreEqual(
-                new[]
-                {
-                    "busPriorityEntries",
-                    "busPriorityMapCapacity",
-                    "busPriorityOrderCapacity",
-                },
-                new ArraySegment<string>(header, 19, 3)
-            );
+            CollectionAssert.AreEqual(new[] { "busPriorityEntries", "busPriorityMapCapacity", "busPriorityOrderCapacity" }, new ArraySegment<string>(header, 19, 3));
             CollectionAssert.AreEqual(new[] { "-1", "-1", "-1" }, legacyRow[^3..]);
 
             string structured = result.ToStructuredLog();
@@ -244,18 +212,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     HandlerStorageConstructionKind.OrdinaryTypedHandler,
                     HandlerStorageConstructionKind.GlobalTypedHandler,
                 },
-                (HandlerStorageConstructionKind[])
-                    Enum.GetValues(typeof(HandlerStorageConstructionKind))
+                (HandlerStorageConstructionKind[])Enum.GetValues(typeof(HandlerStorageConstructionKind))
             );
 
-            HandlerStorageConstructionBenchmarkResult result = new(
-                HandlerStorageConstructionKind.HandlerCache,
-                1d,
-                -1,
-                -1,
-                2d,
-                1_000
-            );
+            HandlerStorageConstructionBenchmarkResult result = new(HandlerStorageConstructionKind.HandlerCache, 1d, -1, -1, 2d, 1_000);
             string[] header = HandlerStorageConstructionBenchmarkResult.CsvHeader.Split(',');
             string[] row = result.ToCsvRow().Split(',');
             Assert.AreEqual(header.Length, row.Length);
@@ -272,62 +232,38 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         public void BusPriorityStorageMaterializesThroughRealRegistration()
         {
             MessageBus bus = new();
-            Assert.IsFalse(
-                bus.TryObserveUntargetedPriorityStorageForBenchmark<StorageProbeMessage>(out _)
-            );
+            Assert.IsFalse(bus.TryObserveUntargetedPriorityStorageForBenchmark<StorageProbeMessage>(out _));
             MessageHandler handler = new(new InstanceId(0x4A123), bus) { active = true };
             using MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
             using LeakWatcher watcher = new(bus);
             _ = token.RegisterUntargeted<StorageProbeMessage>(_ => { });
             token.Enable();
-            Assert.IsTrue(
-                bus.TryObserveUntargetedPriorityStorageForBenchmark<StorageProbeMessage>(
-                    out PriorityStorageObservation observation
-                )
-            );
+            Assert.IsTrue(bus.TryObserveUntargetedPriorityStorageForBenchmark<StorageProbeMessage>(out PriorityStorageObservation observation));
             Assert.AreEqual(1, observation.Entries);
             Assert.GreaterOrEqual(observation.MapCapacity, 1);
             Assert.GreaterOrEqual(observation.OrderCapacity, 1);
             token.UnregisterAll();
         }
 
-        private readonly struct StorageProbeMessage
-            : DxMessaging.Core.Messages.IUntargetedMessage { }
+        private readonly struct StorageProbeMessage : DxMessaging.Core.Messages.IUntargetedMessage { }
 
-        private static void AssertStorageCoherent(
-            int entries,
-            int inlineCapacity,
-            int mapCapacity,
-            int orderCapacity,
-            bool usesSpillStorage,
-            string label
-        )
+        private static void AssertStorageCoherent(int entries, int inlineCapacity, int mapCapacity, int orderCapacity, bool usesSpillStorage, string label)
         {
             if (usesSpillStorage)
             {
                 Assert.GreaterOrEqual(mapCapacity, entries, $"{label} map capacity is too small.");
-                Assert.GreaterOrEqual(
-                    orderCapacity,
-                    entries,
-                    $"{label} order capacity is too small."
-                );
+                Assert.GreaterOrEqual(orderCapacity, entries, $"{label} order capacity is too small.");
                 return;
             }
 
             Assert.Zero(mapCapacity, $"Inline {label} storage must not own a spill map.");
             Assert.Zero(orderCapacity, $"Inline {label} storage must not own a spill order list.");
-            Assert.GreaterOrEqual(
-                inlineCapacity,
-                entries,
-                $"Inline {label} capacity is too small."
-            );
+            Assert.GreaterOrEqual(inlineCapacity, entries, $"Inline {label} capacity is too small.");
         }
 
         private static IEnumerable<TestCaseData> Cases()
         {
-            foreach (
-                HandlerCardinalityBenchmarkCase benchmarkCase in HandlerCardinalityScenarios.All
-            )
+            foreach (HandlerCardinalityBenchmarkCase benchmarkCase in HandlerCardinalityScenarios.All)
             {
                 yield return new TestCaseData(benchmarkCase).SetName(benchmarkCase.Key);
             }

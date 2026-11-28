@@ -100,8 +100,7 @@ namespace DxMessaging.Tests.Runtime.Core
         private static void AssertUnits(string label, object value, string expectedUnits)
         {
             string actualUnits = Units(value);
-            string message =
-                $"Isolated surrogate observation: label={label}, expected={expectedUnits}, actual={actualUnits}";
+            string message = $"Isolated surrogate observation: label={label}, expected={expectedUnits}, actual={actualUnits}";
             Console.WriteLine(message);
             Assert.That(actualUnits, Is.EqualTo(expectedUnits), message);
         }

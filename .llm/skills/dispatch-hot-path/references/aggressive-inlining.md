@@ -4,7 +4,8 @@
 
 ## Overview
 
-Method calls have overhead: push arguments, call, pop return value. For very small methods called millions of times (e.g., property getters, math operations), this overhead can be significant. `AggressiveInlining` tells the JIT to strongly prefer inlining, replacing the call with the method body directly.
+Method calls have overhead: push arguments, call, pop return value. For very small methods called millions of times (e.g., property getters, math operations), this overhead can be
+significant. `AggressiveInlining` tells the JIT to strongly prefer inlining, replacing the call with the method body directly.
 
 ## Problem Statement
 

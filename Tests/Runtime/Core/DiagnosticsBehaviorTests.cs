@@ -26,18 +26,12 @@ namespace DxMessaging.Tests.Runtime.Core
         private const int TestBufferSize = 4;
 
         [Test]
-        public void VetoedEmissionStillAppearsInEmissionHistory(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void VetoedEmissionStillAppearsInEmissionHistory([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             using (new DiagnosticsScope(messageBufferSize: TestBufferSize))
             {
                 MessageBus bus = new() { DiagnosticsMode = true };
-                MessageHandler handler = new(new InstanceId(OwnerInstanceId), bus)
-                {
-                    active = true,
-                };
+                MessageHandler handler = new(new InstanceId(OwnerInstanceId), bus) { active = true };
                 MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
                 token.Enable();
                 InstanceId context = new(ContextInstanceId);
@@ -52,18 +46,8 @@ namespace DxMessaging.Tests.Runtime.Core
 
                 Emit(scenario, context, bus);
 
-                Assert.AreEqual(
-                    1,
-                    intercepted,
-                    "Control failed: the vetoing interceptor must have run for scenario {0}.",
-                    scenario
-                );
-                Assert.AreEqual(
-                    0,
-                    handled,
-                    "The handler must not run for a vetoed emission for scenario {0}.",
-                    scenario
-                );
+                Assert.AreEqual(1, intercepted, "Control failed: the vetoing interceptor must have run for scenario {0}.", scenario);
+                Assert.AreEqual(0, handled, "The handler must not run for a vetoed emission for scenario {0}.", scenario);
                 Assert.AreEqual(
                     1,
                     history.Count,
@@ -90,10 +74,7 @@ namespace DxMessaging.Tests.Runtime.Core
             using (new DiagnosticsScope(messageBufferSize: TestBufferSize))
             {
                 MessageBus bus = new() { DiagnosticsMode = false };
-                MessageHandler handler = new(new InstanceId(OwnerInstanceId), bus)
-                {
-                    active = true,
-                };
+                MessageHandler handler = new(new InstanceId(OwnerInstanceId), bus) { active = true };
                 MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
                 token.Enable();
 
@@ -109,26 +90,17 @@ namespace DxMessaging.Tests.Runtime.Core
                 CyclicBuffer<MessageEmissionData> history = GetEmissionBuffer(bus);
                 SimpleUntargetedMessage message = new();
 
-                Assert.DoesNotThrow(
-                    () => message.EmitUntargeted(bus),
-                    "Toggling DiagnosticsMode from inside a handler must not throw."
-                );
+                Assert.DoesNotThrow(() => message.EmitUntargeted(bus), "Toggling DiagnosticsMode from inside a handler must not throw.");
                 Assert.AreEqual(1, handled, "Control failed: handler must have run.");
                 Assert.AreEqual(
                     0,
                     history.Count,
-                    "The emission that enabled diagnostics must not be recorded: the "
-                        + "diagnostics check happens at the start of the emission, before "
-                        + "handlers run."
+                    "The emission that enabled diagnostics must not be recorded: the " + "diagnostics check happens at the start of the emission, before " + "handlers run."
                 );
 
                 message.EmitUntargeted(bus);
                 Assert.AreEqual(2, handled, "Handler must run for the second emission.");
-                Assert.AreEqual(
-                    1,
-                    history.Count,
-                    "Diagnostics enabled mid-dispatch must take effect on the next emission."
-                );
+                Assert.AreEqual(1, history.Count, "Diagnostics enabled mid-dispatch must take effect on the next emission.");
 
                 token.Dispose();
                 handler.active = false;
@@ -141,10 +113,7 @@ namespace DxMessaging.Tests.Runtime.Core
             using (new DiagnosticsScope(messageBufferSize: TestBufferSize))
             {
                 MessageBus bus = new() { DiagnosticsMode = true };
-                MessageHandler handler = new(new InstanceId(OwnerInstanceId), bus)
-                {
-                    active = true,
-                };
+                MessageHandler handler = new(new InstanceId(OwnerInstanceId), bus) { active = true };
                 MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
                 token.Enable();
 
@@ -160,26 +129,13 @@ namespace DxMessaging.Tests.Runtime.Core
                 CyclicBuffer<MessageEmissionData> history = GetEmissionBuffer(bus);
                 SimpleUntargetedMessage message = new();
 
-                Assert.DoesNotThrow(
-                    () => message.EmitUntargeted(bus),
-                    "Toggling DiagnosticsMode off from inside a handler must not throw."
-                );
+                Assert.DoesNotThrow(() => message.EmitUntargeted(bus), "Toggling DiagnosticsMode off from inside a handler must not throw.");
                 Assert.AreEqual(1, handled, "Control failed: handler must have run.");
-                Assert.AreEqual(
-                    1,
-                    history.Count,
-                    "The emission that disabled diagnostics is still recorded: the buffer "
-                        + "append happens before handlers run."
-                );
+                Assert.AreEqual(1, history.Count, "The emission that disabled diagnostics is still recorded: the buffer " + "append happens before handlers run.");
 
                 message.EmitUntargeted(bus);
                 Assert.AreEqual(2, handled, "Handler must run for the second emission.");
-                Assert.AreEqual(
-                    1,
-                    history.Count,
-                    "Diagnostics disabled mid-dispatch must suppress recording of the "
-                        + "next emission."
-                );
+                Assert.AreEqual(1, history.Count, "Diagnostics disabled mid-dispatch must suppress recording of the " + "next emission.");
 
                 token.Dispose();
                 handler.active = false;
@@ -209,112 +165,65 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
 
-        private static MessageRegistrationHandle RegisterHandler(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            InstanceId context,
-            Action onInvoked
-        )
+        private static MessageRegistrationHandle RegisterHandler(MessageScenario scenario, MessageRegistrationToken token, InstanceId context, Action onInvoked)
         {
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
                 {
-                    return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
-                        scenario,
-                        token,
-                        (in SimpleUntargetedMessage _) => onInvoked()
-                    );
+                    return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(scenario, token, (in SimpleUntargetedMessage _) => onInvoked());
                 }
                 case MessageKind.Targeted:
                 {
-                    return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        context,
-                        (in SimpleTargetedMessage _) => onInvoked()
-                    );
+                    return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(scenario, token, context, (in SimpleTargetedMessage _) => onInvoked());
                 }
                 case MessageKind.Broadcast:
                 {
-                    return ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        context,
-                        (in SimpleBroadcastMessage _) => onInvoked()
-                    );
+                    return ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(scenario, token, context, (in SimpleBroadcastMessage _) => onInvoked());
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
 
-        private static MessageRegistrationHandle RegisterVetoingInterceptor(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            Action onInvoked
-        )
+        private static MessageRegistrationHandle RegisterVetoingInterceptor(MessageScenario scenario, MessageRegistrationToken token, Action onInvoked)
         {
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
                 {
-                    return ScenarioHarness.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(
-                        scenario,
-                        token,
-                        (ref SimpleUntargetedMessage _) =>
-                        {
-                            onInvoked();
-                            return false;
-                        }
-                    );
+                    return ScenarioHarness.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(scenario, token, (ref SimpleUntargetedMessage _) =>
+                    {
+                        onInvoked();
+                        return false;
+                    });
                 }
                 case MessageKind.Targeted:
                 {
-                    return ScenarioHarness.RegisterTargetedInterceptor<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        (ref InstanceId _, ref SimpleTargetedMessage __) =>
-                        {
-                            onInvoked();
-                            return false;
-                        }
-                    );
+                    return ScenarioHarness.RegisterTargetedInterceptor<SimpleTargetedMessage>(scenario, token, (ref InstanceId _, ref SimpleTargetedMessage __) =>
+                    {
+                        onInvoked();
+                        return false;
+                    });
                 }
                 case MessageKind.Broadcast:
                 {
-                    return ScenarioHarness.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        (ref InstanceId _, ref SimpleBroadcastMessage __) =>
-                        {
-                            onInvoked();
-                            return false;
-                        }
-                    );
+                    return ScenarioHarness.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(scenario, token, (ref InstanceId _, ref SimpleBroadcastMessage __) =>
+                    {
+                        onInvoked();
+                        return false;
+                    });
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
@@ -343,11 +252,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }

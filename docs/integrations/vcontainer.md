@@ -13,7 +13,8 @@
 - **Use DI for construction** + DxMessaging for events (best of both worlds)
 - **Compatible** -- VContainer and DxMessaging can be used together
 
-**Why combine DI + Messaging?** Use constructor injection for service dependencies (repositories, managers) and messaging for reactive events (damage taken, item collected), combining both approaches. VContainer's scoped lifetimes support per-scene message buses.
+**Why combine DI + Messaging?** Use constructor injection for service dependencies (repositories, managers) and messaging for reactive events (damage taken, item collected),
+combining both approaches. VContainer's scoped lifetimes support per-scene message buses.
 
 ---
 
@@ -24,15 +25,12 @@
 - DxMessaging installed via UPM
 - VContainer installed (Git URL or OpenUPM)
 
-These examples require VContainer. DxMessaging's integration assembly uses
-`VCONTAINER_PRESENT` as an assembly-local Version Define. Call the helpers directly
-from these framework-specific examples. If your application needs conditional code,
-configure [Version Defines on its own assembly](https://docs.unity3d.com/2021.3/Documentation/Manual/ScriptCompilationAssemblyDefinitionFiles.html#define-symbols).
+These examples require VContainer. DxMessaging's integration assembly uses `VCONTAINER_PRESENT` as an assembly-local Version Define. Call the helpers directly from these
+framework-specific examples. If your application needs conditional code, configure
+[Version Defines on its own assembly](https://docs.unity3d.com/2021.3/Documentation/Manual/ScriptCompilationAssemblyDefinitionFiles.html#define-symbols).
 
-With VContainer 1.19.0, add these references to your custom application asmdef:
-`WallstopStudios.DxMessaging`, `WallstopStudios.DxMessaging.Attributes`,
-`WallstopStudios.DxMessaging.VContainer`, and `VContainer`. The `VContainer` assembly
-contains the `VContainer.Unity` namespace.
+With VContainer 1.19.0, add these references to your custom application asmdef: `WallstopStudios.DxMessaging`, `WallstopStudios.DxMessaging.Attributes`,
+`WallstopStudios.DxMessaging.VContainer`, and `VContainer`. The `VContainer` assembly contains the `VContainer.Unity` namespace.
 
 ### 1. Create a LifetimeScope with DxMessaging
 
@@ -144,8 +142,7 @@ protected override void Configure(IContainerBuilder builder)
 
 #### Start the README service
 
-For the README's `PlayerService`, add an `IStartable` adapter. VContainer calls `Start()` on the
-adapter, which activates the service's subscription.
+For the README's `PlayerService`, add an `IStartable` adapter. VContainer calls `Start()` on the adapter, which activates the service's subscription.
 
 ```csharp
 using VContainer.Unity;
@@ -163,8 +160,7 @@ public sealed class ReadmeServiceStartup : IStartable
 }
 ```
 
-Use these registrations inside `Configure()` after registering the bus and builder. The scope
-creates the service for the adapter and disposes it when the scope ends.
+Use these registrations inside `Configure()` after registering the bus and builder. The scope creates the service for the adapter and disposes it when the scope ends.
 
 ```csharp
 builder.Register<PlayerService>(Lifetime.Singleton);
@@ -175,9 +171,8 @@ builder.RegisterEntryPoint<ReadmeServiceStartup>();
 
 ### Pattern 2: Configure MessagingComponents (For Existing MonoBehaviours)
 
-Configure the messaging component from an injected method. The container must register
-and inject the configurator; the scope below registers one from its scene hierarchy.
-Save each component class in a `.cs` file with the same name.
+Configure the messaging component from an injected method. The container must register and inject the configurator; the scope below registers one from its scene hierarchy. Save
+each component class in a `.cs` file with the same name.
 
 ```csharp
 using DxMessaging.Core.MessageBus;
@@ -199,8 +194,7 @@ public sealed class MessagingComponentConfigurator : MonoBehaviour
 }
 ```
 
-Use this scope for the example, or add its component registration to your existing
-scope after registering the bus:
+Use this scope for the example, or add its component registration to your existing scope after registering the bus:
 
 ```csharp
 using DxMessaging.Unity.Integrations.VContainer;
@@ -219,20 +213,16 @@ public sealed class ConfiguredMessagingScope : LifetimeScope
 
 #### Usage
 
-1. Add `ConfiguredMessagingScope` to the scene and place one `MessagingComponentConfigurator`
-   alongside the `MessagingComponent` to configure.
-1. Building the scope injects the bus and calls `Construct`. For multiple components,
-   register each explicit component reference with `builder.RegisterComponent(configurator)`.
+1. Add `ConfiguredMessagingScope` to the scene and place one `MessagingComponentConfigurator` alongside the `MessagingComponent` to configure.
+1. Building the scope injects the bus and calls `Construct`. For multiple components, register each explicit component reference with `builder.RegisterComponent(configurator)`.
 1. Emit through the same injected `IMessageBus` to reach listeners on that bus.
 
-`MessageAwareComponent` stages handlers in `Awake()` and normally enables them in
-`OnEnable()`. Injection can happen after those callbacks. `RebindActive` moves existing
-active registrations to the injected bus and selects it for future registrations.
-Messages emitted before configuration are not replayed. Configuring a receiving
-component does not change the global bus used by parameterless emission helpers.
+`MessageAwareComponent` stages handlers in `Awake()` and normally enables them in `OnEnable()`. Injection can happen after those callbacks. `RebindActive` moves existing active
+registrations to the injected bus and selects it for future registrations. Messages emitted before configuration are not replayed. Configuring a receiving component does not change
+the global bus used by parameterless emission helpers.
 
-See VContainer's [method injection](https://vcontainer.hadashikick.jp/resolving/method-injection)
-and [scene component registration](https://vcontainer.hadashikick.jp/registering/register-monobehaviour).
+See VContainer's [method injection](https://vcontainer.hadashikick.jp/resolving/method-injection) and
+[scene component registration](https://vcontainer.hadashikick.jp/registering/register-monobehaviour).
 
 ---
 
@@ -272,8 +262,7 @@ public sealed class GameInitializer : IStartable
 
 VContainer's scoped lifetimes support per-scene message buses. This is useful for additive scenes or isolated gameplay features:
 
-Pass the prefab's `LifetimeScope` component to `LoadLevel`. Retain the returned child
-scope and dispose it when the level unloads. See VContainer's
+Pass the prefab's `LifetimeScope` component to `LoadLevel`. Retain the returned child scope and dispose it when the level unloads. See VContainer's
 [child scope creation](https://vcontainer.hadashikick.jp/scoping/generate-child-with-code-first).
 
 ```csharp
@@ -315,10 +304,8 @@ public sealed class LevelLoader
 
 ### Unit Tests
 
-With `GameStarted` and `GameInitializer` from Pattern 3 in scope, register the concrete class to
-check constructor injection and a direct `Start()` call. This test does not install VContainer's
-player-loop dispatcher or verify automatic entry-point startup. Use `RegisterEntryPoint` in the
-application's lifetime scope when you want that startup lifecycle.
+With `GameStarted` and `GameInitializer` from Pattern 3 in scope, register the concrete class to check constructor injection and a direct `Start()` call. This test does not install
+VContainer's player-loop dispatcher or verify automatic entry-point startup. Use `RegisterEntryPoint` in the application's lifetime scope when you want that startup lifecycle.
 
 ```csharp
 using DxMessaging.Core;
@@ -355,10 +342,9 @@ public sealed class GameInitializerTests
 
 ### Play-Mode Tests
 
-Put the following fixture in a PlayMode test assembly with the Unity Test Framework, VContainer,
-and DxMessaging integration references. It uses `GameStarted` from Pattern 3. Each scope owns its
-container and native GameObject; disposing the listener token before the scopes removes its
-subscription. The test checks bus separation directly and needs no frame delay:
+Put the following fixture in a PlayMode test assembly with the Unity Test Framework, VContainer, and DxMessaging integration references. It uses `GameStarted` from Pattern 3. Each
+scope owns its container and native GameObject; disposing the listener token before the scopes removes its subscription. The test checks bus separation directly and needs no frame
+delay:
 
 ```csharp
 using DxMessaging.Core;

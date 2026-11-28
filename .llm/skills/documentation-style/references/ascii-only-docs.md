@@ -4,15 +4,19 @@
 
 ## Overview
 
-The DxMessaging documentation surface (Markdown files, XML doc comments inside C# sources, and the generated `llms.txt`) is held to a strict ASCII-only standard. Real Unicode emojis (codepoint range `U+1F300` and above) are permitted only when used inside a markdown blockquote/admonition (a line beginning with `>`), with a soft per-file cap of five.
+The DxMessaging documentation surface (Markdown files, XML doc comments inside C# sources, and the generated `llms.txt`) is held to a strict ASCII-only standard. Real Unicode
+emojis (codepoint range `U+1F300` and above) are permitted only when used inside a markdown blockquote/admonition (a line beginning with `>`), with a soft per-file cap of five.
 
 ## Rationale
 
-This rule did not start as a stylistic preference. It was adopted after a documentation cleanup pass uncovered roughly 5,350 non-ASCII characters scattered across 33+ files. Those characters - em-dashes, curly quotes, ellipses, bullets, arrows, geometric/dingbat glyphs, no-break spaces, mathematical operators, and box-drawing diagram characters - were:
+This rule did not start as a stylistic preference. It was adopted after a documentation cleanup pass uncovered roughly 5,350 non-ASCII characters scattered across 33+ files. Those
+characters - em-dashes, curly quotes, ellipses, bullets, arrows, geometric/dingbat glyphs, no-break spaces, mathematical operators, and box-drawing diagram characters - were:
 
 - **Breaking grep/terminal/rg workflows.** A user searching for `--` (a real ASCII separator) would not find paragraphs that used the visually identical `-` (em-dash, `U+2014`).
-- **Producing inconsistent rendering across viewers.** Curly quotes rendered as boxes in some terminals; box-drawing diagrams collapsed to garbage on platforms with non-standard fonts.
-- **Increasing LLM tokenization cost without information gain.** Each non-ASCII glyph cost more tokens than its ASCII equivalent and added entropy that interfered with downstream processing.
+- **Producing inconsistent rendering across viewers.** Curly quotes rendered as boxes in some terminals; box-drawing diagrams collapsed to garbage on platforms with non-standard
+  fonts.
+- **Increasing LLM tokenization cost without information gain.** Each non-ASCII glyph cost more tokens than its ASCII equivalent and added entropy that interfered with downstream
+  processing.
 
 The user explicitly required ASCII-only docs going forward and asked that the rule be enforced mechanically so it is never re-litigated.
 
@@ -72,11 +76,13 @@ When rewriting content, apply these substitutions by hand (there is no auto-fixe
 ## Allowed Exceptions
 
 - **Callout-position emojis.** A real emoji at the start of an admonition line (`> 1F4DD Note`) is allowed; keep these to roughly 5 per file.
-- **Skill emoji-shortcode example data.** `.llm/skills/markdown-authoring/references/markdown-compatibility-part-1.md` and `markdown-compatibility-part-2.md` are exempt from emoji and codepoint scanning entirely; they document the project's emoji-shortcode conventions and need to display the source forms.
+- **Skill emoji-shortcode example data.** `.llm/skills/markdown-authoring/references/markdown-compatibility-part-1.md` and `markdown-compatibility-part-2.md` are exempt from emoji
+  and codepoint scanning entirely; they document the project's emoji-shortcode conventions and need to display the source forms.
 
 ## Enforcement
 
-This is a writing convention applied at authoring time; there is no dedicated validator. Apply the substitution table when writing or editing docs, and fix any non-ASCII characters you encounter in files you touch.
+This is a writing convention applied at authoring time; there is no dedicated validator. Apply the substitution table when writing or editing docs, and fix any non-ASCII characters
+you encounter in files you touch.
 
 To spot violations in changed files:
 

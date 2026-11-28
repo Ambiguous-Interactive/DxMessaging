@@ -19,27 +19,15 @@ namespace DxMessaging.Tests.Runtime.Core
         public void OmittedFloatingDefaultsPreserveTheirValues(int index)
         {
             Defaults message = new(1);
-            Assert.That(
-                message.Required,
-                Is.EqualTo(1),
-                $"index={index}: keep the required argument."
-            );
+            Assert.That(message.Required, Is.EqualTo(1), $"index={index}: keep the required argument.");
             if (index == 0)
             {
-                Assert.That(
-                    float.IsNaN(message.FloatNaN),
-                    Is.True,
-                    "index=0: default must be float NaN."
-                );
+                Assert.That(float.IsNaN(message.FloatNaN), Is.True, "index=0: default must be float NaN.");
                 return;
             }
             if (index == 4)
             {
-                Assert.That(
-                    double.IsNaN(message.DoubleNaN),
-                    Is.True,
-                    "index=4: default must be double NaN."
-                );
+                Assert.That(double.IsNaN(message.DoubleNaN), Is.True, "index=4: default must be double NaN.");
                 return;
             }
             byte[] actual = index switch
@@ -62,20 +50,12 @@ namespace DxMessaging.Tests.Runtime.Core
                 7 => BitConverter.GetBytes(-0.0d),
                 _ => throw new ArgumentOutOfRangeException(nameof(index)),
             };
-            Assert.That(
-                actual,
-                Is.EqualTo(expected),
-                $"index={index}: keep the floating-default bits."
-            );
+            Assert.That(actual, Is.EqualTo(expected), $"index={index}: keep the floating-default bits.");
         }
 
         /// <summary>Checks native compiler controls before reading generated finite defaults.</summary>
         [TestCaseSource(nameof(FiniteDefaultCases))]
-        public void FiniteDefaultsMatchHandwrittenConstructorBits(
-            int index,
-            string expectedBits,
-            string boundary
-        )
+        public void FiniteDefaultsMatchHandwrittenConstructorBits(int index, string expectedBits, string boundary)
         {
             string context = $"index={index}, expectedBits={expectedBits}, boundary={boundary}";
             HandwrittenFiniteDefaults manual = new(1);
@@ -124,22 +104,12 @@ namespace DxMessaging.Tests.Runtime.Core
                 15 => Bits(generated.DoubleNegativeLargestFinite),
                 _ => throw new ArgumentOutOfRangeException(nameof(index)),
             };
-            Assert.That(
-                generatedBits,
-                Is.EqualTo(expectedBits),
-                "Generated native value: " + context
-            );
+            Assert.That(generatedBits, Is.EqualTo(expectedBits), "Generated native value: " + context);
         }
 
-        private static string Bits(float value) =>
-            BitConverter
-                .ToInt32(BitConverter.GetBytes(value), 0)
-                .ToString("X8", CultureInfo.InvariantCulture);
+        private static string Bits(float value) => BitConverter.ToInt32(BitConverter.GetBytes(value), 0).ToString("X8", CultureInfo.InvariantCulture);
 
-        private static string Bits(double value) =>
-            BitConverter
-                .ToInt64(BitConverter.GetBytes(value), 0)
-                .ToString("X16", CultureInfo.InvariantCulture);
+        private static string Bits(double value) => BitConverter.ToInt64(BitConverter.GetBytes(value), 0).ToString("X16", CultureInfo.InvariantCulture);
 
         // SYNC: FiniteFloatingDefaultBoundaryTests.Cases uses the same fixed boundary roster.
         private static IEnumerable<TestCaseData> FiniteDefaultCases()
@@ -167,34 +137,20 @@ namespace DxMessaging.Tests.Runtime.Core
             for (int index = 0; index < values.Length; ++index)
             {
                 (string label, string bits) = values[index];
-                yield return new TestCaseData(index, bits, label).SetName(
-                    $"GeneratedFinite{label}DefaultRetainsBits"
-                );
+                yield return new TestCaseData(index, bits, label).SetName($"GeneratedFinite{label}DefaultRetainsBits");
             }
         }
 
         private static IEnumerable<TestCaseData> FloatingDefaultCases()
         {
             yield return new TestCaseData(0).SetName("GeneratedFloatNaNDefaultIsNaN");
-            yield return new TestCaseData(1).SetName(
-                "GeneratedFloatPositiveInfinityDefaultRetainsBits"
-            );
-            yield return new TestCaseData(2).SetName(
-                "GeneratedFloatNegativeInfinityDefaultRetainsBits"
-            );
-            yield return new TestCaseData(3).SetName(
-                "GeneratedFloatNegativeZeroDefaultRetainsBits"
-            );
+            yield return new TestCaseData(1).SetName("GeneratedFloatPositiveInfinityDefaultRetainsBits");
+            yield return new TestCaseData(2).SetName("GeneratedFloatNegativeInfinityDefaultRetainsBits");
+            yield return new TestCaseData(3).SetName("GeneratedFloatNegativeZeroDefaultRetainsBits");
             yield return new TestCaseData(4).SetName("GeneratedDoubleNaNDefaultIsNaN");
-            yield return new TestCaseData(5).SetName(
-                "GeneratedDoublePositiveInfinityDefaultRetainsBits"
-            );
-            yield return new TestCaseData(6).SetName(
-                "GeneratedDoubleNegativeInfinityDefaultRetainsBits"
-            );
-            yield return new TestCaseData(7).SetName(
-                "GeneratedDoubleNegativeZeroDefaultRetainsBits"
-            );
+            yield return new TestCaseData(5).SetName("GeneratedDoublePositiveInfinityDefaultRetainsBits");
+            yield return new TestCaseData(6).SetName("GeneratedDoubleNegativeInfinityDefaultRetainsBits");
+            yield return new TestCaseData(7).SetName("GeneratedDoubleNegativeZeroDefaultRetainsBits");
         }
 
         /// <summary>Retains an independent compiler-built constructor before generated reads.</summary>

@@ -20,22 +20,13 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
         {
             base.RegisterMessageHandlers();
 
-            _ = Token.RegisterGameObjectTargeted<StringMessage>(
-                gameObject,
-                HandleStringGameObjectTargeted
-            );
+            _ = Token.RegisterGameObjectTargeted<StringMessage>(gameObject, HandleStringGameObjectTargeted);
             _ = Token.RegisterComponentTargeted<StringMessage>(this, HandleStringComponentTargeted);
 
             _ = Token.RegisterTargetedWithoutTargeting<StringMessage>(HandleAnyStringTargeted);
 
-            _ = Token.RegisterGameObjectBroadcast<SourcedStringMessage>(
-                gameObject,
-                HandleSourcedStringGameObjectBroadcast
-            );
-            _ = Token.RegisterComponentBroadcast<SourcedStringMessage>(
-                this,
-                HandleSourcedStringComponentBroadcast
-            );
+            _ = Token.RegisterGameObjectBroadcast<SourcedStringMessage>(gameObject, HandleSourcedStringGameObjectBroadcast);
+            _ = Token.RegisterComponentBroadcast<SourcedStringMessage>(this, HandleSourcedStringComponentBroadcast);
             _ = Token.RegisterBroadcastWithoutSource<SourcedStringMessage>(HandleAnySourcedString);
         }
 

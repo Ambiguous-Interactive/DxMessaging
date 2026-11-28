@@ -84,10 +84,9 @@ void OnAnyDamage(in InstanceId src, in TookDamage m) { /* ... */ }
 
 ## Register (DI / services)
 
-This service uses VContainer's `IStartable` and your application's untargeted
-`CombatStarted` message. Register it with `builder.RegisterEntryPoint<DamageSystem>()`
-after the bus and registration builder in your [VContainer scope](../integrations/vcontainer.md#register-the-service-in-your-scope).
-`Start()` activates the lease; scope disposal calls `Dispose()` to release it.
+This service uses VContainer's `IStartable` and your application's untargeted `CombatStarted` message. Register it with `builder.RegisterEntryPoint<DamageSystem>()` after the bus
+and registration builder in your [VContainer scope](../integrations/vcontainer.md#register-the-service-in-your-scope). `Start()` activates the lease; scope disposal calls
+`Dispose()` to release it.
 
 ```csharp
 using System;
@@ -117,7 +116,8 @@ public sealed class DamageSystem : IStartable, IDisposable
 }
 ```
 
-Tip: Use your container's [installer or registration extensions](../integrations/index.md) to bind the bus and builder. The optional shims compile when `ZENJECT_PRESENT`, `VCONTAINER_PRESENT`, or `REFLEX_PRESENT` is enabled; follow the corresponding framework setup.
+Tip: Use your container's [installer or registration extensions](../integrations/index.md) to bind the bus and builder. The optional shims compile when `ZENJECT_PRESENT`,
+`VCONTAINER_PRESENT`, or `REFLEX_PRESENT` is enabled; follow the corresponding framework setup.
 
 ## Interceptors and post-processors
 
@@ -166,10 +166,8 @@ _ = token.RegisterUntargetedPostProcessor<SceneLoaded>(
     (in SceneLoaded m) => metrics.RecordProcessedSceneLoad(m.buildIndex));
 ```
 
-Direct bus registrations are not token-owned. Retain each `MessageBusRegistration` on the
-owner and call `Deregister<T>(in registration)` on the same bus instance with the same message type
-during teardown. Use `IMessage` as `T` for `RegisterGlobalAcceptAll`. Since 4.0, passing a built-in
-handle to another bus is a no-op; it leaves both buses unchanged.
+Direct bus registrations are not token-owned. Retain each `MessageBusRegistration` on the owner and call `Deregister<T>(in registration)` on the same bus instance with the same
+message type during teardown. Use `IMessage` as `T` for `RegisterGlobalAcceptAll`. Since 4.0, passing a built-in handle to another bus is a no-op; it leaves both buses unchanged.
 
 ## Lifecycle
 
@@ -204,8 +202,7 @@ public sealed class ScenePresenter : MessageAwareComponent
 }
 ```
 
-`MessageAwareComponent` owns and disposes `Token`. For standalone services, retain the
-`MessageRegistrationLease` returned by `Build()` and dispose it, as shown above.
+`MessageAwareComponent` owns and disposes `Token`. For standalone services, retain the `MessageRegistrationLease` returned by `Build()` and dispose it, as shown above.
 
 ## Inheritance tip (MessageAwareComponent)
 
@@ -229,9 +226,7 @@ public sealed class ScenePresenter : MessageAwareComponent
 | `bus.OccupiedTypeSlots`         | Count of distinct per-message-type slots currently occupied on the bus.           |
 | `bus.OccupiedTargetSlots`       | Count of distinct (type, target) context tuples currently occupied on the bus.    |
 
-For tuning, scenario tables, and a leak-watching pattern see the
-[Memory Reclamation guide](../guides/memory-reclamation.md). For the asset
-parameters and defaults see the
+For tuning, scenario tables, and a leak-watching pattern see the [Memory Reclamation guide](../guides/memory-reclamation.md). For the asset parameters and defaults see the
 [Runtime Settings reference](runtime-settings.md).
 
 ## See also
@@ -267,8 +262,7 @@ Interceptors -> Global Accept-All -> Handlers<T> @ source
     -> Post-Processors<T> (All Sources)
 ```
 
-> Within a typed handler or post-processor phase, lower priorities run earlier. At the same
-> priority, the bus visits each handler's callbacks together. See
+> Within a typed handler or post-processor phase, lower priorities run earlier. At the same priority, the bus visits each handler's callbacks together. See
 > [execution order](../concepts/interceptors-and-ordering.md#execution-order).
 
 ## API Quick Reference

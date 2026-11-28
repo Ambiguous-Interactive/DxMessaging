@@ -1,16 +1,12 @@
 # Test-Suite Performance Runbook
 
-This runbook is the developer/ops reference for keeping the Unity test legs fast
-without dropping coverage. The agent-facing companion with the code patterns is
-the [Fast Unity Tests](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.llm/skills/unity-test-execution/references/fast-unity-tests.md)
-skill; this
-runbook covers the budgets, the CI shape, the measurement protocol, and the
-drift-guards.
+This runbook is the developer/ops reference for keeping the Unity test legs fast without dropping coverage. The agent-facing companion with the code patterns is the
+[Fast Unity Tests](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.llm/skills/unity-test-execution/references/fast-unity-tests.md) skill; this runbook covers the
+budgets, the CI shape, the measurement protocol, and the drift-guards.
 
 ## Per-mode budgets
 
-The target is **each mode under 3 minutes of wall-clock** while coverage stays at
-or above today and no anti-pattern is introduced.
+The target is **each mode under 3 minutes of wall-clock** while coverage stays at or above today and no anti-pattern is introduced.
 
 | Mode       | Budget                           | Notes                                                                                                                                                           |
 | ---------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -18,90 +14,57 @@ or above today and no anti-pattern is introduced.
 | PlayMode   | < 3 min                          | Dominated by play-mode entry reload + per-test frame yields.                                                                                                    |
 | Standalone | < 3 min for the TEST-RUN portion | Builds a Release IL2CPP player; Debug C++ was measured and regressed end-to-end. See [Standalone IL2CPP build wall-clock](#standalone-il2cpp-build-wall-clock). |
 
-The `< 3 min` figure is a **CI** metric (cold ephemeral project, full compile,
-domain reload, on self-hosted runners). The local MCP editor is warm and already
-finishes PlayMode in tens of seconds, so locally you trust relative deltas, not
-the absolute number.
+The `< 3 min` figure is a **CI** metric (cold ephemeral project, full compile, domain reload, on self-hosted runners). The local MCP editor is warm and already finishes PlayMode in
+tens of seconds, so locally you trust relative deltas, not the absolute number.
 
 ## The modes (editor-grouped CI)
 
-`.github/workflows/unity-tests.yml` runs four version jobs (from
-`.github/unity-versions.json`) with `max-parallel: 1`. Each job validates its
-editor and acquires the organization lock once, then runs `editmode`, `playmode`,
-and `standalone` as separate Unity invocations. Each mode uses a separate
-runner-local project under `$RUNNER_WORKSPACE/dxm-u/t/<version>-<mode>-<source-set-key>/`, result
-verification, and artifact. The
-correctness legs exclude the heavy categories
-(`Stress;Performance;Allocation;MemoryReclaim;PerfBench;PerfGate;PerfBaseline`),
-which run in their own dedicated scopes so a perf change cannot hide in the
-correctness number. PlayMode and Standalone include the fast `UnityRuntime`
-lifecycle tests, including scene unload, persistence, and application quit.
-EditMode keeps `UnityRuntime` excluded because these tests need a running player.
-The existing runtime suite timer includes these tests; they add no Unity invocation
-or benchmark timing window.
+`.github/workflows/unity-tests.yml` runs four version jobs (from `.github/unity-versions.json`) with `max-parallel: 1`. Each job validates its editor and acquires the organization
+lock once, then runs `editmode`, `playmode`, and `standalone` as separate Unity invocations. Each mode uses a separate runner-local project under
+`$RUNNER_WORKSPACE/dxm-u/t/<version>-<mode>-<source-set-key>/`, result verification, and artifact. The correctness legs exclude the heavy categories
+(`Stress;Performance;Allocation;MemoryReclaim;PerfBench;PerfGate;PerfBaseline`), which run in their own dedicated scopes so a perf change cannot hide in the correctness number.
+PlayMode and Standalone include the fast `UnityRuntime` lifecycle tests, including scene unload, persistence, and application quit. EditMode keeps `UnityRuntime` excluded because
+these tests need a running player. The existing runtime suite timer includes these tests; they add no Unity invocation or benchmark timing window.
 
 ## Tooling and artifact overhead
 
-Measure the complete job, including setup, imports, builds, cleanup, redaction, and uploads.
-Record queue time separately. NUnit duration alone does not explain a slow job.
+Measure the complete job, including setup, imports, builds, cleanup, redaction, and uploads. Record queue time separately. NUnit duration alone does not explain a slow job.
 
-Licensed jobs install npm dependencies before acquiring the organization lock. The install
-prefix is `.artifacts/node-tooling`; `NODE_PATH` lets the existing CommonJS scripts resolve
-those dependencies. Keep the prefix hidden from Unity. A root `node_modules` directory
-becomes part of the local UPM package's asset scan. In the Unity 2022 regression tracked by
-[issue #531](https://github.com/Ambiguous-Interactive/DxMessaging/issues/531), each mode imported
-7,720 assets instead of 39. EditMode initial refresh increased from 13.561 to 41.388 seconds,
-while script compilation stayed near 11 seconds.
+Licensed jobs install npm dependencies before acquiring the organization lock. The install prefix is `.artifacts/node-tooling`; `NODE_PATH` lets the existing CommonJS scripts
+resolve those dependencies. Keep the prefix hidden from Unity. A root `node_modules` directory becomes part of the local UPM package's asset scan. In the Unity 2022 regression
+tracked by [issue #531](https://github.com/Ambiguous-Interactive/DxMessaging/issues/531), each mode imported 7,720 assets instead of 39. EditMode initial refresh increased from
+13.561 to 41.388 seconds, while script compilation stayed near 11 seconds.
 
-Keep artifact validation and redaction enabled. Measure changes against the same retained
-files and compare output bytes, findings, and rejection decisions. Include adversarial
-replacement cases: already-sanitized CI artifacts alone cannot prove credential removal.
-Use the full Windows job to assess the five-minute correctness-job target; a local redactor
+Keep artifact validation and redaction enabled. Measure changes against the same retained files and compare output bytes, findings, and rejection decisions. Include adversarial
+replacement cases: already-sanitized CI artifacts alone cannot prove credential removal. Use the full Windows job to assess the five-minute correctness-job target; a local redactor
 benchmark measures only its own processing cost.
 
 ## The levers
 
-See the [Fast Unity Tests](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.llm/skills/unity-test-execution/references/fast-unity-tests.md) skill for
-the code. In short:
+See the [Fast Unity Tests](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.llm/skills/unity-test-execution/references/fast-unity-tests.md) skill for the code. In
+short:
 
-- **Disable enter-play-mode reload.** `EnterPlayModeOptions: 3`
-  (`DisableDomainReload | DisableSceneReload`) is emitted into every CI ephemeral
-  project by `Initialize-EphemeralProject` in `scripts/unity/run-ci-tests.ps1` (the
-  committed source of truth). The local
-  `.unity-test-project/ProjectSettings/EditorSettings.asset` carries the same fields
-  but is gitignored, so it is a per-developer convenience, not committed. Only the
-  PlayMode invocations benefit (editmode and standalone never enter in-editor play mode);
-  in batchmode CI each mode uses a separate project with one play-mode entry, so the
-  saving is one reload per PlayMode invocation, and the persistent-domain path the
-  `MessageTypeIdStabilityTests` fix protects is a local back-to-back-run property,
-  not a CI one.
-- **One teardown frame, not one per object.** Deferred destroys are batched and
-  flushed in a single drain frame regardless of object count. In the normal
-  lifecycle the synchronous `[TearDown] Cleanup()` queues the tracked destroys and
-  the NEXT test's `UnitySetup` drains them in one frame before `Reset()` (verified
-  via the MCP loop on 6000.4: `[TearDown]` runs before `[UnityTearDown]`, so
-  `UnityCleanup` sees an already-cleared `_spawned` and its own drain is skipped).
-  That single `UnitySetup` yield is the residual per-test frame and is load-bearing
-  (fixtures that call `Object.Destroy` directly rely on it), so it cannot be removed
-  even by making the tracked teardown synchronous.
-- **`[UnityTest]` only when you yield.** A no-yield coroutine test is a synchronous
-  test paying coroutine overhead; prefer `[Test]` where the lifecycle allows
-  (a `[Test]` in a PlayMode assembly still runs in play mode). Pinned by the
-  `NoYieldUnityTestsMustBePlainTest` drift-guard.
-- **No real-time waits.** Blocking sleeps, awaited delays, real-seconds coroutine
-  yields, and time-scale manipulation are banned (the cost here is frame-based, not
-  wall-clock, so the "lower the time scale" tip does not apply).
-- **Standalone: keep Release C++.** Debug C++ reduces native compile time but makes
-  the standalone test player much slower for this suite. Release remains faster
-  end-to-end and closer to shipped-player behavior. See the next section.
+- **Disable enter-play-mode reload.** `EnterPlayModeOptions: 3` (`DisableDomainReload | DisableSceneReload`) is emitted into every CI ephemeral project by
+  `Initialize-EphemeralProject` in `scripts/unity/run-ci-tests.ps1` (the committed source of truth). The local `.unity-test-project/ProjectSettings/EditorSettings.asset` carries
+  the same fields but is gitignored, so it is a per-developer convenience, not committed. Only the PlayMode invocations benefit (editmode and standalone never enter in-editor play
+  mode); in batchmode CI each mode uses a separate project with one play-mode entry, so the saving is one reload per PlayMode invocation, and the persistent-domain path the
+  `MessageTypeIdStabilityTests` fix protects is a local back-to-back-run property, not a CI one.
+- **One teardown frame, not one per object.** Deferred destroys are batched and flushed in a single drain frame regardless of object count. In the normal lifecycle the synchronous
+  `[TearDown] Cleanup()` queues the tracked destroys and the NEXT test's `UnitySetup` drains them in one frame before `Reset()` (verified via the MCP loop on 6000.4: `[TearDown]`
+  runs before `[UnityTearDown]`, so `UnityCleanup` sees an already-cleared `_spawned` and its own drain is skipped). That single `UnitySetup` yield is the residual per-test frame
+  and is load-bearing (fixtures that call `Object.Destroy` directly rely on it), so it cannot be removed even by making the tracked teardown synchronous.
+- **`[UnityTest]` only when you yield.** A no-yield coroutine test is a synchronous test paying coroutine overhead; prefer `[Test]` where the lifecycle allows (a `[Test]` in a
+  PlayMode assembly still runs in play mode). Pinned by the `NoYieldUnityTestsMustBePlainTest` drift-guard.
+- **No real-time waits.** Blocking sleeps, awaited delays, real-seconds coroutine yields, and time-scale manipulation are banned (the cost here is frame-based, not wall-clock, so
+  the "lower the time scale" tip does not apply).
+- **Standalone: keep Release C++.** Debug C++ reduces native compile time but makes the standalone test player much slower for this suite. Release remains faster end-to-end and
+  closer to shipped-player behavior. See the next section.
 
 ## Standalone IL2CPP build wall-clock
 
-The standalone leg builds a real IL2CPP player: Unity transpiles the managed
-assemblies to C++ (`il2cpp.exe`), then a native C++ compiler builds that into the
-player. A Debug C++ configuration was tested as a possible shortcut for the
-correctness leg, but the CI evidence went the other way: Debug saved seconds in the
-native build and then lost far more while the unoptimized player executed the tests.
+The standalone leg builds a real IL2CPP player: Unity transpiles the managed assemblies to C++ (`il2cpp.exe`), then a native C++ compiler builds that into the player. A Debug C++
+configuration was tested as a possible shortcut for the correctness leg, but the CI evidence went the other way: Debug saved seconds in the native build and then lost far more
+while the unoptimized player executed the tests.
 
 Matched cold-cache PR jobs:
 
@@ -111,77 +74,49 @@ Matched cold-cache PR jobs:
 | 2022.3.45f1 | 86 s                         | 194 s                        | ~13 s              | ~112 s           |
 | 6000.3.16f1 | 124 s                        | 180 s                        | ~29 s              | ~115 s           |
 
-So `scripts/unity/run-ci-tests.ps1` hard-pins
-`Il2CppCompilerConfiguration.Release` for standalone builds. The correctness leg
-(`unity-tests.yml`) and the sole published perf leg (`perf-numbers.yml`) both use
-Release C++.
+So `scripts/unity/run-ci-tests.ps1` hard-pins `Il2CppCompilerConfiguration.Release` for standalone builds. The correctness leg (`unity-tests.yml`) and the sole published perf leg
+(`perf-numbers.yml`) both use Release C++.
 
-**Fidelity is preserved.** Release C++ matches the shipped-player path. Do not switch
-the correctness leg to Debug C++ for compile speed; the total leg gets slower and the
-runtime code no longer matches the published Release-player profile.
+**Fidelity is preserved.** Release C++ matches the shipped-player path. Do not switch the correctness leg to Debug C++ for compile speed; the total leg gets slower and the runtime
+code no longer matches the published Release-player profile.
 
-**Runner-local Library reuse.** Tests, benchmarks, and performance use separate
-short roots under `$RUNNER_WORKSPACE/dxm-u/{t,b,p}/`. Unity versions and modes
-also have separate projects, so incompatible package graphs never share a
-`Library`. The fixed runner retains each project between jobs and
-`run-ci-tests.ps1` reports `LibraryState: cold|warm` before launch. This replaces
-network cache restore/save steps: measured standalone uploads took 50-82 seconds,
-one upload exceeded 400 MB, and a pull-request cache miss repeated on the
+**Runner-local Library reuse.** Tests, benchmarks, and performance use separate short roots under `$RUNNER_WORKSPACE/dxm-u/{t,b,p}/`. Unity versions and modes also have separate
+projects, so incompatible package graphs never share a `Library`. The fixed runner retains each project between jobs and `run-ci-tests.ps1` reports `LibraryState: cold|warm` before
+launch. This replaces network cache restore/save steps: measured standalone uploads took 50-82 seconds, one upload exceeded 400 MB, and a pull-request cache miss repeated on the
 default branch for the same exact key.
 
 ## Local measurement protocol (MCP loop)
 
 Measure via the [Unity MCP Test Loop](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.llm/skills/unity-mcp-test-loop/references/mcp-test-loop.md):
-`DxMcpTestRunner.Run(testMode, assemblies, null, null, resultPath)` writes
-`durationSeconds` + pass/fail/skip counts. Baseline, change ONE lever, re-run the
-SAME call, diff. Keep a change only if pass counts hold and no flake appears across
-repeated runs. Two caveats: warm-editor frames are near-free (a structural fix can
-show a near-zero LOCAL delta yet pay off on cold CI legs), and a script edit forces
-one reload on the next play-mode entry (run twice back-to-back to exercise the true
-persistent-domain path -- a test with a latent reload dependency fails only on the
-SECOND, persistent run).
+`DxMcpTestRunner.Run(testMode, assemblies, null, null, resultPath)` writes `durationSeconds` + pass/fail/skip counts. Baseline, change ONE lever, re-run the SAME call, diff. Keep a
+change only if pass counts hold and no flake appears across repeated runs. Two caveats: warm-editor frames are near-free (a structural fix can show a near-zero LOCAL delta yet pay
+off on cold CI legs), and a script edit forces one reload on the next play-mode entry (run twice back-to-back to exercise the true persistent-domain path -- a test with a latent
+reload dependency fails only on the SECOND, persistent run).
 
 ## Drift-guards
 
-- `scripts/__tests__/ci-aggregate-workflow.test.js` parses the correctness workflow
-  and checks the category filter on each mode's actual run step. PlayMode and
-  Standalone must include `UnityRuntime`; every mode must keep the heavy-category
-  exclusions above.
-- `scripts/__tests__/run-ci-tests-enter-play-mode.test.js` (Node) asserts
-  `run-ci-tests.ps1` emits the reload-disable into each CI ephemeral project. It
-  guards the runner emit rather than `.unity-test-project` (whose `ProjectSettings`
-  are gitignored, so that copy is absent in a fresh CI checkout).
-- `TestAttributeContractTests.TestSourcesAvoidRealTimeWaitAntiPatterns` (Runtime)
-  scans the whole `Tests/` tree and fails on any banned real-time-wait token.
-- `TestAttributeContractTests.NoYieldUnityTestsMustBePlainTest` (Runtime) scans the
-  `Tests/` tree for `[UnityTest]` methods that never `yield return` a frame and fails
-  unless the file is on the `pendingMigration` allowlist -- now empty, so the rule
-  covers the whole tree and a new synchronous test cannot regress back into a
-  coroutine costume.
-- `SuiteWallClockBudgetTest` covers the Runtime assembly. It fails that assembly
-  when its wall clock exceeds a per-version hard ceiling (300 s on 2021.3, 180 s
-  on 2022.3 / 6000.x) and warns past a 60 s soft budget. It does not cover
-  EditMode regressions or identify which Unity test step slowed down; compare the
-  `Run Unity Test Runner`, `Run Unity PlayMode tests`, and `Run Unity standalone
-tests` step durations when the full workflow gets slower.
+- `scripts/__tests__/ci-aggregate-workflow.test.js` parses the correctness workflow and checks the category filter on each mode's actual run step. PlayMode and Standalone must
+  include `UnityRuntime`; every mode must keep the heavy-category exclusions above.
+- `scripts/__tests__/run-ci-tests-enter-play-mode.test.js` (Node) asserts `run-ci-tests.ps1` emits the reload-disable into each CI ephemeral project. It guards the runner emit
+  rather than `.unity-test-project` (whose `ProjectSettings` are gitignored, so that copy is absent in a fresh CI checkout).
+- `TestAttributeContractTests.TestSourcesAvoidRealTimeWaitAntiPatterns` (Runtime) scans the whole `Tests/` tree and fails on any banned real-time-wait token.
+- `TestAttributeContractTests.NoYieldUnityTestsMustBePlainTest` (Runtime) scans the `Tests/` tree for `[UnityTest]` methods that never `yield return` a frame and fails unless the
+  file is on the `pendingMigration` allowlist -- now empty, so the rule covers the whole tree and a new synchronous test cannot regress back into a coroutine costume.
+- `SuiteWallClockBudgetTest` covers the Runtime assembly. It fails that assembly when its wall clock exceeds a per-version hard ceiling (300 s on 2021.3, 180 s on 2022.3 / 6000.x)
+  and warns past a 60 s soft budget. It does not cover EditMode regressions or identify which Unity test step slowed down; compare the `Run Unity Test Runner`,
+  `Run Unity PlayMode tests`, and `Run Unity standalone tests` step durations when the full workflow gets slower.
 
 ## Current status
 
-Disabling enter-play-mode reload exposed (and we fixed) one latent reload
-dependency: `MessageTypeIdStabilityTests` assumed a fresh message-type-id registry
-each run, but that registry is intentionally process-stable (the design that makes
-"Domain Reload disabled" safe). The test now asserts the persistent invariant.
+Disabling enter-play-mode reload exposed (and we fixed) one latent reload dependency: `MessageTypeIdStabilityTests` assumed a fresh message-type-id registry each run, but that
+registry is intentionally process-stable (the design that makes "Domain Reload disabled" safe). The test now asserts the persistent invariant.
 
-The EditMode de-I/O pass moved repeated reflection and asset setup out of individual tests. The
-no-yield-`[UnityTest]` migration converted every synchronous coroutine test to `[Test]`; the empty
-`pendingMigration` allowlist now makes the drift guard cover the whole `Tests/` tree.
+The EditMode de-I/O pass moved repeated reflection and asset setup out of individual tests. The no-yield-`[UnityTest]` migration converted every synchronous coroutine test to
+`[Test]`; the empty `pendingMigration` allowlist now makes the drift guard cover the whole `Tests/` tree.
 
-Standalone keeps Release C++ after the Debug/Release measurement above. Runner-local Library reuse
-is isolated by scope, version, and mode (see
-[Standalone IL2CPP build wall-clock](#standalone-il2cpp-build-wall-clock)). Measurements for #337
-found no safe grouping or cross-runner parallelism win under the organization build lock and Unity
-license limit. Within-leg sharding remains open. Revisit scheduling only with new
-runner-contention or within-leg evidence.
+Standalone keeps Release C++ after the Debug/Release measurement above. Runner-local Library reuse is isolated by scope, version, and mode (see
+[Standalone IL2CPP build wall-clock](#standalone-il2cpp-build-wall-clock)). Measurements for #337 found no safe grouping or cross-runner parallelism win under the organization
+build lock and Unity license limit. Within-leg sharding remains open. Revisit scheduling only with new runner-contention or within-leg evidence.
 
 ## See Also
 

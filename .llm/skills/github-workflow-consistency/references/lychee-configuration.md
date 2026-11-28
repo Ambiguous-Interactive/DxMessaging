@@ -1,18 +1,14 @@
 # Lychee Link Checker Configuration Management
 
-> **One-line summary**: Validate `.lychee.toml` configuration fields against the target
-> lychee version to prevent CI breakage from deprecated or renamed options.
+> **One-line summary**: Validate `.lychee.toml` configuration fields against the target lychee version to prevent CI breakage from deprecated or renamed options.
 
 ## Overview
 
-Lychee is a fast link checker used in CI to validate URLs across documentation and source
-files. Its configuration lives in `.lychee.toml`, but field names can change between major
-versions. The repository pins the lychee binary at install time so a new lychee release
-cannot silently change which config fields are valid.
+Lychee is a fast link checker used in CI to validate URLs across documentation and source files. Its configuration lives in `.lychee.toml`, but field names can change between major
+versions. The repository pins the lychee binary at install time so a new lychee release cannot silently change which config fields are valid.
 
-This skill documents the field deprecation patterns observed in lychee, the version
-pinning that keeps the config schema stable, and best practices for maintaining
-third-party tool configurations that can drift.
+This skill documents the field deprecation patterns observed in lychee, the version pinning that keeps the config schema stable, and best practices for maintaining third-party tool
+configurations that can drift.
 
 ## Problem Statement
 
@@ -25,17 +21,13 @@ When lychee upgrades from one version to the next, configuration field names may
 - **Changed in type** (e.g., `verbosity` as an integer became `verbose` as a string enum)
 - **Removed entirely** when features are dropped
 
-Lychee treats unknown fields as hard errors, so any deprecated field causes an immediate
-CI failure with an unhelpful error message.
+Lychee treats unknown fields as hard errors, so any deprecated field causes an immediate CI failure with an unhelpful error message.
 
 ### Pinned Binary Installer
 
-Do not use `lycheeverse/lychee-action@v2` in active workflows. Its v0.24.2 Linux
-installer expected a flat archive path while the release asset extracted the binary under
-a platform directory, so the job failed before lychee ran. Active workflows must use
-`./.github/actions/install-pinned-lychee` with `version: v0.24.2`, then invoke the
-`lychee` CLI directly. The installer uses the musl archive, prints the archive entries,
-finds the nested binary, and verifies `lychee --version`.
+Do not use `lycheeverse/lychee-action@v2` in active workflows. Its v0.24.2 Linux installer expected a flat archive path while the release asset extracted the binary under a
+platform directory, so the job failed before lychee ran. Active workflows must use `./.github/actions/install-pinned-lychee` with `version: v0.24.2`, then invoke the `lychee` CLI
+directly. The installer uses the musl archive, prints the archive entries, finds the nested binary, and verifies `lychee --version`.
 
 ### Known Deprecated Field Mappings (pre-v0.23.0 to v0.23.0)
 
@@ -49,36 +41,25 @@ finds the nested binary, and verifies `lychee --version`.
 
 ### 1. Pin the lychee version
 
-Both workflows install a pinned lychee binary (see `install-pinned-lychee`), so
-`.lychee.toml` is written against one known schema (v0.24.2). When bumping the
-pinned version, diff the upstream example config for added/removed/renamed
-fields and update `.lychee.toml` in the same change.
+Both workflows install a pinned lychee binary (see `install-pinned-lychee`), so `.lychee.toml` is written against one known schema (v0.24.2). When bumping the pinned version, diff
+the upstream example config for added/removed/renamed fields and update `.lychee.toml` in the same change.
 
 ### 2. Config policy
 
-- Keep only fields valid for the pinned version; prefer the new names
-  (`max_retries`, `include_mail`, `verbose`).
-- Link-acceptance policy: never accept 404 or 410 (those mean the link is
-  gone); always accept 403 and 429 (sites return these to CI bots even when
-  the page is valid).
-- `accept_timeouts` stays command-line-only (`--accept-timeouts=true` in the
-  blocking workflow) so the advisory scan still reports slow hosts.
+- Keep only fields valid for the pinned version; prefer the new names (`max_retries`, `include_mail`, `verbose`).
+- Link-acceptance policy: never accept 404 or 410 (those mean the link is gone); always accept 403 and 429 (sites return these to CI bots even when the page is valid).
+- `accept_timeouts` stays command-line-only (`--accept-timeouts=true` in the blocking workflow) so the advisory scan still reports slow hosts.
 
 ### 3. CI Workflow Integration
 
-Both link-checking workflows share the single `.lychee.toml`. Keep the config aligned
-with the pinned lychee version in both.
+Both link-checking workflows share the single `.lychee.toml`. Keep the config aligned with the pinned lychee version in both.
 
-- **`ci.yml` / `Lint docs links`** (blocking PR/push check) runs two passes. An OFFLINE pass
-  validates relative/local links and in-repo `#anchor` fragments against the working
-  tree with zero network, so it can never flake. A lenient external-liveness pass then
-  fails only on 404/410 or a DNS/connection error; the broad `accept` list absorbs
-  bot-detection and transient codes.
-- **`markdown-link-validity.yml`** (scheduled advisory scan) runs daily on a cron plus
-  `workflow_dispatch`. It NEVER fails the run; it captures the lychee exit code, opens
-  or updates one tracking issue from `./lychee/out.md`, and installs the pinned binary.
-  Its lychee step writes Markdown to `./lychee/out.md` so the issue sync step has a
-  body file on dead-link runs.
+- **`ci.yml` / `Lint docs links`** (blocking PR/push check) runs two passes. An OFFLINE pass validates relative/local links and in-repo `#anchor` fragments against the working tree
+  with zero network, so it can never flake. A lenient external-liveness pass then fails only on 404/410 or a DNS/connection error; the broad `accept` list absorbs bot-detection and
+  transient codes.
+- **`markdown-link-validity.yml`** (scheduled advisory scan) runs daily on a cron plus `workflow_dispatch`. It NEVER fails the run; it captures the lychee exit code, opens or
+  updates one tracking issue from `./lychee/out.md`, and installs the pinned binary. Its lychee step writes Markdown to `./lychee/out.md` so the issue sync step has a body file on
+  dead-link runs.
 
 ```yaml
 - name: Collect tracked docs
@@ -111,8 +92,7 @@ with the pinned lychee version in both.
       --files-from "${RUNNER_TEMP}/doc-files.txt"
 ```
 
-In the blocking workflow, validation runs first, so invalid config fails fast with a
-clear message instead of a cryptic lychee parse failure.
+In the blocking workflow, validation runs first, so invalid config fails fast with a clear message instead of a cryptic lychee parse failure.
 
 ## Current Valid Configuration
 
@@ -158,20 +138,16 @@ exclude = [
 ]
 ```
 
-`scheme` is NOT set in the config; the two jobs pass `--scheme https --scheme http` on
-the command line for the external-liveness pass only (the offline pass omits it).
-`accept_timeouts` is valid in v0.24.2 but is NOT set here: the blocking workflow passes
-`--accept-timeouts=true`, while the advisory scan should still report slow hosts.
+`scheme` is NOT set in the config; the two jobs pass `--scheme https --scheme http` on the command line for the external-liveness pass only (the offline pass omits it).
+`accept_timeouts` is valid in v0.24.2 but is NOT set here: the blocking workflow passes `--accept-timeouts=true`, while the advisory scan should still report slow hosts.
 
 ## Best Practices for Tool Config Drift
 
 ### Pin and Document
 
-When a CI tool can float, pin its effective binary version and document the target
-version next to the config.
+When a CI tool can float, pin its effective binary version and document the target version next to the config.
 
 ### Keep the Config Aligned With the Pinned Version
 
-When lychee releases a new version, diff the
-[lychee example config](https://github.com/lycheeverse/lychee/blob/lychee-v0.24.2/lychee.example.toml)
-for added/removed/renamed fields and update `.lychee.toml` accordingly.
+When lychee releases a new version, diff the [lychee example config](https://github.com/lycheeverse/lychee/blob/lychee-v0.24.2/lychee.example.toml) for added/removed/renamed fields
+and update `.lychee.toml` accordingly.

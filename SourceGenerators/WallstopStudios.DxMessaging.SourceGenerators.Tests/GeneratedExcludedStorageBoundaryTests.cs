@@ -19,29 +19,16 @@ internal sealed class GeneratedExcludedStorageBoundaryTests
     {
         string context = $"target={target}, shape={shape}";
         LanguageVersion language =
-            shape is "Collision" or "EventOpaque"
-            || target.Contains("record", StringComparison.Ordinal)
-                ? LanguageVersion.CSharp10
-                : LanguageVersion.CSharp9;
+            shape is "Collision" or "EventOpaque" || target.Contains("record", StringComparison.Ordinal) ? LanguageVersion.CSharp10 : LanguageVersion.CSharp9;
         CSharpParseOptions options = new(language);
-        AssertCallerExecutes(
-            CreateCompilation(CreateSource(target, shape, manual: true), options),
-            context + ": handwritten oracle"
-        );
-        GeneratorDriver driver = CSharpGeneratorDriver.Create(
-            new ISourceGenerator[] { new DxAutoConstructorGenerator() },
-            parseOptions: options
-        );
+        AssertCallerExecutes(CreateCompilation(CreateSource(target, shape, manual: true), options), context + ": handwritten oracle");
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(new ISourceGenerator[] { new DxAutoConstructorGenerator() }, parseOptions: options);
         driver = driver.RunGeneratorsAndUpdateCompilation(
             CreateCompilation(CreateSource(target, shape, manual: false), options),
             out Compilation generated,
             out ImmutableArray<Diagnostic> diagnostics
         );
-        Assert.That(
-            driver.GetRunResult().Results.Select(result => result.Exception),
-            Has.All.Null,
-            context
-        );
+        Assert.That(driver.GetRunResult().Results.Select(result => result.Exception), Has.All.Null, context);
         Assert.That(diagnostics, Is.Empty, context + "\n" + string.Join("\n", diagnostics));
         Assert.That(driver.GetRunResult().GeneratedTrees, Has.Length.EqualTo(1), context);
         AssertCallerExecutes(generated, context + ": generated caller");
@@ -50,15 +37,10 @@ internal sealed class GeneratedExcludedStorageBoundaryTests
     [TestCase("public", false)]
     [TestCase("private", false)]
     [TestCase("private", true)]
-    public void FixedSizeBuffersAreExcludedFromScalarConstructors(
-        string accessibility,
-        bool includeSerializedFields
-    )
+    public void FixedSizeBuffersAreExcludedFromScalarConstructors(string accessibility, bool includeSerializedFields)
     {
         string fieldAttribute = includeSerializedFields ? "[UnityEngine.SerializeField]" : "";
-        string constructorAttribute = includeSerializedFields
-            ? "[DxAutoConstructor(GenerateSerializedProperties = true)]"
-            : "[DxAutoConstructor]";
+        string constructorAttribute = includeSerializedFields ? "[DxAutoConstructor(GenerateSerializedProperties = true)]" : "[DxAutoConstructor]";
         string context = $"accessibility={accessibility}, serialized={includeSerializedFields}";
         CSharpParseOptions options = new(LanguageVersion.CSharp9);
 
@@ -97,19 +79,10 @@ internal sealed class GeneratedExcludedStorageBoundaryTests
             }
             """;
 
-        AssertCallerExecutes(
-            CreateCompilation(
-                CreateFixedStorageSource("", "public Packet(int Value) { this.Value = Value; }"),
-                options
-            ),
-            context + ": handwritten oracle"
-        );
+        AssertCallerExecutes(CreateCompilation(CreateFixedStorageSource("", "public Packet(int Value) { this.Value = Value; }"), options), context + ": handwritten oracle");
 
         GeneratorDriver driver = CSharpGeneratorDriver
-            .Create(
-                new ISourceGenerator[] { new DxAutoConstructorGenerator() },
-                parseOptions: options
-            )
+            .Create(new ISourceGenerator[] { new DxAutoConstructorGenerator() }, parseOptions: options)
             .RunGeneratorsAndUpdateCompilation(
                 CreateCompilation(CreateFixedStorageSource(constructorAttribute, ""), options),
                 out Compilation generated,
@@ -119,16 +92,10 @@ internal sealed class GeneratedExcludedStorageBoundaryTests
         AssertCallerExecutes(generated, context + ": generated caller");
         Assert.That(driver.GetRunResult().GeneratedTrees, Has.Length.EqualTo(1), context);
         INamedTypeSymbol packet = generated.GetTypeByMetadataName("Packet")!;
-        IMethodSymbol constructor = packet.InstanceConstructors.Single(candidate =>
-            !candidate.IsImplicitlyDeclared
-        );
+        IMethodSymbol constructor = packet.InstanceConstructors.Single(candidate => !candidate.IsImplicitlyDeclared);
         Assert.That(constructor.Parameters, Has.Length.EqualTo(1), context);
         Assert.That(constructor.Parameters[0].Name, Is.EqualTo("Value"), context);
-        Assert.That(
-            packet.GetMembers().OfType<IPropertySymbol>(),
-            Is.Empty,
-            context + ": fixed storage has no generated property"
-        );
+        Assert.That(packet.GetMembers().OfType<IPropertySymbol>(), Is.Empty, context + ": fixed storage has no generated property");
     }
 
     [Test]
@@ -146,38 +113,18 @@ internal sealed class GeneratedExcludedStorageBoundaryTests
         CSharpParseOptions options = new(LanguageVersion.CSharp9);
         CSharpCompilation input = CreateCompilation(source, options);
         GeneratorDriver driver = CSharpGeneratorDriver
-            .Create(
-                new ISourceGenerator[] { new DxAutoConstructorGenerator() },
-                parseOptions: options
-            )
-            .RunGeneratorsAndUpdateCompilation(
-                input,
-                out Compilation generated,
-                out ImmutableArray<Diagnostic> diagnostics
-            );
+            .Create(new ISourceGenerator[] { new DxAutoConstructorGenerator() }, parseOptions: options)
+            .RunGeneratorsAndUpdateCompilation(input, out Compilation generated, out ImmutableArray<Diagnostic> diagnostics);
         Assert.That(diagnostics, Is.Empty, string.Join("\n", diagnostics));
         using MemoryStream image = new();
         Microsoft.CodeAnalysis.Emit.EmitResult emitted = generated.Emit(image);
         Assert.That(emitted.Success, Is.True, string.Join("\n", emitted.Diagnostics));
-        Assert.That(
-            driver.GetRunResult().GeneratedTrees,
-            Is.Empty,
-            "Fixed storage alone has no constructor parameters to generate."
-        );
+        Assert.That(driver.GetRunResult().GeneratedTrees, Is.Empty, "Fixed storage alone has no constructor parameters to generate.");
     }
 
     private static IEnumerable<TestCaseData> Cases()
     {
-        foreach (
-            string target in new[]
-            {
-                "struct",
-                "readonly struct",
-                "ref struct",
-                "readonly ref struct",
-                "class",
-            }
-        )
+        foreach (string target in new[] { "struct", "readonly struct", "ref struct", "readonly ref struct", "class" })
         foreach (string shape in new[] { "Pointer", "FunctionPointer" })
         {
             yield return Case(target, shape);
@@ -190,16 +137,7 @@ internal sealed class GeneratedExcludedStorageBoundaryTests
         {
             yield return Case(target, "EventOpaque");
         }
-        foreach (
-            string target in new[]
-            {
-                "struct",
-                "readonly struct",
-                "record struct",
-                "readonly record struct",
-                "class",
-            }
-        )
+        foreach (string target in new[] { "struct", "readonly struct", "record struct", "readonly record struct", "class" })
         {
             yield return Case(target, "Collision");
         }
@@ -213,37 +151,18 @@ internal sealed class GeneratedExcludedStorageBoundaryTests
         }
     }
 
-    private static TestCaseData Case(string target, string shape) =>
-        new TestCaseData(target, shape).SetName(
-            $"GeneratedConstructorsInitializeBoundaryStorage({target},{shape})"
-        );
+    private static TestCaseData Case(string target, string shape) => new TestCaseData(target, shape).SetName($"GeneratedConstructorsInitializeBoundaryStorage({target},{shape})");
 
     private static string CreateSource(string target, string shape, bool manual)
     {
         bool isClass = target == "class";
         (string storage, string assignments, string hidden) = shape switch
         {
-            "Pointer" => (
-                "private readonly int* _state;",
-                "_state = default;",
-                "_state == null ? 0 : 1"
-            ),
-            "FunctionPointer" => (
-                "private readonly delegate*<int, int> _state;",
-                "_state = default;",
-                "_state == null ? 0 : 1"
-            ),
-            "Span" => (
-                "private readonly System.Span<int> _state;",
-                "_state = default;",
-                "_state.Length"
-            ),
+            "Pointer" => ("private readonly int* _state;", "_state = default;", "_state == null ? 0 : 1"),
+            "FunctionPointer" => ("private readonly delegate*<int, int> _state;", "_state = default;", "_state == null ? 0 : 1"),
+            "Span" => ("private readonly System.Span<int> _state;", "_state = default;", "_state.Length"),
             "Property" => ("public int State {get;}", "State = default;", "State"),
-            "Event" => (
-                "public event System.Action? Callbacks;",
-                "Callbacks = default;",
-                "Callbacks == null ? 0 : 1"
-            ),
+            "Event" => ("public event System.Action? Callbacks;", "Callbacks = default;", "Callbacks == null ? 0 : 1"),
             "EventOpaque" => (
                 "public event System.Action? Callbacks = Probe.Handler(); int IState.State {get;}",
                 "System.Action? saved = Callbacks; this = default; Callbacks = saved;",
@@ -254,11 +173,7 @@ internal sealed class GeneratedExcludedStorageBoundaryTests
                 "int saved = __dxMessagingInitialized; this = default; __dxMessagingInitialized = saved;",
                 "__dxMessagingInitialized == 17 && __dxMessagingInitialized_ == 29 && ((IState)this).State == 0 ? 0 : 1"
             ),
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(shape),
-                shape,
-                "Unknown boundary shape"
-            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(shape), shape, "Unknown boundary shape"),
         };
         bool opaque = shape is "EventOpaque" or "Collision";
         string contract = opaque ? ": IState" : "";
@@ -275,15 +190,9 @@ internal sealed class GeneratedExcludedStorageBoundaryTests
             storage = storage.Replace("_state;", "_state = default;", StringComparison.Ordinal);
         }
         string extraParameter = shape == "Collision" ? ", int __dxMessagingInitialized_" : "";
-        string extraAssignment =
-            shape == "Collision"
-                ? "this.__dxMessagingInitialized_ = __dxMessagingInitialized_;"
-                : "";
-        string constructor = manual
-            ? $"public Packet(int Value{extraParameter}) {{ {(isClass ? "" : assignments)} this.Value = Value; {extraAssignment} }}"
-            : "";
-        string open =
-            shape == "Collision" ? "public partial class Outer<__dxMessagingInitialized__> {" : "";
+        string extraAssignment = shape == "Collision" ? "this.__dxMessagingInitialized_ = __dxMessagingInitialized_;" : "";
+        string constructor = manual ? $"public Packet(int Value{extraParameter}) {{ {(isClass ? "" : assignments)} this.Value = Value; {extraAssignment} }}" : "";
+        string open = shape == "Collision" ? "public partial class Outer<__dxMessagingInitialized__> {" : "";
         string close = shape == "Collision" ? "}" : "";
         string callerType = shape == "Collision" ? "Outer<int>.Packet" : "Packet";
         string callerArguments = shape == "Collision" ? "42, 29" : "42";
@@ -324,13 +233,7 @@ internal sealed class GeneratedExcludedStorageBoundaryTests
         }
         Assert.That(root, Is.Not.Null, "Find shipped constructor attributes.");
         List<SyntaxTree> trees = new();
-        foreach (
-            string name in new[]
-            {
-                "DxAutoConstructorAttribute.cs",
-                "DxOptionalParameterAttribute.cs",
-            }
-        )
+        foreach (string name in new[] { "DxAutoConstructorAttribute.cs", "DxOptionalParameterAttribute.cs" })
         {
             string path = Path.Combine(root!.FullName, "Runtime", "Attributes", name);
             trees.Add(CSharpSyntaxTree.ParseText(File.ReadAllText(path), options, path));
@@ -340,11 +243,7 @@ internal sealed class GeneratedExcludedStorageBoundaryTests
             "BoundaryStorage",
             trees,
             GeneratorTestUtilities.CompilationReferences,
-            new CSharpCompilationOptions(
-                OutputKind.DynamicallyLinkedLibrary,
-                allowUnsafe: true,
-                generalDiagnosticOption: ReportDiagnostic.Error
-            )
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: true, generalDiagnosticOption: ReportDiagnostic.Error)
         );
     }
 
@@ -352,11 +251,7 @@ internal sealed class GeneratedExcludedStorageBoundaryTests
     {
         using MemoryStream image = new();
         Microsoft.CodeAnalysis.Emit.EmitResult emitted = compilation.Emit(image);
-        Assert.That(
-            emitted.Success,
-            Is.True,
-            context + "\n" + string.Join("\n", emitted.Diagnostics)
-        );
+        Assert.That(emitted.Success, Is.True, context + "\n" + string.Join("\n", emitted.Diagnostics));
         image.Position = 0;
         AssemblyLoadContext load = new("BoundaryStorage", isCollectible: true);
         try
@@ -364,20 +259,8 @@ internal sealed class GeneratedExcludedStorageBoundaryTests
             Assembly assembly = load.LoadFromStream(image);
             MethodInfo? read = assembly.GetType("Probe")?.GetMethod("Read");
             Assert.That(read, Is.Not.Null, context + ": caller exists");
-            int[] expected =
-            {
-                42,
-                0,
-                context.Contains("Collision", StringComparison.Ordinal)
-                || context.Contains("EventOpaque", StringComparison.Ordinal)
-                    ? 1
-                    : 0,
-            };
-            Assert.That(
-                read!.Invoke(null, null),
-                Is.EqualTo(expected),
-                context + ": payload, hidden state and initializer count"
-            );
+            int[] expected = { 42, 0, context.Contains("Collision", StringComparison.Ordinal) || context.Contains("EventOpaque", StringComparison.Ordinal) ? 1 : 0 };
+            Assert.That(read!.Invoke(null, null), Is.EqualTo(expected), context + ": payload, hidden state and initializer count");
         }
         finally
         {

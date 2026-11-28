@@ -27,14 +27,8 @@ public sealed class UIOverlay : MessageAwareComponent
     private void OnGUI()
     {
         GUI.Box(overlayRect, "Combat Feed");
-        GUI.Label(
-            new Rect(overlayRect.x + 12f, overlayRect.y + 24f, overlayRect.width - 24f, 24f),
-            resolutionText
-        );
-        GUI.Label(
-            new Rect(overlayRect.x + 12f, overlayRect.y + 52f, overlayRect.width - 24f, 24f),
-            damageText
-        );
+        GUI.Label(new Rect(overlayRect.x + 12f, overlayRect.y + 24f, overlayRect.width - 24f, 24f), resolutionText);
+        GUI.Label(new Rect(overlayRect.x + 12f, overlayRect.y + 52f, overlayRect.width - 24f, 24f), damageText);
     }
 
     private void OnSettingsChanged(in VideoSettingsChanged message)

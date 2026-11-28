@@ -54,21 +54,17 @@ void OnEnable() { GameManager.OnScoreChanged += UpdateUI; }
 void OnDisable() { /* Missing this results in a memory leak: */ }
 ```
 
-By default, `MessageAwareComponent` enables and disables its token with the component
-and releases its registrations on destruction. Preserve the base calls when
-overriding its lifecycle methods.
+By default, `MessageAwareComponent` enables and disables its token with the component and releases its registrations on destruction. Preserve the base calls when overriding its
+lifecycle methods.
 
-Direct `MessageRegistrationToken` and `MessageRegistrationLease` owners manage
-cleanup themselves. A newly created direct token stages subscriptions until you
-call `Enable()`; call `Dispose()` when its owner finishes. See the
-[plain C# observer](../concepts/listening-patterns.md#development-debug-dump)
-and [builder lifecycle examples](../advanced/registration-builders.md#code-examples).
+Direct `MessageRegistrationToken` and `MessageRegistrationLease` owners manage cleanup themselves. A newly created direct token stages subscriptions until you call `Enable()`; call
+`Dispose()` when its owner finishes. See the [plain C# observer](../concepts/listening-patterns.md#development-debug-dump) and
+[builder lifecycle examples](../advanced/registration-builders.md#code-examples).
 
 ### For Advanced Devs: "I need observability and control"
 
 - Inspect emission history and call sites in Message Monitor
-- Inspect loaded-scene `MessagingComponent` topology and delivery evidence in
-  Flow Graph
+- Inspect loaded-scene `MessagingComponent` topology and delivery evidence in Flow Graph
 - Catch lifecycle mistakes and provider warnings in the Inspector
 - Priority-based execution (deterministic ordering)
 - Interceptors (validate/normalize before handlers)
@@ -145,8 +141,7 @@ _ = Token.RegisterBroadcastWithoutSource<TookDamage>(
 - **Readonly-reference callbacks** - use `FastHandler<T>` when a handler should receive its message through an `in T` parameter
 - **Auto-constructor generation** - `[DxAutoConstructor]` eliminates boilerplate while keeping type safety
 - **Unity-first helpers** - `EmitGameObjectTargeted()`, `EmitComponentBroadcast()` feel natural
-- **Editor diagnostics** - inspect emissions in Message Monitor, routes in Flow
-  Graph, and component warnings in the Inspector
+- **Editor diagnostics** - inspect emissions in Message Monitor, routes in Flow Graph, and component warnings in the Inspector
 
 ---
 

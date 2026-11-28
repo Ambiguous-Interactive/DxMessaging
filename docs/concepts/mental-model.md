@@ -12,7 +12,8 @@ DxMessaging is built around one principle: **it gets out of your way**.
 
 You have data. You need to pass it around. That's the problem.
 
-DxMessaging provides fast, simple primitives as building blocks. You model changes as message types with optional context, using game primitives (GameObjects, components) as that context. The library handles the plumbing.
+DxMessaging provides fast, simple primitives as building blocks. You model changes as message types with optional context, using game primitives (GameObjects, components) as that
+context. The library handles the plumbing.
 
 You don't build your game INTO the messaging system. The messaging system is opt-in and optional - a tool you reach for when it helps.
 
@@ -32,7 +33,8 @@ Player takes damage
 
 Traditional approaches require tight coupling: either the Player knows about all these systems, or they all hold references to the Player. Both paths lead to tangled dependencies.
 
-DxMessaging inverts this relationship. The Player broadcasts a fact - "I took 25 damage" - and interested systems subscribe to receive it. Systems come and go without the Player knowing or caring.
+DxMessaging inverts this relationship. The Player broadcasts a fact - "I took 25 damage" - and interested systems subscribe to receive it. Systems come and go without the Player
+knowing or caring.
 
 ## The Three Message Categories
 
@@ -202,7 +204,8 @@ public class HealthDisplay : MessageAwareComponent
 
 > **Warning: Always call `base.RegisterMessageHandlers()`**
 >
-> When overriding `RegisterMessageHandlers()`, always call `base.RegisterMessageHandlers()` first. This ensures that any registrations from parent classes are preserved. Forgetting this call can silently break inherited behavior.
+> When overriding `RegisterMessageHandlers()`, always call `base.RegisterMessageHandlers()` first. This ensures that any registrations from parent classes are preserved. Forgetting
+> this call can silently break inherited behavior.
 
 ### What the Token Does
 
@@ -257,7 +260,8 @@ DxMessaging uses Unity's primitives (GameObjects, Components) as natural context
 
 ### InstanceId
 
-Every registration and emission uses an `InstanceId` - a lightweight identifier that wraps a Unity Object's instance ID. You rarely need to create these manually because extension methods handle the conversion:
+Every registration and emission uses an `InstanceId` - a lightweight identifier that wraps a Unity Object's instance ID. You rarely need to create these manually because extension
+methods handle the conversion:
 
 ```csharp
 // These are equivalent:
@@ -361,11 +365,13 @@ When getting started with DxMessaging, watch out for these common pitfalls:
 
 ### Forgetting to Enable the Token
 
-Registrations are **staged** when you call `Register*` methods, but they don't become active until the token is enabled. If you're using `MessageAwareComponent`, this is handled automatically. If managing tokens manually, remember to call `Token.Enable()` after registering.
+Registrations are **staged** when you call `Register*` methods, but they don't become active until the token is enabled. If you're using `MessageAwareComponent`, this is handled
+automatically. If managing tokens manually, remember to call `Token.Enable()` after registering.
 
 ### Targeting Component When You Meant GameObject (or Vice Versa)
 
-Component-level targeting (`EmitComponentTargeted`) and GameObject-level targeting (`EmitGameObjectTargeted`) are distinct. A message emitted to a specific component won't be received by handlers registered at the GameObject level for the same object, and vice versa. Be deliberate about which level you're targeting.
+Component-level targeting (`EmitComponentTargeted`) and GameObject-level targeting (`EmitGameObjectTargeted`) are distinct. A message emitted to a specific component won't be
+received by handlers registered at the GameObject level for the same object, and vice versa. Be deliberate about which level you're targeting.
 
 ### Forgetting to Call `base.RegisterMessageHandlers()`
 

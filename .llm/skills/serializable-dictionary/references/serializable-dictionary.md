@@ -4,7 +4,8 @@
 
 ## Overview
 
-Unity cannot serialize `Dictionary<K,V>` directly. This pattern wraps a dictionary with parallel lists that Unity can serialize, syncing them via serialization callbacks. The result is a dictionary that:
+Unity cannot serialize `Dictionary<K,V>` directly. This pattern wraps a dictionary with parallel lists that Unity can serialize, syncing them via serialization callbacks. The
+result is a dictionary that:
 
 1. **Displays in Inspector** - Designers can edit entries
 1. **Persists in scenes/prefabs** - Saves with the GameObject

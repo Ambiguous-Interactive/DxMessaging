@@ -47,27 +47,20 @@ internal sealed class UnityMcpBridgeTests
         Directory.Delete(_directory, true);
     }
 
-    private string Run() =>
-        DxMcpTestRunner.Run("EditMode", "Assembly", "Fixture;Method", "!Perf", _path);
+    private string Run() => DxMcpTestRunner.Run("EditMode", "Assembly", "Fixture;Method", "!Perf", _path);
 
     [Test]
     public void RetainsIdentityAndOwnershipUntilPassiveCleanup()
     {
         Assert.That(Run(), Is.EqualTo("owned-guid"));
         Assert.That(File.ReadAllText(_path + ".run.json"), Does.Contain("owned-guid"));
-        Assert.That(
-            TestRunnerApi.LastSettings!.Filter.testNames,
-            Is.EqualTo("Fixture;Method".Split(';'))
-        );
+        Assert.That(TestRunnerApi.LastSettings!.Filter.testNames, Is.EqualTo("Fixture;Method".Split(';')));
         TestRunnerApi.Callbacks.RunFinished(new Result());
         Assert.That(File.ReadAllText(_path + ".status"), Is.EqualTo("done"));
         EditorApplication.Tick();
         Assert.That(File.ReadAllText(_path + ".cleanup.status"), Is.EqualTo("running"));
         Assert.Throws<InvalidOperationException>(() => Run());
-        Assert.That(
-            SessionState.GetString("DxMcpTestRunner.RunGuid", ""),
-            Is.EqualTo("owned-guid")
-        );
+        Assert.That(SessionState.GetString("DxMcpTestRunner.RunGuid", ""), Is.EqualTo("owned-guid"));
         TestRunnerApi.Active = false;
         EditorApplication.Tick();
         Assert.That(File.ReadAllText(_path + ".cleanup.status"), Is.EqualTo("done"));
@@ -102,11 +95,7 @@ internal sealed class UnityMcpBridgeTests
         TestRunnerApi.Callbacks.RunFinished(result);
         TestRunnerApi.Active = false;
         EditorApplication.Tick();
-        Assert.That(
-            File.ReadAllText(_path + ".cleanup.status"),
-            Is.EqualTo("done"),
-            rootStatus.ToString()
-        );
+        Assert.That(File.ReadAllText(_path + ".cleanup.status"), Is.EqualTo("done"), rootStatus.ToString());
         Assert.That(SessionState.Values, Is.Empty);
     }
 
@@ -145,11 +134,7 @@ internal sealed class UnityMcpBridgeTests
             Assert.That(File.ReadAllText(path), Is.EqualTo(content), callback + ": " + path);
         }
         Assert.That(Directory.GetFiles(_directory), Is.EquivalentTo(evidence.Keys), callback);
-        Assert.That(
-            SessionState.GetString("DxMcpTestRunner.ResultPath", ""),
-            Is.EqualTo(_path),
-            callback
-        );
+        Assert.That(SessionState.GetString("DxMcpTestRunner.ResultPath", ""), Is.EqualTo(_path), callback);
         Assert.That(TestRunnerApi.Executions, Is.Zero);
     }
 
@@ -158,10 +143,7 @@ internal sealed class UnityMcpBridgeTests
     [TestCase("legacyObserverResultPath", false)]
     public void IncompleteOwnershipRemainsVisibleAndBlocksNewRuns(string field, bool hasRawPath)
     {
-        string key =
-            field == "ownedResultPath"
-                ? "DxMcpTestRunner.OwnedResultPath"
-                : "DxMcpObservedTestRunner.ResultPath";
+        string key = field == "ownedResultPath" ? "DxMcpTestRunner.OwnedResultPath" : "DxMcpObservedTestRunner.ResultPath";
         SessionState.SetString(key, _path);
         if (hasRawPath)
         {
@@ -170,9 +152,7 @@ internal sealed class UnityMcpBridgeTests
         Assert.Throws<InvalidOperationException>(() => Run());
         EditorApplication.timeSinceStartup = double.MaxValue;
         EditorApplication.Tick();
-        string snapshot = File.ReadAllText(
-            "Packages/com.wallstop-studios.dxmessaging/.artifacts/unity-mcp/editor-state.json"
-        );
+        string snapshot = File.ReadAllText("Packages/com.wallstop-studios.dxmessaging/.artifacts/unity-mcp/editor-state.json");
         Assert.That(snapshot, Does.Contain(field));
         using JsonDocument state = JsonDocument.Parse(snapshot);
         Assert.That(state.RootElement.GetProperty(field).GetString(), Is.EqualTo(_path));
@@ -213,11 +193,7 @@ internal sealed class UnityMcpBridgeTests
                 StageUtility.CurrentStage = 1;
                 break;
             case "dirty-secondary-scene":
-                SceneManager.Scenes =
-                [
-                    SceneManager.Scenes[0],
-                    new Scene { path = "Assets/Dirty.unity", isDirty = true },
-                ];
+                SceneManager.Scenes = [SceneManager.Scenes[0], new Scene { path = "Assets/Dirty.unity", isDirty = true }];
                 break;
             case "unsaved":
                 SceneManager.Scenes[0].path = "";
@@ -274,10 +250,7 @@ internal sealed class UnityMcpBridgeTests
         Assert.That(File.ReadAllText(_path + ".status"), Is.EqualTo("running"));
         TestRunnerApi.Active = false;
         EditorApplication.Tick();
-        Assert.That(
-            File.ReadAllText(_path + ".cleanup.status"),
-            Does.Contain("without a completed result")
-        );
+        Assert.That(File.ReadAllText(_path + ".cleanup.status"), Does.Contain("without a completed result"));
         Assert.That(File.ReadAllText(_path + ".status"), Does.StartWith("error:"));
     }
 
@@ -289,10 +262,7 @@ internal sealed class UnityMcpBridgeTests
         TestRunnerApi.Active = false;
         TestRunnerApi.QueryThrows = true;
         EditorApplication.Tick();
-        Assert.That(
-            File.ReadAllText(_path + ".cleanup.status"),
-            Does.StartWith("observation-error:")
-        );
+        Assert.That(File.ReadAllText(_path + ".cleanup.status"), Does.StartWith("observation-error:"));
         Assert.Throws<InvalidOperationException>(() => Run());
         TestRunnerApi.QueryThrows = false;
         EditorApplication.Tick();
@@ -352,10 +322,7 @@ internal sealed class UnityMcpBridgeTests
             case "suite-inconclusive":
                 // NUnit suite teardown changes status without incrementing failed-child counts.
                 result.IsSuite = true;
-                result.TestStatus =
-                    condition == "suite-teardown-failed"
-                        ? TestStatus.Failed
-                        : TestStatus.Inconclusive;
+                result.TestStatus = condition == "suite-teardown-failed" ? TestStatus.Failed : TestStatus.Inconclusive;
                 result.Children = [new Result()];
                 break;
             case "child-failed":
@@ -366,11 +333,7 @@ internal sealed class UnityMcpBridgeTests
         TestRunnerApi.Callbacks.RunFinished(result);
         TestRunnerApi.Active = false;
         EditorApplication.Tick();
-        Assert.That(
-            File.ReadAllText(_path + ".cleanup.status"),
-            Does.StartWith("error:"),
-            condition
-        );
+        Assert.That(File.ReadAllText(_path + ".cleanup.status"), Does.StartWith("error:"), condition);
     }
 
     [Test]
@@ -389,14 +352,8 @@ internal sealed class UnityMcpBridgeTests
         JsonElement root = document.RootElement;
         Assert.That(root.GetProperty("nodes").GetArrayLength(), Is.EqualTo(2));
         Assert.That(root.GetProperty("nodes")[1].GetProperty("parentIndex").GetInt32(), Is.Zero);
-        Assert.That(
-            root.GetProperty("failures")[0].GetProperty("message").GetString(),
-            Is.EqualTo(leaf.Message)
-        );
-        Assert.That(
-            root.GetProperty("nodes")[1].GetProperty("output").GetString(),
-            Is.EqualTo("output")
-        );
+        Assert.That(root.GetProperty("failures")[0].GetProperty("message").GetString(), Is.EqualTo(leaf.Message));
+        Assert.That(root.GetProperty("nodes")[1].GetProperty("output").GetString(), Is.EqualTo("output"));
     }
 
     [Test]
@@ -427,24 +384,15 @@ internal sealed class UnityMcpBridgeTests
         TestRunnerApi.Active = false;
         Assert.DoesNotThrow(() => EditorApplication.Tick());
         Assert.That(SessionState.GetString("DxMcpTestRunner.ResultPath", ""), Is.EqualTo(_path));
-        Assert.That(
-            SessionState.GetString("DxMcpTestRunner.Errors", ""),
-            Does.Contain("framework failed")
-        );
+        Assert.That(SessionState.GetString("DxMcpTestRunner.Errors", ""), Does.Contain("framework failed"));
         string retainedErrors = SessionState.GetString("DxMcpTestRunner.Errors", "");
         EditorApplication.Tick();
-        Assert.That(
-            SessionState.GetString("DxMcpTestRunner.Errors", ""),
-            Is.EqualTo(retainedErrors)
-        );
+        Assert.That(SessionState.GetString("DxMcpTestRunner.Errors", ""), Is.EqualTo(retainedErrors));
         Directory.Delete(_path + ".cleanup.status");
         Directory.Delete(_path + ".status");
         EditorApplication.Tick();
         using JsonDocument cleanup = JsonDocument.Parse(File.ReadAllText(_path + ".cleanup.json"));
-        Assert.That(
-            cleanup.RootElement.GetProperty("frameworkErrors").GetString(),
-            Does.Contain("framework failed")
-        );
+        Assert.That(cleanup.RootElement.GetProperty("frameworkErrors").GetString(), Does.Contain("framework failed"));
         Assert.That(File.ReadAllText(_path + ".cleanup.status"), Does.StartWith("error:"));
         Assert.That(SessionState.Values, Is.Empty);
     }
@@ -453,20 +401,11 @@ internal sealed class UnityMcpBridgeTests
     public void PassiveIdleSnapshotCoversEverySceneAndUnknownFrameworkState()
     {
         // Initialize the maintained callback without starting a run.
-        Assert.Throws<ArgumentException>(() =>
-            DxMcpTestRunner.Run("invalid", null!, null!, null!, _path)
-        );
-        SceneManager.Scenes =
-        [
-            SceneManager.Scenes[0],
-            new Scene { path = "Assets/Second.unity", isLoaded = true },
-        ];
+        Assert.Throws<ArgumentException>(() => DxMcpTestRunner.Run("invalid", null!, null!, null!, _path));
+        SceneManager.Scenes = [SceneManager.Scenes[0], new Scene { path = "Assets/Second.unity", isLoaded = true }];
         EditorApplication.timeSinceStartup = double.MaxValue;
         EditorApplication.Tick();
-        string snapshot = Path.Combine(
-            _directory,
-            "Packages/com.wallstop-studios.dxmessaging/.artifacts/unity-mcp/editor-state.json"
-        );
+        string snapshot = Path.Combine(_directory, "Packages/com.wallstop-studios.dxmessaging/.artifacts/unity-mcp/editor-state.json");
         using JsonDocument state = JsonDocument.Parse(File.ReadAllText(snapshot));
         Assert.That(state.RootElement.GetProperty("scenes").GetArrayLength(), Is.EqualTo(2));
         Assert.That(state.RootElement.GetProperty("frameworkActive").GetBoolean(), Is.False);
@@ -474,10 +413,7 @@ internal sealed class UnityMcpBridgeTests
         TestRunnerApi.QueryThrows = true;
         EditorApplication.Tick();
         using JsonDocument failed = JsonDocument.Parse(File.ReadAllText(snapshot));
-        Assert.That(
-            failed.RootElement.GetProperty("observationError").GetString(),
-            Does.Contain("query failed")
-        );
+        Assert.That(failed.RootElement.GetProperty("observationError").GetString(), Does.Contain("query failed"));
         Assert.That(failed.RootElement.GetProperty("mainStage").GetBoolean(), Is.False);
     }
 

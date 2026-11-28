@@ -1,8 +1,6 @@
 #if UNITY_2021_3_OR_NEWER
 [assembly: DxMessaging.Tests.Runtime.NoteGatedCategoryAttribute]
-[assembly: UnityEngine.TestRunner.TestRunCallback(
-    typeof(DxMessaging.Tests.Runtime.NoteGatedCategoryAttribute)
-)]
+[assembly: UnityEngine.TestRunner.TestRunCallback(typeof(DxMessaging.Tests.Runtime.NoteGatedCategoryAttribute))]
 
 namespace DxMessaging.Tests.Runtime
 {
@@ -128,13 +126,7 @@ namespace DxMessaging.Tests.Runtime
             return DefaultHardBudget;
         }
 
-        private static readonly string[] GatedCategories =
-        {
-            "Stress",
-            "Performance",
-            "Allocation",
-            "MemoryReclaim",
-        };
+        private static readonly string[] GatedCategories = { "Stress", "Performance", "Allocation", "MemoryReclaim" };
 
         private static Stopwatch _suiteTimer;
         private static volatile bool _gatedCategoryDetected;
@@ -185,10 +177,7 @@ namespace DxMessaging.Tests.Runtime
 
             if (_gatedCategoryDetected)
             {
-                UnityEngine.Debug.Log(
-                    "Skipping default-suite wall-clock assertion: a Stress/Performance/Allocation/MemoryReclaim "
-                        + "test was observed in this run."
-                );
+                UnityEngine.Debug.Log("Skipping default-suite wall-clock assertion: a Stress/Performance/Allocation/MemoryReclaim " + "test was observed in this run.");
                 return;
             }
 
@@ -288,11 +277,7 @@ namespace DxMessaging.Tests.Runtime
 
         public void TestStarted(ITest test)
         {
-            if (
-                test != null
-                && !test.IsSuite
-                && test.TypeInfo?.Type?.Assembly == typeof(SuiteWallClockBudgetTest).Assembly
-            )
+            if (test != null && !test.IsSuite && test.TypeInfo?.Type?.Assembly == typeof(SuiteWallClockBudgetTest).Assembly)
             {
                 LastStartedTestIdForTesting = test.Id;
                 BeforeTest(test);

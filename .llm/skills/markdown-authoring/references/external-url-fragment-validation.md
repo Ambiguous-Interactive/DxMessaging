@@ -4,12 +4,15 @@
 
 ## Overview
 
-URL fragments (the `#section-name` portion after the main URL) are particularly fragile for external links. The target page's heading structure can change without notice, breaking fragment references.
+URL fragments (the `#section-name` portion after the main URL) are particularly fragile for external links. The target page's heading structure can change without notice, breaking
+fragment references.
 
 Two distinct cases, gated differently in CI:
 
-- **In-repo anchors** (a `#heading` fragment on a local/relative Markdown link) are validated OFFLINE with `lychee --offline --include-fragments` in the blocking PR check. A fragment that matches no heading fails the PR, so these are deterministic and must be correct.
-- **External-page fragments** are not fetched by the blocking offline gate. Authors verify them in a browser; deep external rot is surfaced by the scheduled advisory scan (which opens a tracking issue rather than failing CI). Bot-detection or transient responses on the external page never red a PR.
+- **In-repo anchors** (a `#heading` fragment on a local/relative Markdown link) are validated OFFLINE with `lychee --offline --include-fragments` in the blocking PR check. A
+  fragment that matches no heading fails the PR, so these are deterministic and must be correct.
+- **External-page fragments** are not fetched by the blocking offline gate. Authors verify them in a browser; deep external rot is surfaced by the scheduled advisory scan (which
+  opens a tracking issue rather than failing CI). Bot-detection or transient responses on the external page never red a PR.
 
 ## Problem Statement
 
@@ -23,8 +26,8 @@ Fragment links can break silently or cause CI failures:
 | Heading text changed           | `#getting-started` becomes `#quick-start`                 | 404-like behavior on the page                               |
 | Auto-generated fragment suffix | `#links` vs `#links-1` (duplicate heading disambiguation) | Wrong section targeted                                      |
 
-> **Note**: Some websites have broken internal links themselves. For example, markdownguide.org
-> links to `#links` but their `<h2>Links</h2>` has no `id` attribute. When in doubt, omit the fragment.
+> **Note**: Some websites have broken internal links themselves. For example, markdownguide.org links to `#links` but their `<h2>Links</h2>` has no `id` attribute. When in doubt,
+> omit the fragment.
 
 ## Solution
 
@@ -61,8 +64,7 @@ Different sites generate fragment IDs differently:
 ```markdown
 <!-- Good: Includes context in case fragment breaks -->
 
-See the [Markdown links syntax](https://www.markdownguide.org/basic-syntax/)
-section for details on inline and reference-style links.
+See the [Markdown links syntax](https://www.markdownguide.org/basic-syntax/) section for details on inline and reference-style links.
 
 <!-- Risky: Fragment-only reference with no context -->
 

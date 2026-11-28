@@ -26,25 +26,12 @@ namespace DxMessaging.Tests.Runtime.Core
         /// </summary>
         private static readonly int[] ScrambledPriorities = { 1, -100, 100, 0, -1 };
 
-        private static readonly string[] ExpectedAscendingLabels =
-        {
-            "-100",
-            "-1",
-            "0",
-            "1",
-            "100",
-        };
+        private static readonly string[] ExpectedAscendingLabels = { "-100", "-1", "0", "1", "100" };
 
         [Test]
-        public void HandlersRunLowestPriorityFirstIncludingNegatives(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void HandlersRunLowestPriorityFirstIncludingNegatives([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(HandlersRunLowestPriorityFirstIncludingNegatives) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(HandlersRunLowestPriorityFirstIncludingNegatives) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -56,9 +43,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 List<MessageRegistrationHandle> handles = new();
                 foreach (int priority in ScrambledPriorities)
                 {
-                    handles.Add(
-                        RegisterHandlerAtPriority(scenario, token, hostId, order, priority)
-                    );
+                    handles.Add(RegisterHandlerAtPriority(scenario, token, hostId, order, priority));
                 }
 
                 EmitForScenario(scenario, hostId);
@@ -72,21 +57,14 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(
                 ExpectedAscendingLabels,
                 order.ToArray(),
-                "Handlers must run in ascending priority order (negative before zero before "
-                    + "positive): lower priority is documented to run earlier."
+                "Handlers must run in ascending priority order (negative before zero before " + "positive): lower priority is documented to run earlier."
             );
         }
 
         [Test]
-        public void InterceptorsRunLowestPriorityFirstIncludingNegatives(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void InterceptorsRunLowestPriorityFirstIncludingNegatives([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(InterceptorsRunLowestPriorityFirstIncludingNegatives) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(InterceptorsRunLowestPriorityFirstIncludingNegatives) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -112,21 +90,14 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(
                 ExpectedAscendingLabels,
                 order.ToArray(),
-                "Interceptors must run in ascending priority order (negative before zero "
-                    + "before positive): lower priority is documented to run earlier."
+                "Interceptors must run in ascending priority order (negative before zero " + "before positive): lower priority is documented to run earlier."
             );
         }
 
         [Test]
-        public void PostProcessorsRunLowestPriorityFirstIncludingNegatives(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void PostProcessorsRunLowestPriorityFirstIncludingNegatives([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(PostProcessorsRunLowestPriorityFirstIncludingNegatives) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(PostProcessorsRunLowestPriorityFirstIncludingNegatives) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -138,9 +109,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 List<MessageRegistrationHandle> handles = new();
                 foreach (int priority in ScrambledPriorities)
                 {
-                    handles.Add(
-                        RegisterPostProcessorAtPriority(scenario, token, hostId, order, priority)
-                    );
+                    handles.Add(RegisterPostProcessorAtPriority(scenario, token, hostId, order, priority));
                 }
 
                 EmitForScenario(scenario, hostId);
@@ -154,8 +123,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(
                 ExpectedAscendingLabels,
                 order.ToArray(),
-                "Post-processors must run in ascending priority order (negative before zero "
-                    + "before positive): lower priority is documented to run earlier."
+                "Post-processors must run in ascending priority order (negative before zero " + "before positive): lower priority is documented to run earlier."
             );
         }
 
@@ -166,15 +134,9 @@ namespace DxMessaging.Tests.Runtime.Core
         /// still run before a negative-priority handler.
         /// </summary>
         [Test]
-        public void NegativePriorityDoesNotReorderPipelineStages(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void NegativePriorityDoesNotReorderPipelineStages([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(NegativePriorityDoesNotReorderPipelineStages) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(NegativePriorityDoesNotReorderPipelineStages) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -187,14 +149,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     RegisterInterceptorAtPriority(scenario, token, stages, 100, label: "I"),
                     RegisterHandlerAtPriority(scenario, token, hostId, stages, -100, label: "H"),
-                    RegisterPostProcessorAtPriority(
-                        scenario,
-                        token,
-                        hostId,
-                        stages,
-                        -100,
-                        label: "P"
-                    ),
+                    RegisterPostProcessorAtPriority(scenario, token, hostId, stages, -100, label: "P"),
                 };
 
                 EmitForScenario(scenario, hostId);
@@ -229,22 +184,11 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 case MessageKind.Untargeted:
                 {
-                    return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
-                        scenario,
-                        token,
-                        (in SimpleUntargetedMessage _) => order.Add(effectiveLabel),
-                        priority
-                    );
+                    return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(scenario, token, (in SimpleUntargetedMessage _) => order.Add(effectiveLabel), priority);
                 }
                 case MessageKind.Targeted:
                 {
-                    return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        context,
-                        (in SimpleTargetedMessage _) => order.Add(effectiveLabel),
-                        priority
-                    );
+                    return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(scenario, token, context, (in SimpleTargetedMessage _) => order.Add(effectiveLabel), priority);
                 }
                 case MessageKind.Broadcast:
                 {
@@ -258,11 +202,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
@@ -319,11 +259,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
@@ -371,11 +307,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
@@ -404,11 +336,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }

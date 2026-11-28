@@ -1,6 +1,7 @@
 # Runtime Message Bus Configuration
 
-This guide covers how to configure message buses at runtime and retarget existing registrations. These features enable advanced scenarios like dependency injection, testing with isolated buses, and dynamic reconfiguration of messaging hierarchies.
+This guide covers how to configure message buses at runtime and retarget existing registrations. These features enable advanced scenarios like dependency injection, testing with
+isolated buses, and dynamic reconfiguration of messaging hierarchies.
 
 ## Table of Contents
 
@@ -28,7 +29,8 @@ If you're just getting started with DxMessaging, you probably don't need these f
 
 ## Global Message Bus Management
 
-By default, DxMessaging creates a single process-wide message bus during static initialization. This bus is available through `MessageHandler.MessageBus` and works great for most scenarios.
+By default, DxMessaging creates a single process-wide message bus during static initialization. This bus is available through `MessageHandler.MessageBus` and works great for most
+scenarios.
 
 ### Replacing the Global Bus
 
@@ -55,18 +57,15 @@ var handler = new MessageHandler(new InstanceId(1)) { active = true };
 - When you want all message traffic to flow through a specific bus instance
 - In integration tests that need complete control over message routing
 
-**Important:** This permanently replaces the global bus for the lifetime of the application. All subsequent registrations will use the new bus unless explicitly configured otherwise.
+**Important:** This permanently replaces the global bus for the lifetime of the application. All subsequent registrations will use the new bus unless explicitly configured
+otherwise.
 
 ### Temporarily Overriding the Global Bus
 
-> **Fixed in v3.2.3:** Override scopes are safe to copy and allocate no managed objects while
-> reusing established slot capacity. Keep the result as the concrete
-> `GlobalMessageBusScope` type because converting a value type to `IDisposable` boxes it. Disposing
-> any copy ends the override once. Nested scopes restore the nearest active parent even when
-> disposed out of order. A later `SetGlobalMessageBus`, `ResetGlobalMessageBus`, or
-> `DxMessagingStaticState.Reset` invalidates older scopes so they cannot restore stale state.
-> Unusually deep first-time nesting can allocate storage, which later scopes reuse until domain
-> reload.
+> **Fixed in v3.2.3:** Override scopes are safe to copy and allocate no managed objects while reusing established slot capacity. Keep the result as the concrete
+> `GlobalMessageBusScope` type because converting a value type to `IDisposable` boxes it. Disposing any copy ends the override once. Nested scopes restore the nearest active parent
+> even when disposed out of order. A later `SetGlobalMessageBus`, `ResetGlobalMessageBus`, or `DxMessagingStaticState.Reset` invalidates older scopes so they cannot restore stale
+> state. Unusually deep first-time nesting can allocate storage, which later scopes reuse until domain reload.
 
 Use `OverrideGlobalMessageBus()` when you want to temporarily replace the bus and automatically restore it later:
 
@@ -95,13 +94,10 @@ Assert.AreSame(originalBus, MessageHandler.MessageBus);
 - When temporarily redirecting messages for debugging or logging
 - For scoped gameplay features that need their own message channel
 
-**Pattern:** This returns a `GlobalMessageBusScope` struct. Use the concrete return value directly
-with a `using` statement for zero-GC cleanup while established slot capacity is reused. When the
-scope exits, the nearest active previous bus is restored. New peak nesting depth can allocate more
-storage; that capacity remains available for reuse until domain reload. An out-of-order-disposed
-parent remains restorable until all newer scopes have ended.
-Create and dispose scopes, and set or reset the global bus, on Unity's main thread. These
-configuration APIs follow DxMessaging's single-threaded runtime contract.
+**Pattern:** This returns a `GlobalMessageBusScope` struct. Use the concrete return value directly with a `using` statement for zero-GC cleanup while established slot capacity is
+reused. When the scope exits, the nearest active previous bus is restored. New peak nesting depth can allocate more storage; that capacity remains available for reuse until domain
+reload. An out-of-order-disposed parent remains restorable until all newer scopes have ended. Create and dispose scopes, and set or reset the global bus, on Unity's main thread.
+These configuration APIs follow DxMessaging's single-threaded runtime contract.
 
 ### Resetting to the Default Bus
 
@@ -227,42 +223,33 @@ component.Configure(busB, MessageBusRebindMode.RebindActive);
 
 ### Token registrations accepted during cleanup
 
-A custom `IMessageBus` can register another callback on a token during that token's
-`RetargetMessageBus(..., RebindActive)` cleanup. The accepted registration stays on its original
-bus until a later cleanup pass. Retargeting does not also activate it on the destination bus.
-Its returned handle still removes it. `Disable()` cleans both buses; the next `Enable()` activates
-surviving staged registrations on the current destination.
+A custom `IMessageBus` can register another callback on a token during that token's `RetargetMessageBus(..., RebindActive)` cleanup. The accepted registration stays on its original
+bus until a later cleanup pass. Retargeting does not also activate it on the destination bus. Its returned handle still removes it. `Disable()` cleans both buses; the next
+`Enable()` activates surviving staged registrations on the current destination.
 
 ### Configuration from callbacks
 
 > **Fixed in v4.0.0.**
 
-A bus cleanup or provider callback can call `MessagingComponent.Configure` while another component
-configuration is in progress. The nested call accepts a request with its bus or provider and rebind
-mode. Resolution and migration of that request wait until the current migration returns from foreign
-code. Requests run in their accepted order before the outermost `Configure` returns.
+A bus cleanup or provider callback can call `MessagingComponent.Configure` while another component configuration is in progress. The nested call accepts a request with its bus or
+provider and rebind mode. Resolution and migration of that request wait until the current migration returns from foreign code. Requests run in their accepted order before the
+outermost `Configure` returns.
 
-Observe the final registrations after the outermost call returns. A nested call does not complete
-its migration inside the callback. `PreserveRegistrations` still changes future registration defaults
-without moving active registrations; `RebindActive` moves the active registrations when its queued
-request runs. Later requests do not erase an earlier request's rebind mode.
+Observe the final registrations after the outermost call returns. A nested call does not complete its migration inside the callback. `PreserveRegistrations` still changes future
+registration defaults without moving active registrations; `RebindActive` moves the active registrations when its queued request runs. Later requests do not erase an earlier
+request's rebind mode.
 
-The outermost call attempts accepted requests even when an earlier request fails. It rethrows a
-single original error unchanged, or reports multiple errors in an `AggregateException`. Failed token
-cleanup remains retryable through the component's owning APIs. Released or replaced listeners are
-rechecked when each migration runs, so independently owned work is not migrated by the component.
+The outermost call attempts accepted requests even when an earlier request fails. It rethrows a single original error unchanged, or reports multiple errors in an
+`AggregateException`. Failed token cleanup remains retryable through the component's owning APIs. Released or replaced listeners are rechecked when each migration runs, so
+independently owned work is not migrated by the component.
 
-Before the first handler exists, a component permits one nested provider resolution inside the
-initial provider call. A third active resolution throws `InvalidOperationException` before invoking
-the provider. A provider-based `Configure` call selects the provider before it attempts resolution.
-The guard keeps the component's current selection for any later resolution. Call the concrete-bus
-overload of `Configure` before creating a listener from a deeper provider callback.
+Before the first handler exists, a component permits one nested provider resolution inside the initial provider call. A third active resolution throws `InvalidOperationException`
+before invoking the provider. A provider-based `Configure` call selects the provider before it attempts resolution. The guard keeps the component's current selection for any later
+resolution. Call the concrete-bus overload of `Configure` before creating a listener from a deeper provider callback.
 
-If `Configure` publishes the first handler during a provider callback, nested creation uses that
-handler. Unity's enable and disable callbacks continue to follow `emitMessagesWhenDisabled`.
-At the end of initial resolution, the component reapplies the last explicit `ToggleMessageHandler`
-request made for that handler after publication. When there is no explicit request, the handler
-uses the final lifecycle settings.
+If `Configure` publishes the first handler during a provider callback, nested creation uses that handler. Unity's enable and disable callbacks continue to follow
+`emitMessagesWhenDisabled`. At the end of initial resolution, the component reapplies the last explicit `ToggleMessageHandler` request made for that handler after publication. When
+there is no explicit request, the handler uses the final lifecycle settings.
 
 ### Retarget a Token Directly
 
@@ -286,15 +273,12 @@ token.RetargetMessageBus(busB, MessageBusRebindMode.RebindActive);
 // All registrations are now on busB
 ```
 
-If a custom bus registration callback calls `Enable()` on the token currently being activated or
-retargeted, that nested call returns without restarting replay. The outer call determines whether
-activation succeeds. A registration failure still reaches the outer caller, and later activation
-can retry after cleanup completes.
+If a custom bus registration callback calls `Enable()` on the token currently being activated or retargeted, that nested call returns without restarting replay. The outer call
+determines whether activation succeeds. A registration failure still reaches the outer caller, and later activation can retry after cleanup completes.
 
-When a custom bus registration calls back into a token during activation, a nested active retarget
-moves subscriptions that are already active. The registration currently being accepted keeps its
-original bus; later staged subscriptions use the updated bus override. If the nested retarget fails,
-its recovery restores the subscriptions it owned without replaying the rest of the outer activation.
+When a custom bus registration calls back into a token during activation, a nested active retarget moves subscriptions that are already active. The registration currently being
+accepted keeps its original bus; later staged subscriptions use the updated bus override. If the nested retarget fails, its recovery restores the subscriptions it owned without
+replaying the rest of the outer activation.
 
 #### When to use this
 
@@ -450,23 +434,16 @@ public class DynamicComponentManager
 
 ## Quick Reference
 
-`DxMessagingStaticState.Reset()` clears the built-in default bus, restores shared
-configuration, and invalidates prior global override scopes. It preserves custom bus
-registrations and previously issued message type IDs, bus cache indices, automatically
-generated lease owner IDs, and registration handle IDs. New buses and automatically owned
-leases keep separate handler storage from retained ones. Bus construction or automatic
-lease owner generation throws `InvalidOperationException` when its identifier range is exhausted.
+`DxMessagingStaticState.Reset()` clears the built-in default bus, restores shared configuration, and invalidates prior global override scopes. It preserves custom bus registrations
+and previously issued message type IDs, bus cache indices, automatically generated lease owner IDs, and registration handle IDs. New buses and automatically owned leases keep
+separate handler storage from retained ones. Bus construction or automatic lease owner generation throws `InvalidOperationException` when its identifier range is exhausted.
 
-Reset clears the default bus's typed handler caches, including handlers that already
-deregistered their last callback. A new registration on a retained handler receives
-fresh messages without replaying a cached callback from before reset.
+Reset clears the default bus's typed handler caches, including handlers that already deregistered their last callback. A new registration on a retained handler receives fresh
+messages without replaying a cached callback from before reset.
 
-A reset during an interceptor, global callback, handler, or post-processor stops the
-current message. Remaining callbacks and later phases do not run for that emission.
-Registrations created after the reset receive subsequent emissions, including a
-nested emission started explicitly by the resetting callback.
-`MessageBus.BumpResetGeneration()` uses the same callback boundary and invalidates
-older deregistration handles while retaining the bus's registrations for later emissions.
+A reset during an interceptor, global callback, handler, or post-processor stops the current message. Remaining callbacks and later phases do not run for that emission.
+Registrations created after the reset receive subsequent emissions, including a nested emission started explicitly by the resetting callback. `MessageBus.BumpResetGeneration()`
+uses the same callback boundary and invalidates older deregistration handles while retaining the bus's registrations for later emissions.
 
 | API                                            | Purpose                                     | Use Case                        |
 | ---------------------------------------------- | ------------------------------------------- | ------------------------------- |
@@ -484,21 +461,15 @@ older deregistration handles while retaining the bus's registrations for later e
 
 ## Memory Reclamation Policy
 
-Long-running buses retain per-message-type and per-context slots and a set of
-shared collection pools. The memory reclamation system bounds that growth
-through idle sweeps and an explicit `Trim` API. Both knobs live on the
-`DxMessagingRuntimeSettings` ScriptableObject loaded from `Resources/`.
+Long-running buses retain per-message-type and per-context slots and a set of shared collection pools. The memory reclamation system bounds that growth through idle sweeps and an
+explicit `Trim` API. Both knobs live on the `DxMessagingRuntimeSettings` ScriptableObject loaded from `Resources/`.
 
-The asset is hot-reloadable. Live buses subscribe to
-`DxMessagingRuntimeSettings.SettingsChanged` and re-apply caps without
-recreation, which means you can tune the policy from the editor while Play
-mode is running.
+The asset is hot-reloadable. Live buses subscribe to `DxMessagingRuntimeSettings.SettingsChanged` and re-apply caps without recreation, which means you can tune the policy from the
+editor while Play mode is running.
 
-For scenario-driven tuning recommendations, the public `Trim` and
-diagnostic-counter API surface, and worked examples for scene transitions
-and leak diagnosis, see the [Memory Reclamation guide](../guides/memory-reclamation.md).
-For the full parameter reference (including defaults, mins, and tooltip
-text), see the [Runtime Settings reference](../reference/runtime-settings.md).
+For scenario-driven tuning recommendations, the public `Trim` and diagnostic-counter API surface, and worked examples for scene transitions and leak diagnosis, see the
+[Memory Reclamation guide](../guides/memory-reclamation.md). For the full parameter reference (including defaults, mins, and tooltip text), see the
+[Runtime Settings reference](../reference/runtime-settings.md).
 
 ---
 

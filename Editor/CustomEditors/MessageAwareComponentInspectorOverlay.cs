@@ -82,10 +82,7 @@ namespace DxMessaging.Editor.CustomEditors
             }
             catch (System.Exception ex)
             {
-                DxMessagingEditorLog.LogWarning(
-                    "Failed to repaint inspectors after analyzer report update.",
-                    ex
-                );
+                DxMessagingEditorLog.LogWarning("Failed to repaint inspectors after analyzer report update.", ex);
             }
         }
 
@@ -184,9 +181,7 @@ namespace DxMessaging.Editor.CustomEditors
         /// <returns>True if the HelpBox + buttons were drawn; false if we drew nothing.</returns>
         private static bool BuildAndRenderOverlay(MessageAwareComponent messageAwareComponent)
         {
-            MessageAwareComponentInspectorState state = ResolveInspectorState(
-                messageAwareComponent
-            );
+            MessageAwareComponentInspectorState state = ResolveInspectorState(messageAwareComponent);
 
             if (state.Kind == MessageAwareComponentInspectorStateKind.None)
             {
@@ -205,8 +200,7 @@ namespace DxMessaging.Editor.CustomEditors
                 {
                     case MessageAwareComponentInspectorStateKind.HarvesterUnavailable:
                         EditorGUILayout.HelpBox(
-                            "DxMessaging inspector overlay is disabled on this Unity version. "
-                                + "Check the console for DXMSG006/007/009 warnings instead.",
+                            "DxMessaging inspector overlay is disabled on this Unity version. " + "Check the console for DXMSG006/007/009 warnings instead.",
                             MessageType.Info
                         );
                         break;
@@ -214,13 +208,7 @@ namespace DxMessaging.Editor.CustomEditors
                         DrawIgnoredBox(state.Component, state.Settings, state.FullName);
                         break;
                     case MessageAwareComponentInspectorStateKind.MissingBaseCallWarning:
-                        DrawWarningBox(
-                            state.Component,
-                            state.Settings,
-                            state.FullName,
-                            state.Entry,
-                            state.IsFreshThisSession
-                        );
+                        DrawWarningBox(state.Component, state.Settings, state.FullName, state.Entry, state.IsFreshThisSession);
                         break;
                 }
             }
@@ -287,13 +275,7 @@ namespace DxMessaging.Editor.CustomEditors
                 DxMessagingConsoleHarvester.TryGetEntry(fullName, out entry);
             }
 
-            return ResolveInspectorState(
-                messageAwareComponent,
-                settings,
-                DxMessagingConsoleHarvester.IsAvailable,
-                DxMessagingConsoleHarvester.IsFreshThisSession,
-                entry
-            );
+            return ResolveInspectorState(messageAwareComponent, settings, DxMessagingConsoleHarvester.IsAvailable, DxMessagingConsoleHarvester.IsFreshThisSession, entry);
         }
 
         internal static MessageAwareComponentInspectorState ResolveInspectorState(
@@ -332,38 +314,18 @@ namespace DxMessaging.Editor.CustomEditors
 
             if (!harvesterAvailable)
             {
-                return MessageAwareComponentInspectorState.ForHarvesterUnavailable(
-                    messageAwareComponent,
-                    settings,
-                    fullName,
-                    isFreshThisSession
-                );
+                return MessageAwareComponentInspectorState.ForHarvesterUnavailable(messageAwareComponent, settings, fullName, isFreshThisSession);
             }
 
-            bool isIgnored =
-                settings._baseCallIgnoredTypes != null
-                && settings._baseCallIgnoredTypes.Any(e =>
-                    string.Equals(e, fullName, System.StringComparison.Ordinal)
-                );
+            bool isIgnored = settings._baseCallIgnoredTypes != null && settings._baseCallIgnoredTypes.Any(e => string.Equals(e, fullName, System.StringComparison.Ordinal));
             if (isIgnored)
             {
-                return MessageAwareComponentInspectorState.ForIgnoredType(
-                    messageAwareComponent,
-                    settings,
-                    fullName,
-                    isFreshThisSession
-                );
+                return MessageAwareComponentInspectorState.ForIgnoredType(messageAwareComponent, settings, fullName, isFreshThisSession);
             }
 
             if (entry != null && entry.missingBaseFor != null && 0 < entry.missingBaseFor.Count)
             {
-                return MessageAwareComponentInspectorState.ForMissingBaseCallWarning(
-                    messageAwareComponent,
-                    settings,
-                    fullName,
-                    entry,
-                    isFreshThisSession
-                );
+                return MessageAwareComponentInspectorState.ForMissingBaseCallWarning(messageAwareComponent, settings, fullName, entry, isFreshThisSession);
             }
 
             /*
@@ -391,10 +353,7 @@ namespace DxMessaging.Editor.CustomEditors
             }
             catch (System.Exception ex)
             {
-                DxMessagingEditorLog.LogWarning(
-                    "Failed to repaint inspectors after state change.",
-                    ex
-                );
+                DxMessagingEditorLog.LogWarning("Failed to repaint inspectors after state change.", ex);
             }
 
             System.Action invalidated = InspectorStateInvalidated;
@@ -411,10 +370,7 @@ namespace DxMessaging.Editor.CustomEditors
                 }
                 catch (System.Exception ex)
                 {
-                    DxMessagingEditorLog.LogWarning(
-                        "Failed to refresh MessageAwareComponent inspectors after state change.",
-                        ex
-                    );
+                    DxMessagingEditorLog.LogWarning("Failed to refresh MessageAwareComponent inspectors after state change.", ex);
                 }
             }
         }
@@ -425,13 +381,7 @@ namespace DxMessaging.Editor.CustomEditors
             return (targetType.FullName ?? string.Empty).Replace('+', '.');
         }
 
-        private static void DrawWarningBox(
-            MessageAwareComponent component,
-            DxMessagingSettings settings,
-            string fullName,
-            BaseCallReportEntry entry,
-            bool isFreshThisSession
-        )
+        private static void DrawWarningBox(MessageAwareComponent component, DxMessagingSettings settings, string fullName, BaseCallReportEntry entry, bool isFreshThisSession)
         {
             string missingMethods = string.Join(", ", entry.missingBaseFor);
             /*
@@ -443,9 +393,7 @@ namespace DxMessaging.Editor.CustomEditors
             foreach (string missingMethod in entry.missingBaseFor)
             {
                 consequenceBuilder.Append("\n- ");
-                consequenceBuilder.Append(
-                    BaseCallTypeScannerCore.GetMissingBaseConsequenceLine(missingMethod, fullName)
-                );
+                consequenceBuilder.Append(BaseCallTypeScannerCore.GetMissingBaseConsequenceLine(missingMethod, fullName));
             }
             string consequenceLines = consequenceBuilder.ToString();
 
@@ -458,9 +406,7 @@ namespace DxMessaging.Editor.CustomEditors
                 yet completed; once the scan flips IsFreshThisSession to true and RepaintAllInspectors
                 fires, the overlay redraws without the suffix.
             */
-            string freshnessSuffix = isFreshThisSession
-                ? string.Empty
-                : "\n(cached from previous session; refreshing...)";
+            string freshnessSuffix = isFreshThisSession ? string.Empty : "\n(cached from previous session; refreshing...)";
             string message =
                 $"{fullName} has lifecycle methods that don't chain to MessageAwareComponent ({missingMethods}); DxMessaging will not function on this component."
                 + consequenceLines
@@ -481,16 +427,9 @@ namespace DxMessaging.Editor.CustomEditors
             }
         }
 
-        private static void DrawIgnoredBox(
-            MessageAwareComponent component,
-            DxMessagingSettings settings,
-            string fullName
-        )
+        private static void DrawIgnoredBox(MessageAwareComponent component, DxMessagingSettings settings, string fullName)
         {
-            EditorGUILayout.HelpBox(
-                $"{fullName} is excluded from the DxMessaging base-call check.",
-                MessageType.Info
-            );
+            EditorGUILayout.HelpBox($"{fullName} is excluded from the DxMessaging base-call check.", MessageType.Info);
             using (new EditorGUILayout.HorizontalScope())
             {
                 if (GUILayout.Button("Stop ignoring"))
@@ -500,18 +439,12 @@ namespace DxMessaging.Editor.CustomEditors
             }
         }
 
-        private static void OpenScriptForComponent(
-            MessageAwareComponent component,
-            BaseCallReportEntry entry
-        )
+        private static void OpenScriptForComponent(MessageAwareComponent component, BaseCallReportEntry entry)
         {
             OpenScriptForComponentCore(component, entry);
         }
 
-        private static void OpenScriptForComponentCore(
-            MessageAwareComponent component,
-            BaseCallReportEntry entry
-        )
+        private static void OpenScriptForComponentCore(MessageAwareComponent component, BaseCallReportEntry entry)
         {
             try
             {
@@ -558,10 +491,7 @@ namespace DxMessaging.Editor.CustomEditors
                 }
                 catch (System.Exception ex)
                 {
-                    DxMessagingEditorLog.LogWarning(
-                        $"Failed to add ignored type '{fullName}'.",
-                        ex
-                    );
+                    DxMessagingEditorLog.LogWarning($"Failed to add ignored type '{fullName}'.", ex);
                 }
             });
         }
@@ -586,10 +516,7 @@ namespace DxMessaging.Editor.CustomEditors
                 }
                 catch (System.Exception ex)
                 {
-                    DxMessagingEditorLog.LogWarning(
-                        $"Failed to remove ignored type '{fullName}'.",
-                        ex
-                    );
+                    DxMessagingEditorLog.LogWarning($"Failed to remove ignored type '{fullName}'.", ex);
                 }
             });
         }
@@ -623,14 +550,7 @@ namespace DxMessaging.Editor.CustomEditors
         }
 
         internal static MessageAwareComponentInspectorState None { get; } =
-            new(
-                MessageAwareComponentInspectorStateKind.None,
-                null,
-                null,
-                string.Empty,
-                null,
-                isFreshThisSession: true
-            );
+            new(MessageAwareComponentInspectorStateKind.None, null, null, string.Empty, null, isFreshThisSession: true);
 
         internal MessageAwareComponentInspectorStateKind Kind { get; }
 
@@ -651,31 +571,12 @@ namespace DxMessaging.Editor.CustomEditors
             bool isFreshThisSession
         )
         {
-            return new MessageAwareComponentInspectorState(
-                MessageAwareComponentInspectorStateKind.HarvesterUnavailable,
-                component,
-                settings,
-                fullName,
-                null,
-                isFreshThisSession
-            );
+            return new MessageAwareComponentInspectorState(MessageAwareComponentInspectorStateKind.HarvesterUnavailable, component, settings, fullName, null, isFreshThisSession);
         }
 
-        internal static MessageAwareComponentInspectorState ForIgnoredType(
-            MessageAwareComponent component,
-            DxMessagingSettings settings,
-            string fullName,
-            bool isFreshThisSession
-        )
+        internal static MessageAwareComponentInspectorState ForIgnoredType(MessageAwareComponent component, DxMessagingSettings settings, string fullName, bool isFreshThisSession)
         {
-            return new MessageAwareComponentInspectorState(
-                MessageAwareComponentInspectorStateKind.IgnoredType,
-                component,
-                settings,
-                fullName,
-                null,
-                isFreshThisSession
-            );
+            return new MessageAwareComponentInspectorState(MessageAwareComponentInspectorStateKind.IgnoredType, component, settings, fullName, null, isFreshThisSession);
         }
 
         internal static MessageAwareComponentInspectorState ForMissingBaseCallWarning(

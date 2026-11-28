@@ -26,8 +26,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void UntargetedHandlersRegisterMultipleListeners()
         {
-            List<(MessageRegistrationToken token, MessageRegistrationHandle handle)> registrations =
-                new();
+            List<(MessageRegistrationToken token, MessageRegistrationHandle handle)> registrations = new();
             int[] baseCounts = new int[InitialListenerCount];
             List<int> dynamicCounts = new();
 
@@ -38,37 +37,32 @@ namespace DxMessaging.Tests.Runtime.Core
                 bool expanded = false;
                 int capturedIndex = i;
 
-                MessageRegistrationHandle baseHandle =
-                    token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (in SimpleUntargetedMessage _) =>
+                MessageRegistrationHandle baseHandle = token.RegisterUntargeted<SimpleUntargetedMessage>(
+                    (in SimpleUntargetedMessage _) =>
+                    {
+                        baseCounts[capturedIndex]++;
+                        if (expanded)
                         {
-                            baseCounts[capturedIndex]++;
-                            if (expanded)
-                            {
-                                return;
-                            }
-
-                            expanded = true;
-                            for (int n = 0; n < NewListenersPerHandler; ++n)
-                            {
-                                int dynamicIndex = dynamicCounts.Count;
-                                dynamicCounts.Add(0);
-                                EmptyMessageAwareComponent extraComponent = CreateComponent(
-                                    $"UntargetedExtra_{capturedIndex}_{n}",
-                                    dynamicIndex
-                                );
-                                MessageRegistrationToken extraToken = GetToken(extraComponent);
-                                MessageRegistrationHandle extraHandle =
-                                    extraToken.RegisterUntargeted<SimpleUntargetedMessage>(
-                                        (in SimpleUntargetedMessage _) =>
-                                        {
-                                            dynamicCounts[dynamicIndex]++;
-                                        }
-                                    );
-                                registrations.Add((extraToken, extraHandle));
-                            }
+                            return;
                         }
-                    );
+
+                        expanded = true;
+                        for (int n = 0; n < NewListenersPerHandler; ++n)
+                        {
+                            int dynamicIndex = dynamicCounts.Count;
+                            dynamicCounts.Add(0);
+                            EmptyMessageAwareComponent extraComponent = CreateComponent($"UntargetedExtra_{capturedIndex}_{n}", dynamicIndex);
+                            MessageRegistrationToken extraToken = GetToken(extraComponent);
+                            MessageRegistrationHandle extraHandle = extraToken.RegisterUntargeted<SimpleUntargetedMessage>(
+                                (in SimpleUntargetedMessage _) =>
+                                {
+                                    dynamicCounts[dynamicIndex]++;
+                                }
+                            );
+                            registrations.Add((extraToken, extraHandle));
+                        }
+                    }
+                );
 
                 registrations.Add((token, baseHandle));
             }
@@ -76,32 +70,13 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleUntargetedMessage message = new();
 
             message.EmitUntargeted();
-            Assert.That(
-                dynamicCounts.Count,
-                Is.EqualTo(InitialListenerCount * NewListenersPerHandler)
-            );
-            CollectionAssert.AreEqual(
-                Enumerable.Repeat(1, InitialListenerCount),
-                baseCounts,
-                "Baseline handlers should run exactly once on the first emission."
-            );
-            CollectionAssert.AreEqual(
-                Enumerable.Repeat(0, dynamicCounts.Count),
-                dynamicCounts,
-                "Newly registered handlers must not observe the emission that registered them."
-            );
+            Assert.That(dynamicCounts.Count, Is.EqualTo(InitialListenerCount * NewListenersPerHandler));
+            CollectionAssert.AreEqual(Enumerable.Repeat(1, InitialListenerCount), baseCounts, "Baseline handlers should run exactly once on the first emission.");
+            CollectionAssert.AreEqual(Enumerable.Repeat(0, dynamicCounts.Count), dynamicCounts, "Newly registered handlers must not observe the emission that registered them.");
 
             message.EmitUntargeted();
-            CollectionAssert.AreEqual(
-                Enumerable.Repeat(2, InitialListenerCount),
-                baseCounts,
-                "Baseline handlers should continue observing each emission."
-            );
-            CollectionAssert.AreEqual(
-                Enumerable.Repeat(1, dynamicCounts.Count),
-                dynamicCounts,
-                "Newly registered handlers must activate starting with the next emission."
-            );
+            CollectionAssert.AreEqual(Enumerable.Repeat(2, InitialListenerCount), baseCounts, "Baseline handlers should continue observing each emission.");
+            CollectionAssert.AreEqual(Enumerable.Repeat(1, dynamicCounts.Count), dynamicCounts, "Newly registered handlers must activate starting with the next emission.");
 
             RemoveRegistrations(registrations);
         }
@@ -109,8 +84,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void UntargetedInterceptorsRegisterMultipleInterceptors()
         {
-            List<(MessageRegistrationToken token, MessageRegistrationHandle handle)> registrations =
-                new();
+            List<(MessageRegistrationToken token, MessageRegistrationHandle handle)> registrations = new();
             int[] baseCounts = new int[InitialListenerCount];
             List<int> dynamicCounts = new();
 
@@ -121,79 +95,52 @@ namespace DxMessaging.Tests.Runtime.Core
                 bool expanded = false;
                 int capturedIndex = i;
 
-                MessageRegistrationHandle baseHandle =
-                    token.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) =>
+                MessageRegistrationHandle baseHandle = token.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(
+                    (ref SimpleUntargetedMessage _) =>
+                    {
+                        baseCounts[capturedIndex]++;
+                        if (!expanded)
                         {
-                            baseCounts[capturedIndex]++;
-                            if (!expanded)
+                            expanded = true;
+                            for (int n = 0; n < NewListenersPerHandler; ++n)
                             {
-                                expanded = true;
-                                for (int n = 0; n < NewListenersPerHandler; ++n)
-                                {
-                                    int dynamicIndex = dynamicCounts.Count;
-                                    dynamicCounts.Add(0);
-                                    EmptyMessageAwareComponent extraComponent = CreateComponent(
-                                        $"InterceptorExtra_{capturedIndex}_{n}",
-                                        dynamicIndex
-                                    );
-                                    MessageRegistrationToken extraToken = GetToken(extraComponent);
-                                    MessageRegistrationHandle extraHandle =
-                                        extraToken.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(
-                                            (ref SimpleUntargetedMessage _) =>
-                                            {
-                                                dynamicCounts[dynamicIndex]++;
-                                                return true;
-                                            }
-                                        );
-                                    registrations.Add((extraToken, extraHandle));
-                                }
+                                int dynamicIndex = dynamicCounts.Count;
+                                dynamicCounts.Add(0);
+                                EmptyMessageAwareComponent extraComponent = CreateComponent($"InterceptorExtra_{capturedIndex}_{n}", dynamicIndex);
+                                MessageRegistrationToken extraToken = GetToken(extraComponent);
+                                MessageRegistrationHandle extraHandle = extraToken.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(
+                                    (ref SimpleUntargetedMessage _) =>
+                                    {
+                                        dynamicCounts[dynamicIndex]++;
+                                        return true;
+                                    }
+                                );
+                                registrations.Add((extraToken, extraHandle));
                             }
-
-                            return true;
                         }
-                    );
+
+                        return true;
+                    }
+                );
                 registrations.Add((token, baseHandle));
             }
 
             // Ensure at least one regular handler executes so the emission is fully processed.
             EmptyMessageAwareComponent sinkComponent = CreateComponent("InterceptorSink", -1);
             MessageRegistrationToken sinkToken = GetToken(sinkComponent);
-            MessageRegistrationHandle sinkHandle =
-                sinkToken.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (in SimpleUntargetedMessage _) => { }
-                );
+            MessageRegistrationHandle sinkHandle = sinkToken.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => { });
             registrations.Add((sinkToken, sinkHandle));
 
             SimpleUntargetedMessage message = new();
 
             message.EmitUntargeted();
-            Assert.That(
-                dynamicCounts.Count,
-                Is.EqualTo(InitialListenerCount * NewListenersPerHandler)
-            );
-            CollectionAssert.AreEqual(
-                Enumerable.Repeat(1, InitialListenerCount),
-                baseCounts,
-                "Baseline interceptors should run once on the first emission."
-            );
-            CollectionAssert.AreEqual(
-                Enumerable.Repeat(0, dynamicCounts.Count),
-                dynamicCounts,
-                "New interceptors must not run until the next emission."
-            );
+            Assert.That(dynamicCounts.Count, Is.EqualTo(InitialListenerCount * NewListenersPerHandler));
+            CollectionAssert.AreEqual(Enumerable.Repeat(1, InitialListenerCount), baseCounts, "Baseline interceptors should run once on the first emission.");
+            CollectionAssert.AreEqual(Enumerable.Repeat(0, dynamicCounts.Count), dynamicCounts, "New interceptors must not run until the next emission.");
 
             message.EmitUntargeted();
-            CollectionAssert.AreEqual(
-                Enumerable.Repeat(2, InitialListenerCount),
-                baseCounts,
-                "Baseline interceptors should continue observing each emission."
-            );
-            CollectionAssert.AreEqual(
-                Enumerable.Repeat(1, dynamicCounts.Count),
-                dynamicCounts,
-                "Newly registered interceptors must activate starting with the next emission."
-            );
+            CollectionAssert.AreEqual(Enumerable.Repeat(2, InitialListenerCount), baseCounts, "Baseline interceptors should continue observing each emission.");
+            CollectionAssert.AreEqual(Enumerable.Repeat(1, dynamicCounts.Count), dynamicCounts, "Newly registered interceptors must activate starting with the next emission.");
 
             RemoveRegistrations(registrations);
         }
@@ -201,8 +148,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void GlobalHandlersRegisterMultipleListeners()
         {
-            List<(MessageRegistrationToken token, MessageRegistrationHandle handle)> registrations =
-                new();
+            List<(MessageRegistrationToken token, MessageRegistrationHandle handle)> registrations = new();
             int[] baseUntargetedCounts = new int[InitialListenerCount];
             int[] baseTargetedCounts = new int[InitialListenerCount];
             int[] baseBroadcastCounts = new int[InitialListenerCount];
@@ -210,10 +156,7 @@ namespace DxMessaging.Tests.Runtime.Core
             List<int> dynamicTargetedCounts = new();
             List<int> dynamicBroadcastCounts = new();
 
-            GameObject emissionTarget = new(
-                "GlobalStressTarget",
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject emissionTarget = new("GlobalStressTarget", typeof(EmptyMessageAwareComponent));
             _spawned.Add(emissionTarget);
 
             for (int i = 0; i < InitialListenerCount; ++i)
@@ -254,10 +197,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         dynamicUntargetedCounts.Add(0);
                         dynamicTargetedCounts.Add(0);
                         dynamicBroadcastCounts.Add(0);
-                        EmptyMessageAwareComponent extraComponent = CreateComponent(
-                            $"GlobalExtra_{capturedIndex}_{n}",
-                            dynamicIndex
-                        );
+                        EmptyMessageAwareComponent extraComponent = CreateComponent($"GlobalExtra_{capturedIndex}_{n}", dynamicIndex);
                         MessageRegistrationToken extraToken = GetToken(extraComponent);
                         MessageRegistrationHandle extraHandle = extraToken.RegisterGlobalAcceptAll(
                             (in IUntargetedMessage _) =>
@@ -282,27 +222,15 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleTargetedMessage targetedMessage = new();
             SimpleBroadcastMessage broadcastMessage = new();
 
-            EmitGlobalMessages(
-                emissionTarget,
-                untargetedMessage,
-                targetedMessage,
-                broadcastMessage
-            );
+            EmitGlobalMessages(emissionTarget, untargetedMessage, targetedMessage, broadcastMessage);
 
-            Assert.That(
-                dynamicUntargetedCounts.Count,
-                Is.EqualTo(InitialListenerCount * NewListenersPerHandler)
-            );
+            Assert.That(dynamicUntargetedCounts.Count, Is.EqualTo(InitialListenerCount * NewListenersPerHandler));
             CollectionAssert.AreEqual(
                 Enumerable.Repeat(1, InitialListenerCount),
                 baseUntargetedCounts,
                 "Baseline global untargeted listeners should run once on the first emission."
             );
-            CollectionAssert.AreEqual(
-                Enumerable.Repeat(1, InitialListenerCount),
-                baseTargetedCounts,
-                "Baseline global targeted listeners should run once on the first emission."
-            );
+            CollectionAssert.AreEqual(Enumerable.Repeat(1, InitialListenerCount), baseTargetedCounts, "Baseline global targeted listeners should run once on the first emission.");
             CollectionAssert.AreEqual(
                 Enumerable.Repeat(1, InitialListenerCount),
                 baseBroadcastCounts,
@@ -324,12 +252,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 "New global listeners should activate on the first broadcast emission after registration."
             );
 
-            EmitGlobalMessages(
-                emissionTarget,
-                untargetedMessage,
-                targetedMessage,
-                broadcastMessage
-            );
+            EmitGlobalMessages(emissionTarget, untargetedMessage, targetedMessage, broadcastMessage);
 
             CollectionAssert.AreEqual(
                 Enumerable.Repeat(2, InitialListenerCount),
@@ -368,8 +291,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void UntargetedPostProcessorsRegisterMultiplePostProcessors()
         {
-            List<(MessageRegistrationToken token, MessageRegistrationHandle handle)> registrations =
-                new();
+            List<(MessageRegistrationToken token, MessageRegistrationHandle handle)> registrations = new();
             int[] baseHandlerCounts = new int[InitialListenerCount];
             int[] basePostCounts = new int[InitialListenerCount];
             List<int> dynamicPostCounts = new();
@@ -381,66 +303,49 @@ namespace DxMessaging.Tests.Runtime.Core
                 bool expanded = false;
                 int capturedIndex = i;
 
-                MessageRegistrationHandle handlerHandle =
-                    token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (in SimpleUntargetedMessage _) =>
-                        {
-                            baseHandlerCounts[capturedIndex]++;
-                        }
-                    );
+                MessageRegistrationHandle handlerHandle = token.RegisterUntargeted<SimpleUntargetedMessage>(
+                    (in SimpleUntargetedMessage _) =>
+                    {
+                        baseHandlerCounts[capturedIndex]++;
+                    }
+                );
                 registrations.Add((token, handlerHandle));
 
-                MessageRegistrationHandle postHandle =
-                    token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
-                        (in SimpleUntargetedMessage _) =>
+                MessageRegistrationHandle postHandle = token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
+                    (in SimpleUntargetedMessage _) =>
+                    {
+                        basePostCounts[capturedIndex]++;
+                        if (expanded)
                         {
-                            basePostCounts[capturedIndex]++;
-                            if (expanded)
-                            {
-                                return;
-                            }
-
-                            expanded = true;
-                            for (int n = 0; n < NewListenersPerHandler; ++n)
-                            {
-                                int dynamicIndex = dynamicPostCounts.Count;
-                                dynamicPostCounts.Add(0);
-                                EmptyMessageAwareComponent extraComponent = CreateComponent(
-                                    $"PostExtra_{capturedIndex}_{n}",
-                                    dynamicIndex
-                                );
-                                MessageRegistrationToken extraToken = GetToken(extraComponent);
-                                MessageRegistrationHandle extraHandle =
-                                    extraToken.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
-                                        (in SimpleUntargetedMessage _) =>
-                                        {
-                                            dynamicPostCounts[dynamicIndex]++;
-                                        }
-                                    );
-                                registrations.Add((extraToken, extraHandle));
-                            }
+                            return;
                         }
-                    );
+
+                        expanded = true;
+                        for (int n = 0; n < NewListenersPerHandler; ++n)
+                        {
+                            int dynamicIndex = dynamicPostCounts.Count;
+                            dynamicPostCounts.Add(0);
+                            EmptyMessageAwareComponent extraComponent = CreateComponent($"PostExtra_{capturedIndex}_{n}", dynamicIndex);
+                            MessageRegistrationToken extraToken = GetToken(extraComponent);
+                            MessageRegistrationHandle extraHandle = extraToken.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
+                                (in SimpleUntargetedMessage _) =>
+                                {
+                                    dynamicPostCounts[dynamicIndex]++;
+                                }
+                            );
+                            registrations.Add((extraToken, extraHandle));
+                        }
+                    }
+                );
                 registrations.Add((token, postHandle));
             }
 
             SimpleUntargetedMessage message = new();
 
             message.EmitUntargeted();
-            Assert.That(
-                dynamicPostCounts.Count,
-                Is.EqualTo(InitialListenerCount * NewListenersPerHandler)
-            );
-            CollectionAssert.AreEqual(
-                Enumerable.Repeat(1, InitialListenerCount),
-                baseHandlerCounts,
-                "Baseline handlers should run once per emission."
-            );
-            CollectionAssert.AreEqual(
-                Enumerable.Repeat(1, InitialListenerCount),
-                basePostCounts,
-                "Baseline post-processors should run once on the first emission."
-            );
+            Assert.That(dynamicPostCounts.Count, Is.EqualTo(InitialListenerCount * NewListenersPerHandler));
+            CollectionAssert.AreEqual(Enumerable.Repeat(1, InitialListenerCount), baseHandlerCounts, "Baseline handlers should run once per emission.");
+            CollectionAssert.AreEqual(Enumerable.Repeat(1, InitialListenerCount), basePostCounts, "Baseline post-processors should run once on the first emission.");
             CollectionAssert.AreEqual(
                 Enumerable.Repeat(0, dynamicPostCounts.Count),
                 dynamicPostCounts,
@@ -448,16 +353,8 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             message.EmitUntargeted();
-            CollectionAssert.AreEqual(
-                Enumerable.Repeat(2, InitialListenerCount),
-                baseHandlerCounts,
-                "Baseline handlers should run again on the second emission."
-            );
-            CollectionAssert.AreEqual(
-                Enumerable.Repeat(2, InitialListenerCount),
-                basePostCounts,
-                "Baseline post-processors should continue running on each emission."
-            );
+            CollectionAssert.AreEqual(Enumerable.Repeat(2, InitialListenerCount), baseHandlerCounts, "Baseline handlers should run again on the second emission.");
+            CollectionAssert.AreEqual(Enumerable.Repeat(2, InitialListenerCount), basePostCounts, "Baseline post-processors should continue running on each emission.");
             CollectionAssert.AreEqual(
                 Enumerable.Repeat(1, dynamicPostCounts.Count),
                 dynamicPostCounts,
@@ -474,28 +371,16 @@ namespace DxMessaging.Tests.Runtime.Core
             return go.GetComponent<EmptyMessageAwareComponent>();
         }
 
-        private static void RemoveRegistrations(
-            IReadOnlyList<(
-                MessageRegistrationToken token,
-                MessageRegistrationHandle handle
-            )> registrations
-        )
+        private static void RemoveRegistrations(IReadOnlyList<(MessageRegistrationToken token, MessageRegistrationHandle handle)> registrations)
         {
             for (int i = registrations.Count - 1; 0 <= i; --i)
             {
-                (MessageRegistrationToken token, MessageRegistrationHandle handle) = registrations[
-                    i
-                ];
+                (MessageRegistrationToken token, MessageRegistrationHandle handle) = registrations[i];
                 token.RemoveRegistration(handle);
             }
         }
 
-        private static void EmitGlobalMessages(
-            GameObject targetObject,
-            SimpleUntargetedMessage untargeted,
-            SimpleTargetedMessage targeted,
-            SimpleBroadcastMessage broadcast
-        )
+        private static void EmitGlobalMessages(GameObject targetObject, SimpleUntargetedMessage untargeted, SimpleTargetedMessage targeted, SimpleBroadcastMessage broadcast)
         {
             untargeted.EmitUntargeted();
             targeted.EmitGameObjectTargeted(targetObject);

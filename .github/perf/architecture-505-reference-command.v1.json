@@ -62,7 +62,7 @@
     "state": "protocol-only",
     "queueSourceSha256": "ac73eb86dbfb188bfcf5e84cce21e6ad1c293542b9fb696a96c008875ae157b7",
     "sourceSha256": "ec963a3af3a8cee4d36bf4389e7b0506c99e9ac81cf5612193624a97f6b5ac5b",
-    "testSourceSha256": "8bc53e199a15a42ed3f717e166a677a91a8321ff60762e342f2dff5aa6f7763c",
+    "testSourceSha256": "7e12b6dbebce409fdd2dd260f8018229a611d905b5435fe55f58508f7feb96cf",
     "profileSha256": null,
     "evidenceSha256": null,
     "evidenceLocation": "Current consolidated source binding. Current native qualification is pending; priorEvidence retains the historical source and evidence identities."

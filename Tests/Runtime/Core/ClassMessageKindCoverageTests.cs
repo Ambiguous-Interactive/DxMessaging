@@ -20,37 +20,28 @@ namespace DxMessaging.Tests.Runtime.Core
     /// </summary>
     public sealed class ClassMessageKindCoverageTests : MessagingTestBase
     {
-        private sealed class MutableClassUntargetedMessage
-            : IUntargetedMessage<MutableClassUntargetedMessage>
+        private sealed class MutableClassUntargetedMessage : IUntargetedMessage<MutableClassUntargetedMessage>
         {
             public int counter;
             public string label;
         }
 
-        private sealed class MutableClassTargetedMessage
-            : ITargetedMessage<MutableClassTargetedMessage>
+        private sealed class MutableClassTargetedMessage : ITargetedMessage<MutableClassTargetedMessage>
         {
             public int counter;
             public string label;
         }
 
-        private sealed class MutableClassBroadcastMessage
-            : IBroadcastMessage<MutableClassBroadcastMessage>
+        private sealed class MutableClassBroadcastMessage : IBroadcastMessage<MutableClassBroadcastMessage>
         {
             public int counter;
             public string label;
         }
 
         [Test]
-        public void ClassMessageDispatchDeliversTheExactEmittedInstance(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void ClassMessageDispatchDeliversTheExactEmittedInstance([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(ClassMessageDispatchDeliversTheExactEmittedInstance) + "_" + scenario,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(ClassMessageDispatchDeliversTheExactEmittedInstance) + "_" + scenario, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -68,18 +59,12 @@ namespace DxMessaging.Tests.Runtime.Core
                     case MessageKind.Untargeted:
                     {
                         ClassUntargetedMessage emitted = new("payload");
-                        handles.Add(
-                            ScenarioHarness.RegisterUntargeted<ClassUntargetedMessage>(
-                                scenario,
-                                token,
-                                (in ClassUntargetedMessage message) =>
-                                {
-                                    ++count;
-                                    received = message;
-                                    observedText = message.text;
-                                }
-                            )
-                        );
+                        handles.Add(ScenarioHarness.RegisterUntargeted<ClassUntargetedMessage>(scenario, token, (in ClassUntargetedMessage message) =>
+                            {
+                                ++count;
+                                received = message;
+                                observedText = message.text;
+                            }));
                         ScenarioHarness.EmitUntargeted(scenario, emitted);
                         AssertSingleAliasedDelivery(scenario, count, received, emitted);
                         break;
@@ -87,19 +72,12 @@ namespace DxMessaging.Tests.Runtime.Core
                     case MessageKind.Targeted:
                     {
                         ClassTargetedMessage emitted = new("payload");
-                        handles.Add(
-                            ScenarioHarness.RegisterTargeted<ClassTargetedMessage>(
-                                scenario,
-                                token,
-                                hostId,
-                                (in ClassTargetedMessage message) =>
-                                {
-                                    ++count;
-                                    received = message;
-                                    observedText = message.text;
-                                }
-                            )
-                        );
+                        handles.Add(ScenarioHarness.RegisterTargeted<ClassTargetedMessage>(scenario, token, hostId, (in ClassTargetedMessage message) =>
+                            {
+                                ++count;
+                                received = message;
+                                observedText = message.text;
+                            }));
                         ScenarioHarness.EmitTargeted(scenario, emitted, hostId);
                         AssertSingleAliasedDelivery(scenario, count, received, emitted);
                         break;
@@ -107,39 +85,23 @@ namespace DxMessaging.Tests.Runtime.Core
                     case MessageKind.Broadcast:
                     {
                         ClassBroadcastMessage emitted = new("payload");
-                        handles.Add(
-                            ScenarioHarness.RegisterBroadcast<ClassBroadcastMessage>(
-                                scenario,
-                                token,
-                                hostId,
-                                (in ClassBroadcastMessage message) =>
-                                {
-                                    ++count;
-                                    received = message;
-                                    observedText = message.text;
-                                }
-                            )
-                        );
+                        handles.Add(ScenarioHarness.RegisterBroadcast<ClassBroadcastMessage>(scenario, token, hostId, (in ClassBroadcastMessage message) =>
+                            {
+                                ++count;
+                                received = message;
+                                observedText = message.text;
+                            }));
                         ScenarioHarness.EmitBroadcast(scenario, emitted, hostId);
                         AssertSingleAliasedDelivery(scenario, count, received, emitted);
                         break;
                     }
                     default:
                     {
-                        throw new ArgumentOutOfRangeException(
-                            nameof(scenario),
-                            scenario.Kind,
-                            "Unsupported message kind."
-                        );
+                        throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                     }
                 }
 
-                Assert.AreEqual(
-                    "payload",
-                    observedText,
-                    "Handler must observe the emitted field value for scenario {0}.",
-                    scenario
-                );
+                Assert.AreEqual("payload", observedText, "Handler must observe the emitted field value for scenario {0}.", scenario);
 
                 foreach (MessageRegistrationHandle handle in handles)
                 {
@@ -149,15 +111,9 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void ClassMessageWithNullFieldDispatchesWithoutThrowing(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void ClassMessageWithNullFieldDispatchesWithoutThrowing([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(ClassMessageWithNullFieldDispatchesWithoutThrowing) + "_" + scenario,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(ClassMessageWithNullFieldDispatchesWithoutThrowing) + "_" + scenario, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -174,86 +130,44 @@ namespace DxMessaging.Tests.Runtime.Core
                     case MessageKind.Untargeted:
                     {
                         ClassUntargetedMessage emitted = new();
-                        handles.Add(
-                            ScenarioHarness.RegisterUntargeted<ClassUntargetedMessage>(
-                                scenario,
-                                token,
-                                (in ClassUntargetedMessage message) =>
-                                {
-                                    ++count;
-                                    observedText = message.text;
-                                }
-                            )
-                        );
-                        Assert.DoesNotThrow(
-                            () => ScenarioHarness.EmitUntargeted(scenario, emitted),
-                            "Emitting a class message with a null field must not throw."
-                        );
+                        handles.Add(ScenarioHarness.RegisterUntargeted<ClassUntargetedMessage>(scenario, token, (in ClassUntargetedMessage message) =>
+                            {
+                                ++count;
+                                observedText = message.text;
+                            }));
+                        Assert.DoesNotThrow(() => ScenarioHarness.EmitUntargeted(scenario, emitted), "Emitting a class message with a null field must not throw.");
                         break;
                     }
                     case MessageKind.Targeted:
                     {
                         ClassTargetedMessage emitted = new();
-                        handles.Add(
-                            ScenarioHarness.RegisterTargeted<ClassTargetedMessage>(
-                                scenario,
-                                token,
-                                hostId,
-                                (in ClassTargetedMessage message) =>
-                                {
-                                    ++count;
-                                    observedText = message.text;
-                                }
-                            )
-                        );
-                        Assert.DoesNotThrow(
-                            () => ScenarioHarness.EmitTargeted(scenario, emitted, hostId),
-                            "Emitting a class message with a null field must not throw."
-                        );
+                        handles.Add(ScenarioHarness.RegisterTargeted<ClassTargetedMessage>(scenario, token, hostId, (in ClassTargetedMessage message) =>
+                            {
+                                ++count;
+                                observedText = message.text;
+                            }));
+                        Assert.DoesNotThrow(() => ScenarioHarness.EmitTargeted(scenario, emitted, hostId), "Emitting a class message with a null field must not throw.");
                         break;
                     }
                     case MessageKind.Broadcast:
                     {
                         ClassBroadcastMessage emitted = new();
-                        handles.Add(
-                            ScenarioHarness.RegisterBroadcast<ClassBroadcastMessage>(
-                                scenario,
-                                token,
-                                hostId,
-                                (in ClassBroadcastMessage message) =>
-                                {
-                                    ++count;
-                                    observedText = message.text;
-                                }
-                            )
-                        );
-                        Assert.DoesNotThrow(
-                            () => ScenarioHarness.EmitBroadcast(scenario, emitted, hostId),
-                            "Emitting a class message with a null field must not throw."
-                        );
+                        handles.Add(ScenarioHarness.RegisterBroadcast<ClassBroadcastMessage>(scenario, token, hostId, (in ClassBroadcastMessage message) =>
+                            {
+                                ++count;
+                                observedText = message.text;
+                            }));
+                        Assert.DoesNotThrow(() => ScenarioHarness.EmitBroadcast(scenario, emitted, hostId), "Emitting a class message with a null field must not throw.");
                         break;
                     }
                     default:
                     {
-                        throw new ArgumentOutOfRangeException(
-                            nameof(scenario),
-                            scenario.Kind,
-                            "Unsupported message kind."
-                        );
+                        throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                     }
                 }
 
-                Assert.AreEqual(
-                    1,
-                    count,
-                    "Handler must run exactly once for scenario {0}.",
-                    scenario
-                );
-                Assert.IsNull(
-                    observedText,
-                    "Handler must observe the null field unchanged for scenario {0}.",
-                    scenario
-                );
+                Assert.AreEqual(1, count, "Handler must run exactly once for scenario {0}.", scenario);
+                Assert.IsNull(observedText, "Handler must observe the null field unchanged for scenario {0}.", scenario);
 
                 foreach (MessageRegistrationHandle handle in handles)
                 {
@@ -264,16 +178,10 @@ namespace DxMessaging.Tests.Runtime.Core
 
         [Test]
         public void ClassMessageMutationsAreVisibleToLaterHandlersAndPostProcessors(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario
         )
         {
-            GameObject host = new(
-                nameof(ClassMessageMutationsAreVisibleToLaterHandlersAndPostProcessors)
-                    + "_"
-                    + scenario,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(ClassMessageMutationsAreVisibleToLaterHandlersAndPostProcessors) + "_" + scenario, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -317,20 +225,11 @@ namespace DxMessaging.Tests.Runtime.Core
                                 priority: 10
                             )
                         );
-                        handles.Add(
-                            ScenarioHarness.RegisterUntargetedPostProcessor<MutableClassUntargetedMessage>(
-                                scenario,
-                                token,
-                                (in MutableClassUntargetedMessage message) =>
-                                {
-                                    observedByPostProcessor = message.counter;
-                                    postProcessorSawSameInstance = ReferenceEquals(
-                                        message,
-                                        emitted
-                                    );
-                                }
-                            )
-                        );
+                        handles.Add(ScenarioHarness.RegisterUntargetedPostProcessor<MutableClassUntargetedMessage>(scenario, token, (in MutableClassUntargetedMessage message) =>
+                            {
+                                observedByPostProcessor = message.counter;
+                                postProcessorSawSameInstance = ReferenceEquals(message, emitted);
+                            }));
                         ScenarioHarness.EmitUntargeted(scenario, emitted);
                         callerVisibleCounter = emitted.counter;
                         break;
@@ -364,21 +263,11 @@ namespace DxMessaging.Tests.Runtime.Core
                                 priority: 10
                             )
                         );
-                        handles.Add(
-                            ScenarioHarness.RegisterTargetedPostProcessor<MutableClassTargetedMessage>(
-                                scenario,
-                                token,
-                                hostId,
-                                (in MutableClassTargetedMessage message) =>
-                                {
-                                    observedByPostProcessor = message.counter;
-                                    postProcessorSawSameInstance = ReferenceEquals(
-                                        message,
-                                        emitted
-                                    );
-                                }
-                            )
-                        );
+                        handles.Add(ScenarioHarness.RegisterTargetedPostProcessor<MutableClassTargetedMessage>(scenario, token, hostId, (in MutableClassTargetedMessage message) =>
+                            {
+                                observedByPostProcessor = message.counter;
+                                postProcessorSawSameInstance = ReferenceEquals(message, emitted);
+                            }));
                         ScenarioHarness.EmitTargeted(scenario, emitted, hostId);
                         callerVisibleCounter = emitted.counter;
                         break;
@@ -413,19 +302,11 @@ namespace DxMessaging.Tests.Runtime.Core
                             )
                         );
                         handles.Add(
-                            ScenarioHarness.RegisterBroadcastPostProcessor<MutableClassBroadcastMessage>(
-                                scenario,
-                                token,
-                                hostId,
-                                (in MutableClassBroadcastMessage message) =>
-                                {
-                                    observedByPostProcessor = message.counter;
-                                    postProcessorSawSameInstance = ReferenceEquals(
-                                        message,
-                                        emitted
-                                    );
-                                }
-                            )
+                            ScenarioHarness.RegisterBroadcastPostProcessor<MutableClassBroadcastMessage>(scenario, token, hostId, (in MutableClassBroadcastMessage message) =>
+                            {
+                                observedByPostProcessor = message.counter;
+                                postProcessorSawSameInstance = ReferenceEquals(message, emitted);
+                            })
                         );
                         ScenarioHarness.EmitBroadcast(scenario, emitted, hostId);
                         callerVisibleCounter = emitted.counter;
@@ -433,47 +314,20 @@ namespace DxMessaging.Tests.Runtime.Core
                     }
                     default:
                     {
-                        throw new ArgumentOutOfRangeException(
-                            nameof(scenario),
-                            scenario.Kind,
-                            "Unsupported message kind."
-                        );
+                        throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                     }
                 }
 
                 Assert.AreEqual(
                     5,
                     observedByLaterHandler,
-                    "Later handler must observe the earlier handler's field mutation "
-                        + "(class messages alias a single instance) for scenario {0}.",
+                    "Later handler must observe the earlier handler's field mutation " + "(class messages alias a single instance) for scenario {0}.",
                     scenario
                 );
-                Assert.AreEqual(
-                    "mutated",
-                    labelSeenByLaterHandler,
-                    "Later handler must observe the earlier handler's reference-field "
-                        + "mutation for scenario {0}.",
-                    scenario
-                );
-                Assert.AreEqual(
-                    5,
-                    observedByPostProcessor,
-                    "Post-processor must observe the mutated state for scenario {0}.",
-                    scenario
-                );
-                Assert.IsTrue(
-                    postProcessorSawSameInstance,
-                    "Post-processor must receive the exact emitted instance (no copy) "
-                        + "for scenario {0}.",
-                    scenario
-                );
-                Assert.AreEqual(
-                    5,
-                    callerVisibleCounter,
-                    "Handler mutations must be visible to the emitter after dispatch "
-                        + "for scenario {0}.",
-                    scenario
-                );
+                Assert.AreEqual("mutated", labelSeenByLaterHandler, "Later handler must observe the earlier handler's reference-field " + "mutation for scenario {0}.", scenario);
+                Assert.AreEqual(5, observedByPostProcessor, "Post-processor must observe the mutated state for scenario {0}.", scenario);
+                Assert.IsTrue(postProcessorSawSameInstance, "Post-processor must receive the exact emitted instance (no copy) " + "for scenario {0}.", scenario);
+                Assert.AreEqual(5, callerVisibleCounter, "Handler mutations must be visible to the emitter after dispatch " + "for scenario {0}.", scenario);
 
                 foreach (MessageRegistrationHandle handle in handles)
                 {
@@ -482,18 +336,12 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private static void AssertSingleAliasedDelivery(
-            MessageScenario scenario,
-            int count,
-            object received,
-            object emitted
-        )
+        private static void AssertSingleAliasedDelivery(MessageScenario scenario, int count, object received, object emitted)
         {
             Assert.AreEqual(1, count, "Handler must run exactly once for scenario {0}.", scenario);
             Assert.IsTrue(
                 ReferenceEquals(received, emitted),
-                "Class-message dispatch must deliver the exact emitted instance "
-                    + "(aliasing, no copy) for scenario {0}.",
+                "Class-message dispatch must deliver the exact emitted instance " + "(aliasing, no copy) for scenario {0}.",
                 scenario
             );
         }

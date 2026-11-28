@@ -15,13 +15,9 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void EmitAtTargetsGameObjectAndComponent()
         {
-            GameObject go = new(
-                nameof(EmitAtTargetsGameObjectAndComponent),
-                typeof(ShorthandTargetedBroadcastComponent)
-            );
+            GameObject go = new(nameof(EmitAtTargetsGameObjectAndComponent), typeof(ShorthandTargetedBroadcastComponent));
             _spawned.Add(go);
-            ShorthandTargetedBroadcastComponent comp =
-                go.GetComponent<ShorthandTargetedBroadcastComponent>();
+            ShorthandTargetedBroadcastComponent comp = go.GetComponent<ShorthandTargetedBroadcastComponent>();
 
             SimpleTargetedMessage msg = new();
             msg.EmitAt((InstanceId)go);
@@ -38,13 +34,9 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void EmitFromSourcesGameObjectAndComponent()
         {
-            GameObject go = new(
-                nameof(EmitFromSourcesGameObjectAndComponent),
-                typeof(ShorthandTargetedBroadcastComponent)
-            );
+            GameObject go = new(nameof(EmitFromSourcesGameObjectAndComponent), typeof(ShorthandTargetedBroadcastComponent));
             _spawned.Add(go);
-            ShorthandTargetedBroadcastComponent comp =
-                go.GetComponent<ShorthandTargetedBroadcastComponent>();
+            ShorthandTargetedBroadcastComponent comp = go.GetComponent<ShorthandTargetedBroadcastComponent>();
 
             SimpleBroadcastMessage msg = new();
             msg.EmitFrom((InstanceId)go);
@@ -61,13 +53,9 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void EmitAtMismatchDoesNotHitOtherShape()
         {
-            GameObject go = new(
-                nameof(EmitAtMismatchDoesNotHitOtherShape),
-                typeof(ShorthandTargetedBroadcastComponent)
-            );
+            GameObject go = new(nameof(EmitAtMismatchDoesNotHitOtherShape), typeof(ShorthandTargetedBroadcastComponent));
             _spawned.Add(go);
-            ShorthandTargetedBroadcastComponent comp =
-                go.GetComponent<ShorthandTargetedBroadcastComponent>();
+            ShorthandTargetedBroadcastComponent comp = go.GetComponent<ShorthandTargetedBroadcastComponent>();
 
             SimpleTargetedMessage msg = new();
             msg.EmitAt((InstanceId)comp); // component
@@ -84,13 +72,9 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void EmitFromMismatchDoesNotHitOtherShape()
         {
-            GameObject go = new(
-                nameof(EmitFromMismatchDoesNotHitOtherShape),
-                typeof(ShorthandTargetedBroadcastComponent)
-            );
+            GameObject go = new(nameof(EmitFromMismatchDoesNotHitOtherShape), typeof(ShorthandTargetedBroadcastComponent));
             _spawned.Add(go);
-            ShorthandTargetedBroadcastComponent comp =
-                go.GetComponent<ShorthandTargetedBroadcastComponent>();
+            ShorthandTargetedBroadcastComponent comp = go.GetComponent<ShorthandTargetedBroadcastComponent>();
 
             SimpleBroadcastMessage msg = new();
             msg.EmitFrom((InstanceId)comp); // component
@@ -107,13 +91,9 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void EmitAtEquivalentToExplicitHelpers()
         {
-            GameObject go = new(
-                nameof(EmitAtEquivalentToExplicitHelpers),
-                typeof(ShorthandTargetedBroadcastComponent)
-            );
+            GameObject go = new(nameof(EmitAtEquivalentToExplicitHelpers), typeof(ShorthandTargetedBroadcastComponent));
             _spawned.Add(go);
-            ShorthandTargetedBroadcastComponent comp =
-                go.GetComponent<ShorthandTargetedBroadcastComponent>();
+            ShorthandTargetedBroadcastComponent comp = go.GetComponent<ShorthandTargetedBroadcastComponent>();
 
             SimpleTargetedMessage msg = new();
             msg.EmitAt((InstanceId)go);
@@ -130,13 +110,9 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void EmitFromEquivalentToExplicitHelpers()
         {
-            GameObject go = new(
-                nameof(EmitFromEquivalentToExplicitHelpers),
-                typeof(ShorthandTargetedBroadcastComponent)
-            );
+            GameObject go = new(nameof(EmitFromEquivalentToExplicitHelpers), typeof(ShorthandTargetedBroadcastComponent));
             _spawned.Add(go);
-            ShorthandTargetedBroadcastComponent comp =
-                go.GetComponent<ShorthandTargetedBroadcastComponent>();
+            ShorthandTargetedBroadcastComponent comp = go.GetComponent<ShorthandTargetedBroadcastComponent>();
 
             SimpleBroadcastMessage msg = new();
             msg.EmitFrom((InstanceId)go);
@@ -153,19 +129,13 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void EmitAtRespectsInterceptors()
         {
-            GameObject go = new(
-                nameof(EmitAtRespectsInterceptors),
-                typeof(ShorthandTargetedBroadcastComponent)
-            );
+            GameObject go = new(nameof(EmitAtRespectsInterceptors), typeof(ShorthandTargetedBroadcastComponent));
             _spawned.Add(go);
-            ShorthandTargetedBroadcastComponent comp =
-                go.GetComponent<ShorthandTargetedBroadcastComponent>();
+            ShorthandTargetedBroadcastComponent comp = go.GetComponent<ShorthandTargetedBroadcastComponent>();
 
             IMessageBus bus = MessageHandler.MessageBus;
             bool cancel = true;
-            MessageBusRegistration dereg = bus.RegisterTargetedInterceptor(
-                (ref InstanceId t, ref SimpleTargetedMessage m) => !cancel
-            );
+            MessageBusRegistration dereg = bus.RegisterTargetedInterceptor((ref InstanceId t, ref SimpleTargetedMessage m) => !cancel);
             try
             {
                 SimpleTargetedMessage msg = new();
@@ -187,19 +157,13 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void EmitFromRespectsInterceptors()
         {
-            GameObject go = new(
-                nameof(EmitFromRespectsInterceptors),
-                typeof(ShorthandTargetedBroadcastComponent)
-            );
+            GameObject go = new(nameof(EmitFromRespectsInterceptors), typeof(ShorthandTargetedBroadcastComponent));
             _spawned.Add(go);
-            ShorthandTargetedBroadcastComponent comp =
-                go.GetComponent<ShorthandTargetedBroadcastComponent>();
+            ShorthandTargetedBroadcastComponent comp = go.GetComponent<ShorthandTargetedBroadcastComponent>();
 
             IMessageBus bus = MessageHandler.MessageBus;
             bool cancel = true;
-            MessageBusRegistration dereg = bus.RegisterBroadcastInterceptor(
-                (ref InstanceId s, ref SimpleBroadcastMessage m) => !cancel
-            );
+            MessageBusRegistration dereg = bus.RegisterBroadcastInterceptor((ref InstanceId s, ref SimpleBroadcastMessage m) => !cancel);
             try
             {
                 SimpleBroadcastMessage msg = new();

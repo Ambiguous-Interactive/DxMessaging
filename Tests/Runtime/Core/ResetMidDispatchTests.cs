@@ -33,19 +33,11 @@ namespace DxMessaging.Tests.Runtime.Core
     public sealed class ResetMidDispatchTests : MessagingTestBase
     {
         [Test]
-        public void ResetFromHandlerSuppressesEveryPrefrozenPostPhase(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void ResetFromHandlerSuppressesEveryPrefrozenPostPhase([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(ResetFromHandlerSuppressesEveryPrefrozenPostPhase) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(ResetFromHandlerSuppressesEveryPrefrozenPostPhase) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
-            MessageRegistrationToken token = GetToken(
-                host.GetComponent<EmptyMessageAwareComponent>()
-            );
+            MessageRegistrationToken token = GetToken(host.GetComponent<EmptyMessageAwareComponent>());
             InstanceId hostId = host;
             int resettingCount = 0;
             int postCount = 0;
@@ -55,44 +47,21 @@ namespace DxMessaging.Tests.Runtime.Core
                 ++resettingCount;
                 DxMessagingStaticState.Reset();
             });
-            _ = ScenarioCallbacks.RegisterCountingPostProcessor(scenario, token, hostId, () =>
-                ++postCount
-            );
+            _ = ScenarioCallbacks.RegisterCountingPostProcessor(scenario, token, hostId, () => ++postCount);
 
             Assert.DoesNotThrow(() => ScenarioCallbacks.EmitForKind(scenario, hostId));
-            Assert.AreEqual(
-                1,
-                resettingCount,
-                "[{0}] The resetting handler must run once.",
-                scenario.Kind
-            );
-            Assert.AreEqual(
-                0,
-                postCount,
-                "[{0}] A post snapshot frozen before Reset must not start a new dispatch "
-                    + "phase after the reset generation changes.",
-                scenario.Kind
-            );
+            Assert.AreEqual(1, resettingCount, "[{0}] The resetting handler must run once.", scenario.Kind);
+            Assert.AreEqual(0, postCount, "[{0}] A post snapshot frozen before Reset must not start a new dispatch " + "phase after the reset generation changes.", scenario.Kind);
         }
 
         [Test]
         public void ResetFromKeyedPostProcessorSuppressesWithoutContextPostPhase(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.KindsWithComponentTarget)
-            )]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.KindsWithComponentTarget))] MessageScenario scenario
         )
         {
-            GameObject host = new(
-                nameof(ResetFromKeyedPostProcessorSuppressesWithoutContextPostPhase)
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(ResetFromKeyedPostProcessorSuppressesWithoutContextPostPhase) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
-            MessageRegistrationToken token = GetToken(
-                host.GetComponent<EmptyMessageAwareComponent>()
-            );
+            MessageRegistrationToken token = GetToken(host.GetComponent<EmptyMessageAwareComponent>());
             InstanceId hostId = host;
             int keyedPostCount = 0;
             int withoutContextPostCount = 0;
@@ -106,16 +75,12 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 case MessageKind.Targeted:
                 {
-                    _ = token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>(
-                        (in InstanceId _, in SimpleTargetedMessage __) => ++withoutContextPostCount
-                    );
+                    _ = token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>((in InstanceId _, in SimpleTargetedMessage __) => ++withoutContextPostCount);
                     break;
                 }
                 case MessageKind.Broadcast:
                 {
-                    _ = token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(
-                        (in InstanceId _, in SimpleBroadcastMessage __) => ++withoutContextPostCount
-                    );
+                    _ = token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>((in InstanceId _, in SimpleBroadcastMessage __) => ++withoutContextPostCount);
                     break;
                 }
                 default:
@@ -125,19 +90,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
 
             Assert.DoesNotThrow(() => ScenarioCallbacks.EmitForKind(scenario, hostId));
-            Assert.AreEqual(
-                1,
-                keyedPostCount,
-                "[{0}] The keyed post-processor must run once and reset the bus.",
-                scenario.Kind
-            );
-            Assert.AreEqual(
-                0,
-                withoutContextPostCount,
-                "[{0}] Reset in the keyed post phase must suppress the later without-context "
-                    + "post phase.",
-                scenario.Kind
-            );
+            Assert.AreEqual(1, keyedPostCount, "[{0}] The keyed post-processor must run once and reset the bus.", scenario.Kind);
+            Assert.AreEqual(0, withoutContextPostCount, "[{0}] Reset in the keyed post phase must suppress the later without-context " + "post phase.", scenario.Kind);
         }
 
         /// <summary>
@@ -149,15 +103,9 @@ namespace DxMessaging.Tests.Runtime.Core
         /// register and receive again afterwards.
         /// </summary>
         [Test]
-        public void ResetFromInsideHandlerStopsInFlightEmissionCleanly(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void ResetFromInsideHandlerStopsInFlightEmissionCleanly([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(ResetFromInsideHandlerStopsInFlightEmissionCleanly) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(ResetFromInsideHandlerStopsInFlightEmissionCleanly) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -168,13 +116,9 @@ namespace DxMessaging.Tests.Runtime.Core
                 MessageHandler) so the test observes cross-handler behavior,
                 not same-wrapper short-circuiting.
             */
-            GameObject auxHost = new(
-                nameof(ResetFromInsideHandlerStopsInFlightEmissionCleanly) + "Aux" + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject auxHost = new(nameof(ResetFromInsideHandlerStopsInFlightEmissionCleanly) + "Aux" + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(auxHost);
-            EmptyMessageAwareComponent auxComponent =
-                auxHost.GetComponent<EmptyMessageAwareComponent>();
+            EmptyMessageAwareComponent auxComponent = auxHost.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken auxToken = GetToken(auxComponent);
 
             int resettingCount = 0;
@@ -194,19 +138,9 @@ namespace DxMessaging.Tests.Runtime.Core
                 },
                 priority: 0
             );
-            _ = ScenarioCallbacks.RegisterCountingHandler(
-                scenario,
-                auxToken,
-                hostId,
-                () => ++trailingCount,
-                priority: 1
-            );
+            _ = ScenarioCallbacks.RegisterCountingHandler(scenario, auxToken, hostId, () => ++trailingCount, priority: 1);
 
-            Assert.DoesNotThrow(
-                () => ScenarioCallbacks.EmitForKind(scenario, hostId),
-                "[{0}] Reset from inside a handler must not throw mid-dispatch.",
-                scenario.Kind
-            );
+            Assert.DoesNotThrow(() => ScenarioCallbacks.EmitForKind(scenario, hostId), "[{0}] Reset from inside a handler must not throw mid-dispatch.", scenario.Kind);
             Assert.AreEqual(
                 1,
                 resettingCount,
@@ -228,85 +162,35 @@ namespace DxMessaging.Tests.Runtime.Core
                 Post-reset emissions are silent no-ops: nothing is registered,
                 nothing may fire, nothing may throw.
             */
-            Assert.DoesNotThrow(
-                () => ScenarioCallbacks.EmitForKind(scenario, hostId),
-                "[{0}] Emitting after the mid-dispatch Reset must not throw.",
-                scenario.Kind
-            );
-            Assert.AreEqual(
-                1,
-                resettingCount,
-                "[{0}] Pre-reset handlers must NOT fire on post-reset emissions.",
-                scenario.Kind
-            );
-            Assert.AreEqual(
-                0,
-                trailingCount,
-                "[{0}] Pre-reset trailing handlers must NOT fire on post-reset emissions.",
-                scenario.Kind
-            );
+            Assert.DoesNotThrow(() => ScenarioCallbacks.EmitForKind(scenario, hostId), "[{0}] Emitting after the mid-dispatch Reset must not throw.", scenario.Kind);
+            Assert.AreEqual(1, resettingCount, "[{0}] Pre-reset handlers must NOT fire on post-reset emissions.", scenario.Kind);
+            Assert.AreEqual(0, trailingCount, "[{0}] Pre-reset trailing handlers must NOT fire on post-reset emissions.", scenario.Kind);
 
             /*
                 The reset must leave the bus with zero registrations on every
                 public counter (no corruption / phantom registrations).
             */
             IMessageBus bus = MessageHandler.MessageBus;
-            Assert.AreEqual(
-                0,
-                bus.RegisteredUntargeted,
-                "[{0}] Untargeted counter must be zero after a mid-dispatch Reset.",
-                scenario.Kind
-            );
-            Assert.AreEqual(
-                0,
-                bus.RegisteredTargeted,
-                "[{0}] Targeted counter must be zero after a mid-dispatch Reset.",
-                scenario.Kind
-            );
-            Assert.AreEqual(
-                0,
-                bus.RegisteredBroadcast,
-                "[{0}] Broadcast counter must be zero after a mid-dispatch Reset.",
-                scenario.Kind
-            );
-            Assert.AreEqual(
-                0,
-                bus.RegisteredGlobalAcceptAll,
-                "[{0}] GlobalAcceptAll counter must be zero after a mid-dispatch Reset.",
-                scenario.Kind
-            );
+            Assert.AreEqual(0, bus.RegisteredUntargeted, "[{0}] Untargeted counter must be zero after a mid-dispatch Reset.", scenario.Kind);
+            Assert.AreEqual(0, bus.RegisteredTargeted, "[{0}] Targeted counter must be zero after a mid-dispatch Reset.", scenario.Kind);
+            Assert.AreEqual(0, bus.RegisteredBroadcast, "[{0}] Broadcast counter must be zero after a mid-dispatch Reset.", scenario.Kind);
+            Assert.AreEqual(0, bus.RegisteredGlobalAcceptAll, "[{0}] GlobalAcceptAll counter must be zero after a mid-dispatch Reset.", scenario.Kind);
 
             /*
                 Re-setup afterwards works: a freshly created component can
                 register on the reset bus and receive emissions normally.
             */
-            GameObject rebornHost = new(
-                nameof(ResetFromInsideHandlerStopsInFlightEmissionCleanly)
-                    + "Reborn"
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject rebornHost = new(nameof(ResetFromInsideHandlerStopsInFlightEmissionCleanly) + "Reborn" + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(rebornHost);
-            EmptyMessageAwareComponent rebornComponent =
-                rebornHost.GetComponent<EmptyMessageAwareComponent>();
+            EmptyMessageAwareComponent rebornComponent = rebornHost.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken rebornToken = GetToken(rebornComponent);
             InstanceId rebornId = rebornHost;
 
             int rebornCount = 0;
-            MessageRegistrationHandle rebornHandle = ScenarioCallbacks.RegisterCountingHandler(
-                scenario,
-                rebornToken,
-                rebornId,
-                () => ++rebornCount
-            );
+            MessageRegistrationHandle rebornHandle = ScenarioCallbacks.RegisterCountingHandler(scenario, rebornToken, rebornId, () => ++rebornCount);
 
             ScenarioCallbacks.EmitForKind(scenario, rebornId);
-            Assert.AreEqual(
-                1,
-                rebornCount,
-                "[{0}] A handler registered after the mid-dispatch Reset must receive emissions normally.",
-                scenario.Kind
-            );
+            Assert.AreEqual(1, rebornCount, "[{0}] A handler registered after the mid-dispatch Reset must receive emissions normally.", scenario.Kind);
 
             rebornToken.RemoveRegistration(rebornHandle);
         }
@@ -333,15 +217,9 @@ namespace DxMessaging.Tests.Runtime.Core
         /// guard), so the same-bucket peer must not run.
         /// </remarks>
         [Test]
-        public void ResetFromInsideHandlerWithSamePriorityPeerDoesNotThrow(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void ResetFromInsideHandlerWithSamePriorityPeerDoesNotThrow([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(ResetFromInsideHandlerWithSamePriorityPeerDoesNotThrow) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(ResetFromInsideHandlerWithSamePriorityPeerDoesNotThrow) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -353,15 +231,9 @@ namespace DxMessaging.Tests.Runtime.Core
                 dispatch bucket. Registration order makes the resetting
                 handler run first within the bucket.
             */
-            GameObject peerHost = new(
-                nameof(ResetFromInsideHandlerWithSamePriorityPeerDoesNotThrow)
-                    + "Peer"
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject peerHost = new(nameof(ResetFromInsideHandlerWithSamePriorityPeerDoesNotThrow) + "Peer" + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(peerHost);
-            EmptyMessageAwareComponent peerComponent =
-                peerHost.GetComponent<EmptyMessageAwareComponent>();
+            EmptyMessageAwareComponent peerComponent = peerHost.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken peerToken = GetToken(peerComponent);
 
             int resettingCount = 0;
@@ -381,27 +253,14 @@ namespace DxMessaging.Tests.Runtime.Core
                 },
                 priority: 0
             );
-            _ = ScenarioCallbacks.RegisterCountingHandler(
-                scenario,
-                peerToken,
-                hostId,
-                () => ++peerCount,
-                priority: 0
-            );
+            _ = ScenarioCallbacks.RegisterCountingHandler(scenario, peerToken, hostId, () => ++peerCount, priority: 0);
 
             Assert.DoesNotThrow(
                 () => ScenarioCallbacks.EmitForKind(scenario, hostId),
                 "[{0}] Reset from inside a handler must not throw even when a same-priority peer entry follows it in the same dispatch bucket.",
                 scenario.Kind
             );
-            Assert.AreEqual(
-                1,
-                resettingCount,
-                "[{0}] The resetting handler must run exactly once. resetting={1}, peer={2}.",
-                scenario.Kind,
-                resettingCount,
-                peerCount
-            );
+            Assert.AreEqual(1, resettingCount, "[{0}] The resetting handler must run exactly once. resetting={1}, peer={2}.", scenario.Kind, resettingCount, peerCount);
             Assert.AreEqual(
                 0,
                 peerCount,
@@ -412,17 +271,8 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             // The bus must remain usable afterwards.
-            Assert.DoesNotThrow(
-                () => ScenarioCallbacks.EmitForKind(scenario, hostId),
-                "[{0}] Emitting after the mid-dispatch Reset must not throw.",
-                scenario.Kind
-            );
-            Assert.AreEqual(
-                1,
-                resettingCount,
-                "[{0}] Pre-reset handlers must NOT fire on post-reset emissions.",
-                scenario.Kind
-            );
+            Assert.DoesNotThrow(() => ScenarioCallbacks.EmitForKind(scenario, hostId), "[{0}] Emitting after the mid-dispatch Reset must not throw.", scenario.Kind);
+            Assert.AreEqual(1, resettingCount, "[{0}] Pre-reset handlers must NOT fire on post-reset emissions.", scenario.Kind);
         }
 
         /// <summary>
@@ -455,15 +305,10 @@ namespace DxMessaging.Tests.Runtime.Core
         /// </remarks>
         [Test]
         public void ResetFromInsideHandlerWithSameComponentSamePriorityPeerDoesNotThrow(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario
         )
         {
-            GameObject host = new(
-                nameof(ResetFromInsideHandlerWithSameComponentSamePriorityPeerDoesNotThrow)
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(ResetFromInsideHandlerWithSameComponentSamePriorityPeerDoesNotThrow) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -492,13 +337,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 },
                 priority: 0
             );
-            _ = ScenarioCallbacks.RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                () => ++peerCount,
-                priority: 0
-            );
+            _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () => ++peerCount, priority: 0);
 
             Assert.DoesNotThrow(
                 () => ScenarioCallbacks.EmitForKind(scenario, hostId),
@@ -526,11 +365,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 The bus must remain usable afterwards: post-reset emissions are
                 silent no-ops for the pre-reset delegates.
             */
-            Assert.DoesNotThrow(
-                () => ScenarioCallbacks.EmitForKind(scenario, hostId),
-                "[{0}] Emitting after the mid-dispatch Reset must not throw.",
-                scenario.Kind
-            );
+            Assert.DoesNotThrow(() => ScenarioCallbacks.EmitForKind(scenario, hostId), "[{0}] Emitting after the mid-dispatch Reset must not throw.", scenario.Kind);
             Assert.AreEqual(
                 1,
                 resettingCount,

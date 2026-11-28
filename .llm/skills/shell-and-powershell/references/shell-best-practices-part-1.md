@@ -118,8 +118,7 @@ shellcheck .husky/*
 
 ### Problem: Unnecessary `head` with `grep -q`
 
-The `grep -q` flag (quiet mode) already stops reading after the first match, making a preceding
-`head` command redundant:
+The `grep -q` flag (quiet mode) already stops reading after the first match, making a preceding `head` command redundant:
 
 ```bash
 # WRONG: head -1 is redundant when using grep -q

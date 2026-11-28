@@ -89,9 +89,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
                 return null;
             }
 
-            return scenario == ComparisonScenario.StructMessageNoBoxing
-                ? typeof(ComparisonStructPayload)
-                : typeof(int);
+            return scenario == ComparisonScenario.StructMessageNoBoxing ? typeof(ComparisonStructPayload) : typeof(int);
         }
 
         public void Prepare(ComparisonScenario scenario)
@@ -196,8 +194,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
 
         private ComparisonStructAtomEvent CreateStructEvent()
         {
-            ComparisonStructAtomEvent created =
-                ScriptableObject.CreateInstance<ComparisonStructAtomEvent>();
+            ComparisonStructAtomEvent created = ScriptableObject.CreateInstance<ComparisonStructAtomEvent>();
             created.ReplayBufferSize = 0;
             _events.Add(created);
             return created;

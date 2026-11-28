@@ -12,15 +12,12 @@ internal sealed class BaseCallLogMessageParserTests
         parser regexes must be updated in lockstep; the parser is downstream of the analyzer.
     */
     private const string Dxmsg006Bare =
-        "'Sample.Player' overrides MessageAwareComponent.Awake but does not call base.Awake(); "
-        + "the messaging system may not function correctly on this component.";
+        "'Sample.Player' overrides MessageAwareComponent.Awake but does not call base.Awake(); " + "the messaging system may not function correctly on this component.";
 
     private const string Dxmsg007Bare =
-        "'Sample.Player' hides MessageAwareComponent.OnEnable with 'new'; "
-        + "replace with 'override' and call base.OnEnable() so the messaging system continues to function.";
+        "'Sample.Player' hides MessageAwareComponent.OnEnable with 'new'; " + "replace with 'override' and call base.OnEnable() so the messaging system continues to function.";
 
-    private const string Dxmsg008Bare =
-        "'Sample.Player' is excluded from the DxMessaging base-call check ([DxIgnoreMissingBaseCall]).";
+    private const string Dxmsg008Bare = "'Sample.Player' is excluded from the DxMessaging base-call check ([DxIgnoreMissingBaseCall]).";
 
     private const string Dxmsg009Bare =
         "'Sample.BrokenThing' declares OnEnable without 'override' or 'new'; "
@@ -39,14 +36,7 @@ internal sealed class BaseCallLogMessageParserTests
     private static readonly string[] expectedArray4 = new[] { "DXMSG009" };
     private static readonly string[] expectedArray5 = new[] { "DXMSG006", "DXMSG009" };
     private static readonly string[] expectedArray6 = new[] { "DXMSG010" };
-    private static readonly string[] expectedArray7 = new[]
-    {
-        "DiagnosticId",
-        "FilePath",
-        "Line",
-        "MethodName",
-        "TypeFullName",
-    };
+    private static readonly string[] expectedArray7 = new[] { "DiagnosticId", "FilePath", "Line", "MethodName", "TypeFullName" };
 
     [Test]
     public void ConsoleCandidateScreenPreservesParsedDiagnostics()
@@ -68,25 +58,13 @@ internal sealed class BaseCallLogMessageParserTests
             string quotedPath = $"'{prefixed}";
             foreach (string line in new[] { body, prefixed, unicodeSpace, quotedPath })
             {
-                Assert.That(
-                    BaseCallLogMessageParser.ParseLine(line)?.DiagnosticId,
-                    Is.EqualTo(id),
-                    $"The parser should recognize {line}."
-                );
-                Assert.That(
-                    BaseCallLogMessageParser.IsDiagnosticCandidate(line),
-                    Is.True,
-                    $"The Console screen must preserve {line}."
-                );
+                Assert.That(BaseCallLogMessageParser.ParseLine(line)?.DiagnosticId, Is.EqualTo(id), $"The parser should recognize {line}.");
+                Assert.That(BaseCallLogMessageParser.IsDiagnosticCandidate(line), Is.True, $"The Console screen must preserve {line}.");
             }
         }
 
         const string unrelated = "Assets/Other.cs(3,9): warning CS0168: Unused variable.";
-        Assert.That(
-            BaseCallLogMessageParser.IsDiagnosticCandidate(unrelated),
-            Is.False,
-            "The Console buffer should skip ordinary unrelated warnings."
-        );
+        Assert.That(BaseCallLogMessageParser.IsDiagnosticCandidate(unrelated), Is.False, "The Console buffer should skip ordinary unrelated warnings.");
         string[] unrelatedRows =
         {
             "'Tool output' row 000319.",
@@ -200,23 +178,13 @@ internal sealed class BaseCallLogMessageParserTests
     [Test]
     public void ParseLineUnrelatedCompilerWarningReturnsNull()
     {
-        Assert.That(
-            BaseCallLogMessageParser.ParseLine(
-                "Assets/Sample/Other.cs(3,5): warning CS0168: The variable 'x' is declared but never used"
-            ),
-            Is.Null
-        );
+        Assert.That(BaseCallLogMessageParser.ParseLine("Assets/Sample/Other.cs(3,5): warning CS0168: The variable 'x' is declared but never used"), Is.Null);
     }
 
     [Test]
     public void ParseLineDebugLogStyleTextReturnsNull()
     {
-        Assert.That(
-            BaseCallLogMessageParser.ParseLine(
-                "Hello from Debug.Log; nothing analyzer-related here."
-            ),
-            Is.Null
-        );
+        Assert.That(BaseCallLogMessageParser.ParseLine("Hello from Debug.Log; nothing analyzer-related here."), Is.Null);
     }
 
     [Test]
@@ -226,12 +194,7 @@ internal sealed class BaseCallLogMessageParserTests
         Assert.That(BaseCallLogMessageParser.ParseLine("DXMSG006"), Is.Null);
         Assert.That(BaseCallLogMessageParser.ParseLine("// see DXMSG006 in the docs"), Is.Null);
         // A line that says DXMSG006 but is not the analyzer's wording.
-        Assert.That(
-            BaseCallLogMessageParser.ParseLine(
-                "DXMSG006 fired earlier today on this assembly; investigate."
-            ),
-            Is.Null
-        );
+        Assert.That(BaseCallLogMessageParser.ParseLine("DXMSG006 fired earlier today on this assembly; investigate."), Is.Null);
     }
 
     [Test]
@@ -255,12 +218,7 @@ internal sealed class BaseCallLogMessageParserTests
             ),
             Is.Null
         );
-        Assert.That(
-            BaseCallLogMessageParser.ParseLine(
-                "Reminder: 'Sample.Player' is excluded from the DxMessaging base-call check ([DxIgnoreMissingBaseCall])."
-            ),
-            Is.Null
-        );
+        Assert.That(BaseCallLogMessageParser.ParseLine("Reminder: 'Sample.Player' is excluded from the DxMessaging base-call check ([DxIgnoreMissingBaseCall])."), Is.Null);
     }
 
     [Test]
@@ -280,15 +238,11 @@ internal sealed class BaseCallLogMessageParserTests
     public void AggregateMergesDifferentMethodsOnSameType()
     {
         const string awakeLine =
-            "'Sample.Player' overrides MessageAwareComponent.Awake but does not call base.Awake(); "
-            + "the messaging system may not function correctly on this component.";
+            "'Sample.Player' overrides MessageAwareComponent.Awake but does not call base.Awake(); " + "the messaging system may not function correctly on this component.";
         const string onEnableLine =
-            "'Sample.Player' overrides MessageAwareComponent.OnEnable but does not call base.OnEnable(); "
-            + "the messaging system may not function correctly on this component.";
+            "'Sample.Player' overrides MessageAwareComponent.OnEnable but does not call base.OnEnable(); " + "the messaging system may not function correctly on this component.";
 
-        Dictionary<string, ParsedTypeReport> result = BaseCallLogMessageParser.Aggregate(
-            new[] { awakeLine, onEnableLine }
-        );
+        Dictionary<string, ParsedTypeReport> result = BaseCallLogMessageParser.Aggregate(new[] { awakeLine, onEnableLine });
 
         Assert.That(result.Count, Is.EqualTo(1));
         ParsedTypeReport report = result["Sample.Player"];
@@ -299,15 +253,11 @@ internal sealed class BaseCallLogMessageParserTests
     public void AggregateSeparatesDifferentTypes()
     {
         const string a =
-            "'Sample.PlayerA' overrides MessageAwareComponent.Awake but does not call base.Awake(); "
-            + "the messaging system may not function correctly on this component.";
+            "'Sample.PlayerA' overrides MessageAwareComponent.Awake but does not call base.Awake(); " + "the messaging system may not function correctly on this component.";
         const string b =
-            "'Sample.PlayerB' overrides MessageAwareComponent.OnEnable but does not call base.OnEnable(); "
-            + "the messaging system may not function correctly on this component.";
+            "'Sample.PlayerB' overrides MessageAwareComponent.OnEnable but does not call base.OnEnable(); " + "the messaging system may not function correctly on this component.";
 
-        Dictionary<string, ParsedTypeReport> result = BaseCallLogMessageParser.Aggregate(
-            new[] { a, b }
-        );
+        Dictionary<string, ParsedTypeReport> result = BaseCallLogMessageParser.Aggregate(new[] { a, b });
 
         Assert.That(result.Count, Is.EqualTo(2));
         Assert.That(result["Sample.PlayerA"].MissingBaseFor, Is.EqualTo(expectedArray));
@@ -318,15 +268,11 @@ internal sealed class BaseCallLogMessageParserTests
     public void AggregateAccumulatesIdsAcrossDxmsg006And007()
     {
         const string awake006 =
-            "'Sample.Player' overrides MessageAwareComponent.Awake but does not call base.Awake(); "
-            + "the messaging system may not function correctly on this component.";
+            "'Sample.Player' overrides MessageAwareComponent.Awake but does not call base.Awake(); " + "the messaging system may not function correctly on this component.";
         const string onEnable007 =
-            "'Sample.Player' hides MessageAwareComponent.OnEnable with 'new'; "
-            + "replace with 'override' and call base.OnEnable() so the messaging system continues to function.";
+            "'Sample.Player' hides MessageAwareComponent.OnEnable with 'new'; " + "replace with 'override' and call base.OnEnable() so the messaging system continues to function.";
 
-        Dictionary<string, ParsedTypeReport> result = BaseCallLogMessageParser.Aggregate(
-            new[] { awake006, onEnable007 }
-        );
+        Dictionary<string, ParsedTypeReport> result = BaseCallLogMessageParser.Aggregate(new[] { awake006, onEnable007 });
 
         Assert.That(result.Count, Is.EqualTo(1));
         ParsedTypeReport report = result["Sample.Player"];
@@ -337,9 +283,7 @@ internal sealed class BaseCallLogMessageParserTests
     [Test]
     public void AggregateDxmsg008ContributesIdButNoMethod()
     {
-        Dictionary<string, ParsedTypeReport> result = BaseCallLogMessageParser.Aggregate(
-            new[] { Dxmsg008Bare }
-        );
+        Dictionary<string, ParsedTypeReport> result = BaseCallLogMessageParser.Aggregate(new[] { Dxmsg008Bare });
 
         Assert.That(result.Count, Is.EqualTo(1));
         ParsedTypeReport report = result["Sample.Player"];
@@ -350,9 +294,7 @@ internal sealed class BaseCallLogMessageParserTests
     [Test]
     public void AggregateEmptyReturnsEmptyDictionary()
     {
-        Dictionary<string, ParsedTypeReport> result = BaseCallLogMessageParser.Aggregate(
-            System.Array.Empty<string>()
-        );
+        Dictionary<string, ParsedTypeReport> result = BaseCallLogMessageParser.Aggregate(System.Array.Empty<string>());
 
         Assert.That(result, Is.Empty);
     }
@@ -361,15 +303,10 @@ internal sealed class BaseCallLogMessageParserTests
     public void AggregateOrderIndependentFor008ThenVs006Then008()
     {
         const string awake006 =
-            "'Sample.Player' overrides MessageAwareComponent.Awake but does not call base.Awake(); "
-            + "the messaging system may not function correctly on this component.";
+            "'Sample.Player' overrides MessageAwareComponent.Awake but does not call base.Awake(); " + "the messaging system may not function correctly on this component.";
 
-        Dictionary<string, ParsedTypeReport> forward = BaseCallLogMessageParser.Aggregate(
-            new[] { awake006, Dxmsg008Bare }
-        );
-        Dictionary<string, ParsedTypeReport> reverse = BaseCallLogMessageParser.Aggregate(
-            new[] { Dxmsg008Bare, awake006 }
-        );
+        Dictionary<string, ParsedTypeReport> forward = BaseCallLogMessageParser.Aggregate(new[] { awake006, Dxmsg008Bare });
+        Dictionary<string, ParsedTypeReport> reverse = BaseCallLogMessageParser.Aggregate(new[] { Dxmsg008Bare, awake006 });
 
         Assert.That(forward.Count, Is.EqualTo(1));
         Assert.That(reverse.Count, Is.EqualTo(1));
@@ -399,8 +336,7 @@ internal sealed class BaseCallLogMessageParserTests
     [Test]
     public void ParseLinePrefixedDxmsg009CapturesPathAndLine()
     {
-        const string line =
-            "Assets/Scripts/BrokenThing.cs(7,22): warning DXMSG009: " + Dxmsg009Bare;
+        const string line = "Assets/Scripts/BrokenThing.cs(7,22): warning DXMSG009: " + Dxmsg009Bare;
 
         ParsedEntry? parsed = BaseCallLogMessageParser.ParseLine(line);
 
@@ -420,8 +356,7 @@ internal sealed class BaseCallLogMessageParserTests
             Adversarial: the analyzer's wording embedded in a Debug.Log payload must not be parsed
             as a real DXMSG009 warning.
         */
-        const string line =
-            "Hello world. " + "'Sample.BrokenThing' declares OnEnable without 'override' or 'new'.";
+        const string line = "Hello world. " + "'Sample.BrokenThing' declares OnEnable without 'override' or 'new'.";
 
         ParsedEntry? parsed = BaseCallLogMessageParser.ParseLine(line);
 
@@ -431,9 +366,7 @@ internal sealed class BaseCallLogMessageParserTests
     [Test]
     public void AggregateDxmsg009ContributesToMissingBaseFor()
     {
-        Dictionary<string, ParsedTypeReport> result = BaseCallLogMessageParser.Aggregate(
-            new[] { Dxmsg009Bare }
-        );
+        Dictionary<string, ParsedTypeReport> result = BaseCallLogMessageParser.Aggregate(new[] { Dxmsg009Bare });
 
         Assert.That(result.Count, Is.EqualTo(1));
         ParsedTypeReport report = result["Sample.BrokenThing"];
@@ -446,12 +379,9 @@ internal sealed class BaseCallLogMessageParserTests
     {
         // Same type, two diagnostics on different methods → one entry, two methods, two ids.
         const string awake006 =
-            "'Sample.BrokenThing' overrides MessageAwareComponent.Awake but does not call base.Awake(); "
-            + "the messaging system may not function correctly on this component.";
+            "'Sample.BrokenThing' overrides MessageAwareComponent.Awake but does not call base.Awake(); " + "the messaging system may not function correctly on this component.";
 
-        Dictionary<string, ParsedTypeReport> result = BaseCallLogMessageParser.Aggregate(
-            new[] { awake006, Dxmsg009Bare }
-        );
+        Dictionary<string, ParsedTypeReport> result = BaseCallLogMessageParser.Aggregate(new[] { awake006, Dxmsg009Bare });
 
         Assert.That(result.Count, Is.EqualTo(1));
         ParsedTypeReport report = result["Sample.BrokenThing"];
@@ -489,8 +419,7 @@ internal sealed class BaseCallLogMessageParserTests
     [Test]
     public void ParseLinePrefixedDxmsg010CapturesPathAndLine()
     {
-        const string line =
-            "Assets/Scripts/BrokenThing.cs(11,33): warning DXMSG010: " + Dxmsg010Bare;
+        const string line = "Assets/Scripts/BrokenThing.cs(11,33): warning DXMSG010: " + Dxmsg010Bare;
 
         ParsedEntry? parsed = BaseCallLogMessageParser.ParseLine(line);
 
@@ -527,9 +456,7 @@ internal sealed class BaseCallLogMessageParserTests
             DXMSG010 must contribute its method name to MissingBaseFor so the inspector overlay
             surfaces it just like DXMSG006/007/009.
         */
-        Dictionary<string, ParsedTypeReport> result = BaseCallLogMessageParser.Aggregate(
-            new[] { Dxmsg010Bare }
-        );
+        Dictionary<string, ParsedTypeReport> result = BaseCallLogMessageParser.Aggregate(new[] { Dxmsg010Bare });
 
         Assert.That(result.Count, Is.EqualTo(1));
         ParsedTypeReport report = result["Sample.BrokenThing"];
@@ -562,9 +489,7 @@ internal sealed class BaseCallLogMessageParserTests
             MethodName, FilePath, Line). Confirm the struct shape is unchanged so a future addition
             of a BrokenAncestor property is detected here as a deliberate API change.
         */
-        System.Reflection.PropertyInfo[] properties = typeof(ParsedEntry).GetProperties(
-            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance
-        );
+        System.Reflection.PropertyInfo[] properties = typeof(ParsedEntry).GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
         string[] propertyNames = properties.Select(p => p.Name).OrderBy(n => n).ToArray();
         Assert.That(
             propertyNames,
@@ -584,12 +509,9 @@ internal sealed class BaseCallLogMessageParserTests
             + "'Sample.Player' overrides MessageAwareComponent.Awake but does not call base.Awake(); "
             + "the messaging system may not function correctly on this component.";
         const string bareLater =
-            "'Sample.Player' overrides MessageAwareComponent.OnEnable but does not call base.OnEnable(); "
-            + "the messaging system may not function correctly on this component.";
+            "'Sample.Player' overrides MessageAwareComponent.OnEnable but does not call base.OnEnable(); " + "the messaging system may not function correctly on this component.";
 
-        Dictionary<string, ParsedTypeReport> result = BaseCallLogMessageParser.Aggregate(
-            new[] { prefixed, bareLater }
-        );
+        Dictionary<string, ParsedTypeReport> result = BaseCallLogMessageParser.Aggregate(new[] { prefixed, bareLater });
 
         Assert.That(result.Count, Is.EqualTo(1));
         ParsedTypeReport report = result["Sample.Player"];

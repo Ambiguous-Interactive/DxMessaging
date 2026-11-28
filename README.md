@@ -19,15 +19,14 @@
 
 > **AI Assistance Disclosure:**
 >
-> DxMessaging began as an original project around 2014 and remains actively developed and used today.
-> Over the past two years, I (wallstop) have been using LLMs to help improve the library's quality and
-> performance, expand its tests, and create user-facing documentation. I review all changes and
-> read all user-facing copy. I share this so you can make an informed decision about using the
-> project.
+> DxMessaging began as an original project around 2014 and remains actively developed and used today. Over the past two years, I (wallstop) have been using LLMs to help improve the
+> library's quality and performance, expand its tests, and create user-facing documentation. I review all changes and read all user-facing copy. I share this so you can make an
+> informed decision about using the project.
 
 DxMessaging is free and will remain free forever. No paid editions, paid upgrades, or feature charges.
 
-**DxMessaging is a synchronous, type-safe Unity message bus for decoupled, simple systems.** It replaces sprawling C# events, brittle UnityEvents, and global static event buses with explicit message contracts, lifecycle-managed registrations, and editor-visible routing.
+**DxMessaging is a synchronous, type-safe Unity message bus for decoupled, simple systems.** It replaces sprawling C# events, brittle UnityEvents, and global static event buses
+with explicit message contracts, lifecycle-managed registrations, and editor-visible routing.
 
 Use it when one system needs to announce a fact, command a target, or broadcast from a source without keeping a direct scene reference to the receiver.
 
@@ -35,7 +34,9 @@ Use it when one system needs to announce a fact, command a target, or broadcast 
 openupm add com.wallstop-studios.dxmessaging
 ```
 
-The core taxonomy is small: **Untargeted** announcements, **Targeted** commands, and **Broadcast** facts from a source. Diagnostics mark them blue, purple, and green, respectively, and reserve red for problems. Message Monitor shows recent emissions and filters, Flow Graph shows loaded-scene `MessagingComponent` topology and trace evidence, and the Inspector overlay catches `MessageAwareComponent` lifecycle mistakes. Use bus logs or counters for direct bus/token registrations outside those components.
+The core taxonomy is small: **Untargeted** announcements, **Targeted** commands, and **Broadcast** facts from a source. Diagnostics mark them blue, purple, and green, respectively,
+and reserve red for problems. Message Monitor shows recent emissions and filters, Flow Graph shows loaded-scene `MessagingComponent` topology and trace evidence, and the Inspector
+overlay catches `MessageAwareComponent` lifecycle mistakes. Use bus logs or counters for direct bus/token registrations outside those components.
 
 See the [Install Guide](https://ambiguous-interactive.github.io/DxMessaging/getting-started/install/) for Git URL, scoped registry, and release tarball options.
 
@@ -95,7 +96,8 @@ See [Mental Model](#mental-model-how-to-think-about-dxmessaging) for how to choo
 
 DxMessaging is built around one principle: **it gets out of your way**.
 
-You have data. You need to pass it around. That's the problem. DxMessaging provides fast, simple primitives as building blocks. You model changes as message types with optional context, using game primitives (GameObjects, components) as that context.
+You have data. You need to pass it around. That's the problem. DxMessaging provides fast, simple primitives as building blocks. You model changes as message types with optional
+context, using game primitives (GameObjects, components) as that context.
 
 **You don't build your game INTO the messaging system.** It's opt-in and optional -- a tool you reach for when it helps.
 
@@ -181,7 +183,8 @@ flowchart TD
 >
 > 📖 See [Troubleshooting](https://ambiguous-interactive.github.io/DxMessaging/reference/troubleshooting/) for solutions to these and other issues.
 
-**Want more depth?** See the full [Mental Model documentation](https://ambiguous-interactive.github.io/DxMessaging/concepts/mental-model/) for detailed examples, lifecycle patterns, and edge cases.
+**Want more depth?** See the full [Mental Model documentation](https://ambiguous-interactive.github.io/DxMessaging/concepts/mental-model/) for detailed examples, lifecycle
+patterns, and edge cases.
 
 **Ready to code?** Jump to [Quick Start](#quick-start) to send your first message!
 
@@ -212,9 +215,8 @@ See the [Install Guide](https://ambiguous-interactive.github.io/DxMessaging/gett
 
 ### 2. Define a Damage Command
 
-> **Handler version:** These examples use the 4.0 `in` signature. With a 3.x package, use
-> `ref DamageRequested message` for the receiver callback parameter instead. Keep the registration
-> and emission calls unchanged. See the [4.0 migration guide](https://ambiguous-interactive.github.io/DxMessaging/guides/migration-guide/#migrating-to-400).
+> **Handler version:** These examples use the 4.0 `in` signature. With a 3.x package, use `ref DamageRequested message` for the receiver callback parameter instead. Keep the
+> registration and emission calls unchanged. See the [4.0 migration guide](https://ambiguous-interactive.github.io/DxMessaging/guides/migration-guide/#migrating-to-400).
 
 ```csharp
 using DxMessaging.Core.Attributes;
@@ -251,7 +253,8 @@ public sealed class DamageReceiver : MessageAwareComponent
 }
 ```
 
-> **Heads-up:** When you override `Awake`, `OnEnable`, `OnDisable`, `OnDestroy`, or `RegisterMessageHandlers`, call the base method first or handlers fail silently. See [DXMSG006](https://ambiguous-interactive.github.io/DxMessaging/reference/analyzers/#dxmsg006-missing-base-call).
+> **Heads-up:** When you override `Awake`, `OnEnable`, `OnDisable`, `OnDestroy`, or `RegisterMessageHandlers`, call the base method first or handlers fail silently. See
+> [DXMSG006](https://ambiguous-interactive.github.io/DxMessaging/reference/analyzers/#dxmsg006-missing-base-call).
 
 ### 4. Add a Hazard
 
@@ -271,22 +274,20 @@ public sealed class Hazard : MonoBehaviour
 }
 ```
 
-On the hazard GameObject, enable **Is Trigger** on its collider and add a kinematic `Rigidbody` with
-**Use Gravity** disabled. Put `DamageReceiver` and the entering collider on the same target
-GameObject. The hazard targets that exact object without knowing its concrete type. Registration
-cleanup follows the receiver's Unity lifecycle.
+On the hazard GameObject, enable **Is Trigger** on its collider and add a kinematic `Rigidbody` with **Use Gravity** disabled. Put `DamageReceiver` and the entering collider on the
+same target GameObject. The hazard targets that exact object without knowing its concrete type. Registration cleanup follows the receiver's Unity lifecycle.
 
-Follow the [Play Mode walkthrough](https://ambiguous-interactive.github.io/DxMessaging/getting-started/quick-start/#try-it-in-play-mode) to
-move the hazard into the target and find `Health: 75` in the Console.
+Follow the [Play Mode walkthrough](https://ambiguous-interactive.github.io/DxMessaging/getting-started/quick-start/#try-it-in-play-mode) to move the hazard into the target and find
+`Health: 75` in the Console.
 
-**Stuck?** See [Troubleshooting](https://ambiguous-interactive.github.io/DxMessaging/reference/troubleshooting/) or [FAQ](https://ambiguous-interactive.github.io/DxMessaging/reference/faq/)
+**Stuck?** See [Troubleshooting](https://ambiguous-interactive.github.io/DxMessaging/reference/troubleshooting/) or
+[FAQ](https://ambiguous-interactive.github.io/DxMessaging/reference/faq/)
 
 ---
 
 ## Dependency Injection (DI) Compatible
 
-Inject the scoped `IMessageBus` and `IMessageRegistrationBuilder` into your service. Use the same
-bus for its subscription and its sends.
+Inject the scoped `IMessageBus` and `IMessageRegistrationBuilder` into your service. Use the same bus for its subscription and its sends.
 
 ```csharp
 using System;
@@ -330,11 +331,10 @@ public sealed class PlayerService : IDisposable
 }
 ```
 
-Call `Initialize()` when the service starts. Have the scope that owns the service call `Dispose()`
-when it ends. To start this service through a container, use the adapter for
+Call `Initialize()` when the service starts. Have the scope that owns the service call `Dispose()` when it ends. To start this service through a container, use the adapter for
 [Zenject](https://ambiguous-interactive.github.io/DxMessaging/integrations/zenject/#start-the-readme-service) or
-[VContainer](https://ambiguous-interactive.github.io/DxMessaging/integrations/vcontainer/#start-the-readme-service). For Reflex, call
-`Initialize()` explicitly from your scene bootstrap.
+[VContainer](https://ambiguous-interactive.github.io/DxMessaging/integrations/vcontainer/#start-the-readme-service). For Reflex, call `Initialize()` explicitly from your scene
+bootstrap.
 
 ### Why use DI + Messaging?
 
@@ -385,7 +385,8 @@ when it ends. To start this service through a container, use the adapter for
 
 ### Maybe Use DxMessaging (Start Small)
 
-- **Existing large codebase** - Migrate incrementally: start with new features, refactor old code gradually (see [Migration Guide](https://ambiguous-interactive.github.io/DxMessaging/guides/migration-guide/))
+- **Existing large codebase** - Migrate incrementally: start with new features, refactor old code gradually (see
+  [Migration Guide](https://ambiguous-interactive.github.io/DxMessaging/guides/migration-guide/))
 - **Small team learning** - Try it for one system (e.g., achievements) before going all-in
 - **Mid-size projects (5-20k lines)** - Evaluate after trying it for one complex interaction (e.g., combat or scene transitions)
 
@@ -406,9 +407,11 @@ flowchart TD
     Q3 -->|NO| A4[" Keep it simple"]
 ```
 
-**Rule of thumb:** If decoupling, lifecycle leaks, or handler-ordering bugs match what you're hitting today, DxMessaging fits. If none of those describe your project, start with the [Visual Guide](https://ambiguous-interactive.github.io/DxMessaging/getting-started/visual-guide/) or stick with simpler patterns.
+**Rule of thumb:** If decoupling, lifecycle leaks, or handler-ordering bugs match what you're hitting today, DxMessaging fits. If none of those describe your project, start with
+the [Visual Guide](https://ambiguous-interactive.github.io/DxMessaging/getting-started/visual-guide/) or stick with simpler patterns.
 
-Looking for hard numbers? See the Standalone IL2CPP dispatch and library-comparison [Performance Benchmarks](https://ambiguous-interactive.github.io/DxMessaging/architecture/performance/).
+Looking for hard numbers? See the Standalone IL2CPP dispatch and library-comparison
+[Performance Benchmarks](https://ambiguous-interactive.github.io/DxMessaging/architecture/performance/).
 
 ## Why DxMessaging
 
@@ -509,17 +512,13 @@ public class GameUI : MessageAwareComponent {
 
 ##### Scenario 3: Debugging is Built In
 
-Open **Tools > Wallstop Studios > DxMessaging > Message Monitor** to inspect
-recent emissions and their call sites. Open **Flow Graph** from the same menu to
-inspect routes between loaded-scene `MessagingComponent` instances. For direct
-bus/token registrations outside those components, use bus logs and registration
-counters.
+Open **Tools > Wallstop Studios > DxMessaging > Message Monitor** to inspect recent emissions and their call sites. Open **Flow Graph** from the same menu to inspect routes between
+loaded-scene `MessagingComponent` instances. For direct bus/token registrations outside those components, use bus logs and registration counters.
 
 ### How It Transforms Your Code
 
-Save this example as `Player.cs` and attach `Player` to the target GameObject. Pass that component
-to `Healing.HealPlayer` from gameplay code. The listener and sender use the global bus in this
-example; configure and emit through the same bus when using a custom bus.
+Save this example as `Player.cs` and attach `Player` to the target GameObject. Pass that component to `Healing.HealPlayer` from gameplay code. The listener and sender use the
+global bus in this example; configure and emit through the same bus when using a custom bus.
 
 ```csharp
 using DxMessaging.Core.Attributes;
@@ -580,9 +579,8 @@ What DxMessaging offers:
 
 ### Performance: Zero-Allocation Design
 
-**The problem in event-heavy systems:** Interface or object conversions can box values, handler
-code can allocate, and forgotten cleanup can leak subscribers. Strongly typed C# event
-invocation itself can be allocation-free.
+**The problem in event-heavy systems:** Interface or object conversions can box values, handler code can allocate, and forgotten cleanup can leak subscribers. Strongly typed C#
+event invocation itself can be allocation-free.
 
 #### DxMessaging solution
 
@@ -697,40 +695,28 @@ void OnDamage(in ApplyDamage msg) {
 
 **The problem with normal events:** "Which event fired? When? Who handled it? In what order?" = unknown
 
-**DxMessaging solution:** turn on diagnostics in the Inspector or Project Settings, then use the
-dedicated Unity editor tools under **Tools > Wallstop Studios > DxMessaging**.
+**DxMessaging solution:** turn on diagnostics in the Inspector or Project Settings, then use the dedicated Unity editor tools under **Tools > Wallstop Studios > DxMessaging**.
 
 #### Message Monitor
 
 - Recent global-bus emissions, most-recent first
 - Message type, context, and stack trace details
-- Plain text filtering, `type:` / `message:` / `context:` / `stack:` field
-  filters, an active-filter summary with Clear, and Copy JSON export
-- Visible message-type lanes showing per-filter entry counts, context breadth,
-  and message-volume share, plus context lanes showing context volume and
-  message breadth, with row-level Filter shortcuts and exact quoted context
-  shortcuts
-- Loaded-scene `MessagingComponent` diagnostics, including listener counts,
-  registrations, calls, local messages, and provider warnings
+- Plain text filtering, `type:` / `message:` / `context:` / `stack:` field filters, an active-filter summary with Clear, and Copy JSON export
+- Visible message-type lanes showing per-filter entry counts, context breadth, and message-volume share, plus context lanes showing context volume and message breadth, with
+  row-level Filter shortcuts and exact quoted context shortcuts
+- Loaded-scene `MessagingComponent` diagnostics, including listener counts, registrations, calls, local messages, and provider warnings
 
 #### Flow Graph
 
-- Crossing-aware layered message and receiver nodes with ordered connection
-  ports, feathered arrow paths, arrowhead direction, and shape-and-color route
-  selectors; click anywhere along a route to inspect it
-- Fit, zoom-out, and zoom-in controls for dense graphs, with automatic framing
-  down to 20 percent so hundreds of routes remain available in one overview
-- Named node metrics for sources or targets, receivers, handlers, calls, and
-  state instead of compact `+N` overflow summaries; multi-kind message types
-  use neutral `MIXED` metrics until filtered to one route kind
-- No default selection or details wall on open; responsive route details split
-  route and activity from collapsed emission, trace, and technical evidence
-- Recent registration-exact delivery call sites for targeted and broadcast
-  routes; call sites identify the script and method when token diagnostics are
-  enabled without leaking evidence across components or message buses, and
-  source links open the exact message declaration or captured call-site line
-- Global accept-all registrations shown as `ANY MESSAGE` observer scope rather
-  than as an `IMessage` message type
+- Crossing-aware layered message and receiver nodes with ordered connection ports, feathered arrow paths, arrowhead direction, and shape-and-color route selectors; click anywhere
+  along a route to inspect it
+- Fit, zoom-out, and zoom-in controls for dense graphs, with automatic framing down to 20 percent so hundreds of routes remain available in one overview
+- Named node metrics for sources or targets, receivers, handlers, calls, and state instead of compact `+N` overflow summaries; multi-kind message types use neutral `MIXED` metrics
+  until filtered to one route kind
+- No default selection or details wall on open; responsive route details split route and activity from collapsed emission, trace, and technical evidence
+- Recent registration-exact delivery call sites for targeted and broadcast routes; call sites identify the script and method when token diagnostics are enabled without leaking
+  evidence across components or message buses, and source links open the exact message declaration or captured call-site line
+- Global accept-all registrations shown as `ANY MESSAGE` observer scope rather than as an `IMessage` message type
 - Route summaries that surface busy, inactive, and uncalled paths
 - Message, target, route-kind, and context lanes for narrowing dense graphs
 - Recent delivery evidence and trace details for the selected route
@@ -738,26 +724,20 @@ dedicated Unity editor tools under **Tools > Wallstop Studios > DxMessaging**.
 
 #### Inspector integration
 
-Click any `MessagingComponent` in the Inspector for component-local diagnostics
-and any `MessageAwareComponent` subclass for base-call warning surfaces.
+Click any `MessagingComponent` in the Inspector for component-local diagnostics and any `MessageAwareComponent` subclass for base-call warning surfaces.
 
 #### Real-world debugging scenarios
 
 - "Did my message fire?" -> Check Message Monitor history.
-- "Why didn't my handler run?" -> For loaded-scene `MessagingComponent`s, check
-  registrations and Flow Graph edges. For direct bus/token registrations, check
-  bus logs and counters.
+- "Why didn't my handler run?" -> For loaded-scene `MessagingComponent`s, check registrations and Flow Graph edges. For direct bus/token registrations, check bus logs and counters.
 - "What's firing too often?" -> Compare call counts in component and route summaries.
-- "Which source/target context was involved?" -> Check Message Monitor context
-  and Flow Graph trace paths.
+- "Which source/target context was involved?" -> Check Message Monitor context and Flow Graph trace paths.
 
 **No more:** Setting 50 breakpoints and stepping through code for 30 minutes.
 
-See [Diagnostics](https://ambiguous-interactive.github.io/DxMessaging/guides/diagnostics/) for the current editor tooling and
-trace-path semantics. The
-[Diagnostics Tooling Exerciser](Samples~/Diagnostics%20Tooling%20Exerciser/README.md)
-sample imports a deterministic scene that drives Message Monitor, Flow Graph,
-Inspector diagnostics, and Project Settings together.
+See [Diagnostics](https://ambiguous-interactive.github.io/DxMessaging/guides/diagnostics/) for the current editor tooling and trace-path semantics. The
+[Diagnostics Tooling Exerciser](Samples~/Diagnostics%20Tooling%20Exerciser/README.md) sample imports a deterministic scene that drives Message Monitor, Flow Graph, Inspector
+diagnostics, and Project Settings together.
 
 ### Local Bus Islands for Testing
 
@@ -801,9 +781,8 @@ public sealed class AchievementMessagingTests
 }
 ```
 
-The local bus isolates message routing. The `using` block removes registrations even if the assertion
-fails. This example needs no Unity object. Local buses still share runtime settings and pools: run
-Unity messaging tests on the main thread and avoid concurrent access to that shared state.
+The local bus isolates message routing. The `using` block removes registrations even if the assertion fails. This example needs no Unity object. Local buses still share runtime
+settings and pools: run Unity messaging tests on the main thread and avoid concurrent access to that shared state.
 
 ## Documentation
 
@@ -828,7 +807,8 @@ Unity messaging tests on the main thread and avoid concurrent access to that sha
 ### Unity Integration
 
 - [Unity Integration](https://ambiguous-interactive.github.io/DxMessaging/guides/unity-integration/) -- MessagingComponent deep dive
-- [Subscription Ownership](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/docs/guides/subscription-ownership.md) -- groups, source moves, and static handlers with explicit state (4.0.0)
+- [Subscription Ownership](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/docs/guides/subscription-ownership.md) -- groups, source moves, and static handlers with
+  explicit state (4.0.0)
 - [Targeting & Context](https://ambiguous-interactive.github.io/DxMessaging/concepts/targeting-and-context/) -- GameObject vs Component
 - [Diagnostics](https://ambiguous-interactive.github.io/DxMessaging/guides/diagnostics/) -- editor tools, traces, and debugging
 - [Memory Reclamation](https://ambiguous-interactive.github.io/DxMessaging/guides/memory-reclamation/) -- idle eviction, explicit Trim, and tuning the runtime settings asset
@@ -851,8 +831,10 @@ DxMessaging works standalone (zero dependencies) or with any major DI framework.
 
 #### Core DI concepts
 
-- **[Runtime Configuration](https://ambiguous-interactive.github.io/DxMessaging/advanced/runtime-configuration/)** -- Setting and overriding message buses at runtime, re-binding registrations
-- **[Message Bus Providers](https://ambiguous-interactive.github.io/DxMessaging/advanced/message-bus-providers/)** -- Provider system and MessageBusProviderHandle for flexible bus configuration
+- **[Runtime Configuration](https://ambiguous-interactive.github.io/DxMessaging/advanced/runtime-configuration/)** -- Setting and overriding message buses at runtime, re-binding
+  registrations
+- **[Message Bus Providers](https://ambiguous-interactive.github.io/DxMessaging/advanced/message-bus-providers/)** -- Provider system and MessageBusProviderHandle for flexible bus
+  configuration
 
 Each guide includes:
 
@@ -865,8 +847,10 @@ See the [DI Compatible section](#dependency-injection-di-compatible) above for a
 
 ### Comparisons
 
-- [Compare with Other Unity Messaging Frameworks](https://ambiguous-interactive.github.io/DxMessaging/architecture/comparisons/) -- In-depth comparison with UniRx, MessagePipe, Zenject Signals, C# events, UnityEvents, and more
-- [Scriptable Object Architecture (SOA) Compatibility](https://ambiguous-interactive.github.io/DxMessaging/guides/patterns/#14-compatibility-with-scriptable-object-architecture-soa) -- Migration patterns and interoperability with SOA
+- [Compare with Other Unity Messaging Frameworks](https://ambiguous-interactive.github.io/DxMessaging/architecture/comparisons/) -- In-depth comparison with UniRx, MessagePipe,
+  Zenject Signals, C# events, UnityEvents, and more
+- [Scriptable Object Architecture (SOA) Compatibility](https://ambiguous-interactive.github.io/DxMessaging/guides/patterns/#14-compatibility-with-scriptable-object-architecture-soa)
+  -- Migration patterns and interoperability with SOA
 
 #### Quick Framework Comparison
 
@@ -889,11 +873,13 @@ See the [DI Compatible section](#dependency-injection-di-compatible) above for a
 - Post-processing stage (analytics, logging after handlers)
 - No dependencies, plug-and-play setup
 
-See [full comparison](https://ambiguous-interactive.github.io/DxMessaging/architecture/comparisons/) for detailed analysis with code examples, performance benchmarks, and decision guides.
+See [full comparison](https://ambiguous-interactive.github.io/DxMessaging/architecture/comparisons/) for detailed analysis with code examples, performance benchmarks, and decision
+guides.
 
 > **📦 Using Scriptable Object Architecture (SOA)?**
 >
-> DxMessaging can work alongside or replace SOA patterns. See [SOA Compatibility Guide](https://ambiguous-interactive.github.io/DxMessaging/guides/patterns/#14-compatibility-with-scriptable-object-architecture-soa) for:
+> DxMessaging can work alongside or replace SOA patterns. See
+> [SOA Compatibility Guide](https://ambiguous-interactive.github.io/DxMessaging/guides/patterns/#14-compatibility-with-scriptable-object-architecture-soa) for:
 >
 > - Fair comparison of SOA vs. DxMessaging
 > - Migration patterns from GameEvent/FloatVariable to DxMessaging
@@ -961,14 +947,16 @@ public class AchievementTracker : MessageAwareComponent {
 
 ## Performance
 
-- **Zero GC allocations** for ordinary typed steady-state struct dispatch; stack-trace diagnostics and struct global accept-all dispatch allocate ([details](https://ambiguous-interactive.github.io/DxMessaging/reference/faq/#does-dxmessaging-allocate-memory-is-dispatch-zero-gc))
+- **Zero GC allocations** for ordinary typed steady-state struct dispatch; stack-trace diagnostics and struct global accept-all dispatch allocate
+  ([details](https://ambiguous-interactive.github.io/DxMessaging/reference/faq/#does-dxmessaging-allocate-memory-is-dispatch-zero-gc))
 - **CI-generated time/op and cross-library results** for the published runner
 - **Type-indexed caching** for O(1) lookups
 - **Optimized for hot paths** with aggressive inlining
 
 See [Design & Architecture](https://ambiguous-interactive.github.io/DxMessaging/architecture/design-and-architecture/#performance-optimizations) for details.
 
-See [Performance Benchmarks](https://ambiguous-interactive.github.io/DxMessaging/architecture/performance/) for Standalone IL2CPP dispatch and comparisons. The workflow measures Release builds using the .NET Standard 2.1 profile. Nightly dispatches and manual runs on the default branch can refresh the published tables.
+See [Performance Benchmarks](https://ambiguous-interactive.github.io/DxMessaging/architecture/performance/) for Standalone IL2CPP dispatch and comparisons. The workflow measures
+Release builds using the .NET Standard 2.1 profile. Nightly dispatches and manual runs on the default branch can refresh the published tables.
 
 ## Comparison Table
 
@@ -1005,12 +993,13 @@ See [Performance Benchmarks](https://ambiguous-interactive.github.io/DxMessaging
 
 ## Samples
 
-For a UPM install, select **DxMessaging** in Package Manager and use its **Samples** tab.
-For a classic `.unitypackage` import, open the samples under `Assets/WallstopStudios/DxMessaging/Samples`.
+For a UPM install, select **DxMessaging** in Package Manager and use its **Samples** tab. For a classic `.unitypackage` import, open the samples under
+`Assets/WallstopStudios/DxMessaging/Samples`.
 
 - **[Mini Combat](Samples~/Mini%20Combat/README.md)** -- Simple combat with Heal/Damage messages
 - **[UI Buttons + Inspector](Samples~/UI%20Buttons%20%2B%20Inspector/README.md)** -- Interactive diagnostics demo
-- **[Diagnostics Tooling Exerciser](Samples~/Diagnostics%20Tooling%20Exerciser/README.md)** -- Deterministic scene for Message Monitor, Flow Graph, Inspector diagnostics, and Project Settings
+- **[Diagnostics Tooling Exerciser](Samples~/Diagnostics%20Tooling%20Exerciser/README.md)** -- Deterministic scene for Message Monitor, Flow Graph, Inspector diagnostics, and
+  Project Settings
 - **[Dependency Injection](Samples~/DI/README.md)** -- Zenject, VContainer, and Reflex setup and disposal examples
 
 ## Requirements
@@ -1043,13 +1032,15 @@ Created and maintained by [wallstop studios](https://wallstopstudios.com)
 
 ## AI Agent Integration
 
-DxMessaging publishes machine-readable context for AI agents through [llms.txt](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/llms.txt), following the [llmstxt.org](https://llmstxt.org/) standard. The file collects the project overview, API surface, conventions, and links into one document.
+DxMessaging publishes machine-readable context for AI agents through [llms.txt](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/llms.txt), following the
+[llmstxt.org](https://llmstxt.org/) standard. The file collects the project overview, API surface, conventions, and links into one document.
 
 ### For AI Agents
 
 - **[llms.txt](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/llms.txt)** -- Complete project overview, API reference, and context in a single file
 - **[Repository Guidelines](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.llm/context.md)** -- Coding standards and development workflows
-- **[AI Agent Skills](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/.llm/skills/)** -- 35+ specialized skills covering documentation, testing, GitHub Actions, and more
+- **[AI Agent Skills](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/.llm/skills/)** -- 35+ specialized skills covering documentation, testing, GitHub Actions,
+  and more
 
 The `llms.txt` file is automatically updated via CI/CD to stay current with project changes. It includes:
 

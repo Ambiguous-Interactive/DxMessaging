@@ -40,12 +40,7 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleTargetedMessage targetedMessage = new();
             SimpleBroadcastMessage broadcastMessage = new();
             RunGlobalAcceptAllTest(
-                token =>
-                    token.RegisterGlobalAcceptAll(
-                        HandleUntargeted,
-                        HandleTargeted,
-                        HandleBroadcast
-                    ),
+                token => token.RegisterGlobalAcceptAll(HandleUntargeted, HandleTargeted, HandleBroadcast),
                 i =>
                 {
                     Assert.AreEqual(i, untargetedCount);
@@ -110,12 +105,7 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleTargetedMessage targetedMessage = new();
             SimpleBroadcastMessage broadcastMessage = new();
             RunGlobalAcceptAllTest(
-                token =>
-                    token.RegisterGlobalAcceptAll(
-                        HandleUntargeted,
-                        HandleTargeted,
-                        HandleBroadcast
-                    ),
+                token => token.RegisterGlobalAcceptAll(HandleUntargeted, HandleTargeted, HandleBroadcast),
                 i =>
                 {
                     Assert.AreEqual(i, untargetedCount);
@@ -169,12 +159,7 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private void RunGlobalAcceptAllTest(
-            Action<MessageRegistrationToken> register,
-            Action<int> untargeted,
-            Action<int> targeted,
-            Action<int> broadcast
-        )
+        private void RunGlobalAcceptAllTest(Action<MessageRegistrationToken> register, Action<int> untargeted, Action<int> targeted, Action<int> broadcast)
         {
             EmptyMessageAwareComponent component = _test.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);

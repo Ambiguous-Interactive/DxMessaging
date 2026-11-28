@@ -83,17 +83,12 @@ namespace DxMessaging.Tests.Runtime.Core
         /// <see cref="ReentrantEmissionTests"/>).
         /// </summary>
         [Test]
-        public void CrossKindReentrancyChainCompletes(
-            [ValueSource(nameof(CrossKindReentrancyPairs))] CrossKindReentrancyCase pair
-        )
+        public void CrossKindReentrancyChainCompletes([ValueSource(nameof(CrossKindReentrancyPairs))] CrossKindReentrancyCase pair)
         {
             MessageScenario scenario = pair.Outer;
             MessageScenario innerScenario = pair.Inner;
 
-            GameObject host = new(
-                nameof(CrossKindReentrancyChainCompletes) + scenario.Kind + innerScenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(CrossKindReentrancyChainCompletes) + scenario.Kind + innerScenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -108,78 +103,31 @@ namespace DxMessaging.Tests.Runtime.Core
                 trace.Add("inner");
                 ++innerCount;
             });
-            MessageRegistrationHandle outerHandle = RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                () =>
-                {
-                    trace.Add("outer-start");
-                    ++outerCount;
-                    EmitForScenario(innerScenario, hostId);
-                    trace.Add("outer-end");
-                }
-            );
+            MessageRegistrationHandle outerHandle = RegisterCountingHandler(scenario, token, hostId, () =>
+            {
+                trace.Add("outer-start");
+                ++outerCount;
+                EmitForScenario(innerScenario, hostId);
+                trace.Add("outer-end");
+            });
 
             EmitForScenario(scenario, hostId);
-            Assert.AreEqual(
-                1,
-                outerCount,
-                "[{0}->{1}] Outer handler must run exactly once. trace=[{2}]",
-                scenario.Kind,
-                innerScenario.Kind,
-                string.Join(",", trace)
-            );
-            Assert.AreEqual(
-                1,
-                innerCount,
-                "[{0}->{1}] Inner handler must run inside outer's callback. trace=[{2}]",
-                scenario.Kind,
-                innerScenario.Kind,
-                string.Join(",", trace)
-            );
-            Assert.AreEqual(
-                "outer-start",
-                trace[0],
-                "[{0}->{1}] Outer must begin before inner. trace=[{2}]",
-                scenario.Kind,
-                innerScenario.Kind,
-                string.Join(",", trace)
-            );
-            Assert.AreEqual(
-                "inner",
-                trace[1],
-                "[{0}->{1}] Inner must run between outer's two halves. trace=[{2}]",
-                scenario.Kind,
-                innerScenario.Kind,
-                string.Join(",", trace)
-            );
-            Assert.AreEqual(
-                "outer-end",
-                trace[2],
-                "[{0}->{1}] Outer must complete after inner returns. trace=[{2}]",
-                scenario.Kind,
-                innerScenario.Kind,
-                string.Join(",", trace)
-            );
+            Assert.AreEqual(1, outerCount, "[{0}->{1}] Outer handler must run exactly once. trace=[{2}]", scenario.Kind, innerScenario.Kind, string.Join(",", trace));
+            Assert.AreEqual(1, innerCount, "[{0}->{1}] Inner handler must run inside outer's callback. trace=[{2}]", scenario.Kind, innerScenario.Kind, string.Join(",", trace));
+            Assert.AreEqual("outer-start", trace[0], "[{0}->{1}] Outer must begin before inner. trace=[{2}]", scenario.Kind, innerScenario.Kind, string.Join(",", trace));
+            Assert.AreEqual("inner", trace[1], "[{0}->{1}] Inner must run between outer's two halves. trace=[{2}]", scenario.Kind, innerScenario.Kind, string.Join(",", trace));
+            Assert.AreEqual("outer-end", trace[2], "[{0}->{1}] Outer must complete after inner returns. trace=[{2}]", scenario.Kind, innerScenario.Kind, string.Join(",", trace));
 
             token.RemoveRegistration(outerHandle);
         }
 
         [Test]
-        public void PostProcessorCrossKindReentrancyRestoresOuterEmissionId(
-            [ValueSource(nameof(CrossKindReentrancyPairs))] CrossKindReentrancyCase pair
-        )
+        public void PostProcessorCrossKindReentrancyRestoresOuterEmissionId([ValueSource(nameof(CrossKindReentrancyPairs))] CrossKindReentrancyCase pair)
         {
             using LeakWatcher watcher = LeakWatcher.Watch(pair.ToString());
             MessageScenario outerScenario = pair.Outer;
             MessageScenario innerScenario = pair.Inner;
-            GameObject host = new(
-                nameof(PostProcessorCrossKindReentrancyRestoresOuterEmissionId)
-                    + outerScenario.Kind
-                    + innerScenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(PostProcessorCrossKindReentrancyRestoresOuterEmissionId) + outerScenario.Kind + innerScenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -234,30 +182,10 @@ namespace DxMessaging.Tests.Runtime.Core
                     "[{0}] Cross-kind post-processor reentrancy order changed.",
                     pair
                 );
-                Assert.AreNotEqual(
-                    outerBeforeNested,
-                    nested,
-                    "[{0}] A nested emission must receive a distinct EmissionId.",
-                    pair
-                );
-                Assert.AreEqual(
-                    outerBeforeNested + 1,
-                    nested,
-                    "[{0}] The synchronous nested emission must immediately follow the outer emission.",
-                    pair
-                );
-                Assert.AreEqual(
-                    outerBeforeNested,
-                    outerAfterNested,
-                    "[{0}] The outer post-processor must regain its scoped EmissionId after the nested emission returns.",
-                    pair
-                );
-                Assert.AreEqual(
-                    outerBeforeNested,
-                    trailingOuter,
-                    "[{0}] A trailing outer post-processor must observe the restored outer EmissionId.",
-                    pair
-                );
+                Assert.AreNotEqual(outerBeforeNested, nested, "[{0}] A nested emission must receive a distinct EmissionId.", pair);
+                Assert.AreEqual(outerBeforeNested + 1, nested, "[{0}] The synchronous nested emission must immediately follow the outer emission.", pair);
+                Assert.AreEqual(outerBeforeNested, outerAfterNested, "[{0}] The outer post-processor must regain its scoped EmissionId after the nested emission returns.", pair);
+                Assert.AreEqual(outerBeforeNested, trailingOuter, "[{0}] A trailing outer post-processor must observe the restored outer EmissionId.", pair);
             }
             finally
             {
@@ -276,15 +204,9 @@ namespace DxMessaging.Tests.Runtime.Core
         /// production-side bool used to gate recursion.
         /// </summary>
         [Test]
-        public void DeepRecursion10Levels(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void DeepRecursion10Levels([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(DeepRecursion10Levels) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(DeepRecursion10Levels) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -295,29 +217,24 @@ namespace DxMessaging.Tests.Runtime.Core
             IMessageBus bus = MessageHandler.MessageBus;
             long initialEmissionId = bus.EmissionId;
 
-            MessageRegistrationHandle handle = RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                () =>
+            MessageRegistrationHandle handle = RegisterCountingHandler(scenario, token, hostId, () =>
+            {
+                ++invocations;
+                if (DeepRecursionLimit <= depth)
                 {
-                    ++invocations;
-                    if (DeepRecursionLimit <= depth)
-                    {
-                        return;
-                    }
-
-                    ++depth;
-                    try
-                    {
-                        EmitForScenario(scenario, hostId);
-                    }
-                    finally
-                    {
-                        --depth;
-                    }
+                    return;
                 }
-            );
+
+                ++depth;
+                try
+                {
+                    EmitForScenario(scenario, hostId);
+                }
+                finally
+                {
+                    --depth;
+                }
+            });
 
             EmitForScenario(scenario, hostId);
             Assert.AreEqual(
@@ -351,15 +268,9 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void RecursionWithPriorityHandlersRespectsOrderingPerEmission(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void RecursionWithPriorityHandlersRespectsOrderingPerEmission([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(RecursionWithPriorityHandlersRespectsOrderingPerEmission) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(RecursionWithPriorityHandlersRespectsOrderingPerEmission) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -375,13 +286,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 reentrant inner emission interleaved between p5's start and
                 p10's run on the outer emission.
             */
-            MessageRegistrationHandle p0Handle = RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                () => trace.Add($"d{depth}:p0"),
-                priority: 0
-            );
+            MessageRegistrationHandle p0Handle = RegisterCountingHandler(scenario, token, hostId, () => trace.Add($"d{depth}:p0"), priority: 0);
             MessageRegistrationHandle p5Handle = RegisterCountingHandler(
                 scenario,
                 token,
@@ -405,13 +310,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 },
                 priority: 5
             );
-            MessageRegistrationHandle p10Handle = RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                () => trace.Add($"d{depth}:p10"),
-                priority: 10
-            );
+            MessageRegistrationHandle p10Handle = RegisterCountingHandler(scenario, token, hostId, () => trace.Add($"d{depth}:p10"), priority: 10);
 
             EmitForScenario(scenario, hostId);
 
@@ -428,24 +327,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 This shows that priority order is preserved INSIDE each
                 emission frame, even though the inner emission interleaves.
             */
-            string[] expected =
-            {
-                "d0:p0",
-                "d0:p5-start",
-                "d1:p0",
-                "d1:p5-start",
-                "d1:p5-end",
-                "d1:p10",
-                "d0:p5-end",
-                "d0:p10",
-            };
-            CollectionAssert.AreEqual(
-                expected,
-                trace,
-                "[{0}] Priority order must be preserved per emission frame. trace=[{1}]",
-                scenario.Kind,
-                string.Join(",", trace)
-            );
+            string[] expected = { "d0:p0", "d0:p5-start", "d1:p0", "d1:p5-start", "d1:p5-end", "d1:p10", "d0:p5-end", "d0:p10" };
+            CollectionAssert.AreEqual(expected, trace, "[{0}] Priority order must be preserved per emission frame. trace=[{1}]", scenario.Kind, string.Join(",", trace));
 
             token.RemoveRegistration(p0Handle);
             token.RemoveRegistration(p5Handle);
@@ -458,15 +341,9 @@ namespace DxMessaging.Tests.Runtime.Core
         /// (snapshot semantics) but MUST run on the next emission.
         /// </summary>
         [Test]
-        public void ReentrantUnsubscribeThenResubscribeSelf(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void ReentrantUnsubscribeThenResubscribeSelf([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(ReentrantUnsubscribeThenResubscribeSelf) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(ReentrantUnsubscribeThenResubscribeSelf) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -486,9 +363,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     firstHandle = default;
                 }
 
-                respawnedHandle ??= RegisterCountingHandler(scenario, token, hostId, () =>
-                    ++respawnedHandlerCount
-                );
+                respawnedHandle ??= RegisterCountingHandler(scenario, token, hostId, () => ++respawnedHandlerCount);
             });
 
             EmitForScenario(scenario, hostId);
@@ -541,15 +416,9 @@ namespace DxMessaging.Tests.Runtime.Core
         /// frame too.
         /// </summary>
         [Test]
-        public void NestedHandlerThrowsDuringReentrantEmit(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void NestedHandlerThrowsDuringReentrantEmit([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(NestedHandlerThrowsDuringReentrantEmit) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(NestedHandlerThrowsDuringReentrantEmit) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -594,17 +463,9 @@ namespace DxMessaging.Tests.Runtime.Core
                 },
                 priority: 0
             );
-            MessageRegistrationHandle trailingHandle = RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                () => ++outerTrailingCount,
-                priority: 1
-            );
+            MessageRegistrationHandle trailingHandle = RegisterCountingHandler(scenario, token, hostId, () => ++outerTrailingCount, priority: 1);
 
-            InvalidOperationException captured = Assert.Throws<InvalidOperationException>(() =>
-                EmitForScenario(scenario, hostId)
-            );
+            InvalidOperationException captured = Assert.Throws<InvalidOperationException>(() => EmitForScenario(scenario, hostId));
             Assert.AreEqual(ThrowMessage, captured.Message);
             Assert.AreEqual(
                 1,
@@ -648,15 +509,9 @@ namespace DxMessaging.Tests.Runtime.Core
         /// the outer emission's frame.
         /// </summary>
         [Test]
-        public void ReentrantInterceptorVeto(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void ReentrantInterceptorVeto([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(ReentrantInterceptorVeto) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(ReentrantInterceptorVeto) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -773,21 +628,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 run AFTER the inner emission completes (vetoed) and on the
                 outer frame (depth 0).
             */
-            string[] expectedTrace =
-            {
-                "d0:interceptor",
-                "d0:outer-start",
-                "d1:interceptor",
-                "d0:outer-end",
-                "d0:trailing",
-            };
-            CollectionAssert.AreEqual(
-                expectedTrace,
-                trace,
-                "[{0}] Vetoed re-emit must produce the documented trace. trace=[{1}]",
-                scenario.Kind,
-                string.Join(",", trace)
-            );
+            string[] expectedTrace = { "d0:interceptor", "d0:outer-start", "d1:interceptor", "d0:outer-end", "d0:trailing" };
+            CollectionAssert.AreEqual(expectedTrace, trace, "[{0}] Vetoed re-emit must produce the documented trace. trace=[{1}]", scenario.Kind, string.Join(",", trace));
 
             token.RemoveRegistration(outerHandle);
             token.RemoveRegistration(trailingHandle);
@@ -800,15 +642,9 @@ namespace DxMessaging.Tests.Runtime.Core
         /// emission.
         /// </summary>
         [Test]
-        public void InterceptorMutationDuringReemitObservesFreshState(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void InterceptorMutationDuringReemitObservesFreshState([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(InterceptorMutationDuringReemitObservesFreshState) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(InterceptorMutationDuringReemitObservesFreshState) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -829,31 +665,26 @@ namespace DxMessaging.Tests.Runtime.Core
 
             RegisterAllowingInterceptor(scenario, token, () => ++interceptorInvocations);
 
-            MessageRegistrationHandle handle = RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                () =>
+            MessageRegistrationHandle handle = RegisterCountingHandler(scenario, token, hostId, () =>
+            {
+                if (depth == 0)
                 {
-                    if (depth == 0)
+                    ++outerCount;
+                    ++depth;
+                    try
                     {
-                        ++outerCount;
-                        ++depth;
-                        try
-                        {
-                            EmitForScenario(scenario, hostId);
-                        }
-                        finally
-                        {
-                            --depth;
-                        }
+                        EmitForScenario(scenario, hostId);
                     }
-                    else if (depth <= InnerRecursionLimit)
+                    finally
                     {
-                        ++innerCount;
+                        --depth;
                     }
                 }
-            );
+                else if (depth <= InnerRecursionLimit)
+                {
+                    ++innerCount;
+                }
+            });
 
             EmitForScenario(scenario, hostId);
             Assert.AreEqual(
@@ -899,158 +730,95 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 case MessageKind.Untargeted:
                 {
-                    return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
-                        scenario,
-                        token,
-                        (in SimpleUntargetedMessage _) => onInvoked(),
-                        priority
-                    );
+                    return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(scenario, token, (in SimpleUntargetedMessage _) => onInvoked(), priority);
                 }
                 case MessageKind.Targeted:
                 {
-                    return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        target,
-                        (in SimpleTargetedMessage _) => onInvoked(),
-                        priority
-                    );
+                    return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(scenario, token, target, (in SimpleTargetedMessage _) => onInvoked(), priority);
                 }
                 case MessageKind.Broadcast:
                 {
-                    return ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        target,
-                        (in SimpleBroadcastMessage _) => onInvoked(),
-                        priority
-                    );
+                    return ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(scenario, token, target, (in SimpleBroadcastMessage _) => onInvoked(), priority);
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
 
-        private static void RegisterDepthLimitedInterceptor(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            int threshold,
-            Func<int> getDepth,
-            Action onInvoked
-        )
+        private static void RegisterDepthLimitedInterceptor(MessageScenario scenario, MessageRegistrationToken token, int threshold, Func<int> getDepth, Action onInvoked)
         {
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
                 {
-                    _ = ScenarioHarness.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(
-                        scenario,
-                        token,
-                        (ref SimpleUntargetedMessage _) =>
-                        {
-                            onInvoked();
-                            return getDepth() < threshold;
-                        }
-                    );
+                    _ = ScenarioHarness.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(scenario, token, (ref SimpleUntargetedMessage _) =>
+                    {
+                        onInvoked();
+                        return getDepth() < threshold;
+                    });
                     return;
                 }
                 case MessageKind.Targeted:
                 {
-                    _ = ScenarioHarness.RegisterTargetedInterceptor<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        (ref InstanceId _, ref SimpleTargetedMessage _) =>
-                        {
-                            onInvoked();
-                            return getDepth() < threshold;
-                        }
-                    );
+                    _ = ScenarioHarness.RegisterTargetedInterceptor<SimpleTargetedMessage>(scenario, token, (ref InstanceId _, ref SimpleTargetedMessage _) =>
+                    {
+                        onInvoked();
+                        return getDepth() < threshold;
+                    });
                     return;
                 }
                 case MessageKind.Broadcast:
                 {
-                    _ = ScenarioHarness.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        (ref InstanceId _, ref SimpleBroadcastMessage _) =>
-                        {
-                            onInvoked();
-                            return getDepth() < threshold;
-                        }
-                    );
+                    _ = ScenarioHarness.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(scenario, token, (ref InstanceId _, ref SimpleBroadcastMessage _) =>
+                    {
+                        onInvoked();
+                        return getDepth() < threshold;
+                    });
                     return;
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
 
-        private static void RegisterAllowingInterceptor(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            Action onInvoked
-        )
+        private static void RegisterAllowingInterceptor(MessageScenario scenario, MessageRegistrationToken token, Action onInvoked)
         {
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
                 {
-                    _ = ScenarioHarness.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(
-                        scenario,
-                        token,
-                        (ref SimpleUntargetedMessage _) =>
-                        {
-                            onInvoked();
-                            return true;
-                        }
-                    );
+                    _ = ScenarioHarness.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(scenario, token, (ref SimpleUntargetedMessage _) =>
+                    {
+                        onInvoked();
+                        return true;
+                    });
                     return;
                 }
                 case MessageKind.Targeted:
                 {
-                    _ = ScenarioHarness.RegisterTargetedInterceptor<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        (ref InstanceId _, ref SimpleTargetedMessage _) =>
-                        {
-                            onInvoked();
-                            return true;
-                        }
-                    );
+                    _ = ScenarioHarness.RegisterTargetedInterceptor<SimpleTargetedMessage>(scenario, token, (ref InstanceId _, ref SimpleTargetedMessage _) =>
+                    {
+                        onInvoked();
+                        return true;
+                    });
                     return;
                 }
                 case MessageKind.Broadcast:
                 {
-                    _ = ScenarioHarness.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        (ref InstanceId _, ref SimpleBroadcastMessage _) =>
-                        {
-                            onInvoked();
-                            return true;
-                        }
-                    );
+                    _ = ScenarioHarness.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(scenario, token, (ref InstanceId _, ref SimpleBroadcastMessage _) =>
+                    {
+                        onInvoked();
+                        return true;
+                    });
                     return;
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
@@ -1079,11 +847,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }

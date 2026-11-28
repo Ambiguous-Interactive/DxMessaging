@@ -31,14 +31,9 @@ namespace DxMessaging.Tests.Runtime.Core
     public sealed class RetargetMessageBusTests : MessagingTestBase
     {
         [Test]
-        public void RetargetWhileEnabledMovesLiveRegistrationsToNewBus(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void RetargetWhileEnabledMovesLiveRegistrationsToNewBus([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(RetargetWhileEnabledMovesLiveRegistrationsToNewBus) + scenario.Kind
-            );
+            GameObject host = new(nameof(RetargetWhileEnabledMovesLiveRegistrationsToNewBus) + scenario.Kind);
             _spawned.Add(host);
             InstanceId hostId = host;
 
@@ -49,54 +44,20 @@ namespace DxMessaging.Tests.Runtime.Core
             token.Enable();
 
             int handlerCount = 0;
-            using (
-                LeakWatcher oldBusWatcher = new(
-                    bus: oldBus,
-                    throwOnLeak: true,
-                    label: scenario.DisplayName + "-OldBus"
-                )
-            )
-            using (
-                LeakWatcher newBusWatcher = new(
-                    bus: newBus,
-                    throwOnLeak: true,
-                    label: scenario.DisplayName + "-NewBus"
-                )
-            )
+            using (LeakWatcher oldBusWatcher = new(bus: oldBus, throwOnLeak: true, label: scenario.DisplayName + "-OldBus"))
+            using (LeakWatcher newBusWatcher = new(bus: newBus, throwOnLeak: true, label: scenario.DisplayName + "-NewBus"))
             {
-                _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () =>
-                    ++handlerCount
-                );
+                _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () => ++handlerCount);
 
-                Assert.AreEqual(
-                    1,
-                    RegisteredCountForKind(oldBus, scenario.Kind),
-                    "[{0}] Live registration must land on the old bus before retargeting.",
-                    scenario.Kind
-                );
-                Assert.AreEqual(
-                    0,
-                    RegisteredCountForKind(newBus, scenario.Kind),
-                    "[{0}] New bus must be empty before retargeting.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(1, RegisteredCountForKind(oldBus, scenario.Kind), "[{0}] Live registration must land on the old bus before retargeting.", scenario.Kind);
+                Assert.AreEqual(0, RegisteredCountForKind(newBus, scenario.Kind), "[{0}] New bus must be empty before retargeting.", scenario.Kind);
 
                 ScenarioCallbacks.EmitForKind(scenario, oldBus, hostId);
-                Assert.AreEqual(
-                    1,
-                    handlerCount,
-                    "[{0}] Handler must receive emissions on the old bus before retargeting.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(1, handlerCount, "[{0}] Handler must receive emissions on the old bus before retargeting.", scenario.Kind);
 
                 token.RetargetMessageBus(newBus, MessageBusRebindMode.RebindActive);
 
-                Assert.AreEqual(
-                    0,
-                    RegisteredCountForKind(oldBus, scenario.Kind),
-                    "[{0}] RebindActive retarget must remove the live registration from the old bus.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(0, RegisteredCountForKind(oldBus, scenario.Kind), "[{0}] RebindActive retarget must remove the live registration from the old bus.", scenario.Kind);
                 Assert.AreEqual(
                     1,
                     RegisteredCountForKind(newBus, scenario.Kind),
@@ -105,22 +66,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 );
 
                 ScenarioCallbacks.EmitForKind(scenario, oldBus, hostId);
-                Assert.AreEqual(
-                    1,
-                    handlerCount,
-                    "[{0}] Old bus must stop reaching the handler after retargeting (count={1}).",
-                    scenario.Kind,
-                    handlerCount
-                );
+                Assert.AreEqual(1, handlerCount, "[{0}] Old bus must stop reaching the handler after retargeting (count={1}).", scenario.Kind, handlerCount);
 
                 ScenarioCallbacks.EmitForKind(scenario, newBus, hostId);
-                Assert.AreEqual(
-                    2,
-                    handlerCount,
-                    "[{0}] New bus must reach the handler after retargeting (count={1}).",
-                    scenario.Kind,
-                    handlerCount
-                );
+                Assert.AreEqual(2, handlerCount, "[{0}] New bus must reach the handler after retargeting (count={1}).", scenario.Kind, handlerCount);
 
                 token.UnregisterAll();
             }
@@ -129,14 +78,9 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void RetargetWhileDisabledLandsOnNewBusOnNextEnable(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void RetargetWhileDisabledLandsOnNewBusOnNextEnable([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(RetargetWhileDisabledLandsOnNewBusOnNextEnable) + scenario.Kind
-            );
+            GameObject host = new(nameof(RetargetWhileDisabledLandsOnNewBusOnNextEnable) + scenario.Kind);
             _spawned.Add(host);
             InstanceId hostId = host;
 
@@ -147,86 +91,32 @@ namespace DxMessaging.Tests.Runtime.Core
             token.Enable();
 
             int handlerCount = 0;
-            using (
-                LeakWatcher oldBusWatcher = new(
-                    bus: oldBus,
-                    throwOnLeak: true,
-                    label: scenario.DisplayName + "-OldBus"
-                )
-            )
-            using (
-                LeakWatcher newBusWatcher = new(
-                    bus: newBus,
-                    throwOnLeak: true,
-                    label: scenario.DisplayName + "-NewBus"
-                )
-            )
+            using (LeakWatcher oldBusWatcher = new(bus: oldBus, throwOnLeak: true, label: scenario.DisplayName + "-OldBus"))
+            using (LeakWatcher newBusWatcher = new(bus: newBus, throwOnLeak: true, label: scenario.DisplayName + "-NewBus"))
             {
-                _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () =>
-                    ++handlerCount
-                );
-                Assert.AreEqual(
-                    1,
-                    RegisteredCountForKind(oldBus, scenario.Kind),
-                    "[{0}] Sanity: live registration starts on the old bus.",
-                    scenario.Kind
-                );
+                _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () => ++handlerCount);
+                Assert.AreEqual(1, RegisteredCountForKind(oldBus, scenario.Kind), "[{0}] Sanity: live registration starts on the old bus.", scenario.Kind);
 
                 token.Disable();
-                Assert.AreEqual(
-                    0,
-                    RegisteredCountForKind(oldBus, scenario.Kind),
-                    "[{0}] Disable must tear down the old-bus registration before the retarget.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(0, RegisteredCountForKind(oldBus, scenario.Kind), "[{0}] Disable must tear down the old-bus registration before the retarget.", scenario.Kind);
 
                 /*
                     Retargeting a disabled token must not register anything: the
                     swap is latent until the next Enable().
                 */
                 token.RetargetMessageBus(newBus, MessageBusRebindMode.RebindActive);
-                Assert.AreEqual(
-                    0,
-                    RegisteredCountForKind(oldBus, scenario.Kind),
-                    "[{0}] Retarget while disabled must leave the old bus empty.",
-                    scenario.Kind
-                );
-                Assert.AreEqual(
-                    0,
-                    RegisteredCountForKind(newBus, scenario.Kind),
-                    "[{0}] Retarget while disabled must NOT eagerly register on the new bus.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(0, RegisteredCountForKind(oldBus, scenario.Kind), "[{0}] Retarget while disabled must leave the old bus empty.", scenario.Kind);
+                Assert.AreEqual(0, RegisteredCountForKind(newBus, scenario.Kind), "[{0}] Retarget while disabled must NOT eagerly register on the new bus.", scenario.Kind);
 
                 token.Enable();
-                Assert.AreEqual(
-                    0,
-                    RegisteredCountForKind(oldBus, scenario.Kind),
-                    "[{0}] Enable after retarget must not touch the old bus.",
-                    scenario.Kind
-                );
-                Assert.AreEqual(
-                    1,
-                    RegisteredCountForKind(newBus, scenario.Kind),
-                    "[{0}] Enable after retarget must replay the staged registration on the new bus.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(0, RegisteredCountForKind(oldBus, scenario.Kind), "[{0}] Enable after retarget must not touch the old bus.", scenario.Kind);
+                Assert.AreEqual(1, RegisteredCountForKind(newBus, scenario.Kind), "[{0}] Enable after retarget must replay the staged registration on the new bus.", scenario.Kind);
 
                 ScenarioCallbacks.EmitForKind(scenario, oldBus, hostId);
-                Assert.AreEqual(
-                    0,
-                    handlerCount,
-                    "[{0}] Old bus emissions must not reach the handler after the latent retarget.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(0, handlerCount, "[{0}] Old bus emissions must not reach the handler after the latent retarget.", scenario.Kind);
 
                 ScenarioCallbacks.EmitForKind(scenario, newBus, hostId);
-                Assert.AreEqual(
-                    1,
-                    handlerCount,
-                    "[{0}] New bus emissions must reach the handler after Enable().",
-                    scenario.Kind
-                );
+                Assert.AreEqual(1, handlerCount, "[{0}] New bus emissions must reach the handler after Enable().", scenario.Kind);
 
                 token.UnregisterAll();
             }
@@ -235,10 +125,7 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void RetargetToSameBusIsObservableNoOp(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void RetargetToSameBusIsObservableNoOp([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             GameObject host = new(nameof(RetargetToSameBusIsObservableNoOp) + scenario.Kind);
             _spawned.Add(host);
@@ -250,19 +137,10 @@ namespace DxMessaging.Tests.Runtime.Core
             token.Enable();
 
             int handlerCount = 0;
-            using (
-                LeakWatcher watcher = new(bus: bus, throwOnLeak: true, label: scenario.DisplayName)
-            )
+            using (LeakWatcher watcher = new(bus: bus, throwOnLeak: true, label: scenario.DisplayName))
             {
-                _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () =>
-                    ++handlerCount
-                );
-                Assert.AreEqual(
-                    1,
-                    RegisteredCountForKind(bus, scenario.Kind),
-                    "[{0}] Sanity: exactly one live registration before retargeting.",
-                    scenario.Kind
-                );
+                _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () => ++handlerCount);
+                Assert.AreEqual(1, RegisteredCountForKind(bus, scenario.Kind), "[{0}] Sanity: exactly one live registration before retargeting.", scenario.Kind);
 
                 /*
                     PreserveRegistrations + same bus takes the strict early-return
@@ -331,14 +209,9 @@ namespace DxMessaging.Tests.Runtime.Core
         /// nothing, and new-bus emissions reach every moved handler.
         /// </summary>
         [Test]
-        public void RetargetMidDispatchCompletesSnapshotThenMovesRouting(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void RetargetMidDispatchCompletesSnapshotThenMovesRouting([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(RetargetMidDispatchCompletesSnapshotThenMovesRouting) + scenario.Kind
-            );
+            GameObject host = new(nameof(RetargetMidDispatchCompletesSnapshotThenMovesRouting) + scenario.Kind);
             _spawned.Add(host);
             InstanceId hostId = host;
 
@@ -352,20 +225,8 @@ namespace DxMessaging.Tests.Runtime.Core
             int trailingCount = 0;
             bool retargeted = false;
 
-            using (
-                LeakWatcher oldBusWatcher = new(
-                    bus: oldBus,
-                    throwOnLeak: true,
-                    label: scenario.DisplayName + "-OldBus"
-                )
-            )
-            using (
-                LeakWatcher newBusWatcher = new(
-                    bus: newBus,
-                    throwOnLeak: true,
-                    label: scenario.DisplayName + "-NewBus"
-                )
-            )
+            using (LeakWatcher oldBusWatcher = new(bus: oldBus, throwOnLeak: true, label: scenario.DisplayName + "-OldBus"))
+            using (LeakWatcher newBusWatcher = new(bus: newBus, throwOnLeak: true, label: scenario.DisplayName + "-NewBus"))
             {
                 /*
                     Handler A (priority 0) retargets the token mid-dispatch;
@@ -387,13 +248,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     },
                     priority: 0
                 );
-                _ = ScenarioCallbacks.RegisterCountingHandler(
-                    scenario,
-                    token,
-                    hostId,
-                    () => ++trailingCount,
-                    priority: 1
-                );
+                _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () => ++trailingCount, priority: 1);
 
                 Assert.DoesNotThrow(
                     () => ScenarioCallbacks.EmitForKind(scenario, oldBus, hostId),
@@ -431,32 +286,12 @@ namespace DxMessaging.Tests.Runtime.Core
                 );
 
                 ScenarioCallbacks.EmitForKind(scenario, oldBus, hostId);
-                Assert.AreEqual(
-                    1,
-                    retargetingCount,
-                    "[{0}] Old bus emissions after the retarget must not reach the retargeting handler.",
-                    scenario.Kind
-                );
-                Assert.AreEqual(
-                    1,
-                    trailingCount,
-                    "[{0}] Old bus emissions after the retarget must not reach the trailing handler.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(1, retargetingCount, "[{0}] Old bus emissions after the retarget must not reach the retargeting handler.", scenario.Kind);
+                Assert.AreEqual(1, trailingCount, "[{0}] Old bus emissions after the retarget must not reach the trailing handler.", scenario.Kind);
 
                 ScenarioCallbacks.EmitForKind(scenario, newBus, hostId);
-                Assert.AreEqual(
-                    2,
-                    retargetingCount,
-                    "[{0}] New bus emissions must reach the retargeting handler exactly once.",
-                    scenario.Kind
-                );
-                Assert.AreEqual(
-                    2,
-                    trailingCount,
-                    "[{0}] New bus emissions must reach the trailing handler exactly once.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(2, retargetingCount, "[{0}] New bus emissions must reach the retargeting handler exactly once.", scenario.Kind);
+                Assert.AreEqual(2, trailingCount, "[{0}] New bus emissions must reach the trailing handler exactly once.", scenario.Kind);
 
                 token.UnregisterAll();
             }
@@ -482,11 +317,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(kind),
-                        kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unsupported message kind.");
                 }
             }
         }

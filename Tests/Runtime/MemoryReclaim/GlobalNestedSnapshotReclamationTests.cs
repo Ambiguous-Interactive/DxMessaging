@@ -35,23 +35,8 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                             foreach (int cap in new[] { 0, 1, 4 })
                             {
                                 yield return new TestCaseData(scenario, shape, count, throwing, cap)
-                                    .SetName(
-                                        "GlobalSnapshotReclaim_"
-                                            + scenario
-                                            + "_shape"
-                                            + shape
-                                            + "_count"
-                                            + count
-                                            + "_throw"
-                                            + throwing
-                                            + "_cap"
-                                            + cap
-                                    )
-                                    .SetCategory(
-                                        throwing == (cap == 0) && count == (shape == 0 ? 3 : 8)
-                                            ? "FastRetention"
-                                            : "Exhaustive"
-                                    );
+                                    .SetName("GlobalSnapshotReclaim_" + scenario + "_shape" + shape + "_count" + count + "_throw" + throwing + "_cap" + cap)
+                                    .SetCategory(throwing == (cap == 0) && count == (shape == 0 ? 3 : 8) ? "FastRetention" : "Exhaustive");
                             }
                         }
                     }
@@ -60,24 +45,9 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
         }
 
         [TestCaseSource(nameof(Cases))]
-        public void CompletedSnapshotsReleaseRemovedCapturesBeforeHandlerCleanup(
-            MessageScenario scenario,
-            int shape,
-            int count,
-            bool throwing,
-            int cap
-        )
+        public void CompletedSnapshotsReleaseRemovedCapturesBeforeHandlerCleanup(MessageScenario scenario, int shape, int count, bool throwing, int cap)
         {
-            string label =
-                scenario
-                + ",shape="
-                + shape
-                + ",count="
-                + count
-                + ",throw="
-                + throwing
-                + ",cap="
-                + cap;
+            string label = scenario + ",shape=" + shape + ",count=" + count + ",throw=" + throwing + ",cap=" + cap;
             int previousCap = DxPools.IntSets.MaxRetained;
             bool previousDebug = MessagingDebug.enabled;
             MessageBus bus = null;
@@ -87,93 +57,37 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             {
                 MessagingDebug.enabled = false;
                 bus = new MessageBus { DiagnosticsMode = false };
-                MessageHandler handler = new MessageHandler(new InstanceId(1652), bus)
-                {
-                    active = true,
-                };
+                MessageHandler handler = new MessageHandler(new InstanceId(1652), bus) { active = true };
                 DxPools.IntSets.MaxRetained = cap;
-                Assert.That(
-                    DxPools.IntSets.MaxRetained,
-                    Is.EqualTo(cap),
-                    label + ": explicit pool cap after bus initialization"
-                );
+                Assert.That(DxPools.IntSets.MaxRetained, Is.EqualTo(cap), label + ": explicit pool cap after bus initialization");
                 watcher = LeakWatcher.WatchWithSlots(bus, label: label, handler: handler);
                 token = MessageRegistrationToken.Create(handler, bus);
                 token.Enable();
                 List<string> calls = new List<string>();
-                ReceiverProbe receivers = CreateDisplacedSnapshot(
-                    scenario,
-                    shape,
-                    count,
-                    throwing,
-                    bus,
-                    token,
-                    calls,
-                    label
-                );
+                ReceiverProbe receivers = CreateDisplacedSnapshot(scenario, shape, count, throwing, bus, token, calls, label);
                 Collect();
-                Assert.That(
-                    receivers.Removed.IsAlive,
-                    Is.False,
-                    label + ": removed receiver before trim"
-                );
-                Assert.That(
-                    receivers.Live.IsAlive,
-                    Is.True,
-                    label + ": registered positive control"
-                );
-                Assert.That(
-                    handler.HasTypedHandlersForBus(bus),
-                    Is.True,
-                    label + ": strong live handler"
-                );
+                Assert.That(receivers.Removed.IsAlive, Is.False, label + ": removed receiver before trim");
+                Assert.That(receivers.Live.IsAlive, Is.True, label + ": registered positive control");
+                Assert.That(handler.HasTypedHandlersForBus(bus), Is.True, label + ": strong live handler");
                 CheckTrackingStorage(handler, bus, cap, label);
                 token.RemoveRegistration(receivers.RemovedHandle);
                 calls.Clear();
                 Emit(scenario.Kind, bus);
                 Assert.That(calls, Does.Contain("live"), label + ": live peer after stale removal");
-                Assert.That(
-                    calls,
-                    Does.Contain("replacement"),
-                    label + ": stale removal preserves its replacement"
-                );
-                Assert.That(
-                    calls,
-                    Does.Not.Contain("removed"),
-                    label + ": removed peer stays absent"
-                );
+                Assert.That(calls, Does.Contain("replacement"), label + ": stale removal preserves its replacement");
+                Assert.That(calls, Does.Not.Contain("removed"), label + ": removed peer stays absent");
                 token.Dispose();
                 int emptySlots = handler.CountEmptyTypedSlotsForSweep(bus);
-                Assert.That(
-                    0 < emptySlots,
-                    Is.True,
-                    label + ": empty typed slots before trim=" + emptySlots
-                );
+                Assert.That(0 < emptySlots, Is.True, label + ": empty typed slots before trim=" + emptySlots);
                 bus.Trim(force: true);
                 watcher.Dispose();
-                Assert.That(
-                    handler.CountEmptyTypedSlotsForSweep(bus),
-                    Is.EqualTo(0),
-                    label + ": reclaimed slots"
-                );
-                Assert.That(
-                    handler.HasTypedHandlersForBus(bus),
-                    Is.False,
-                    label + ": outer typed cache removed"
-                );
+                Assert.That(handler.CountEmptyTypedSlotsForSweep(bus), Is.EqualTo(0), label + ": reclaimed slots");
+                Assert.That(handler.HasTypedHandlersForBus(bus), Is.False, label + ": outer typed cache removed");
                 IMessageBus.TrimResult again = bus.Trim(force: true);
                 Assert.That(again.TypeSlotsEvicted, Is.EqualTo(0), label + ": repeated type trim");
-                Assert.That(
-                    again.TargetSlotsEvicted,
-                    Is.EqualTo(0),
-                    label + ": repeated target trim"
-                );
+                Assert.That(again.TargetSlotsEvicted, Is.EqualTo(0), label + ": repeated target trim");
                 Collect();
-                Assert.That(
-                    receivers.Removed.IsAlive,
-                    Is.False,
-                    label + ": removed receiver after trim"
-                );
+                Assert.That(receivers.Removed.IsAlive, Is.False, label + ": removed receiver after trim");
                 Assert.That(receivers.Live.IsAlive, Is.False, label + ": cleaned positive control");
                 GC.KeepAlive(handler);
                 GC.KeepAlive(bus);
@@ -255,35 +169,21 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             {
                 observed = exception;
             }
-            Assert.That(
-                observed,
-                Is.SameAs(throwing ? failure : null),
-                label + ": primary exception"
-            );
+            Assert.That(observed, Is.SameAs(throwing ? failure : null), label + ": primary exception");
             return new ReceiverProbe(new WeakReference(receiver), new WeakReference(live), removed);
         }
 
-        private static void CheckTrackingStorage(
-            MessageHandler handler,
-            MessageBus bus,
-            int cap,
-            string label
-        )
+        private static void CheckTrackingStorage(MessageHandler handler, MessageBus bus, int cap, string label)
         {
             Assert.That(
-                handler._handlersByTypeByMessageBus.TryGetValue(
-                    bus.RegisteredGlobalSequentialIndex,
-                    out MessageCache<object> byType
-                ),
+                handler._handlersByTypeByMessageBus.TryGetValue(bus.RegisteredGlobalSequentialIndex, out MessageCache<object> byType),
                 Is.True,
                 label + ": actual handler cache exists"
             );
             int observedCaches = 0;
             foreach (object typed in byType)
             {
-                foreach (
-                    object slot in (Array)MessageBusInspection.ReadField(typed, "_globalSlots")
-                )
+                foreach (object slot in (Array)MessageBusInspection.ReadField(typed, "_globalSlots"))
                 {
                     if (slot == null)
                     {
@@ -295,27 +195,15 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                         continue;
                     }
                     ++observedCaches;
-                    foreach (
-                        FieldInfo field in cache
-                            .GetType()
-                            .GetFields(
-                                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
-                            )
-                    )
+                    foreach (FieldInfo field in cache.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
                     {
                         Type type = field.FieldType;
-                        if (
-                            !type.IsGenericType
-                            || type.GetGenericTypeDefinition() != typeof(List<>)
-                        )
+                        if (!type.IsGenericType || type.GetGenericTypeDefinition() != typeof(List<>))
                         {
                             continue;
                         }
                         Type element = type.GetGenericArguments()[0];
-                        if (
-                            !element.IsGenericType
-                            || element.GetGenericTypeDefinition() != typeof(List<>)
-                        )
+                        if (!element.IsGenericType || element.GetGenericTypeDefinition() != typeof(List<>))
                         {
                             continue;
                         }
@@ -324,25 +212,13 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                         {
                             continue;
                         }
-                        Assert.That(
-                            tracking.Count,
-                            Is.EqualTo(0),
-                            label + ": retired references cleared"
-                        );
+                        Assert.That(tracking.Count, Is.EqualTo(0), label + ": retired references cleared");
                         int capacity = (int)MessageBusInspection.ReadProperty(tracking, "Capacity");
-                        Assert.That(
-                            capacity <= cap,
-                            Is.True,
-                            label + ": tracking capacity=" + capacity
-                        );
+                        Assert.That(capacity <= cap, Is.True, label + ": tracking capacity=" + capacity);
                     }
                 }
             }
-            Assert.That(
-                3 <= observedCaches,
-                Is.True,
-                label + ": actual global caches=" + observedCaches
-            );
+            Assert.That(3 <= observedCaches, Is.True, label + ": actual global caches=" + observedCaches);
         }
 
         private static void Collect()
@@ -352,11 +228,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             GC.Collect();
         }
 
-        private static MessageRegistrationHandle Register(
-            MessageRegistrationToken token,
-            bool fast,
-            Action callback
-        )
+        private static MessageRegistrationHandle Register(MessageRegistrationToken token, bool fast, Action callback)
         {
             if (fast)
             {
@@ -366,11 +238,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     (in InstanceId _, in IBroadcastMessage __) => callback()
                 );
             }
-            return token.RegisterGlobalAcceptAll(
-                _ => callback(),
-                (_, _) => callback(),
-                (_, _) => callback()
-            );
+            return token.RegisterGlobalAcceptAll(_ => callback(), (_, _) => callback(), (_, _) => callback());
         }
 
         private static void Emit(MessageKind kind, MessageBus bus)
@@ -395,11 +263,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
 
         private readonly struct ReceiverProbe
         {
-            internal ReceiverProbe(
-                WeakReference removed,
-                WeakReference live,
-                MessageRegistrationHandle removedHandle
-            )
+            internal ReceiverProbe(WeakReference removed, WeakReference live, MessageRegistrationHandle removedHandle)
             {
                 Removed = removed;
                 Live = live;
@@ -425,10 +289,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             internal void Invoke() => _calls.Add(_name);
         }
 
-        private readonly struct ProbeMessage
-            : IUntargetedMessage,
-                ITargetedMessage,
-                IBroadcastMessage
+        private readonly struct ProbeMessage : IUntargetedMessage, ITargetedMessage, IBroadcastMessage
         {
             public Type MessageType => typeof(ProbeMessage);
         }

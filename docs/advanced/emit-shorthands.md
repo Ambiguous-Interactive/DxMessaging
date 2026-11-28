@@ -2,7 +2,8 @@
 
 **Quick, readable ways to send messages** without reaching for `MessageHandler.MessageBus` directly.
 
-These shorthands provide concise syntax for sending messages, but they come with important Unity-specific gotchas around GameObject vs Component targeting. Read the [Pitfalls](#unity-targeting-pitfalls) section to avoid silent bugs.
+These shorthands provide concise syntax for sending messages, but they come with important Unity-specific gotchas around GameObject vs Component targeting. Read the
+[Pitfalls](#unity-targeting-pitfalls) section to avoid silent bugs.
 
 ## What You Get
 
@@ -78,7 +79,8 @@ public readonly partial struct ScoreChanged
 }
 ```
 
-These helpers mirror the struct/class/targeted/broadcast overloads available on message instances. They keep DI-friendly services aligned with the same dispatch path as Unity shorthands.
+These helpers mirror the struct/class/targeted/broadcast overloads available on message instances. They keep DI-friendly services aligned with the same dispatch path as Unity
+shorthands.
 
 ## Understanding Each Shorthand
 
@@ -350,9 +352,8 @@ If a handler isn't firing, first suspect a GameObject vs Component mismatch. See
 
 ### "How do I debug message flow?"
 
-Select the GameObject that hosts the listener you want to inspect. Open its existing
-`MessagingComponent` in the Inspector and enable diagnostics for that listener's token.
-The Inspector shows that component's registrations and captured emissions.
+Select the GameObject that hosts the listener you want to inspect. Open its existing `MessagingComponent` in the Inspector and enable diagnostics for that listener's token. The
+Inspector shows that component's registrations and captured emissions.
 
 To enable diagnostics by default for newly created buses and tokens, set this before initialization:
 

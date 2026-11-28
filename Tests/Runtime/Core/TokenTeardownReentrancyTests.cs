@@ -19,17 +19,11 @@ namespace DxMessaging.Tests.Runtime.Core
 
         private static IEnumerable<(MessageScenario Scenario, bool Action, int Family)> Shapes()
         {
-            foreach (
-                MessageScenario scenario in MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext
-            )
+            foreach (MessageScenario scenario in MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext)
             {
                 foreach (bool action in new[] { false, true })
                 {
-                    if (
-                        scenario.Kind == MessageKind.Untargeted
-                        && scenario.UsePostProcessor
-                        && action
-                    )
+                    if (scenario.Kind == MessageKind.Untargeted && scenario.UsePostProcessor && action)
                     {
                         continue;
                     }
@@ -56,15 +50,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         {
                             foreach (int mutation in new[] { 0, 1, 2, 3 })
                             {
-                                yield return new TestCaseData(
-                                    shape.Scenario,
-                                    shape.Action,
-                                    shape.Family,
-                                    diagnostics,
-                                    count,
-                                    outerClear,
-                                    mutation
-                                ).SetName(
+                                yield return new TestCaseData(shape.Scenario, shape.Action, shape.Family, diagnostics, count, outerClear, mutation).SetName(
                                     "Teardown_family"
                                         + shape.Family
                                         + "_"
@@ -88,30 +74,10 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [TestCaseSource(nameof(Cases))]
-        public void NestedCleanupPreservesOuterOwnership(
-            MessageScenario scenario,
-            bool action,
-            int family,
-            bool diagnostics,
-            int count,
-            bool outerClear,
-            int mutation
-        )
+        public void NestedCleanupPreservesOuterOwnership(MessageScenario scenario, bool action, int family, bool diagnostics, int count, bool outerClear, int mutation)
         {
             string label =
-                scenario
-                + ",action="
-                + action
-                + ",family="
-                + family
-                + ",diagnostics="
-                + diagnostics
-                + ",count="
-                + count
-                + ",outerClear="
-                + outerClear
-                + ",mutation="
-                + mutation;
+                scenario + ",action=" + action + ",family=" + family + ",diagnostics=" + diagnostics + ",count=" + count + ",outerClear=" + outerClear + ",mutation=" + mutation;
             using CaseState state = new CaseState(diagnostics);
             for (int index = 0; index < count; ++index)
             {
@@ -157,64 +123,30 @@ namespace DxMessaging.Tests.Runtime.Core
             }
             state.Emit(scenario);
             TestContext.WriteLine(
-                label
-                    + "; exception="
-                    + observed
-                    + "; enabled="
-                    + state.Token.Enabled
-                    + "; metadata="
-                    + state.Token._metadata.Count
-                    + "; after="
-                    + string.Join(",", state.Calls)
+                label + "; exception=" + observed + "; enabled=" + state.Token.Enabled + "; metadata=" + state.Token._metadata.Count + "; after=" + string.Join(",", state.Calls)
             );
-            Assert.That(
-                observed,
-                Is.Null,
-                label + ": cleanup must not throw an implementation collection exception"
-            );
+            Assert.That(observed, Is.Null, label + ": cleanup must not throw an implementation collection exception");
             Assert.That(mutations, Is.EqualTo(1), label + ": one-shot mutation");
             Assert.That(state.CleanupCount, Is.Zero, label + ": cleanup count returns to zero");
-            Assert.That(
-                state.Bus.Attempts.Count,
-                Is.EqualTo(count),
-                label + ": exactly one attempt per accepted handle"
-            );
-            Assert.That(
-                state.Bus.Attempts,
-                Is.Unique,
-                label + ": in-flight cleanup must not be reentered"
-            );
+            Assert.That(state.Bus.Attempts.Count, Is.EqualTo(count), label + ": exactly one attempt per accepted handle");
+            Assert.That(state.Bus.Attempts, Is.Unique, label + ": in-flight cleanup must not be reentered");
             Assert.That(state.Token.Enabled, Is.False, label + ": accepted teardown completes");
             Assert.That(state.Calls, Is.Empty, label + ": no cleaned registration dispatches");
             bool cleared = outerClear || 2 <= mutation;
-            Assert.That(
-                state.Token._metadata.Count,
-                Is.EqualTo(cleared ? 0 : count),
-                label + ": staged survivors"
-            );
+            Assert.That(state.Token._metadata.Count, Is.EqualTo(cleared ? 0 : count), label + ": staged survivors");
             state.Token.Enable();
             state.Emit(scenario);
-            Assert.That(
-                state.Calls.Count,
-                Is.EqualTo(cleared ? 0 : count),
-                label + ": next enable replays each surviving staged entry once"
-            );
+            Assert.That(state.Calls.Count, Is.EqualTo(cleared ? 0 : count), label + ": next enable replays each surviving staged entry once");
             state.Token.UnregisterAll();
         }
 
-        private static IEnumerable<TestCaseData> FailureCases() =>
-            CasesWithOptions(new object[] { false, true }, new object[] { 1, 2, 3 });
+        private static IEnumerable<TestCaseData> FailureCases() => CasesWithOptions(new object[] { false, true }, new object[] { 1, 2, 3 });
 
-        private static IEnumerable<TestCaseData> AddedCases() =>
-            CasesWithOptions(new object[] { false, true });
+        private static IEnumerable<TestCaseData> AddedCases() => CasesWithOptions(new object[] { false, true });
 
-        private static IEnumerable<TestCaseData> OverlapCases() =>
-            CasesWithOptions(new object[] { false, true }, new object[] { false, true });
+        private static IEnumerable<TestCaseData> OverlapCases() => CasesWithOptions(new object[] { false, true }, new object[] { false, true });
 
-        private static IEnumerable<TestCaseData> CasesWithOptions(
-            object[] firstOptions,
-            object[] secondOptions = null
-        )
+        private static IEnumerable<TestCaseData> CasesWithOptions(object[] firstOptions, object[] secondOptions = null)
         {
             foreach ((MessageScenario Scenario, bool Action, int Family) shape in Shapes())
             {
@@ -224,26 +156,13 @@ namespace DxMessaging.Tests.Runtime.Core
                     {
                         if (secondOptions == null)
                         {
-                            yield return new TestCaseData(
-                                shape.Scenario,
-                                shape.Action,
-                                shape.Family,
-                                diagnostics,
-                                first
-                            );
+                            yield return new TestCaseData(shape.Scenario, shape.Action, shape.Family, diagnostics, first);
                         }
                         else
                         {
                             foreach (object second in secondOptions)
                             {
-                                yield return new TestCaseData(
-                                    shape.Scenario,
-                                    shape.Action,
-                                    shape.Family,
-                                    diagnostics,
-                                    first,
-                                    second
-                                );
+                                yield return new TestCaseData(shape.Scenario, shape.Action, shape.Family, diagnostics, first, second);
                             }
                         }
                     }
@@ -252,27 +171,9 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [TestCaseSource(nameof(FailureCases))]
-        public void NestedCleanupFailureKeepsOriginalIdentityRetryable(
-            MessageScenario scenario,
-            bool action,
-            int family,
-            bool diagnostics,
-            bool outerClear,
-            int mutation
-        )
+        public void NestedCleanupFailureKeepsOriginalIdentityRetryable(MessageScenario scenario, bool action, int family, bool diagnostics, bool outerClear, int mutation)
         {
-            string label =
-                scenario
-                + ",action="
-                + action
-                + ",family="
-                + family
-                + ",diagnostics="
-                + diagnostics
-                + ",outerClear="
-                + outerClear
-                + ",mutation="
-                + mutation;
+            string label = scenario + ",action=" + action + ",family=" + family + ",diagnostics=" + diagnostics + ",outerClear=" + outerClear + ",mutation=" + mutation;
             using CaseState state = new CaseState(diagnostics);
             _ = Register(state.Token, scenario, action, family, () => state.Calls.Add("first"));
             _ = Register(state.Token, scenario, action, family, () => state.Calls.Add("second"));
@@ -304,49 +205,19 @@ namespace DxMessaging.Tests.Runtime.Core
                     state.Token.Disable();
                 }
             });
-            TestContext.WriteLine(
-                label + "; observed=" + observed + "; cleanup=" + state.CleanupCount
-            );
-            Assert.That(
-                observed,
-                Is.SameAs(state.Bus.Failure),
-                label + ": preserve the original rejected teardown"
-            );
-            Assert.That(
-                state.Token.Enabled,
-                Is.True,
-                label + ": pending cleanup keeps ownership active"
-            );
-            Assert.That(
-                state.CleanupCount,
-                Is.EqualTo(1),
-                label + ": exactly the rejected in-flight cleanup remains"
-            );
-            Assert.That(
-                state.Bus.Attempts.Count,
-                Is.EqualTo(2),
-                label + ": each original handle attempted once"
-            );
-            Assert.That(
-                state.Bus.Attempts,
-                Is.Unique,
-                label + ": nested cleanup cannot invoke the in-flight action again"
-            );
+            TestContext.WriteLine(label + "; observed=" + observed + "; cleanup=" + state.CleanupCount);
+            Assert.That(observed, Is.SameAs(state.Bus.Failure), label + ": preserve the original rejected teardown");
+            Assert.That(state.Token.Enabled, Is.True, label + ": pending cleanup keeps ownership active");
+            Assert.That(state.CleanupCount, Is.EqualTo(1), label + ": exactly the rejected in-flight cleanup remains");
+            Assert.That(state.Bus.Attempts.Count, Is.EqualTo(2), label + ": each original handle attempted once");
+            Assert.That(state.Bus.Attempts, Is.Unique, label + ": nested cleanup cannot invoke the in-flight action again");
             state.Emit(scenario);
-            Assert.That(
-                state.Calls,
-                Is.EqualTo(new[] { "first" }),
-                label + ": only the rejected registration stays live"
-            );
+            Assert.That(state.Calls, Is.EqualTo(new[] { "first" }), label + ": only the rejected registration stays live");
             int expectedStaged =
                 2 <= mutation ? 0
                 : outerClear ? 1
                 : 2;
-            Assert.That(
-                state.Token._metadata.Count,
-                Is.EqualTo(expectedStaged),
-                label + ": preserve only requested staging"
-            );
+            Assert.That(state.Token._metadata.Count, Is.EqualTo(expectedStaged), label + ": preserve only requested staging");
             state.Bus.Attempts.Clear();
             if (outerClear)
             {
@@ -356,57 +227,28 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 state.Token.Disable();
             }
-            Assert.That(
-                state.Bus.Attempts.Count,
-                Is.EqualTo(1),
-                label + ": retry through owning cleanup API"
-            );
-            Assert.That(
-                state.CleanupCount,
-                Is.Zero,
-                label + ": retry consumes exactly one retained cleanup"
-            );
+            Assert.That(state.Bus.Attempts.Count, Is.EqualTo(1), label + ": retry through owning cleanup API");
+            Assert.That(state.CleanupCount, Is.Zero, label + ": retry consumes exactly one retained cleanup");
             state.Calls.Clear();
             state.Emit(scenario);
             Assert.That(state.Calls, Is.Empty, label + ": retry removes the live registration");
             state.Token.Enable();
             state.Emit(scenario);
-            Assert.That(
-                state.Calls.Count,
-                Is.EqualTo(outerClear ? 0 : expectedStaged),
-                label + ": staged survivors replay exactly once"
-            );
+            Assert.That(state.Calls.Count, Is.EqualTo(outerClear ? 0 : expectedStaged), label + ": staged survivors replay exactly once");
             state.Token.UnregisterAll();
         }
 
         [TestCaseSource(nameof(AddedCases))]
-        public void AcceptedReentrantRegistrationRetainsCleanupForNextPass(
-            MessageScenario scenario,
-            bool action,
-            int family,
-            bool diagnostics,
-            bool outerClear
-        )
+        public void AcceptedReentrantRegistrationRetainsCleanupForNextPass(MessageScenario scenario, bool action, int family, bool diagnostics, bool outerClear)
         {
-            string label =
-                scenario
-                + ",action="
-                + action
-                + ",family="
-                + family
-                + ",diagnostics="
-                + diagnostics
-                + ",outerClear="
-                + outerClear;
+            string label = scenario + ",action=" + action + ",family=" + family + ",diagnostics=" + diagnostics + ",outerClear=" + outerClear;
             using CaseState state = new CaseState(diagnostics);
             _ = Register(state.Token, scenario, action, family, () => state.Calls.Add("old"));
             state.Token.Enable();
             MessageRegistrationHandle added = default;
             state.Bus.OnFirstDeregistration = () =>
             {
-                added = Register(state.Token, scenario, action, family, () =>
-                    state.Calls.Add("added")
-                );
+                added = Register(state.Token, scenario, action, family, () => state.Calls.Add("added"));
             };
             if (outerClear)
             {
@@ -416,29 +258,13 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 state.Token.Disable();
             }
-            Assert.That(
-                state.Token.Enabled,
-                Is.True,
-                label + ": accepted reentrant registration keeps cleanup active"
-            );
+            Assert.That(state.Token.Enabled, Is.True, label + ": accepted reentrant registration keeps cleanup active");
             Assert.That(state.CleanupCount, Is.EqualTo(1), label + ": one deferred cleanup");
-            Assert.That(
-                state.Token._metadata.Count,
-                Is.EqualTo(outerClear ? 1 : 2),
-                label + ": retain staged ownership of the accepted addition"
-            );
+            Assert.That(state.Token._metadata.Count, Is.EqualTo(outerClear ? 1 : 2), label + ": retain staged ownership of the accepted addition");
             state.Emit(scenario);
-            Assert.That(
-                state.Calls,
-                Is.EqualTo(new[] { "added" }),
-                label + ": the new registration is live"
-            );
+            Assert.That(state.Calls, Is.EqualTo(new[] { "added" }), label + ": the new registration is live");
             state.Token.RemoveRegistration(added);
-            Assert.That(
-                state.CleanupCount,
-                Is.Zero,
-                label + ": returned handle owns accepted cleanup"
-            );
+            Assert.That(state.CleanupCount, Is.Zero, label + ": returned handle owns accepted cleanup");
             state.Calls.Clear();
             state.Emit(scenario);
             Assert.That(state.Calls, Is.Empty, label + ": removed addition stays absent");
@@ -455,22 +281,9 @@ namespace DxMessaging.Tests.Runtime.Core
             bool reject
         )
         {
-            string label =
-                scenario
-                + ",action="
-                + action
-                + ",family="
-                + family
-                + ",diagnostics="
-                + diagnostics
-                + ",remove="
-                + removeHandle
-                + ",reject="
-                + reject;
+            string label = scenario + ",action=" + action + ",family=" + family + ",diagnostics=" + diagnostics + ",remove=" + removeHandle + ",reject=" + reject;
             using CaseState state = new CaseState(diagnostics);
-            MessageRegistrationHandle handle = Register(state.Token, scenario, action, family, () =>
-                state.Calls.Add("live")
-            );
+            MessageRegistrationHandle handle = Register(state.Token, scenario, action, family, () => state.Calls.Add("live"));
             state.Token.Enable();
             state.Bus.RejectNext = reject;
             state.Bus.OnFirstDeregistration = () =>
@@ -489,48 +302,20 @@ namespace DxMessaging.Tests.Runtime.Core
                     state.Token.Disable();
                 }
             });
-            Assert.That(
-                observed,
-                reject ? Is.SameAs(state.Bus.Failure) : Is.Null,
-                label + ": original failure or successful cleanup"
-            );
-            Assert.That(
-                state.Bus.Attempts.Count,
-                Is.EqualTo(1),
-                label + ": nested cleanup excludes the current action"
-            );
+            Assert.That(observed, reject ? Is.SameAs(state.Bus.Failure) : Is.Null, label + ": original failure or successful cleanup");
+            Assert.That(state.Bus.Attempts.Count, Is.EqualTo(1), label + ": nested cleanup excludes the current action");
             MessageBusRegistration original = state.Bus.Attempts[0];
-            Assert.That(
-                state.CleanupCount,
-                Is.EqualTo(1),
-                label + ": one owned handle, including an overlapping holder"
-            );
-            Assert.That(
-                state.Token._metadata.Count,
-                Is.EqualTo(removeHandle && !reject ? 0 : 1),
-                label + ": successful removal drops staging only"
-            );
+            Assert.That(state.CleanupCount, Is.EqualTo(1), label + ": one owned handle, including an overlapping holder");
+            Assert.That(state.Token._metadata.Count, Is.EqualTo(removeHandle && !reject ? 0 : 1), label + ": successful removal drops staging only");
             state.Emit(scenario);
-            Assert.That(
-                state.Calls,
-                Is.EqualTo(new[] { "live" }),
-                label + ": duplicate registration refcounts dispatch once"
-            );
+            Assert.That(state.Calls, Is.EqualTo(new[] { "live" }), label + ": duplicate registration refcounts dispatch once");
             state.Bus.Attempts.Clear();
             state.Token.UnregisterAll();
-            Assert.That(
-                state.Bus.Attempts.Count,
-                Is.EqualTo(reject ? 2 : 1),
-                label + ": every remaining accepted handle is consumed"
-            );
+            Assert.That(state.Bus.Attempts.Count, Is.EqualTo(reject ? 2 : 1), label + ": every remaining accepted handle is consumed");
             Assert.That(state.Bus.Attempts, Is.Unique, label + ": cleanup handles remain distinct");
             if (reject)
             {
-                Assert.That(
-                    state.Bus.Attempts[0],
-                    Is.EqualTo(original),
-                    label + ": failed original precedes reenabled cleanup"
-                );
+                Assert.That(state.Bus.Attempts[0], Is.EqualTo(original), label + ": failed original precedes reenabled cleanup");
             }
             Assert.That(state.CleanupCount, Is.Zero, label + ": all overlap ownership consumed");
             state.Calls.Clear();
@@ -539,44 +324,18 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [TestCaseSource(nameof(OverlapCases))]
-        public void SlotReusePreservesFailedOrphanAndReplacementCleanup(
-            MessageScenario scenario,
-            bool action,
-            int family,
-            bool diagnostics,
-            bool removeHandle,
-            bool reject
-        )
+        public void SlotReusePreservesFailedOrphanAndReplacementCleanup(MessageScenario scenario, bool action, int family, bool diagnostics, bool removeHandle, bool reject)
         {
-            string label =
-                scenario
-                + ",action="
-                + action
-                + ",family="
-                + family
-                + ",diagnostics="
-                + diagnostics
-                + ",remove="
-                + removeHandle
-                + ",reject="
-                + reject;
+            string label = scenario + ",action=" + action + ",family=" + family + ",diagnostics=" + diagnostics + ",remove=" + removeHandle + ",reject=" + reject;
             using CaseState state = new CaseState(diagnostics);
-            MessageRegistrationHandle original = Register(
-                state.Token,
-                scenario,
-                action,
-                family,
-                () => state.Calls.Add("original")
-            );
+            MessageRegistrationHandle original = Register(state.Token, scenario, action, family, () => state.Calls.Add("original"));
             MessageRegistrationHandle replacement = default;
             state.Token.Enable();
             state.Bus.RejectNext = reject;
             state.Bus.OnFirstDeregistration = () =>
             {
                 state.Token.UnregisterAll();
-                replacement = Register(state.Token, scenario, action, family, () =>
-                    state.Calls.Add("replacement")
-                );
+                replacement = Register(state.Token, scenario, action, family, () => state.Calls.Add("replacement"));
                 state.Token.Enable();
             };
             Exception observed = Capture(() =>
@@ -590,53 +349,21 @@ namespace DxMessaging.Tests.Runtime.Core
                     state.Token.Disable();
                 }
             });
-            Assert.That(
-                observed,
-                reject ? Is.SameAs(state.Bus.Failure) : Is.Null,
-                label + ": preserve cleanup outcome"
-            );
+            Assert.That(observed, reject ? Is.SameAs(state.Bus.Failure) : Is.Null, label + ": preserve cleanup outcome");
             Assert.That(replacement.Slot, Is.EqualTo(original.Slot), label + ": actual slot reuse");
-            Assert.That(
-                replacement,
-                Is.Not.EqualTo(original),
-                label + ": distinct opaque identity"
-            );
-            Assert.That(
-                state.Token._metadata.Count,
-                Is.EqualTo(1),
-                label + ": replacement staging survives"
-            );
-            Assert.That(
-                state.CleanupCount,
-                Is.EqualTo(reject ? 2 : 1),
-                label + ": failed original becomes an independent orphan"
-            );
+            Assert.That(replacement, Is.Not.EqualTo(original), label + ": distinct opaque identity");
+            Assert.That(state.Token._metadata.Count, Is.EqualTo(1), label + ": replacement staging survives");
+            Assert.That(state.CleanupCount, Is.EqualTo(reject ? 2 : 1), label + ": failed original becomes an independent orphan");
             state.Emit(scenario);
-            Assert.That(
-                state.Calls,
-                Is.EqualTo(reject ? new[] { "original", "replacement" } : new[] { "replacement" }),
-                label + ": exact accepted callbacks"
-            );
+            Assert.That(state.Calls, Is.EqualTo(reject ? new[] { "original", "replacement" } : new[] { "replacement" }), label + ": exact accepted callbacks");
             state.Token.RemoveRegistration(original);
             state.Token.RemoveRegistration(original);
-            Assert.That(
-                state.CleanupCount,
-                Is.EqualTo(1),
-                label + ": retry and stale copy preserve replacement"
-            );
+            Assert.That(state.CleanupCount, Is.EqualTo(1), label + ": retry and stale copy preserve replacement");
             state.Calls.Clear();
             state.Emit(scenario);
-            Assert.That(
-                state.Calls,
-                Is.EqualTo(new[] { "replacement" }),
-                label + ": original handle cannot remove replacement"
-            );
+            Assert.That(state.Calls, Is.EqualTo(new[] { "replacement" }), label + ": original handle cannot remove replacement");
             state.Token.RemoveRegistration(replacement);
-            Assert.That(
-                state.CleanupCount,
-                Is.Zero,
-                label + ": replacement cleanup remains reachable"
-            );
+            Assert.That(state.CleanupCount, Is.Zero, label + ": replacement cleanup remains reachable");
             state.Calls.Clear();
             state.Emit(scenario);
             Assert.That(state.Calls, Is.Empty, label + ": both original and replacement cleaned");
@@ -648,81 +375,34 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 foreach (bool diagnostics in new[] { false, true })
                 {
-                    yield return new TestCaseData(
-                        shape.Scenario,
-                        shape.Action,
-                        shape.Family,
-                        diagnostics
-                    );
+                    yield return new TestCaseData(shape.Scenario, shape.Action, shape.Family, diagnostics);
                 }
             }
         }
 
         [TestCaseSource(nameof(BasicCases))]
-        public void FailedDirectAndOrphanRemovalKeepTokenEnabledForRetry(
-            MessageScenario scenario,
-            bool action,
-            int family,
-            bool diagnostics
-        )
+        public void FailedDirectAndOrphanRemovalKeepTokenEnabledForRetry(MessageScenario scenario, bool action, int family, bool diagnostics)
         {
-            string label =
-                scenario
-                + ",action="
-                + action
-                + ",family="
-                + family
-                + ",diagnostics="
-                + diagnostics;
+            string label = scenario + ",action=" + action + ",family=" + family + ",diagnostics=" + diagnostics;
             using CaseState state = new CaseState(diagnostics);
-            MessageRegistrationHandle handle = Register(state.Token, scenario, action, family, () =>
-                state.Calls.Add("retained")
-            );
+            MessageRegistrationHandle handle = Register(state.Token, scenario, action, family, () => state.Calls.Add("retained"));
             state.Token.Enable();
             for (int attempt = 0; attempt < 2; ++attempt)
             {
                 state.Bus.RejectNext = true;
                 state.Bus.OnFirstDeregistration = state.Token.UnregisterAll;
                 Exception observed = Capture(() => state.Token.RemoveRegistration(handle));
-                Assert.That(
-                    observed,
-                    Is.SameAs(state.Bus.Failure),
-                    label + ": direct/orphan rejection identity, attempt=" + attempt
-                );
-                Assert.That(
-                    state.Token.Enabled,
-                    Is.True,
-                    label + ": accepted failed cleanup keeps token enabled, attempt=" + attempt
-                );
-                Assert.That(
-                    state.CleanupCount,
-                    Is.EqualTo(1),
-                    label + ": one retryable orphan, attempt=" + attempt
-                );
-                Assert.That(
-                    state.Token._metadata.Count,
-                    Is.Zero,
-                    label + ": nested clear removed staging, attempt=" + attempt
-                );
+                Assert.That(observed, Is.SameAs(state.Bus.Failure), label + ": direct/orphan rejection identity, attempt=" + attempt);
+                Assert.That(state.Token.Enabled, Is.True, label + ": accepted failed cleanup keeps token enabled, attempt=" + attempt);
+                Assert.That(state.CleanupCount, Is.EqualTo(1), label + ": one retryable orphan, attempt=" + attempt);
+                Assert.That(state.Token._metadata.Count, Is.Zero, label + ": nested clear removed staging, attempt=" + attempt);
             }
             state.Emit(scenario);
-            Assert.That(
-                state.Calls,
-                Is.EqualTo(new[] { "retained" }),
-                label + ": failed original remains live"
-            );
+            Assert.That(state.Calls, Is.EqualTo(new[] { "retained" }), label + ": failed original remains live");
             state.Token.RemoveRegistration(handle);
             state.Token.Disable();
-            Assert.That(
-                state.CleanupCount,
-                Is.Zero,
-                label + ": successful owner retry consumes orphan"
-            );
-            Assert.That(
-                state.Token.Enabled,
-                Is.False,
-                label + ": completed cleanup disables token"
-            );
+            Assert.That(state.CleanupCount, Is.Zero, label + ": successful owner retry consumes orphan");
+            Assert.That(state.Token.Enabled, Is.False, label + ": completed cleanup disables token");
             state.Calls.Clear();
             state.Emit(scenario);
             Assert.That(state.Calls, Is.Empty, label + ": final retry removes accepted callback");
@@ -741,13 +421,7 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private static MessageRegistrationHandle Register(
-            MessageRegistrationToken token,
-            MessageScenario scenario,
-            bool action,
-            int family,
-            Action record
-        )
+        private static MessageRegistrationHandle Register(MessageRegistrationToken token, MessageScenario scenario, bool action, int family, Action record)
         {
             return family switch
             {
@@ -760,11 +434,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
         private sealed class CaseState : IDisposable
         {
-            private static readonly FieldInfo CleanupCountField =
-                typeof(MessageRegistrationToken).GetField(
-                    "_deregistrationCount",
-                    BindingFlags.Instance | BindingFlags.NonPublic
-                );
+            private static readonly FieldInfo CleanupCountField = typeof(MessageRegistrationToken).GetField("_deregistrationCount", BindingFlags.Instance | BindingFlags.NonPublic);
             internal int CleanupCount => (int)CleanupCountField.GetValue(Token);
             internal readonly BusType Inner;
             internal readonly ReplayBus Bus;
@@ -811,21 +481,9 @@ namespace DxMessaging.Tests.Runtime.Core
                 try
                 {
                     Token.Dispose();
-                    Assert.That(
-                        Token._metadata.Count,
-                        Is.Zero,
-                        "Successful disposal clears token metadata."
-                    );
-                    Assert.That(
-                        Token._callCounts.Count,
-                        Is.Zero,
-                        "Successful disposal clears token call counts."
-                    );
-                    Assert.That(
-                        Token._emissionBuffer.Count,
-                        Is.Zero,
-                        "Successful disposal clears token emission history."
-                    );
+                    Assert.That(Token._metadata.Count, Is.Zero, "Successful disposal clears token metadata.");
+                    Assert.That(Token._callCounts.Count, Is.Zero, "Successful disposal clears token call counts.");
+                    Assert.That(Token._emissionBuffer.Count, Is.Zero, "Successful disposal clears token emission history.");
                 }
                 finally
                 {
@@ -836,20 +494,12 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private static MessageRegistrationHandle RegisterHandler(
-            MessageRegistrationToken token,
-            MessageScenario scenario,
-            bool action,
-            Action record
-        )
+        private static MessageRegistrationHandle RegisterHandler(MessageRegistrationToken token, MessageScenario scenario, bool action, Action record)
         {
             Action<ProbeMessage> scalar = _ => record();
             Action<InstanceId, ProbeMessage> context = (_, __) => record();
             MessageHandler.FastHandler<ProbeMessage> fast = (in ProbeMessage _) => record();
-            MessageHandler.FastHandlerWithContext<ProbeMessage> fastContext = (
-                in InstanceId _,
-                in ProbeMessage __
-            ) => record();
+            MessageHandler.FastHandlerWithContext<ProbeMessage> fastContext = (in InstanceId _, in ProbeMessage __) => record();
             return (scenario.Kind, scenario.UsePostProcessor, action) switch
             {
                 (MessageKind.Untargeted, false, true) => token.RegisterUntargeted(scalar),
@@ -857,49 +507,25 @@ namespace DxMessaging.Tests.Runtime.Core
                 (MessageKind.Untargeted, true, _) => token.RegisterUntargetedPostProcessor(fast),
                 (MessageKind.Targeted, false, true) => token.RegisterTargeted(Context, scalar),
                 (MessageKind.Targeted, false, false) => token.RegisterTargeted(Context, fast),
-                (MessageKind.Targeted, true, true) => token.RegisterTargetedPostProcessor(
-                    Context,
-                    scalar
-                ),
-                (MessageKind.Targeted, true, false) => token.RegisterTargetedPostProcessor(
-                    Context,
-                    fast
-                ),
+                (MessageKind.Targeted, true, true) => token.RegisterTargetedPostProcessor(Context, scalar),
+                (MessageKind.Targeted, true, false) => token.RegisterTargetedPostProcessor(Context, fast),
                 (MessageKind.Broadcast, false, true) => token.RegisterBroadcast(Context, scalar),
                 (MessageKind.Broadcast, false, false) => token.RegisterBroadcast(Context, fast),
-                (MessageKind.Broadcast, true, true) => token.RegisterBroadcastPostProcessor(
-                    Context,
-                    scalar
-                ),
-                (MessageKind.Broadcast, true, false) => token.RegisterBroadcastPostProcessor(
-                    Context,
-                    fast
-                ),
-                (MessageKind.TargetedWithoutTargeting, false, true) =>
-                    token.RegisterTargetedWithoutTargeting(context),
-                (MessageKind.TargetedWithoutTargeting, false, false) =>
-                    token.RegisterTargetedWithoutTargeting(fastContext),
-                (MessageKind.TargetedWithoutTargeting, true, true) =>
-                    token.RegisterTargetedWithoutTargetingPostProcessor(context),
-                (MessageKind.TargetedWithoutTargeting, true, false) =>
-                    token.RegisterTargetedWithoutTargetingPostProcessor(fastContext),
-                (MessageKind.BroadcastWithoutSource, false, true) =>
-                    token.RegisterBroadcastWithoutSource(context),
-                (MessageKind.BroadcastWithoutSource, false, false) =>
-                    token.RegisterBroadcastWithoutSource(fastContext),
-                (MessageKind.BroadcastWithoutSource, true, true) =>
-                    token.RegisterBroadcastWithoutSourcePostProcessor(context),
-                (MessageKind.BroadcastWithoutSource, true, false) =>
-                    token.RegisterBroadcastWithoutSourcePostProcessor(fastContext),
+                (MessageKind.Broadcast, true, true) => token.RegisterBroadcastPostProcessor(Context, scalar),
+                (MessageKind.Broadcast, true, false) => token.RegisterBroadcastPostProcessor(Context, fast),
+                (MessageKind.TargetedWithoutTargeting, false, true) => token.RegisterTargetedWithoutTargeting(context),
+                (MessageKind.TargetedWithoutTargeting, false, false) => token.RegisterTargetedWithoutTargeting(fastContext),
+                (MessageKind.TargetedWithoutTargeting, true, true) => token.RegisterTargetedWithoutTargetingPostProcessor(context),
+                (MessageKind.TargetedWithoutTargeting, true, false) => token.RegisterTargetedWithoutTargetingPostProcessor(fastContext),
+                (MessageKind.BroadcastWithoutSource, false, true) => token.RegisterBroadcastWithoutSource(context),
+                (MessageKind.BroadcastWithoutSource, false, false) => token.RegisterBroadcastWithoutSource(fastContext),
+                (MessageKind.BroadcastWithoutSource, true, true) => token.RegisterBroadcastWithoutSourcePostProcessor(context),
+                (MessageKind.BroadcastWithoutSource, true, false) => token.RegisterBroadcastWithoutSourcePostProcessor(fastContext),
                 _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
             };
         }
 
-        private static MessageRegistrationHandle RegisterInterceptor(
-            MessageRegistrationToken token,
-            MessageScenario scenario,
-            Action record
-        )
+        private static MessageRegistrationHandle RegisterInterceptor(MessageRegistrationToken token, MessageScenario scenario, Action record)
         {
             bool Scalar(ref ProbeMessage message)
             {
@@ -915,18 +541,12 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 MessageKind.Untargeted => token.RegisterUntargetedInterceptor<ProbeMessage>(Scalar),
                 MessageKind.Targeted => token.RegisterTargetedInterceptor<ProbeMessage>(Contextual),
-                MessageKind.Broadcast => token.RegisterBroadcastInterceptor<ProbeMessage>(
-                    Contextual
-                ),
+                MessageKind.Broadcast => token.RegisterBroadcastInterceptor<ProbeMessage>(Contextual),
                 _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
             };
         }
 
-        private static MessageRegistrationHandle RegisterGlobal(
-            MessageRegistrationToken token,
-            bool action,
-            Action record
-        )
+        private static MessageRegistrationHandle RegisterGlobal(MessageRegistrationToken token, bool action, Action record)
         {
             if (action)
             {
@@ -951,15 +571,7 @@ namespace DxMessaging.Tests.Runtime.Core
             foreach (bool add in new[] { false, true })
             foreach (bool after in new[] { false, true })
             {
-                yield return new TestCaseData(
-                    shape.Scenario,
-                    shape.Action,
-                    shape.Family,
-                    diagnostics,
-                    sameBus,
-                    add,
-                    after
-                ).SetName(
+                yield return new TestCaseData(shape.Scenario, shape.Action, shape.Family, diagnostics, sameBus, add, after).SetName(
                     $"RetargetTeardownAddition_{shape.Scenario}_action{shape.Action}_family{shape.Family}_diagnostics{diagnostics}_same{sameBus}_add{add}_after{after}"
                 );
             }
@@ -982,20 +594,11 @@ namespace DxMessaging.Tests.Runtime.Core
             bool after
         )
         {
-            string label =
-                $"[{scenario}] action={action},family={family},diagnostics={diagnostics},sameBus={sameBus},add={add},after={after}";
+            string label = $"[{scenario}] action={action},family={family},diagnostics={diagnostics},sameBus={sameBus},add={add},after={after}";
             using CaseState state = new CaseState(diagnostics);
-            BusType destination = sameBus
-                ? state.Inner
-                : new BusType { DiagnosticsMode = diagnostics };
+            BusType destination = sameBus ? state.Inner : new BusType { DiagnosticsMode = diagnostics };
             using LeakWatcher destinationLeaks = new LeakWatcher(destination, label: label);
-            MessageRegistrationHandle original = Register(
-                state.Token,
-                scenario,
-                action,
-                family,
-                () => state.Calls.Add("original")
-            );
+            MessageRegistrationHandle original = Register(state.Token, scenario, action, family, () => state.Calls.Add("original"));
             state.Token.Enable();
             MessageRegistrationHandle added = default;
             int mutations = 0;
@@ -1005,17 +608,12 @@ namespace DxMessaging.Tests.Runtime.Core
                 ++mutations;
                 if (add)
                 {
-                    added = Register(state.Token, scenario, action, family, () =>
-                        state.Calls.Add("added")
-                    );
+                    added = Register(state.Token, scenario, action, family, () => state.Calls.Add("added"));
                 }
             };
             try
             {
-                state.Token.RetargetMessageBus(
-                    sameBus ? state.Bus : destination,
-                    MessageBusRebindMode.RebindActive
-                );
+                state.Token.RetargetMessageBus(sameBus ? state.Bus : destination, MessageBusRebindMode.RebindActive);
                 state.Emit(scenario);
                 string[] oldDelivery = state.Calls.ToArray();
                 state.Calls.Clear();
@@ -1026,12 +624,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 string[] newDelivery = state.Calls.ToArray();
                 int originalCount = state.Token._callCounts.GetValueOrDefault(original);
                 int addedCount = state.Token._callCounts.GetValueOrDefault(added);
-                string report =
-                    label
-                    + "; old="
-                    + string.Join(",", oldDelivery)
-                    + "; new="
-                    + string.Join(",", newDelivery);
+                string report = label + "; old=" + string.Join(",", oldDelivery) + "; new=" + string.Join(",", newDelivery);
                 TestContext.WriteLine(report);
                 AssertRetargetState(() =>
                 {
@@ -1040,28 +633,12 @@ namespace DxMessaging.Tests.Runtime.Core
                     Assert.That(state.Token._metadata.Count, Is.EqualTo(add ? 2 : 1), report);
                     Assert.That(
                         oldDelivery,
-                        Is.EquivalentTo(
-                            sameBus
-                                ? (add ? new[] { "original", "added" } : new[] { "original" })
-                                : (add ? new[] { "added" } : Array.Empty<string>())
-                        ),
+                        Is.EquivalentTo(sameBus ? (add ? new[] { "original", "added" } : new[] { "original" }) : (add ? new[] { "added" } : Array.Empty<string>())),
                         report
                     );
-                    Assert.That(
-                        newDelivery,
-                        Is.EqualTo(sameBus ? Array.Empty<string>() : new[] { "original" }),
-                        report
-                    );
-                    Assert.That(
-                        originalCount,
-                        Is.EqualTo(diagnostics && family != 1 ? 1 : 0),
-                        report
-                    );
-                    Assert.That(
-                        addedCount,
-                        Is.EqualTo(diagnostics && family != 1 && add ? 1 : 0),
-                        report
-                    );
+                    Assert.That(newDelivery, Is.EqualTo(sameBus ? Array.Empty<string>() : new[] { "original" }), report);
+                    Assert.That(originalCount, Is.EqualTo(diagnostics && family != 1 ? 1 : 0), report);
+                    Assert.That(addedCount, Is.EqualTo(diagnostics && family != 1 && add ? 1 : 0), report);
                 });
                 state.Token.RemoveRegistration(added);
                 state.Token.RemoveRegistration(added);
@@ -1071,17 +648,9 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     state.Emit(scenario, destination);
                 }
-                Assert.That(
-                    state.Calls,
-                    Is.EqualTo(new[] { "original" }),
-                    report + ": owner removal consumes only the addition"
-                );
+                Assert.That(state.Calls, Is.EqualTo(new[] { "original" }), report + ": owner removal consumes only the addition");
                 state.Token.Disable();
-                Assert.That(
-                    state.Token.Enabled,
-                    Is.False,
-                    report + ": all accepted cleanup completes"
-                );
+                Assert.That(state.Token.Enabled, Is.False, report + ": all accepted cleanup completes");
                 state.Calls.Clear();
                 state.Emit(scenario);
                 if (!sameBus)
@@ -1098,16 +667,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     state.Emit(scenario, destination);
                 }
-                Assert.That(
-                    reenabledOld,
-                    Is.EqualTo(sameBus ? new[] { "original" } : Array.Empty<string>()),
-                    report + ": later activation selects the destination"
-                );
-                Assert.That(
-                    state.Calls,
-                    Is.EqualTo(sameBus ? Array.Empty<string>() : new[] { "original" }),
-                    report + ": one recovered destination subscription"
-                );
+                Assert.That(reenabledOld, Is.EqualTo(sameBus ? new[] { "original" } : Array.Empty<string>()), report + ": later activation selects the destination");
+                Assert.That(state.Calls, Is.EqualTo(sameBus ? Array.Empty<string>() : new[] { "original" }), report + ": one recovered destination subscription");
             }
             finally
             {
@@ -1127,15 +688,7 @@ namespace DxMessaging.Tests.Runtime.Core
             foreach (bool after in new[] { false, true })
             foreach (int cleanup in new[] { 0, 1, 2, 3 })
             {
-                yield return new TestCaseData(
-                    shape.Scenario,
-                    shape.Action,
-                    shape.Family,
-                    diagnostics,
-                    sameBus,
-                    after,
-                    cleanup
-                ).SetName(
+                yield return new TestCaseData(shape.Scenario, shape.Action, shape.Family, diagnostics, sameBus, after, cleanup).SetName(
                     $"RetargetCleanupCancellation_{shape.Scenario}_action{shape.Action}_family{shape.Family}_diagnostics{diagnostics}_same{sameBus}_after{after}_cleanup{cleanup}"
                 );
             }
@@ -1144,22 +697,11 @@ namespace DxMessaging.Tests.Runtime.Core
         /// <summary>Preserves lifecycle decisions made while an active retarget cleans its old bus.</summary>
         /// <remarks>2026-11-15: A nested Disable must not be undone by the outer retarget's stale activation decision.</remarks>
         [TestCaseSource(nameof(RetargetCancellationCases))]
-        public void ActiveRetargetPreservesCleanupCallbackCancellation(
-            MessageScenario scenario,
-            bool action,
-            int family,
-            bool diagnostics,
-            bool sameBus,
-            bool after,
-            int cleanup
-        )
+        public void ActiveRetargetPreservesCleanupCallbackCancellation(MessageScenario scenario, bool action, int family, bool diagnostics, bool sameBus, bool after, int cleanup)
         {
-            string label =
-                $"[{scenario}] action={action},family={family},diagnostics={diagnostics},sameBus={sameBus},after={after},cleanup={cleanup}";
+            string label = $"[{scenario}] action={action},family={family},diagnostics={diagnostics},sameBus={sameBus},after={after},cleanup={cleanup}";
             using CaseState state = new CaseState(diagnostics);
-            BusType destination = sameBus
-                ? state.Inner
-                : new BusType { DiagnosticsMode = diagnostics };
+            BusType destination = sameBus ? state.Inner : new BusType { DiagnosticsMode = diagnostics };
             using LeakWatcher destinationLeaks = new LeakWatcher(destination, label: label);
             _ = Register(state.Token, scenario, action, family, () => state.Calls.Add("original"));
             state.Token.Enable();
@@ -1183,10 +725,7 @@ namespace DxMessaging.Tests.Runtime.Core
             };
             try
             {
-                state.Token.RetargetMessageBus(
-                    sameBus ? state.Bus : destination,
-                    MessageBusRebindMode.RebindActive
-                );
+                state.Token.RetargetMessageBus(sameBus ? state.Bus : destination, MessageBusRebindMode.RebindActive);
                 state.Emit(scenario);
                 string[] oldDelivery = state.Calls.ToArray();
                 state.Calls.Clear();
@@ -1204,25 +743,15 @@ namespace DxMessaging.Tests.Runtime.Core
                     Assert.That(callbacks, Is.EqualTo(1), label);
                     Assert.That(state.Token.Enabled, Is.EqualTo(active), label);
                     Assert.That(state.CleanupCount, Is.EqualTo(active ? 1 : 0), label);
-                    Assert.That(
-                        state.Token._metadata.Count,
-                        Is.EqualTo(cleanup == 2 ? 0 : 1),
-                        label
-                    );
+                    Assert.That(state.Token._metadata.Count, Is.EqualTo(cleanup == 2 ? 0 : 1), label);
                     Assert.That(
                         oldDelivery,
-                        Is.EqualTo(
-                            cleanup == 3 || (cleanup == 0 && sameBus)
-                                ? new[] { "original" }
-                                : Array.Empty<string>()
-                        ),
+                        Is.EqualTo(cleanup == 3 || (cleanup == 0 && sameBus) ? new[] { "original" } : Array.Empty<string>()),
                         label + ": only intentional nested reactivation stays on its accepting bus"
                     );
                     Assert.That(
                         newDelivery,
-                        Is.EqualTo(
-                            cleanup == 0 && !sameBus ? new[] { "original" } : Array.Empty<string>()
-                        ),
+                        Is.EqualTo(cleanup == 0 && !sameBus ? new[] { "original" } : Array.Empty<string>()),
                         label + ": outer replay must not undo callback cancellation"
                     );
                 });
@@ -1238,16 +767,8 @@ namespace DxMessaging.Tests.Runtime.Core
                     state.Emit(scenario, destination);
                 }
                 string[] expected = cleanup == 2 ? Array.Empty<string>() : new[] { "original" };
-                Assert.That(
-                    laterOld,
-                    Is.EqualTo(sameBus ? expected : Array.Empty<string>()),
-                    label
-                );
-                Assert.That(
-                    state.Calls,
-                    Is.EqualTo(sameBus ? Array.Empty<string>() : expected),
-                    label
-                );
+                Assert.That(laterOld, Is.EqualTo(sameBus ? expected : Array.Empty<string>()), label);
+                Assert.That(state.Calls, Is.EqualTo(sameBus ? Array.Empty<string>() : expected), label);
             }
             finally
             {
@@ -1262,8 +783,7 @@ namespace DxMessaging.Tests.Runtime.Core
         /// <summary>Does not restore cleaned peers after a teardown callback cancels a failing retarget.</summary>
         [Test]
         public void RetargetCleanupFailurePreservesCallbackCancellation(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
             [Values(false, true)] bool diagnostics,
             [Values(0, 1, 2, 3)] int cleanup
         )
@@ -1294,12 +814,7 @@ namespace DxMessaging.Tests.Runtime.Core
             try
             {
                 Assert.That(
-                    Assert.Throws<InvalidOperationException>(() =>
-                        state.Token.RetargetMessageBus(
-                            destination,
-                            MessageBusRebindMode.RebindActive
-                        )
-                    ),
+                    Assert.Throws<InvalidOperationException>(() => state.Token.RetargetMessageBus(destination, MessageBusRebindMode.RebindActive)),
                     Is.SameAs(state.Bus.Failure),
                     label
                 );
@@ -1308,48 +823,28 @@ namespace DxMessaging.Tests.Runtime.Core
                 state.Calls.Clear();
                 state.Emit(scenario, destination);
                 bool restorePeers = cleanup == 0 || cleanup == 3;
-                TestContext.WriteLine(
-                    $"{label}; cleanupCount={state.CleanupCount}; old={string.Join(",", oldDelivery)}; new={string.Join(",", state.Calls)}"
-                );
+                TestContext.WriteLine($"{label}; cleanupCount={state.CleanupCount}; old={string.Join(",", oldDelivery)}; new={string.Join(",", state.Calls)}");
                 AssertRetargetState(() =>
                 {
-                    Assert.That(
-                        state.Token.Enabled,
-                        Is.True,
-                        label + ": failed cleanup stays retryable"
-                    );
+                    Assert.That(state.Token.Enabled, Is.True, label + ": failed cleanup stays retryable");
                     Assert.That(state.CleanupCount, Is.EqualTo(restorePeers ? 2 : 1), label);
-                    Assert.That(
-                        state.Token._metadata.Count,
-                        Is.EqualTo(cleanup == 2 ? 0 : 2),
-                        label
-                    );
+                    Assert.That(state.Token._metadata.Count, Is.EqualTo(cleanup == 2 ? 0 : 2), label);
                     Assert.That(
                         oldDelivery,
                         Is.EqualTo(restorePeers ? new[] { "first", "later" } : new[] { "first" }),
-                        label
-                            + ": callback cancellation must not revive a successfully cleaned peer"
+                        label + ": callback cancellation must not revive a successfully cleaned peer"
                     );
-                    Assert.That(
-                        state.Calls,
-                        Is.Empty,
-                        label + ": failed retarget keeps its old bus"
-                    );
+                    Assert.That(state.Calls, Is.Empty, label + ": failed retarget keeps its old bus");
                 });
                 state.Token.Disable();
-                Assert.That(
-                    state.Token.Enabled,
-                    Is.False,
-                    label + ": public retry drains the failed cleanup"
-                );
+                Assert.That(state.Token.Enabled, Is.False, label + ": public retry drains the failed cleanup");
                 state.Token.Enable();
                 state.Calls.Clear();
                 state.Emit(scenario);
                 Assert.That(
                     state.Calls,
                     Is.EqualTo(cleanup == 2 ? Array.Empty<string>() : new[] { "first", "later" }),
-                    label
-                        + ": explicit activation restores only retained staging on the previous bus"
+                    label + ": explicit activation restores only retained staging on the previous bus"
                 );
             }
             finally
@@ -1376,11 +871,8 @@ namespace DxMessaging.Tests.Runtime.Core
             internal Action OnFirstDeregistration;
             internal bool RejectNext;
             internal bool AfterDeregistration;
-            internal readonly InvalidOperationException Failure = new InvalidOperationException(
-                "Deregistration rejected before forwarding."
-            );
-            internal readonly List<MessageBusRegistration> Attempts =
-                new List<MessageBusRegistration>();
+            internal readonly InvalidOperationException Failure = new InvalidOperationException("Deregistration rejected before forwarding.");
+            internal readonly List<MessageBusRegistration> Attempts = new List<MessageBusRegistration>();
 
             internal ReplayBus(BusType inner)
                 : base(inner) { }
@@ -1408,10 +900,7 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private readonly struct ProbeMessage
-            : IUntargetedMessage,
-                ITargetedMessage,
-                IBroadcastMessage
+        private readonly struct ProbeMessage : IUntargetedMessage, ITargetedMessage, IBroadcastMessage
         {
             public Type MessageType => typeof(ProbeMessage);
         }

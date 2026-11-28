@@ -1,42 +1,18 @@
 #if UNITY_2021_3_OR_NEWER
 using DxMessaging.Core.Attributes;
 
-[assembly: DxAotMessage(
-    typeof(DxMessaging.Tests.Runtime.Core.ClosedAotMessages<bool>.UntargetedValue)
-)]
-[assembly: DxAotMessage(
-    typeof(DxMessaging.Tests.Runtime.Core.ClosedAotMessages<bool>.UntargetedReference)
-)]
-[assembly: DxAotMessage(
-    typeof(DxMessaging.Tests.Runtime.Core.ClosedAotMessages<bool>.TargetedValue)
-)]
-[assembly: DxAotMessage(
-    typeof(DxMessaging.Tests.Runtime.Core.ClosedAotMessages<bool>.TargetedReference)
-)]
-[assembly: DxAotMessage(
-    typeof(DxMessaging.Tests.Runtime.Core.ClosedAotMessages<bool>.BroadcastValue)
-)]
-[assembly: DxAotMessage(
-    typeof(DxMessaging.Tests.Runtime.Core.ClosedAotMessages<bool>.BroadcastReference)
-)]
-[assembly: DxAotMessage(
-    typeof(DxMessaging.Tests.Runtime.Core.ClosedAotMessages<DxMessaging.Tests.Runtime.Core.AotChoice>.UntargetedValue)
-)]
-[assembly: DxAotMessage(
-    typeof(DxMessaging.Tests.Runtime.Core.ClosedAotMessages<DxMessaging.Tests.Runtime.Core.AotChoice>.UntargetedReference)
-)]
-[assembly: DxAotMessage(
-    typeof(DxMessaging.Tests.Runtime.Core.ClosedAotMessages<DxMessaging.Tests.Runtime.Core.AotChoice>.TargetedValue)
-)]
-[assembly: DxAotMessage(
-    typeof(DxMessaging.Tests.Runtime.Core.ClosedAotMessages<DxMessaging.Tests.Runtime.Core.AotChoice>.TargetedReference)
-)]
-[assembly: DxAotMessage(
-    typeof(DxMessaging.Tests.Runtime.Core.ClosedAotMessages<DxMessaging.Tests.Runtime.Core.AotChoice>.BroadcastValue)
-)]
-[assembly: DxAotMessage(
-    typeof(DxMessaging.Tests.Runtime.Core.ClosedAotMessages<DxMessaging.Tests.Runtime.Core.AotChoice>.BroadcastReference)
-)]
+[assembly: DxAotMessage(typeof(DxMessaging.Tests.Runtime.Core.ClosedAotMessages<bool>.UntargetedValue))]
+[assembly: DxAotMessage(typeof(DxMessaging.Tests.Runtime.Core.ClosedAotMessages<bool>.UntargetedReference))]
+[assembly: DxAotMessage(typeof(DxMessaging.Tests.Runtime.Core.ClosedAotMessages<bool>.TargetedValue))]
+[assembly: DxAotMessage(typeof(DxMessaging.Tests.Runtime.Core.ClosedAotMessages<bool>.TargetedReference))]
+[assembly: DxAotMessage(typeof(DxMessaging.Tests.Runtime.Core.ClosedAotMessages<bool>.BroadcastValue))]
+[assembly: DxAotMessage(typeof(DxMessaging.Tests.Runtime.Core.ClosedAotMessages<bool>.BroadcastReference))]
+[assembly: DxAotMessage(typeof(DxMessaging.Tests.Runtime.Core.ClosedAotMessages<DxMessaging.Tests.Runtime.Core.AotChoice>.UntargetedValue))]
+[assembly: DxAotMessage(typeof(DxMessaging.Tests.Runtime.Core.ClosedAotMessages<DxMessaging.Tests.Runtime.Core.AotChoice>.UntargetedReference))]
+[assembly: DxAotMessage(typeof(DxMessaging.Tests.Runtime.Core.ClosedAotMessages<DxMessaging.Tests.Runtime.Core.AotChoice>.TargetedValue))]
+[assembly: DxAotMessage(typeof(DxMessaging.Tests.Runtime.Core.ClosedAotMessages<DxMessaging.Tests.Runtime.Core.AotChoice>.TargetedReference))]
+[assembly: DxAotMessage(typeof(DxMessaging.Tests.Runtime.Core.ClosedAotMessages<DxMessaging.Tests.Runtime.Core.AotChoice>.BroadcastValue))]
+[assembly: DxAotMessage(typeof(DxMessaging.Tests.Runtime.Core.ClosedAotMessages<DxMessaging.Tests.Runtime.Core.AotChoice>.BroadcastReference))]
 
 namespace DxMessaging.Tests.Runtime.Core
 {
@@ -58,17 +34,13 @@ namespace DxMessaging.Tests.Runtime.Core
         /// <summary>Checks first untyped delivery before any typed use of the dedicated closed payloads.</summary>
         [Test]
         public void FirstUntypedDispatchUsesSelectedClosedGenericBridge(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
             [Values(false, true)] bool referencePayload,
             [Values(false, true)] bool enumArgument
         )
         {
             BusType bus = new();
-            using LeakWatcher leaks = new(
-                bus: bus,
-                label: $"{scenario.Kind}/{referencePayload}/{enumArgument}"
-            );
+            using LeakWatcher leaks = new(bus: bus, label: $"{scenario.Kind}/{referencePayload}/{enumArgument}");
             InstanceId context = new(0x6A17_4001);
             Assert.DoesNotThrow(
                 () =>
@@ -84,68 +56,42 @@ namespace DxMessaging.Tests.Runtime.Core
                 },
                 $"[{scenario.Kind}] First untyped closed-generic dispatch must have a startup bridge."
             );
-            Assert.That(
-                bus.EmissionId,
-                Is.EqualTo(1),
-                $"[{scenario.Kind}] The bridge must reach typed bus dispatch exactly once."
-            );
+            Assert.That(bus.EmissionId, Is.EqualTo(1), $"[{scenario.Kind}] The bridge must reach typed bus dispatch exactly once.");
         }
 
         /// <summary>Creates one dedicated closed payload and sends it through its untyped route.</summary>
-        private static void Dispatch<T>(
-            IMessageBus bus,
-            MessageKind kind,
-            bool referencePayload,
-            T value,
-            InstanceId context
-        )
+        private static void Dispatch<T>(IMessageBus bus, MessageKind kind, bool referencePayload, T value, InstanceId context)
         {
             switch (kind)
             {
                 case MessageKind.Untargeted:
                     if (referencePayload)
                     {
-                        bus.UntypedUntargetedBroadcast(
-                            new ClosedAotMessages<T>.UntargetedReference(value)
-                        );
+                        bus.UntypedUntargetedBroadcast(new ClosedAotMessages<T>.UntargetedReference(value));
                     }
                     else
                     {
-                        bus.UntypedUntargetedBroadcast(
-                            new ClosedAotMessages<T>.UntargetedValue(value)
-                        );
+                        bus.UntypedUntargetedBroadcast(new ClosedAotMessages<T>.UntargetedValue(value));
                     }
                     break;
                 case MessageKind.Targeted:
                     if (referencePayload)
                     {
-                        bus.UntypedTargetedBroadcast(
-                            context,
-                            new ClosedAotMessages<T>.TargetedReference(value)
-                        );
+                        bus.UntypedTargetedBroadcast(context, new ClosedAotMessages<T>.TargetedReference(value));
                     }
                     else
                     {
-                        bus.UntypedTargetedBroadcast(
-                            context,
-                            new ClosedAotMessages<T>.TargetedValue(value)
-                        );
+                        bus.UntypedTargetedBroadcast(context, new ClosedAotMessages<T>.TargetedValue(value));
                     }
                     break;
                 case MessageKind.Broadcast:
                     if (referencePayload)
                     {
-                        bus.UntypedSourcedBroadcast(
-                            context,
-                            new ClosedAotMessages<T>.BroadcastReference(value)
-                        );
+                        bus.UntypedSourcedBroadcast(context, new ClosedAotMessages<T>.BroadcastReference(value));
                     }
                     else
                     {
-                        bus.UntypedSourcedBroadcast(
-                            context,
-                            new ClosedAotMessages<T>.BroadcastValue(value)
-                        );
+                        bus.UntypedSourcedBroadcast(context, new ClosedAotMessages<T>.BroadcastValue(value));
                     }
                     break;
                 default:
@@ -173,8 +119,7 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        public sealed class UntargetedReference
-            : DxMessaging.Core.Messages.IUntargetedMessage<UntargetedReference>
+        public sealed class UntargetedReference : DxMessaging.Core.Messages.IUntargetedMessage<UntargetedReference>
         {
             public readonly T value;
 
@@ -195,8 +140,7 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        public sealed class TargetedReference
-            : DxMessaging.Core.Messages.ITargetedMessage<TargetedReference>
+        public sealed class TargetedReference : DxMessaging.Core.Messages.ITargetedMessage<TargetedReference>
         {
             public readonly T value;
 
@@ -217,8 +161,7 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        public sealed class BroadcastReference
-            : DxMessaging.Core.Messages.IBroadcastMessage<BroadcastReference>
+        public sealed class BroadcastReference : DxMessaging.Core.Messages.IBroadcastMessage<BroadcastReference>
         {
             public readonly T value;
 

@@ -18,11 +18,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
     {
         private const string PilotOrderVariable = "DXM_PAIRED_BATCH_ORDER";
 
-        public static PairedBenchmarkMeasurement Run(
-            Func<IMessagingTechBridge> firstFactory,
-            Func<IMessagingTechBridge> secondFactory,
-            ComparisonScenario scenario
-        )
+        public static PairedBenchmarkMeasurement Run(Func<IMessagingTechBridge> firstFactory, Func<IMessagingTechBridge> secondFactory, ComparisonScenario scenario)
         {
             if (firstFactory == null)
             {
@@ -34,39 +30,16 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 throw new ArgumentNullException(nameof(secondFactory));
             }
 
-            Assert.AreEqual(
-                DiagnosticsTarget.Off,
-                IMessageBus.GlobalDiagnosticsTargets,
-                $"Paired comparison '{scenario}' requires global diagnostics targets to be off."
-            );
-            Assert.IsFalse(
-                IMessageBus.GlobalDiagnosticsStackTraces,
-                $"Paired comparison '{scenario}' requires global diagnostics stack traces to be off."
-            );
+            Assert.AreEqual(DiagnosticsTarget.Off, IMessageBus.GlobalDiagnosticsTargets, $"Paired comparison '{scenario}' requires global diagnostics targets to be off.");
+            Assert.IsFalse(IMessageBus.GlobalDiagnosticsStackTraces, $"Paired comparison '{scenario}' requires global diagnostics stack traces to be off.");
 
             using IMessagingTechBridge first = firstFactory();
             using IMessagingTechBridge second = secondFactory();
-            Assert.IsFalse(
-                first.RequiresPlayMode && !Application.isPlaying,
-                $"Paired comparison first bridge '{first.TechKey}' requires PlayMode."
-            );
-            Assert.IsFalse(
-                second.RequiresPlayMode && !Application.isPlaying,
-                $"Paired comparison second bridge '{second.TechKey}' requires PlayMode."
-            );
-            Assert.IsTrue(
-                first.Supports(scenario),
-                $"Paired comparison first bridge '{first.TechKey}' does not support '{scenario}'."
-            );
-            Assert.IsTrue(
-                second.Supports(scenario),
-                $"Paired comparison second bridge '{second.TechKey}' does not support '{scenario}'."
-            );
-            Assert.AreNotEqual(
-                first.TechKey,
-                second.TechKey,
-                $"Paired comparison '{scenario}' requires two distinct technology keys."
-            );
+            Assert.IsFalse(first.RequiresPlayMode && !Application.isPlaying, $"Paired comparison first bridge '{first.TechKey}' requires PlayMode.");
+            Assert.IsFalse(second.RequiresPlayMode && !Application.isPlaying, $"Paired comparison second bridge '{second.TechKey}' requires PlayMode.");
+            Assert.IsTrue(first.Supports(scenario), $"Paired comparison first bridge '{first.TechKey}' does not support '{scenario}'.");
+            Assert.IsTrue(second.Supports(scenario), $"Paired comparison second bridge '{second.TechKey}' does not support '{scenario}'.");
+            Assert.AreNotEqual(first.TechKey, second.TechKey, $"Paired comparison '{scenario}' requires two distinct technology keys.");
 
             long expectedFanOut = ComparisonScenarios.ExpectedInvocationsPerOperation(scenario);
             Assert.AreEqual(
@@ -102,22 +75,8 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 complementaryOrder
             );
 
-            AssertProgress(
-                first,
-                scenario,
-                firstStartProgress,
-                expectedFanOut,
-                warmupEmits,
-                measurement.First.TotalOperations
-            );
-            AssertProgress(
-                second,
-                scenario,
-                secondStartProgress,
-                expectedFanOut,
-                warmupEmits,
-                measurement.Second.TotalOperations
-            );
+            AssertProgress(first, scenario, firstStartProgress, expectedFanOut, warmupEmits, measurement.First.TotalOperations);
+            AssertProgress(second, scenario, secondStartProgress, expectedFanOut, warmupEmits, measurement.Second.TotalOperations);
             WriteEvidence(first, second, scenario, measurement, complementaryOrder);
             return measurement;
         }
@@ -134,23 +93,17 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 return true;
             }
 
-            throw new InvalidOperationException(
-                $"{PilotOrderVariable} must be ABBABAAB or BAABABBA; observed '{requestedOrder}'."
-            );
+            throw new InvalidOperationException($"{PilotOrderVariable} must be ABBABAAB or BAABABBA; observed '{requestedOrder}'.");
         }
 
 #if DXM_PILOT_CONTROL
         internal static void RequirePilotCpuWorkAssignment()
         {
-            bool scalar =
-                Environment.GetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH") != null;
-            bool vector =
-                Environment.GetEnvironmentVariable("DXM_PILOT_CPU_WORK_BY_SCENARIO") != null;
+            bool scalar = Environment.GetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH") != null;
+            bool vector = Environment.GetEnvironmentVariable("DXM_PILOT_CPU_WORK_BY_SCENARIO") != null;
             if (scalar == vector)
             {
-                throw new InvalidOperationException(
-                    "Pilot paired comparisons require exactly one scalar or per-scenario CPU work assignment."
-                );
+                throw new InvalidOperationException("Pilot paired comparisons require exactly one scalar or per-scenario CPU work assignment.");
             }
         }
 #endif
@@ -213,17 +166,8 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 measurement.First.ElapsedSeconds * 1000d
             );
 
-            string evidence = BuildEvidenceJson(
-                first,
-                second,
-                scenarioKey,
-                firstResult,
-                measurement,
-                complementaryOrder
-            );
-            if (
-                BenchmarkProtocol.PairedMaterialityBandPercent < measurement.CycleRatioSpreadPercent
-            )
+            string evidence = BuildEvidenceJson(first, second, scenarioKey, firstResult, measurement, complementaryOrder);
+            if (BenchmarkProtocol.PairedMaterialityBandPercent < measurement.CycleRatioSpreadPercent)
             {
                 Debug.LogWarning($"DXM_PAIRED_COMPARISON {evidence}");
             }
@@ -255,13 +199,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             builder.Append(',');
             AppendJsonString(builder, "commit", result.Commit);
             builder.Append(',');
-            AppendJsonString(
-                builder,
-                "protocol",
-                complementaryOrder
-                    ? "interleaved-baab-abba-pilot-v1"
-                    : BenchmarkProtocol.PairedProtocolId
-            );
+            AppendJsonString(builder, "protocol", complementaryOrder ? "interleaved-baab-abba-pilot-v1" : BenchmarkProtocol.PairedProtocolId);
             builder.Append(',');
             AppendJsonString(builder, "batchOrder", complementaryOrder ? "BAABABBA" : "ABBABAAB");
             builder.Append(",\"cycles\":");
@@ -278,17 +216,11 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             }
 #endif
             builder.Append(",\"firstToSecondRatio\":");
-            builder.Append(
-                measurement.FirstToSecondRatio.ToString("R", CultureInfo.InvariantCulture)
-            );
+            builder.Append(measurement.FirstToSecondRatio.ToString("R", CultureInfo.InvariantCulture));
             builder.Append(",\"aggregateRateRatio\":");
-            builder.Append(
-                measurement.AggregateRateRatio.ToString("R", CultureInfo.InvariantCulture)
-            );
+            builder.Append(measurement.AggregateRateRatio.ToString("R", CultureInfo.InvariantCulture));
             builder.Append(",\"cycleRatioSpreadPercent\":");
-            builder.Append(
-                measurement.CycleRatioSpreadPercent.ToString("R", CultureInfo.InvariantCulture)
-            );
+            builder.Append(measurement.CycleRatioSpreadPercent.ToString("R", CultureInfo.InvariantCulture));
             builder.Append(",\"cycleRatios\":[");
             for (int index = 0; index < measurement.CycleRatios.Count; index++)
             {
@@ -296,9 +228,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 {
                     builder.Append(',');
                 }
-                builder.Append(
-                    measurement.CycleRatios[index].ToString("R", CultureInfo.InvariantCulture)
-                );
+                builder.Append(measurement.CycleRatios[index].ToString("R", CultureInfo.InvariantCulture));
             }
             builder.Append("],\"cycleMeasurements\":[");
             for (int index = 0; index < measurement.Cycles.Count; index++)
@@ -312,19 +242,13 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 builder.Append("{\"firstOperations\":");
                 builder.Append(cycle.First.TotalOperations);
                 builder.Append(",\"firstActiveSeconds\":");
-                builder.Append(
-                    cycle.First.ElapsedSeconds.ToString("R", CultureInfo.InvariantCulture)
-                );
+                builder.Append(cycle.First.ElapsedSeconds.ToString("R", CultureInfo.InvariantCulture));
                 builder.Append(",\"secondOperations\":");
                 builder.Append(cycle.Second.TotalOperations);
                 builder.Append(",\"secondActiveSeconds\":");
-                builder.Append(
-                    cycle.Second.ElapsedSeconds.ToString("R", CultureInfo.InvariantCulture)
-                );
+                builder.Append(cycle.Second.ElapsedSeconds.ToString("R", CultureInfo.InvariantCulture));
                 builder.Append(",\"firstToSecondRatio\":");
-                builder.Append(
-                    cycle.FirstToSecondRatio.ToString("R", CultureInfo.InvariantCulture)
-                );
+                builder.Append(cycle.FirstToSecondRatio.ToString("R", CultureInfo.InvariantCulture));
                 builder.Append('}');
             }
             builder.Append("]}");
@@ -372,9 +296,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                         if (character < ' ')
                         {
                             builder.Append("\\u");
-                            builder.Append(
-                                ((int)character).ToString("x4", CultureInfo.InvariantCulture)
-                            );
+                            builder.Append(((int)character).ToString("x4", CultureInfo.InvariantCulture));
                         }
                         else
                         {

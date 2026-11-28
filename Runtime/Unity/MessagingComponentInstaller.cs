@@ -65,10 +65,7 @@ namespace DxMessaging.Unity
                 return;
             }
 
-            Debug.LogWarning(
-                $"{nameof(MessagingComponentInstaller)} on {name} has no provider or explicit message bus configured.",
-                this
-            );
+            Debug.LogWarning($"{nameof(MessagingComponentInstaller)} on {name} has no provider or explicit message bus configured.", this);
         }
 
         /// <summary>
@@ -78,9 +75,7 @@ namespace DxMessaging.Unity
         {
             if (explicitMessageBus != null)
             {
-                return new MessageRegistrationBuilder(
-                    new FixedMessageBusProvider(explicitMessageBus)
-                );
+                return new MessageRegistrationBuilder(new FixedMessageBusProvider(explicitMessageBus));
             }
 
             IMessageBusProvider provider = ResolveEffectiveProvider();

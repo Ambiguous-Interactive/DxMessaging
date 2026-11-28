@@ -2,7 +2,9 @@
 
 # Unity License Bootstrap
 
-> **One-line summary**: CI activates Unity with a classic serial (`UNITY_SERIAL` + `UNITY_EMAIL` + `UNITY_PASSWORD`) and attempts `-returnlicense` on every exit path. Confirm cleanup from positive evidence; an attempted return can leave portal state unresolved. LOCAL Unity needs NO license: the host editor (driven via the [Unity MCP Test Loop](../../unity-mcp-test-loop/references/mcp-test-loop.md)) supplies its own.
+> **One-line summary**: CI activates Unity with a classic serial (`UNITY_SERIAL` + `UNITY_EMAIL` + `UNITY_PASSWORD`) and attempts `-returnlicense` on every exit path. Confirm
+> cleanup from positive evidence; an attempted return can leave portal state unresolved. LOCAL Unity needs NO license: the host editor (driven via the
+> [Unity MCP Test Loop](../../unity-mcp-test-loop/references/mcp-test-loop.md)) supplies its own.
 
 ## When to Use
 
@@ -12,30 +14,24 @@
 
 ## License Types
 
-Classic serial activation is the only supported CI activation path. LOCAL Unity
-verification needs no license at all -- it runs against the host editor through
-the MCP loop, and that editor already holds its own license.
+Classic serial activation is the only supported CI activation path. LOCAL Unity verification needs no license at all -- it runs against the host editor through the MCP loop, and
+that editor already holds its own license.
 
 | Type          | Scope     | Activation Method                                              | Notes                                                                       |
 | ------------- | --------- | -------------------------------------------------------------- | --------------------------------------------------------------------------- |
 | Serial (paid) | CI (only) | `UNITY_SERIAL` + `UNITY_EMAIL` + `UNITY_PASSWORD` -> `-serial` | The single CI path. Activated before the editor and returned on every exit. |
 
-The floating licensing server has been RETIRED. The `UNITY_LICENSING_SERVER`
-secret is removed and must not be reintroduced; the `validate-unity-license`
-action rejects it.
+The floating licensing server has been RETIRED. The `UNITY_LICENSING_SERVER` secret is removed and must not be reintroduced; the `validate-unity-license` action rejects it.
 
 ## Local Unity Needs No License
 
-The devcontainer ships no local Unity build. Local verification runs on the host
-editor through the [Unity MCP Test Loop](../../unity-mcp-test-loop/references/mcp-test-loop.md) (the
-`unity-mcp-remote` MCP server), and the host editor supplies its own license.
-There is no local `.ulf`, no `UNITY_LICENSE` / `UNITY_LICENSE_B64`, and no local
-serial to configure. Everything below is CI-only.
+The devcontainer ships no local Unity build. Local verification runs on the host editor through the [Unity MCP Test Loop](../../unity-mcp-test-loop/references/mcp-test-loop.md)
+(the `unity-mcp-remote` MCP server), and the host editor supplies its own license. There is no local `.ulf`, no `UNITY_LICENSE` / `UNITY_LICENSE_B64`, and no local serial to
+configure. Everything below is CI-only.
 
 ## Classic Serial Path (CI, Primary)
 
-CI activates Unity with the classic serial command line. Three GitHub secrets are
-required: `UNITY_SERIAL`, `UNITY_EMAIL`, and `UNITY_PASSWORD`.
+CI activates Unity with the classic serial command line. Three GitHub secrets are required: `UNITY_SERIAL`, `UNITY_EMAIL`, and `UNITY_PASSWORD`.
 
 How `scripts/unity/run-ci-tests.ps1` activates and returns Unity:
 
@@ -49,18 +45,12 @@ Unity.exe -quit -batchmode -nographics -returnlicense \
   -username <UNITY_EMAIL> -password <UNITY_PASSWORD> -logFile -
 ```
 
-`run-ci-tests.ps1` wraps these as `Invoke-UnityLicenseActivate` (throws on
-failure) and `Invoke-UnityLicenseReturn` (best-effort, never throws). The license
-is returned on EVERY exit path through four redundant layers: a defensive
-return-at-start, a PowerShell `try`/`finally` return, the acquired-scoped
-centrally pinned return/classify/release/gate chain, and the next run's
-return-at-start on the same persistent runner. Serial licenses have no
-server-side reclaim and only a small seat pool, so those return layers are the
-only thing that frees a seat -- the full guarantee, the seat-limit tradeoff, and
-its enforcement live in [[unity-license-return-guarantee]].
+`run-ci-tests.ps1` wraps these as `Invoke-UnityLicenseActivate` (throws on failure) and `Invoke-UnityLicenseReturn` (best-effort, never throws). The license is returned on EVERY
+exit path through four redundant layers: a defensive return-at-start, a PowerShell `try`/`finally` return, the acquired-scoped centrally pinned return/classify/release/gate chain,
+and the next run's return-at-start on the same persistent runner. Serial licenses have no server-side reclaim and only a small seat pool, so those return layers are the only thing
+that frees a seat -- the full guarantee, the seat-limit tradeoff, and its enforcement live in [[unity-license-return-guarantee]].
 
-SECURITY: never echo or log the serial or password; license logs go to
-`RUNNER_TEMP`, never to uploaded artifacts.
+SECURITY: never echo or log the serial or password; license logs go to `RUNNER_TEMP`, never to uploaded artifacts.
 
 ### CI Secrets
 
@@ -70,19 +60,12 @@ SECURITY: never echo or log the serial or password; license logs go to
 | `UNITY_EMAIL`    | Unity account email    | Yes      |
 | `UNITY_PASSWORD` | Unity account password | Yes      |
 
-The retired `UNITY_LICENSING_SERVER` secret is removed from CI and must not be
-re-wired. The active workflows under `.github/workflows/unity-*.yml` forward the
-three serial secrets to `scripts/unity/run-ci-tests.ps1` on the self-hosted
-Windows runners. Each workflow runs `./.github/actions/validate-unity-license`
-(it checks that the three serial secrets are present and errors if the retired
-`UNITY_LICENSING_SERVER` is still set) BEFORE acquiring the central organization
-Unity lock, so a misconfigured license fails with a clear diagnostic before Unity
-starts or blocks the shared seat. Inside the org-lock window, every Unity
-workflow also has an acquired-scoped centrally pinned return action before
-cleanup classification, release, and the final fail-closed gate. The
-`.github/workflows-disabled/*` files are ubuntu game-ci reference
-mirrors that pass the serial via `unitySerial: ${{ secrets.UNITY_SERIAL }}`,
-`unityEmail`, and `unityPassword`.
+The retired `UNITY_LICENSING_SERVER` secret is removed from CI and must not be re-wired. The active workflows under `.github/workflows/unity-*.yml` forward the three serial secrets
+to `scripts/unity/run-ci-tests.ps1` on the self-hosted Windows runners. Each workflow runs `./.github/actions/validate-unity-license` (it checks that the three serial secrets are
+present and errors if the retired `UNITY_LICENSING_SERVER` is still set) BEFORE acquiring the central organization Unity lock, so a misconfigured license fails with a clear
+diagnostic before Unity starts or blocks the shared seat. Inside the org-lock window, every Unity workflow also has an acquired-scoped centrally pinned return action before cleanup
+classification, release, and the final fail-closed gate. The `.github/workflows-disabled/*` files are ubuntu game-ci reference mirrors that pass the serial via
+`unitySerial: ${{ secrets.UNITY_SERIAL }}`, `unityEmail`, and `unityPassword`.
 
 ## Common Failures (CI)
 
@@ -96,9 +79,7 @@ mirrors that pass the serial via `unitySerial: ${{ secrets.UNITY_SERIAL }}`,
 
 ## Renewal
 
-If activation fails after a serial renewal, verify the serial and credentials in
-the Unity dashboard and update the `UNITY_SERIAL` / `UNITY_EMAIL` /
-`UNITY_PASSWORD` secrets.
+If activation fails after a serial renewal, verify the serial and credentials in the Unity dashboard and update the `UNITY_SERIAL` / `UNITY_EMAIL` / `UNITY_PASSWORD` secrets.
 
 ## See Also
 

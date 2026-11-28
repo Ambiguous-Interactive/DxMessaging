@@ -7,6 +7,11 @@ obj/
 Temp/
 Logs/
 
+# Local, git-ignored evidence and session records. Formatting these would change the bytes
+# that retained measurements are qualified against.
+.artifacts/
+progress/
+
 # GitHub
 .github/
 
@@ -24,6 +29,7 @@ Samples~/
 # --check mode converge: a formatter rewriting these would make `npm run llm:check` fail
 # immediately after a successful regeneration.
 .llm/index.md
+.llm/context.md
 
 # Roslyn 3.3 release tracking rejects leading/trailing table pipes from Prettier.
 # The compiler and markdownlint validate these native-format tables.

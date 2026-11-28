@@ -34,19 +34,16 @@ Version inconsistencies cause preventable issues:
 
 ### Version Update Process
 
-1. **Audit all workflows**: Find all action uses across `.github/workflows/`
-   and `.github/workflows-disabled/`
+1. **Audit all workflows**: Find all action uses across `.github/workflows/` and `.github/workflows-disabled/`
 1. **Identify inconsistencies**: List actions with different versions
-1. **Verify upstream tags**: Check official repository tags/releases before
-   accepting or rejecting a version bump
+1. **Verify upstream tags**: Check official repository tags/releases before accepting or rejecting a version bump
 1. **Update together**: Change all instances in a single PR
 1. **Test thoroughly**: Run all affected workflows before merging
 
 ### Common Actions to Monitor
 
-Do not treat a static table as permanent truth. Verify the official action tag
-before claiming that a workflow version is unpublished. The repository uses these published official-action majors in enabled and
-disabled workflow files:
+Do not treat a static table as permanent truth. Verify the official action tag before claiming that a workflow version is unpublished. The repository uses these published
+official-action majors in enabled and disabled workflow files:
 
 | Action                            | Repo Pin | Notes                            |
 | --------------------------------- | -------- | -------------------------------- |
@@ -76,9 +73,8 @@ git ls-remote --tags https://github.com/actions/setup-node.git refs/tags/v7
 
 ### Artifact Action Pairing
 
-Upload and download artifact actions must use compatible versions. Compatibility
-can span different major numbers, so verify release notes instead of requiring
-the numbers to match blindly:
+Upload and download artifact actions must use compatible versions. Compatibility can span different major numbers, so verify release notes instead of requiring the numbers to match
+blindly:
 
 ```yaml
 # GOOD: Compatible published artifact actions
@@ -112,7 +108,9 @@ Bad: `See [README.md](../README.md)` <- Inline code, should be skipped
 
 ### Do Not Write New Bespoke Documentation Linters
 
-The repository deliberately uses off-the-shelf linters (markdownlint-cli2, prettier, cspell, lychee) instead of bespoke documentation-linter scripts. See the Tooling Philosophy section of `.llm/context.md` before adding any new linting script; the code-block-skipping guidance above exists only for the rare case where an existing kept script must be modified.
+The repository deliberately uses off-the-shelf linters (markdownlint-cli2, prettier, cspell, lychee) instead of bespoke documentation-linter scripts. See the Tooling Philosophy
+section of `.llm/context.md` before adding any new linting script; the code-block-skipping guidance above exists only for the rare case where an existing kept script must be
+modified.
 
 ## Validation Checklist
 

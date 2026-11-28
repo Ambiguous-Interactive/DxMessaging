@@ -102,11 +102,9 @@ options.UnityOwner = gameObject;  // or any Component
 
 When omitted, a synthetic owner ID is generated automatically. `UnityOwner` takes precedence over `Owner` when both are set.
 
-Automatically generated owner IDs remain consumed until the application domain ends.
-`DxMessagingStaticState.Reset()` does not reuse them, so leases on a preserved custom bus
-keep separate handlers across resets. This also applies to leases that have not yet been
-activated. `Build()` throws `InvalidOperationException` if the negative synthetic owner
-range is exhausted. Explicit `Owner` and `UnityOwner` values still take precedence.
+Automatically generated owner IDs remain consumed until the application domain ends. `DxMessagingStaticState.Reset()` does not reuse them, so leases on a preserved custom bus keep
+separate handlers across resets. This also applies to leases that have not yet been activated. `Build()` throws `InvalidOperationException` if the negative synthetic owner range is
+exhausted. Explicit `Owner` and `UnityOwner` values still take precedence.
 
 ### Message Bus Selection
 
@@ -127,9 +125,12 @@ Resolution order:
 1. The builder's available provider (from its constructor), if the options' provider is absent or returns null
 1. `null`, which leaves the token using the global bus
 
-If the options and builder reference the same provider, `Build()` calls it only once. A null result then selects the global bus. Provider exceptions propagate before token creation; they do not select the next fallback. A non-null `PreferredMessageBus` skips both providers.
+If the options and builder reference the same provider, `Build()` calls it only once. A null result then selects the global bus. Provider exceptions propagate before token
+creation; they do not select the next fallback. A non-null `PreferredMessageBus` skips both providers.
 
-This resolution happens during `Build()`. Changing a provider's result later does not move the lease's registrations; use the [runtime reconfiguration APIs](runtime-configuration.md) to rebind them. A standalone [provider handle](message-bus-providers.md#messagebusproviderhandle) returns its selected provider's result without this builder fallback chain.
+This resolution happens during `Build()`. Changing a provider's result later does not move the lease's registrations; use the
+[runtime reconfiguration APIs](runtime-configuration.md) to rebind them. A standalone [provider handle](message-bus-providers.md#messagebusproviderhandle) returns its selected
+provider's result without this builder fallback chain.
 
 ---
 
@@ -170,7 +171,8 @@ options.Configure = token =>
 
 This callback runs after the token is created but before lifecycle hooks and activation.
 
-**Note:** `RegisterTargeted<T>` requires an `InstanceId` target parameter specifying which entity should receive the message. For Unity objects, use `RegisterGameObjectTargeted<T>` or `RegisterComponentTargeted<T>` instead.
+**Note:** `RegisterTargeted<T>` requires an `InstanceId` target parameter specifying which entity should receive the message. For Unity objects, use `RegisterGameObjectTargeted<T>`
+or `RegisterComponentTargeted<T>` instead.
 
 ### Lifecycle Hooks
 
@@ -201,7 +203,8 @@ A `MessageRegistrationLease` wraps the created token and provides lifecycle mana
 | `Owner`      | `InstanceId`               | The owner identifier                                    |
 | `IsActive`   | `bool`                     | State maintained by lease operations                    |
 
-Retargeting the token does not change `MessageBus`. Manage activation through the lease to keep its state and lifecycle hooks synchronized; direct token operations do not update `IsActive`.
+Retargeting the token does not change `MessageBus`. Manage activation through the lease to keep its state and lifecycle hooks synchronized; direct token operations do not update
+`IsActive`.
 
 ### Activation Methods
 
@@ -215,11 +218,15 @@ lease.Deactivate();
 
 - `Activate()` throws `ObjectDisposedException` if called after disposal
 - `Deactivate()` is safe to call multiple times or after disposal
-- **4.0:** A nested `Activate()` from a registration callback returns while the outer call owns activation. Disposal during registration prevents `OnActivate` and attempts to release newly accepted subscriptions.
+- **4.0:** A nested `Activate()` from a registration callback returns while the outer call owns activation. Disposal during registration prevents `OnActivate` and attempts to
+  release newly accepted subscriptions.
 - **4.0:** For an undisposed lease, `Activate()` returns immediately while `Deactivate()` is in progress. Call `Activate()` after deactivation returns to start a new activation.
 - **4.0:** If a cleanup callback adds a subscription, `Token.Enabled` and `IsActive` can stay true. Retry `Dispose()` to release it. The `OnDispose` hook runs once.
-- **4.0:** If cleanup diagnostics stage or enable registrations, `Build()` releases them or throws `MessageRegistrationBuildException` with a recovery lease. Diagnostic exceptions propagate after cleanup completes. The recovery exception takes priority while cleanup remains live.
-- **4.0:** If `Configure`, `OnBuild`, or `ActivateOnBuild` activation throws, `Build()` cleans up its token before throwing again. If deregistration remains retryable, `Build()` throws `MessageRegistrationBuildException`; dispose `exception.Lease` after resolving the cleanup failure. Its `ActivationException` property contains the original setup or activation failure, and `CleanupException` contains the first cleanup failure. `CleanupException` is null when callbacks add cleanup work without throwing.
+- **4.0:** If cleanup diagnostics stage or enable registrations, `Build()` releases them or throws `MessageRegistrationBuildException` with a recovery lease. Diagnostic exceptions
+  propagate after cleanup completes. The recovery exception takes priority while cleanup remains live.
+- **4.0:** If `Configure`, `OnBuild`, or `ActivateOnBuild` activation throws, `Build()` cleans up its token before throwing again. If deregistration remains retryable, `Build()`
+  throws `MessageRegistrationBuildException`; dispose `exception.Lease` after resolving the cleanup failure. Its `ActivationException` property contains the original setup or
+  activation failure, and `CleanupException` contains the first cleanup failure. `CleanupException` is null when callbacks add cleanup work without throwing.
 
 ### Dispose Pattern
 
@@ -238,17 +245,17 @@ Disposal sequence:
 1. Clears the owned token's staged registrations and token-local diagnostics
 1. Marks the lease as disposed after token cleanup succeeds
 
-Before token cleanup completes, a call to `lease.Activate()` from a disposal callback returns immediately.
-If a nested `Dispose()` has already completed cleanup, the call throws `ObjectDisposedException`.
+Before token cleanup completes, a call to `lease.Activate()` from a disposal callback returns immediately. If a nested `Dispose()` has already completed cleanup, the call throws
+`ObjectDisposedException`.
 
-Token cleanup still runs when a lifecycle callback throws; `Dispose()` rethrows the first lifecycle exception after cleanup. If the bus deregistration action itself throws before cleanup, the failed token cleanup remains retryable by calling `Dispose()` again.
+Token cleanup still runs when a lifecycle callback throws; `Dispose()` rethrows the first lifecycle exception after cleanup. If the bus deregistration action itself throws before
+cleanup, the failed token cleanup remains retryable by calling `Dispose()` again.
 
 ### Keep cleanup after a failed build
 
-**4.0 cleanup recovery:** Store the cleanup owner before calling `Build`. A failed build can
-return ownership through `MessageRegistrationBuildException.Lease` instead of its return value.
-Keep that lease reachable until cleanup finishes. Use this pattern when configured callbacks
-or a custom bus can fail during cleanup or accept another subscription during disposal.
+**4.0 cleanup recovery:** Store the cleanup owner before calling `Build`. A failed build can return ownership through `MessageRegistrationBuildException.Lease` instead of its
+return value. Keep that lease reachable until cleanup finishes. Use this pattern when configured callbacks or a custom bus can fail during cleanup or accept another subscription
+during disposal.
 
 ```csharp
 namespace RegistrationRecoveryExample
@@ -367,23 +374,17 @@ namespace RegistrationRecoveryExample
 }
 ```
 
-Create and keep a `RegistrationOwner` before calling its `Build` method. If setup fails,
-handle the reported exception and retain the owner. After resolving the cleanup failure,
-call the owner's `Dispose` again. The `Lease` property stays set when disposal throws or
-`Token.Enabled` still reports live cleanup, including a returned disposal pass that accepted
-new work through a callback. Replace the owner only after `Lease` becomes null.
+Create and keep a `RegistrationOwner` before calling its `Build` method. If setup fails, handle the reported exception and retain the owner. After resolving the cleanup failure,
+call the owner's `Dispose` again. The `Lease` property stays set when disposal throws or `Token.Enabled` still reports live cleanup, including a returned disposal pass that
+accepted new work through a callback. Replace the owner only after `Lease` becomes null.
 
-Call the owner's `Activate()` after an inactive build, and its `Deactivate()` to pause delivery.
-The owner retains the lease across either operation, including an exception that leaves cleanup
-live. Build, activation and deactivation reject lifecycle reentry. Disposal during those operations
-is rejected; nested disposal during an existing disposal returns to the outer call.
+Call the owner's `Activate()` after an inactive build, and its `Deactivate()` to pause delivery. The owner retains the lease across either operation, including an exception that
+leaves cleanup live. Build, activation and deactivation reject lifecycle reentry. Disposal during those operations is rejected; nested disposal during an existing disposal returns
+to the outer call.
 
-Use the owner for all lifecycle operations. The `Lease` property exposes state for inspection;
-do not call lifecycle methods on that lease or mutate its token directly. Those calls bypass
-the owner's operation guard and can lose cleanup ownership if a callback disposes the owner
-before registration acceptance returns. Direct token operations also do not synchronize
-`IsActive`, so cleanup checks `Token.Enabled` instead. Do not reactivate a retained token after
-its owner has finished cleanup.
+Use the owner for all lifecycle operations. The `Lease` property exposes state for inspection; do not call lifecycle methods on that lease or mutate its token directly. Those calls
+bypass the owner's operation guard and can lose cleanup ownership if a callback disposes the owner before registration acceptance returns. Direct token operations also do not
+synchronize `IsActive`, so cleanup checks `Token.Enabled` instead. Do not reactivate a retained token after its owner has finished cleanup.
 
 ---
 

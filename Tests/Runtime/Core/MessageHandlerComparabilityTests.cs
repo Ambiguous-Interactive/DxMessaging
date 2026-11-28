@@ -26,15 +26,9 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageHandler differentOwner = new(new InstanceId(8));
 
             Assert.IsTrue(first.Equals(first), "Equality must be reflexive.");
-            Assert.IsTrue(
-                first.Equals(sameOwner),
-                "Two distinct handler instances with the same owner id must be equal."
-            );
+            Assert.IsTrue(first.Equals(sameOwner), "Two distinct handler instances with the same owner id must be equal.");
             Assert.IsTrue(sameOwner.Equals(first), "Owner-id equality must be symmetric.");
-            Assert.IsFalse(
-                first.Equals(differentOwner),
-                "Handlers with different owner ids must not be equal."
-            );
+            Assert.IsFalse(first.Equals(differentOwner), "Handlers with different owner ids must not be equal.");
             Assert.IsFalse(differentOwner.Equals(first), "Owner-id inequality must be symmetric.");
             Assert.IsFalse(first.Equals((MessageHandler)null), "Equals(null) must be false.");
         }
@@ -45,15 +39,9 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageHandler first = new(new InstanceId(7));
             MessageHandler sameOwner = new(new InstanceId(7));
 
-            Assert.IsTrue(
-                first.Equals((object)sameOwner),
-                "Equals(object) must agree with the typed overload for an equal handler."
-            );
+            Assert.IsTrue(first.Equals((object)sameOwner), "Equals(object) must agree with the typed overload for an equal handler.");
             Assert.IsFalse(first.Equals((object)null), "Equals(object) must be false for null.");
-            Assert.IsFalse(
-                first.Equals("not a handler"),
-                "Equals(object) must be false for a non-handler argument."
-            );
+            Assert.IsFalse(first.Equals("not a handler"), "Equals(object) must be false for a non-handler argument.");
         }
 
         [Test]
@@ -63,21 +51,9 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageHandler handler = new(owner);
             MessageHandler sameOwner = new(owner);
 
-            Assert.AreEqual(
-                owner.GetHashCode(),
-                handler.GetHashCode(),
-                "The handler hash must equal the owner id hash."
-            );
-            Assert.AreEqual(
-                handler.GetHashCode(),
-                handler.GetHashCode(),
-                "The hash must be stable across repeated calls."
-            );
-            Assert.AreEqual(
-                handler.GetHashCode(),
-                sameOwner.GetHashCode(),
-                "Equal handlers (same owner id) must produce equal hashes."
-            );
+            Assert.AreEqual(owner.GetHashCode(), handler.GetHashCode(), "The handler hash must equal the owner id hash.");
+            Assert.AreEqual(handler.GetHashCode(), handler.GetHashCode(), "The hash must be stable across repeated calls.");
+            Assert.AreEqual(handler.GetHashCode(), sameOwner.GetHashCode(), "Equal handlers (same owner id) must produce equal hashes.");
         }
 
         [Test]
@@ -89,32 +65,12 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageHandler higher = new(higherId);
             MessageHandler lowerTwin = new(lowerId);
 
-            Assert.AreEqual(
-                Math.Sign(lowerId.CompareTo(higherId)),
-                Math.Sign(lower.CompareTo(higher)),
-                "Handler CompareTo must agree with the owner InstanceId ordering."
-            );
-            Assert.Less(
-                lower.CompareTo(higher),
-                0,
-                "A handler with a lower owner id must order before a higher one."
-            );
-            Assert.Greater(
-                higher.CompareTo(lower),
-                0,
-                "A handler with a higher owner id must order after a lower one."
-            );
-            Assert.AreEqual(
-                -Math.Sign(higher.CompareTo(lower)),
-                Math.Sign(lower.CompareTo(higher)),
-                "CompareTo must be antisymmetric."
-            );
+            Assert.AreEqual(Math.Sign(lowerId.CompareTo(higherId)), Math.Sign(lower.CompareTo(higher)), "Handler CompareTo must agree with the owner InstanceId ordering.");
+            Assert.Less(lower.CompareTo(higher), 0, "A handler with a lower owner id must order before a higher one.");
+            Assert.Greater(higher.CompareTo(lower), 0, "A handler with a higher owner id must order after a lower one.");
+            Assert.AreEqual(-Math.Sign(higher.CompareTo(lower)), Math.Sign(lower.CompareTo(higher)), "CompareTo must be antisymmetric.");
             Assert.AreEqual(0, lower.CompareTo(lower), "CompareTo(self) must be zero.");
-            Assert.AreEqual(
-                0,
-                lower.CompareTo(lowerTwin),
-                "CompareTo between equal-owner handlers must be zero."
-            );
+            Assert.AreEqual(0, lower.CompareTo(lowerTwin), "CompareTo between equal-owner handlers must be zero.");
         }
 
         [Test]

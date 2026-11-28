@@ -14,11 +14,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [UnityTest]
         public IEnumerator ReleasesListenerOnDestroy()
         {
-            GameObject go = new(
-                "Lifecycle",
-                typeof(MessagingComponent),
-                typeof(SimpleMessageAwareComponent)
-            );
+            GameObject go = new("Lifecycle", typeof(MessagingComponent), typeof(SimpleMessageAwareComponent));
             _spawned.Add(go);
 
             MessagingComponent messaging = go.GetComponent<MessagingComponent>();
@@ -26,52 +22,31 @@ namespace DxMessaging.Tests.Runtime.Core
 
             yield return null;
 
-            Assert.AreEqual(
-                1,
-                messaging._registeredListeners.Count,
-                "Expected initial listener registration."
-            );
+            Assert.AreEqual(1, messaging._registeredListeners.Count, "Expected initial listener registration.");
 
             Object.Destroy(listener);
             yield return null;
 
-            Assert.AreEqual(
-                0,
-                messaging._registeredListeners.Count,
-                "Listener dictionary should be cleared after destroy."
-            );
+            Assert.AreEqual(0, messaging._registeredListeners.Count, "Listener dictionary should be cleared after destroy.");
 
-            SimpleMessageAwareComponent replacement =
-                go.AddComponent<SimpleMessageAwareComponent>();
+            SimpleMessageAwareComponent replacement = go.AddComponent<SimpleMessageAwareComponent>();
             yield return null;
 
-            Assert.AreEqual(
-                1,
-                messaging._registeredListeners.Count,
-                "Replacement listener should be tracked."
-            );
+            Assert.AreEqual(1, messaging._registeredListeners.Count, "Replacement listener should be tracked.");
             Assert.IsTrue(messaging._registeredListeners.ContainsKey(replacement));
         }
 
         [UnityTest]
         public IEnumerator ManualReleaseRemovesListenerAndDisablesToken()
         {
-            GameObject go = new(
-                "ManualRelease",
-                typeof(MessagingComponent),
-                typeof(ManualListenerComponent)
-            );
+            GameObject go = new("ManualRelease", typeof(MessagingComponent), typeof(ManualListenerComponent));
             _spawned.Add(go);
 
             MessagingComponent messaging = go.GetComponent<MessagingComponent>();
             ManualListenerComponent listener = go.GetComponent<ManualListenerComponent>();
 
             MessageRegistrationToken token = listener.RequestToken(messaging);
-            Assert.AreEqual(
-                1,
-                messaging._registeredListeners.Count,
-                "Token request should register listener."
-            );
+            Assert.AreEqual(1, messaging._registeredListeners.Count, "Token request should register listener.");
 
             token.Enable();
             Assert.IsTrue(token.Enabled, "Token should enable successfully.");
@@ -79,11 +54,7 @@ namespace DxMessaging.Tests.Runtime.Core
             messaging.Release(listener);
             yield return null;
 
-            Assert.AreEqual(
-                0,
-                messaging._registeredListeners.Count,
-                "Manual release should remove listener."
-            );
+            Assert.AreEqual(0, messaging._registeredListeners.Count, "Manual release should remove listener.");
             Assert.IsFalse(token.Enabled, "Released token should be disabled.");
         }
     }

@@ -15,16 +15,9 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Tests;
 internal sealed class GeneratedUnconstrainedStorageTests
 {
     [TestCaseSource(nameof(Cases))]
-    public void GeneratedConstructorsPreserveUnconstrainedStorage(
-        string target,
-        int language,
-        string initializer,
-        bool userConstructor,
-        bool globalWarnings
-    )
+    public void GeneratedConstructorsPreserveUnconstrainedStorage(string target, int language, string initializer, bool userConstructor, bool globalWarnings)
     {
-        string context =
-            $"target={target}, language={language}, initializer={initializer}, userConstructor={userConstructor}, globalWarnings={globalWarnings}";
+        string context = $"target={target}, language={language}, initializer={initializer}, userConstructor={userConstructor}, globalWarnings={globalWarnings}";
         CSharpParseOptions options = new(
             language switch
             {
@@ -34,30 +27,14 @@ internal sealed class GeneratedUnconstrainedStorageTests
             }
         );
         string manual = CreateSource(target, initializer, userConstructor, manual: true);
-        AssertCallerExecutes(
-            CreateCompilation(manual, options, globalWarnings),
-            initializer,
-            false,
-            "Handwritten oracle: " + context
-        );
-        GeneratorDriver driver = CSharpGeneratorDriver.Create(
-            new ISourceGenerator[] { new DxAutoConstructorGenerator() },
-            parseOptions: options
-        );
+        AssertCallerExecutes(CreateCompilation(manual, options, globalWarnings), initializer, false, "Handwritten oracle: " + context);
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(new ISourceGenerator[] { new DxAutoConstructorGenerator() }, parseOptions: options);
         driver = driver.RunGeneratorsAndUpdateCompilation(
-            CreateCompilation(
-                CreateSource(target, initializer, userConstructor, manual: false),
-                options,
-                globalWarnings
-            ),
+            CreateCompilation(CreateSource(target, initializer, userConstructor, manual: false), options, globalWarnings),
             out Compilation generated,
             out ImmutableArray<Diagnostic> diagnostics
         );
-        Assert.That(
-            driver.GetRunResult().Results.Select(result => result.Exception),
-            Has.All.Null,
-            context
-        );
+        Assert.That(driver.GetRunResult().Results.Select(result => result.Exception), Has.All.Null, context);
         Assert.That(diagnostics, Is.Empty, context + "\n" + string.Join("\n", diagnostics));
         Assert.That(driver.GetRunResult().GeneratedTrees, Has.Length.EqualTo(1), context);
         AssertCallerExecutes(generated, initializer, false, "Generated caller: " + context);
@@ -71,46 +48,21 @@ internal sealed class GeneratedUnconstrainedStorageTests
     [TestCase("readonly struct", 10, true)]
     [TestCase("readonly struct", 11, false)]
     [TestCase("readonly struct", 11, true)]
-    public void HandwrittenOpaqueGenericInitializationRetainsCompilerRestrictions(
-        string target,
-        int language,
-        bool user
-    )
+    public void HandwrittenOpaqueGenericInitializationRetainsCompilerRestrictions(string target, int language, bool user)
     {
         string context = $"target={target}, language={language}, user={user}";
-        CSharpParseOptions options = new(
-            language == 10 ? LanguageVersion.CSharp10 : LanguageVersion.CSharp11
-        );
-        CSharpCompilation manual = CreateCompilation(
-            CreateSource(target, "Opaque", user, manual: true),
-            options,
-            true
-        );
+        CSharpParseOptions options = new(language == 10 ? LanguageVersion.CSharp10 : LanguageVersion.CSharp11);
+        CSharpCompilation manual = CreateCompilation(CreateSource(target, "Opaque", user, manual: true), options, true);
         if (user)
         {
-            AssertCallerExecutes(
-                manual,
-                "Opaque",
-                true,
-                context + ": user chaining erases initializer and calls user code"
-            );
+            AssertCallerExecutes(manual, "Opaque", true, context + ": user chaining erases initializer and calls user code");
             return;
         }
         using MemoryStream image = new();
         Microsoft.CodeAnalysis.Emit.EmitResult emitted = manual.Emit(image);
-        Assert.That(
-            emitted.Success,
-            Is.False,
-            context + ": implicit chaining does not establish the non-null contract"
-        );
-        Diagnostic[] errors = emitted
-            .Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error)
-            .ToArray();
-        Assert.That(
-            errors,
-            Has.Length.EqualTo(1),
-            context + "\n" + string.Join("\n", emitted.Diagnostics)
-        );
+        Assert.That(emitted.Success, Is.False, context + ": implicit chaining does not establish the non-null contract");
+        Diagnostic[] errors = emitted.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).ToArray();
+        Assert.That(errors, Has.Length.EqualTo(1), context + "\n" + string.Join("\n", emitted.Diagnostics));
         Assert.That(errors[0].Id, Is.EqualTo("CS8618"), context);
     }
 
@@ -129,37 +81,23 @@ internal sealed class GeneratedUnconstrainedStorageTests
         }
     }
 
-    private static TestCaseData Case(
-        string target,
-        int language,
-        string initializer,
-        bool user,
-        bool global
-    ) =>
+    private static TestCaseData Case(string target, int language, string initializer, bool user, bool global) =>
         new TestCaseData(target, language, initializer, user, global).SetName(
             $"GeneratedConstructorsPreserveUnconstrainedStorage({target},{language},{initializer},{user},{global})"
         );
 
     private static string CreateSource(string target, string initializer, bool user, bool manual)
     {
-        string declaration =
-            target == "readonly struct" ? "readonly partial struct" : "partial struct";
+        string declaration = target == "readonly struct" ? "readonly partial struct" : "partial struct";
         string storage = initializer switch
         {
-            "Named" =>
-                "private readonly int _first = Probe.Initialize(); public int First => _first;",
-            "Opaque" =>
-                "int IState.First {get;} = Probe.Initialize(); public int First => ((IState)this).First;",
+            "Named" => "private readonly int _first = Probe.Initialize(); public int First => _first;",
+            "Opaque" => "int IState.First {get;} = Probe.Initialize(); public int First => ((IState)this).First;",
             _ => "public int First => 0;",
         };
         string contract = initializer == "Opaque" ? ": IState" : "";
-        string initialization =
-            initializer == "Named"
-                ? "int saved = _first; this = default; _first = saved;"
-                : "this = default;";
-        string defaultConstructor = user
-            ? "public Packet() { this = default; Value = -2; Probe.Ctors++; }"
-            : "";
+        string initialization = initializer == "Named" ? "int saved = _first; this = default; _first = saved;" : "this = default;";
+        string defaultConstructor = user ? "public Packet() { this = default; Value = -2; Probe.Ctors++; }" : "";
         string constructor = manual
             ? initializer == "Opaque"
                 ? "public Packet(int Value) : this() { this.Value = Value; }"
@@ -199,29 +137,15 @@ internal sealed class GeneratedUnconstrainedStorageTests
             """;
     }
 
-    private static CSharpCompilation CreateCompilation(
-        string source,
-        CSharpParseOptions options,
-        bool globalWarnings
-    )
+    private static CSharpCompilation CreateCompilation(string source, CSharpParseOptions options, bool globalWarnings)
     {
-        CSharpCompilation input =
-            GeneratorTestUtilities.CreateAutoConstructorCompilationFromShippedAttributes(source);
-        CSharpCompilation attributes = input
-            .RemoveSyntaxTrees(input.SyntaxTrees.Single(tree => tree.FilePath == "UserSource.cs"))
-            .WithAssemblyName("DxMessagingAttributes");
+        CSharpCompilation input = GeneratorTestUtilities.CreateAutoConstructorCompilationFromShippedAttributes(source);
+        CSharpCompilation attributes = input.RemoveSyntaxTrees(input.SyntaxTrees.Single(tree => tree.FilePath == "UserSource.cs")).WithAssemblyName("DxMessagingAttributes");
         using MemoryStream image = new();
         Microsoft.CodeAnalysis.Emit.EmitResult emitted = attributes.Emit(image);
-        Assert.That(
-            emitted.Success,
-            Is.True,
-            "Compile shipped attribute contracts in their normal assembly context: "
-                + string.Join("\n", emitted.Diagnostics)
-        );
+        Assert.That(emitted.Success, Is.True, "Compile shipped attribute contracts in their normal assembly context: " + string.Join("\n", emitted.Diagnostics));
         MetadataReference contract = MetadataReference.CreateFromImage(image.ToArray());
-        CSharpCompilationOptions compileOptions = input.Options.WithNullableContextOptions(
-            globalWarnings ? NullableContextOptions.Enable : NullableContextOptions.Disable
-        );
+        CSharpCompilationOptions compileOptions = input.Options.WithNullableContextOptions(globalWarnings ? NullableContextOptions.Enable : NullableContextOptions.Disable);
         return CSharpCompilation.Create(
             "UnconstrainedStorage",
             new[] { CSharpSyntaxTree.ParseText(source, options, "UserSource.cs") },
@@ -230,20 +154,11 @@ internal sealed class GeneratedUnconstrainedStorageTests
         );
     }
 
-    private static void AssertCallerExecutes(
-        Compilation compilation,
-        string initializer,
-        bool callsUser,
-        string context
-    )
+    private static void AssertCallerExecutes(Compilation compilation, string initializer, bool callsUser, string context)
     {
         using MemoryStream image = new();
         Microsoft.CodeAnalysis.Emit.EmitResult emitted = compilation.Emit(image);
-        Assert.That(
-            emitted.Success,
-            Is.True,
-            context + "\n" + string.Join("\n", emitted.Diagnostics)
-        );
+        Assert.That(emitted.Success, Is.True, context + "\n" + string.Join("\n", emitted.Diagnostics));
         image.Position = 0;
         AssemblyLoadContext load = new("UnconstrainedStorage", isCollectible: true);
         try
@@ -254,25 +169,8 @@ internal sealed class GeneratedUnconstrainedStorageTests
             int first = initializer == "None" || callsUser ? 0 : 17;
             int initializers = initializer == "None" ? 0 : 1;
             int calls = callsUser ? 1 : 0;
-            int[] expected =
-            {
-                42,
-                first,
-                1,
-                initializers,
-                calls,
-                43,
-                first,
-                1,
-                initializers,
-                calls,
-            };
-            Assert.That(
-                read!.Invoke(null, null),
-                Is.EqualTo(expected),
-                context
-                    + ": preserve both int and string values, default state and side-effect counts"
-            );
+            int[] expected = { 42, first, 1, initializers, calls, 43, first, 1, initializers, calls };
+            Assert.That(read!.Invoke(null, null), Is.EqualTo(expected), context + ": preserve both int and string values, default state and side-effect counts");
         }
         finally
         {

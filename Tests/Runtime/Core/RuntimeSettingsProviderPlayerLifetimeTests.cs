@@ -35,35 +35,20 @@ namespace DxMessaging.Tests.Runtime.Core
         [SetUp]
         public void PreserveProviderState()
         {
-            Assert.That(
-                Application.isPlaying,
-                Is.True,
-                "Player lifetime controls require PlayMode."
-            );
+            Assert.That(Application.isPlaying, Is.True, "Player lifetime controls require PlayMode.");
             Assert.That(Cache, Is.Not.Null, "The actual provider cache must be available.");
             Assert.That(
-                Resources.Load<DxMessagingRuntimeSettings>(DxMessagingRuntimeSettings.ResourceName)
-                    == null,
+                Resources.Load<DxMessagingRuntimeSettings>(DxMessagingRuntimeSettings.ResourceName) == null,
                 Is.True,
                 "The isolated host must have no settings resource asset for fallback controls."
             );
             _savedCache = Cache.GetValue(null);
             _savedOwned = Owned?.GetValue(null);
-            Type ownershipType = Provider.Assembly.GetType(
-                "DxMessaging.Core.Configuration.DxMessagingRuntimeSettingsOwnership"
-            );
+            Type ownershipType = Provider.Assembly.GetType("DxMessaging.Core.Configuration.DxMessagingRuntimeSettingsOwnership");
             if (ownershipType != null)
             {
-                _ownership = ownershipType
-                    .GetProperty(
-                        "instance",
-                        BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy
-                    )
-                    .GetValue(null);
-                _retainedFallback = ownershipType.GetField(
-                    "_fallback",
-                    BindingFlags.Instance | BindingFlags.NonPublic
-                );
+                _ownership = ownershipType.GetProperty("instance", BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy).GetValue(null);
+                _retainedFallback = ownershipType.GetField("_fallback", BindingFlags.Instance | BindingFlags.NonPublic);
                 _savedRetained = _retainedFallback.GetValue(_ownership);
             }
             _stateCaptured = true;
@@ -93,11 +78,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     }
                 }
                 yield return null;
-                Assert.That(
-                    _created.TrueForAll(settings => settings == null),
-                    Is.True,
-                    "Every test-owned fallback must finish native destruction during cleanup."
-                );
+                Assert.That(_created.TrueForAll(settings => settings == null), Is.True, "Every test-owned fallback must finish native destruction during cleanup.");
             }
             finally
             {
@@ -116,34 +97,14 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             DxMessagingRuntimeSettings settings = DxMessagingRuntimeSettingsProvider.Current;
             _created.Add(settings);
-            Assert.That(
-                settings.IsFallbackInstance,
-                Is.True,
-                "The actual provider must own the fallback."
-            );
+            Assert.That(settings.IsFallbackInstance, Is.True, "The actual provider must own the fallback.");
             MethodInfo cleanup = Provider.GetMethod("ReleaseBeforeAssemblyReload", StaticFields);
             Assert.That(cleanup, Is.Not.Null, "The Editor needs a reload cleanup boundary.");
             cleanup.Invoke(null, null);
-            Assert.That(
-                settings == null,
-                Is.True,
-                "Editor reload must release its fallback before a frame can run, even while playing."
-            );
-            Assert.That(
-                Cache.GetValue(null),
-                Is.Null,
-                "Reload cleanup must detach the cache immediately."
-            );
-            Assert.That(
-                Owned.GetValue(null),
-                Is.Null,
-                "Reload cleanup must detach static ownership."
-            );
-            Assert.That(
-                _retainedFallback.GetValue(_ownership),
-                Is.Null,
-                "Reload cleanup must detach serialized ownership."
-            );
+            Assert.That(settings == null, Is.True, "Editor reload must release its fallback before a frame can run, even while playing.");
+            Assert.That(Cache.GetValue(null), Is.Null, "Reload cleanup must detach the cache immediately.");
+            Assert.That(Owned.GetValue(null), Is.Null, "Reload cleanup must detach static ownership.");
+            Assert.That(_retainedFallback.GetValue(_ownership), Is.Null, "Reload cleanup must detach serialized ownership.");
         }
 #endif
 
@@ -155,37 +116,14 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 DxMessagingRuntimeSettings settings = DxMessagingRuntimeSettingsProvider.Current;
                 _created.Add(settings);
-                Assert.That(
-                    settings.IsFallbackInstance,
-                    Is.True,
-                    "The actual provider must create a fallback."
-                );
-                Assert.That(
-                    DxMessagingRuntimeSettingsProvider.Current,
-                    Is.SameAs(settings),
-                    "Reads before reset must keep the same live fallback."
-                );
+                Assert.That(settings.IsFallbackInstance, Is.True, "The actual provider must create a fallback.");
+                Assert.That(DxMessagingRuntimeSettingsProvider.Current, Is.SameAs(settings), "Reads before reset must keep the same live fallback.");
                 DxMessagingRuntimeSettingsProvider.ResetCachedSettings();
-                Assert.That(
-                    Cache.GetValue(null),
-                    Is.Null,
-                    "Reset must detach the cache immediately."
-                );
-                Assert.That(
-                    settings != null,
-                    Is.True,
-                    "Player destruction must be deferred until the frame ends."
-                );
-                Assert.DoesNotThrow(
-                    DxMessagingRuntimeSettingsProvider.ResetCachedSettings,
-                    "A second reset must remain safe while destruction is pending."
-                );
+                Assert.That(Cache.GetValue(null), Is.Null, "Reset must detach the cache immediately.");
+                Assert.That(settings != null, Is.True, "Player destruction must be deferred until the frame ends.");
+                Assert.DoesNotThrow(DxMessagingRuntimeSettingsProvider.ResetCachedSettings, "A second reset must remain safe while destruction is pending.");
                 yield return null;
-                Assert.That(
-                    settings == null,
-                    Is.True,
-                    "The provider-created fallback must be destroyed after the frame boundary."
-                );
+                Assert.That(settings == null, Is.True, "The provider-created fallback must be destroyed after the frame boundary.");
             }
         }
     }

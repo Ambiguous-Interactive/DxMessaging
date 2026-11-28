@@ -16,38 +16,23 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void CustomMessageBusIsolatedFromGlobalBus()
         {
-            GameObject globalObject = new(
-                nameof(CustomMessageBusIsolatedFromGlobalBus) + "_Global",
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject globalObject = new(nameof(CustomMessageBusIsolatedFromGlobalBus) + "_Global", typeof(EmptyMessageAwareComponent));
             _spawned.Add(globalObject);
-            EmptyMessageAwareComponent globalComponent =
-                globalObject.GetComponent<EmptyMessageAwareComponent>();
+            EmptyMessageAwareComponent globalComponent = globalObject.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken globalToken = GetToken(globalComponent);
 
             int globalUntargetedCount = 0;
-            MessageRegistrationHandle globalHandle =
-                globalToken.RegisterUntargeted<SimpleUntargetedMessage>(_ =>
-                    ++globalUntargetedCount
-                );
+            MessageRegistrationHandle globalHandle = globalToken.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++globalUntargetedCount);
 
-            GameObject customObject = new(
-                nameof(CustomMessageBusIsolatedFromGlobalBus) + "_Custom"
-            );
+            GameObject customObject = new(nameof(CustomMessageBusIsolatedFromGlobalBus) + "_Custom");
             _spawned.Add(customObject);
             MessageHandler customHandler = new(customObject) { active = true };
             MessageBus customBus = new();
-            MessageRegistrationToken customToken = MessageRegistrationToken.Create(
-                customHandler,
-                customBus
-            );
+            MessageRegistrationToken customToken = MessageRegistrationToken.Create(customHandler, customBus);
             customToken.Enable();
 
             int customUntargetedCount = 0;
-            MessageRegistrationHandle customUntargetedHandle =
-                customToken.RegisterUntargeted<SimpleUntargetedMessage>(_ =>
-                    ++customUntargetedCount
-                );
+            MessageRegistrationHandle customUntargetedHandle = customToken.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++customUntargetedCount);
 
             SimpleUntargetedMessage untargetedMessage = new();
             untargetedMessage.EmitUntargeted(customBus);
@@ -59,10 +44,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(1, globalUntargetedCount);
 
             int customTargetedCount = 0;
-            MessageRegistrationHandle customTargetedHandle =
-                customToken.RegisterGameObjectTargeted<SimpleTargetedMessage>(customObject, _ =>
-                    ++customTargetedCount
-                );
+            MessageRegistrationHandle customTargetedHandle = customToken.RegisterGameObjectTargeted<SimpleTargetedMessage>(customObject, _ => ++customTargetedCount);
             SimpleTargetedMessage targetedMessage = new();
             targetedMessage.EmitGameObjectTargeted(customObject, customBus);
             Assert.AreEqual(1, customTargetedCount);
@@ -79,10 +61,7 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void CrossBusReentrantEmissionsCompleteWithoutCorruption(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void CrossBusReentrantEmissionsCompleteWithoutCorruption([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             MessageBus busA = new();
             MessageBus busB = new();
@@ -94,16 +73,8 @@ namespace DxMessaging.Tests.Runtime.Core
             tokenB.Enable();
             InstanceId context = new(7);
 
-            using LeakWatcher watcherA = new(
-                bus: busA,
-                throwOnLeak: true,
-                label: nameof(CrossBusReentrantEmissionsCompleteWithoutCorruption) + "_A"
-            );
-            using LeakWatcher watcherB = new(
-                bus: busB,
-                throwOnLeak: true,
-                label: nameof(CrossBusReentrantEmissionsCompleteWithoutCorruption) + "_B"
-            );
+            using LeakWatcher watcherA = new(bus: busA, throwOnLeak: true, label: nameof(CrossBusReentrantEmissionsCompleteWithoutCorruption) + "_A");
+            using LeakWatcher watcherB = new(bus: busB, throwOnLeak: true, label: nameof(CrossBusReentrantEmissionsCompleteWithoutCorruption) + "_B");
 
             int countA = 0;
             int countB = 0;
@@ -132,53 +103,20 @@ namespace DxMessaging.Tests.Runtime.Core
             });
 
             EmitOnBus(scenario, context, busA);
-            Assert.AreEqual(
-                2,
-                countA,
-                "Bus A must observe the initial emission plus exactly one bounce-back "
-                    + "from bus B for scenario {0}.",
-                scenario
-            );
-            Assert.AreEqual(
-                1,
-                countB,
-                "Bus B must observe exactly one cross-bus emission for scenario {0}.",
-                scenario
-            );
+            Assert.AreEqual(2, countA, "Bus A must observe the initial emission plus exactly one bounce-back " + "from bus B for scenario {0}.", scenario);
+            Assert.AreEqual(1, countB, "Bus B must observe exactly one cross-bus emission for scenario {0}.", scenario);
 
             /*
                 Post-reentrancy sanity: both buses keep dispatching normally and
                 emissions never leak to the other bus.
             */
             EmitOnBus(scenario, context, busB);
-            Assert.AreEqual(
-                2,
-                countB,
-                "Bus B must keep dispatching normally after the reentrant exchange "
-                    + "for scenario {0}.",
-                scenario
-            );
-            Assert.AreEqual(
-                2,
-                countA,
-                "A plain bus B emission must not leak to bus A for scenario {0}.",
-                scenario
-            );
+            Assert.AreEqual(2, countB, "Bus B must keep dispatching normally after the reentrant exchange " + "for scenario {0}.", scenario);
+            Assert.AreEqual(2, countA, "A plain bus B emission must not leak to bus A for scenario {0}.", scenario);
 
             EmitOnBus(scenario, context, busA);
-            Assert.AreEqual(
-                3,
-                countA,
-                "Bus A must keep dispatching normally after the reentrant exchange "
-                    + "for scenario {0}.",
-                scenario
-            );
-            Assert.AreEqual(
-                2,
-                countB,
-                "A plain bus A emission must not leak to bus B for scenario {0}.",
-                scenario
-            );
+            Assert.AreEqual(3, countA, "Bus A must keep dispatching normally after the reentrant exchange " + "for scenario {0}.", scenario);
+            Assert.AreEqual(2, countB, "A plain bus A emission must not leak to bus B for scenario {0}.", scenario);
 
             tokenA.Dispose();
             tokenB.Dispose();
@@ -186,48 +124,25 @@ namespace DxMessaging.Tests.Runtime.Core
             handlerB.active = false;
         }
 
-        private static MessageRegistrationHandle RegisterReentrantHandler(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            InstanceId context,
-            Action onInvoked
-        )
+        private static MessageRegistrationHandle RegisterReentrantHandler(MessageScenario scenario, MessageRegistrationToken token, InstanceId context, Action onInvoked)
         {
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
                 {
-                    return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
-                        scenario,
-                        token,
-                        (in SimpleUntargetedMessage _) => onInvoked()
-                    );
+                    return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(scenario, token, (in SimpleUntargetedMessage _) => onInvoked());
                 }
                 case MessageKind.Targeted:
                 {
-                    return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        context,
-                        (in SimpleTargetedMessage _) => onInvoked()
-                    );
+                    return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(scenario, token, context, (in SimpleTargetedMessage _) => onInvoked());
                 }
                 case MessageKind.Broadcast:
                 {
-                    return ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        context,
-                        (in SimpleBroadcastMessage _) => onInvoked()
-                    );
+                    return ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(scenario, token, context, (in SimpleBroadcastMessage _) => onInvoked());
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
@@ -256,11 +171,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }

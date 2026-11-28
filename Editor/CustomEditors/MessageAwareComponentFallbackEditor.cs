@@ -71,14 +71,10 @@ namespace DxMessaging.Editor.CustomEditors
         internal const string RootClassName = "dxmessaging-fallback-inspector";
         internal const string WarningHostName = "dxmessaging-fallback-inspector-warning-host";
         internal const string WarningHostClassName = "dxmessaging-fallback-inspector-warning-host";
-        internal const string DefaultInspectorBodyName =
-            "dxmessaging-fallback-inspector-default-body";
-        internal const string DefaultInspectorBodyClassName =
-            "dxmessaging-fallback-inspector-default-body";
-        internal const string SubscriptionsHostName =
-            "dxmessaging-fallback-inspector-subscriptions-host";
-        internal const string SubscriptionsHostClassName =
-            "dxmessaging-fallback-inspector-subscriptions-host";
+        internal const string DefaultInspectorBodyName = "dxmessaging-fallback-inspector-default-body";
+        internal const string DefaultInspectorBodyClassName = "dxmessaging-fallback-inspector-default-body";
+        internal const string SubscriptionsHostName = "dxmessaging-fallback-inspector-subscriptions-host";
+        internal const string SubscriptionsHostClassName = "dxmessaging-fallback-inspector-subscriptions-host";
 
         /// <summary>
         /// Poll interval for the subscriptions section. Registrations change from game code with
@@ -90,9 +86,7 @@ namespace DxMessaging.Editor.CustomEditors
 
         public override VisualElement CreateInspectorGUI()
         {
-            return BuildInspectorGUI(this, () =>
-                MessageAwareComponentInspectorOverlay.ResolveInspectorState(target)
-            );
+            return BuildInspectorGUI(this, () => MessageAwareComponentInspectorOverlay.ResolveInspectorState(target));
         }
 
         public override void OnInspectorGUI()
@@ -113,10 +107,7 @@ namespace DxMessaging.Editor.CustomEditors
             DrawDefaultInspector();
         }
 
-        internal static VisualElement BuildInspectorGUI(
-            Editor editor,
-            Func<MessageAwareComponentInspectorState> resolveState
-        )
+        internal static VisualElement BuildInspectorGUI(Editor editor, Func<MessageAwareComponentInspectorState> resolveState)
         {
             if (editor == null)
             {
@@ -185,10 +176,7 @@ namespace DxMessaging.Editor.CustomEditors
             return components;
         }
 
-        private static void AddSubscriptionsSection(
-            VisualElement root,
-            IReadOnlyList<MessageAwareComponent> components
-        )
+        private static void AddSubscriptionsSection(VisualElement root, IReadOnlyList<MessageAwareComponent> components)
         {
             if (components == null || components.Count == 0)
             {
@@ -202,8 +190,7 @@ namespace DxMessaging.Editor.CustomEditors
             long revision = long.MinValue;
             void Refresh()
             {
-                MessageAwareComponentSubscriptionsState state =
-                    MessageAwareComponentSubscriptionsState.Capture(components);
+                MessageAwareComponentSubscriptionsState state = MessageAwareComponentSubscriptionsState.Capture(components);
                 if (state.SelectionCount == 0)
                 {
                     revision = state.Revision;
@@ -232,9 +219,7 @@ namespace DxMessaging.Editor.CustomEditors
             }
             if (root.userData is not InspectorWarningBinding binding)
             {
-                throw new InvalidOperationException(
-                    "Fallback inspector root is missing its warning binding."
-                );
+                throw new InvalidOperationException("Fallback inspector root is missing its warning binding.");
             }
 
             binding.Refresh();
@@ -247,14 +232,10 @@ namespace DxMessaging.Editor.CustomEditors
             private bool _connected;
             private bool _refreshRetryScheduled;
 
-            internal InspectorWarningBinding(
-                VisualElement warningHost,
-                Func<MessageAwareComponentInspectorState> resolveState
-            )
+            internal InspectorWarningBinding(VisualElement warningHost, Func<MessageAwareComponentInspectorState> resolveState)
             {
                 _warningHost = warningHost ?? throw new ArgumentNullException(nameof(warningHost));
-                _resolveState = resolveState
-                    ?? throw new ArgumentNullException(nameof(resolveState));
+                _resolveState = resolveState ?? throw new ArgumentNullException(nameof(resolveState));
             }
 
             internal void Connect()
@@ -287,9 +268,7 @@ namespace DxMessaging.Editor.CustomEditors
                 MessageAwareComponentInspectorState state = _resolveState();
                 if (state.Kind == MessageAwareComponentInspectorStateKind.None)
                 {
-                    if (
-                        MessageAwareComponentInspectorOverlay.IsInspectorResolutionTransientlyBlocked()
-                    )
+                    if (MessageAwareComponentInspectorOverlay.IsInspectorResolutionTransientlyBlocked())
                     {
                         ScheduleRefreshRetry();
                         return;

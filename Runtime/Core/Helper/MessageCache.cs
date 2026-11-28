@@ -262,9 +262,7 @@ namespace DxMessaging.Core.Helper
             {
                 if (int.MaxValue >> 1 < capacity)
                 {
-                    throw new InvalidOperationException(
-                        "The message type index exceeds the cache's supported capacity."
-                    );
+                    throw new InvalidOperationException("The message type index exceeds the cache's supported capacity.");
                 }
                 capacity <<= 1;
             }

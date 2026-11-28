@@ -283,18 +283,7 @@
           "minimum": 0
         }
       },
-      "required": [
-        "payloadType",
-        "owners",
-        "tokens",
-        "registrations",
-        "priorities",
-        "routes",
-        "dispatchRoute",
-        "liveBefore",
-        "liveDuringOperation",
-        "liveAfterOperation"
-      ],
+      "required": ["payloadType", "owners", "tokens", "registrations", "priorities", "routes", "dispatchRoute", "liveBefore", "liveDuringOperation", "liveAfterOperation"],
       "additionalProperties": false
     },
     "mpTopology": {
@@ -359,15 +348,7 @@
           "additionalProperties": false
         }
       },
-      "required": [
-        "payloadType",
-        "passing",
-        "subscriptions",
-        "filterOrders",
-        "keys",
-        "publishKey",
-        "storage"
-      ],
+      "required": ["payloadType", "passing", "subscriptions", "filterOrders", "keys", "publishKey", "storage"],
       "additionalProperties": false
     },
     "topology": {
@@ -392,13 +373,7 @@
           "minimum": 0
         }
       },
-      "required": [
-        "dxmessaging",
-        "messagepipe",
-        "terminalCallbacksPerOperation",
-        "lifecycleOperationsPerOperation",
-        "progressIncrementPerOperation"
-      ],
+      "required": ["dxmessaging", "messagepipe", "terminalCallbacksPerOperation", "lifecycleOperationsPerOperation", "progressIncrementPerOperation"],
       "additionalProperties": false
     },
     "row": {
@@ -451,14 +426,7 @@
           }
         }
       },
-      "required": [
-        "supported",
-        "publicResultIds",
-        "internalTwin",
-        "workloadScope",
-        "topology",
-        "dimensions"
-      ],
+      "required": ["supported", "publicResultIds", "internalTwin", "workloadScope", "topology", "dimensions"],
       "additionalProperties": false
     },
     "contractPair": {
@@ -657,14 +625,7 @@
               "minLength": 1
             }
           },
-          "required": [
-            "publicRows",
-            "supportedPairs",
-            "requiredDimensions",
-            "dimensionEntries",
-            "meaning",
-            "nativeEvidencePolicy"
-          ],
+          "required": ["publicRows", "supportedPairs", "requiredDimensions", "dimensionEntries", "meaning", "nativeEvidencePolicy"],
           "additionalProperties": false
         },
         "identity": {
@@ -787,14 +748,7 @@
                   "minLength": 1
                 }
               },
-              "required": [
-                "measuredCalls",
-                "measuredBytes",
-                "status",
-                "scope",
-                "dxmessaging",
-                "messagepipe"
-              ],
+              "required": ["measuredCalls", "measuredBytes", "status", "scope", "dxmessaging", "messagepipe"],
               "additionalProperties": false
             },
             "cleanup": {
@@ -881,14 +835,7 @@
                   "uniqueItems": true
                 }
               },
-              "required": [
-                "passing",
-                "ownersActive",
-                "tokensEnabled",
-                "physicalSlots",
-                "physicalStatus",
-                "sourceRefs"
-              ],
+              "required": ["passing", "ownersActive", "tokensEnabled", "physicalSlots", "physicalStatus", "sourceRefs"],
               "additionalProperties": false
             },
             "messagepipe": {
@@ -910,15 +857,7 @@
               "additionalProperties": false
             }
           },
-          "required": [
-            "callbackMutation",
-            "diagnostics",
-            "allocationWork",
-            "cleanup",
-            "contractTests",
-            "dxmessaging",
-            "messagepipe"
-          ],
+          "required": ["callbackMutation", "diagnostics", "allocationWork", "cleanup", "contractTests", "dxmessaging", "messagepipe"],
           "additionalProperties": false
         },
         "rowDefaults": {
@@ -1030,10 +969,7 @@
                       "const": true
                     },
                     "publicResultIds": {
-                      "const": [
-                        "Comparison_DxMessaging_GlobalToOne",
-                        "Comparison_MessagePipe_GlobalToOne"
-                      ]
+                      "const": ["Comparison_DxMessaging_GlobalToOne", "Comparison_MessagePipe_GlobalToOne"]
                     },
                     "internalTwin": {
                       "const": "UntargetedFlood_OneHandler"
@@ -1109,10 +1045,7 @@
                       "const": true
                     },
                     "publicResultIds": {
-                      "const": [
-                        "Comparison_DxMessaging_GlobalToMany",
-                        "Comparison_MessagePipe_GlobalToMany"
-                      ]
+                      "const": ["Comparison_DxMessaging_GlobalToMany", "Comparison_MessagePipe_GlobalToMany"]
                     },
                     "internalTwin": {
                       "const": "UntargetedFlood_SixteenHandlers_OnePriority"
@@ -1188,10 +1121,7 @@
                       "const": true
                     },
                     "publicResultIds": {
-                      "const": [
-                        "Comparison_DxMessaging_KeyedToOne",
-                        "Comparison_MessagePipe_KeyedToOne"
-                      ]
+                      "const": ["Comparison_DxMessaging_KeyedToOne", "Comparison_MessagePipe_KeyedToOne"]
                     },
                     "internalTwin": {
                       "const": "InternalComparisonTwin_KeyedToOne"
@@ -1210,10 +1140,7 @@
                               "postProcessors": 0
                             },
                             "priorities": [0],
-                            "routes": [
-                              41000, 41001, 41002, 41003, 41004, 41005, 41006, 41007, 41008, 41009,
-                              41010, 41011, 41012, 41013, 41014, 41015
-                            ],
+                            "routes": [41000, 41001, 41002, 41003, 41004, 41005, 41006, 41007, 41008, 41009, 41010, 41011, 41012, 41013, 41014, 41015],
                             "dispatchRoute": 41000,
                             "liveBefore": 16,
                             "liveDuringOperation": 16,
@@ -1483,10 +1410,7 @@
                       "const": true
                     },
                     "publicResultIds": {
-                      "const": [
-                        "Comparison_DxMessaging_Filtered",
-                        "Comparison_MessagePipe_Filtered"
-                      ]
+                      "const": ["Comparison_DxMessaging_Filtered", "Comparison_MessagePipe_Filtered"]
                     },
                     "internalTwin": {
                       "const": "InternalComparisonTwin_Filtered"
@@ -1562,10 +1486,7 @@
                       "const": true
                     },
                     "publicResultIds": {
-                      "const": [
-                        "Comparison_DxMessaging_PostProcess",
-                        "Comparison_MessagePipe_PostProcess"
-                      ]
+                      "const": ["Comparison_DxMessaging_PostProcess", "Comparison_MessagePipe_PostProcess"]
                     },
                     "internalTwin": {
                       "const": "InternalComparisonTwin_PostProcess"
@@ -1641,10 +1562,7 @@
                       "const": true
                     },
                     "publicResultIds": {
-                      "const": [
-                        "Comparison_DxMessaging_FilteredPostProcess",
-                        "Comparison_MessagePipe_FilteredPostProcess"
-                      ]
+                      "const": ["Comparison_DxMessaging_FilteredPostProcess", "Comparison_MessagePipe_FilteredPostProcess"]
                     },
                     "internalTwin": {
                       "const": "InternalComparisonTwin_FilteredPostProcess"
@@ -1720,10 +1638,7 @@
                       "const": true
                     },
                     "publicResultIds": {
-                      "const": [
-                        "Comparison_DxMessaging_SubUnsub",
-                        "Comparison_MessagePipe_SubUnsub"
-                      ]
+                      "const": ["Comparison_DxMessaging_SubUnsub", "Comparison_MessagePipe_SubUnsub"]
                     },
                     "internalTwin": {
                       "const": "InternalComparisonTwin_SubUnsub"
@@ -1799,10 +1714,7 @@
                       "const": true
                     },
                     "publicResultIds": {
-                      "const": [
-                        "Comparison_DxMessaging_StructNoBox",
-                        "Comparison_MessagePipe_StructNoBox"
-                      ]
+                      "const": ["Comparison_DxMessaging_StructNoBox", "Comparison_MessagePipe_StructNoBox"]
                     },
                     "internalTwin": {
                       "const": "InternalComparisonTwin_StructNoBox"
@@ -1867,17 +1779,7 @@
               ]
             }
           },
-          "required": [
-            "GlobalToOne",
-            "GlobalToMany",
-            "KeyedToOne",
-            "PriorityOrdered",
-            "Filtered",
-            "PostProcess",
-            "FilteredPostProcess",
-            "SubUnsub",
-            "StructNoBox"
-          ],
+          "required": ["GlobalToOne", "GlobalToMany", "KeyedToOne", "PriorityOrdered", "Filtered", "PostProcess", "FilteredPostProcess", "SubUnsub", "StructNoBox"],
           "additionalProperties": false
         }
       },

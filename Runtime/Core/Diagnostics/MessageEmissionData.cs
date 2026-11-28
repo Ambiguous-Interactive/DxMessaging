@@ -65,20 +65,13 @@ namespace DxMessaging.Core.Diagnostics
         internal MessageEmissionData(IMessage message, InstanceId? context, long traceId)
             : this(message, context, traceId, registrationHandle: default) { }
 
-        internal MessageEmissionData(
-            IMessage message,
-            InstanceId? context,
-            long traceId,
-            MessageRegistrationHandle registrationHandle
-        )
+        internal MessageEmissionData(IMessage message, InstanceId? context, long traceId, MessageRegistrationHandle registrationHandle)
         {
             this.message = message;
             this.context = context;
             this.traceId = traceId;
             this.registrationHandle = registrationHandle;
-            stackTrace = IMessageBus.GlobalDiagnosticsStackTraces
-                ? GetAccurateStackTrace()
-                : string.Empty;
+            stackTrace = IMessageBus.GlobalDiagnosticsStackTraces ? GetAccurateStackTrace() : string.Empty;
         }
 
         private static string GetAccurateStackTrace()
@@ -111,21 +104,13 @@ namespace DxMessaging.Core.Diagnostics
             while (lineStart <= length)
             {
                 int lineEnd = lineStart;
-                while (
-                    lineEnd < length
-                    && fullStackTrace[lineEnd] != '\n'
-                    && fullStackTrace[lineEnd] != '\r'
-                )
+                while (lineEnd < length && fullStackTrace[lineEnd] != '\n' && fullStackTrace[lineEnd] != '\r')
                 {
                     lineEnd++;
                 }
 
                 int lineLength = lineEnd - lineStart;
-                if (
-                    0 < lineLength
-                    && !IsBlank(fullStackTrace, lineStart, lineLength)
-                    && !IsInternalFrame(fullStackTrace, lineStart, lineLength)
-                )
+                if (0 < lineLength && !IsBlank(fullStackTrace, lineStart, lineLength) && !IsInternalFrame(fullStackTrace, lineStart, lineLength))
                 {
                     builder ??= new StringBuilder(length);
                     if (0 < builder.Length)
@@ -142,11 +127,7 @@ namespace DxMessaging.Core.Diagnostics
                 }
 
                 // A CRLF pair terminates one line, matching the old separator list.
-                if (
-                    fullStackTrace[lineEnd] == '\r'
-                    && lineEnd + 1 < length
-                    && fullStackTrace[lineEnd + 1] == '\n'
-                )
+                if (fullStackTrace[lineEnd] == '\r' && lineEnd + 1 < length && fullStackTrace[lineEnd + 1] == '\n')
                 {
                     lineEnd++;
                 }
@@ -177,34 +158,15 @@ namespace DxMessaging.Core.Diagnostics
         private static bool IsInternalFrame(string text, int start, int length)
         {
             int ownerStart = text.IndexOf("DxMessaging.", start, length, StringComparison.Ordinal);
-            if (
-                ownerStart < 0
-                || (ownerStart != start && !char.IsWhiteSpace(text[ownerStart - 1]))
-                || 0 <= text.IndexOf('(', start, ownerStart - start)
-            )
+            if (ownerStart < 0 || (ownerStart != start && !char.IsWhiteSpace(text[ownerStart - 1])) || 0 <= text.IndexOf('(', start, ownerStart - start))
             {
                 return false;
             }
 
             int ownerLength = start + length - ownerStart;
-            return text.IndexOf(
-                    "DxMessaging.Core.",
-                    ownerStart,
-                    ownerLength,
-                    StringComparison.Ordinal
-                ) == ownerStart
-                || text.IndexOf(
-                    "DxMessaging.Unity.",
-                    ownerStart,
-                    ownerLength,
-                    StringComparison.Ordinal
-                ) == ownerStart
-                || text.IndexOf(
-                    "DxMessaging.Editor.",
-                    ownerStart,
-                    ownerLength,
-                    StringComparison.Ordinal
-                ) == ownerStart;
+            return text.IndexOf("DxMessaging.Core.", ownerStart, ownerLength, StringComparison.Ordinal) == ownerStart
+                || text.IndexOf("DxMessaging.Unity.", ownerStart, ownerLength, StringComparison.Ordinal) == ownerStart
+                || text.IndexOf("DxMessaging.Editor.", ownerStart, ownerLength, StringComparison.Ordinal) == ownerStart;
         }
     }
 }

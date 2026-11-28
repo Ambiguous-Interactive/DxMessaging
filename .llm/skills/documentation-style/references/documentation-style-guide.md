@@ -17,9 +17,8 @@ Inconsistent style leads to verbose, unclear docs that are hard to scan and easy
 ```markdown
 <!-- BAD: Too verbose -->
 
-In order to be able to successfully emit a message to a target, you will
-first need to ensure that you have obtained a valid InstanceId for that
-target, which can be accomplished by...
+In order to be able to successfully emit a message to a target, you will first need to ensure that you have obtained a valid InstanceId for that target, which can be accomplished
+by...
 
 <!-- GOOD: Concise -->
 
@@ -43,8 +42,7 @@ The MessageBus emits the message to all registered handlers.
 ```markdown
 <!-- BAD: Buries the lede -->
 
-There are several ways to register a handler, but the most common approach
-that you'll want to use in most cases is to call RegisterMessageHandler.
+There are several ways to register a handler, but the most common approach that you'll want to use in most cases is to call RegisterMessageHandler.
 
 <!-- GOOD: Action first -->
 
@@ -56,8 +54,7 @@ Call `RegisterMessageHandler` to subscribe to messages:
 ````markdown
 <!-- BAD: Describing code in words -->
 
-The method takes a type parameter for the message type, a target object,
-and a handler delegate. It returns a registration handle.
+The method takes a type parameter for the message type, a target object, and a handler delegate. It returns a registration handle.
 
 <!-- GOOD: Show, don't tell -->
 

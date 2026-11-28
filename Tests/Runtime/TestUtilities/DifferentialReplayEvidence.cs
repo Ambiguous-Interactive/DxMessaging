@@ -10,8 +10,7 @@ namespace DxMessaging.Tests.Runtime
     /// <summary>Writes opt-in, deterministic differential replay inputs and observations for sealing.</summary>
     internal static class DifferentialReplayEvidence
     {
-        internal const string DirectoryEnvironmentVariable =
-            "DXM_DIFFERENTIAL_REPLAY_EVIDENCE_DIRECTORY";
+        internal const string DirectoryEnvironmentVariable = "DXM_DIFFERENTIAL_REPLAY_EVIDENCE_DIRECTORY";
 
         internal static void TryWrite(
             BusTraceSequence original,
@@ -43,22 +42,12 @@ namespace DxMessaging.Tests.Runtime
                 messageKind = original.Scenario.Kind.ToString(),
                 fault = fault,
                 original = Capture(original, originalControl, originalCandidate, originalMismatch),
-                minimized = Capture(
-                    minimized,
-                    minimizedControl,
-                    minimizedCandidate,
-                    minimizedMismatch
-                ),
+                minimized = Capture(minimized, minimizedControl, minimizedCandidate, minimizedMismatch),
             };
             Directory.CreateDirectory(directory);
             string fileName = document.messageKind.ToLowerInvariant() + ".json";
             string filePath = Path.Combine(directory, fileName);
-            using FileStream stream = new(
-                filePath,
-                FileMode.CreateNew,
-                FileAccess.Write,
-                FileShare.None
-            );
+            using FileStream stream = new(filePath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
             using StreamWriter writer = new(stream, new UTF8Encoding(false));
             writer.Write(JsonUtility.ToJson(document));
             writer.Write('\n');
@@ -79,9 +68,7 @@ namespace DxMessaging.Tests.Runtime
                 category = mismatch.Category,
             };
 
-        private static OperationEvidence[] CaptureOperations(
-            IReadOnlyList<BusTraceOperation> operations
-        )
+        private static OperationEvidence[] CaptureOperations(IReadOnlyList<BusTraceOperation> operations)
         {
             OperationEvidence[] captured = new OperationEvidence[operations.Count];
             for (int index = 0; index < operations.Count; ++index)
@@ -109,9 +96,7 @@ namespace DxMessaging.Tests.Runtime
             return captured;
         }
 
-        private static ObservationEvidence[] CaptureObservations(
-            IReadOnlyList<BusTraceObservation> observations
-        )
+        private static ObservationEvidence[] CaptureObservations(IReadOnlyList<BusTraceObservation> observations)
         {
             ObservationEvidence[] captured = new ObservationEvidence[observations.Count];
             for (int index = 0; index < observations.Count; ++index)

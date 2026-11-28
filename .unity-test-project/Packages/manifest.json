@@ -25,14 +25,7 @@
     {
       "name": "package.openupm.com",
       "url": "https://package.openupm.com",
-      "scopes": [
-        "com.cysharp",
-        "com.gustavopsantos",
-        "com.svermeulen",
-        "com.neuecc",
-        "com.unity-atoms",
-        "jp.hadashikick"
-      ]
+      "scopes": ["com.cysharp", "com.gustavopsantos", "com.svermeulen", "com.neuecc", "com.unity-atoms", "jp.hadashikick"]
     }
   ],
   "testables": ["com.wallstop-studios.dxmessaging"]

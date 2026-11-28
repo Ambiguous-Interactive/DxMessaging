@@ -41,13 +41,7 @@ namespace DxMessaging.Core.Pooling
         private long _misses;
         private long _evictions;
 
-        public CollectionPool(
-            int maxRetained,
-            bool useLru,
-            Func<T> factory,
-            Action<T> onRecycled = null,
-            Action<T> onEvicted = null
-        )
+        public CollectionPool(int maxRetained, bool useLru, Func<T> factory, Action<T> onRecycled = null, Action<T> onEvicted = null)
         {
             if (maxRetained < 0)
             {
@@ -282,11 +276,7 @@ namespace DxMessaging.Core.Pooling
         {
             if (Environment.CurrentManagedThreadId != _ownerThreadId)
             {
-                throw new InvalidOperationException(
-                    "CollectionPool<"
-                        + typeof(T).Name
-                        + "> is single-threaded; accessed from foreign thread."
-                );
+                throw new InvalidOperationException("CollectionPool<" + typeof(T).Name + "> is single-threaded; accessed from foreign thread.");
             }
         }
     }

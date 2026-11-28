@@ -24,17 +24,11 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
 
         private static IEnumerable<TestCaseData> Cases()
         {
-            foreach (
-                MessageScenario scenario in MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext
-            )
+            foreach (MessageScenario scenario in MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext)
             {
                 foreach (bool fast in new[] { false, true })
                 {
-                    if (
-                        scenario.Kind == MessageKind.Untargeted
-                        && scenario.UsePostProcessor
-                        && !fast
-                    )
+                    if (scenario.Kind == MessageKind.Untargeted && scenario.UsePostProcessor && !fast)
                     {
                         continue;
                     }
@@ -44,13 +38,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                         {
                             foreach (bool nested in new[] { false, true })
                             {
-                                yield return new TestCaseData(
-                                    scenario,
-                                    fast,
-                                    force,
-                                    aged,
-                                    nested
-                                ).SetName(
+                                yield return new TestCaseData(scenario, fast, force, aged, nested).SetName(
                                     $"InFlightIdleSweep_{scenario}_fast{fast}_force{force}_aged{aged}_nested{nested}"
                                 );
                             }
@@ -61,30 +49,12 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
         }
 
         [TestCaseSource(nameof(Cases))]
-        public void OrdinaryTrimReclaimsEmptySlotsAfterTheActiveLeaseEnds(
-            MessageScenario scenario,
-            bool fast,
-            bool force,
-            bool aged,
-            bool nested
-        )
+        public void OrdinaryTrimReclaimsEmptySlotsAfterTheActiveLeaseEnds(MessageScenario scenario, bool fast, bool force, bool aged, bool nested)
         {
             string label = $"{scenario},fast={fast},force={force},aged={aged},nested={nested}";
-            Bus bus = Bus.CreateForInternalUse(
-                new ConstantClock(),
-                idleEvictionTicks: 0,
-                idleEvictionEnabled: false,
-                trimApiEnabled: true
-            );
-            MessageHandler handler = new MessageHandler(new InstanceId(9518), bus)
-            {
-                active = true,
-            };
-            using LeakWatcher watch = LeakWatcher.WatchWithSlots(
-                bus,
-                label: label,
-                handler: handler
-            );
+            Bus bus = Bus.CreateForInternalUse(new ConstantClock(), idleEvictionTicks: 0, idleEvictionEnabled: false, trimApiEnabled: true);
+            MessageHandler handler = new MessageHandler(new InstanceId(9518), bus) { active = true };
+            using LeakWatcher watch = LeakWatcher.WatchWithSlots(bus, label: label, handler: handler);
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
             MessageRegistrationToken outer = MessageRegistrationToken.Create(handler, bus);
             MessageRegistrationToken fresh = MessageRegistrationToken.Create(handler, bus);
@@ -136,40 +106,20 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     Emit(bus, scenario.Kind);
                 }
                 Assert.That(calls, Is.EqualTo(2), label + ": armed callback delivers exactly once");
-                Assert.That(
-                    inFlightSlots,
-                    Is.GreaterThan(0),
-                    label + ": active snapshot keeps storage alive in flight"
-                );
-                Assert.That(
-                    watch.Snapshot,
-                    Is.Zero,
-                    label + ": both tokens have no live registrations after dispatch"
-                );
+                Assert.That(inFlightSlots, Is.GreaterThan(0), label + ": active snapshot keeps storage alive in flight");
+                Assert.That(watch.Snapshot, Is.Zero, label + ": both tokens have no live registrations after dispatch");
                 Tick(bus);
                 IMessageBus.TrimResult result = bus.Trim(force: false);
                 TestContext.WriteLine(
                     $"{label}: after lease slots={bus.OccupiedTypeSlots}, targetSlots={bus.OccupiedTargetSlots}, typeEvictions={result.TypeSlotsEvicted}, dirtyTypes={ReadDirtyTypeCount(bus)}"
                 );
-                Assert.That(
-                    bus.OccupiedTypeSlots,
-                    Is.Zero,
-                    label + ": later ordinary trim must reclaim every empty candidate"
-                );
-                Assert.That(
-                    bus.OccupiedTargetSlots,
-                    Is.Zero,
-                    label + ": later ordinary trim must reclaim every empty context"
-                );
+                Assert.That(bus.OccupiedTypeSlots, Is.Zero, label + ": later ordinary trim must reclaim every empty candidate");
+                Assert.That(bus.OccupiedTargetSlots, Is.Zero, label + ": later ordinary trim must reclaim every empty context");
                 Register(fresh, scenario, fast, () => ++freshCalls, priority: 3);
                 fresh.Enable();
                 token.Disable();
                 Emit(bus, scenario.Kind);
-                Assert.That(
-                    freshCalls,
-                    Is.EqualTo(1),
-                    label + ": stale disabled token cannot consume a fresh callback"
-                );
+                Assert.That(freshCalls, Is.EqualTo(1), label + ": stale disabled token cannot consume a fresh callback");
                 Assert.That(calls, Is.EqualTo(2), label + ": retired callback remains retired");
             }
             finally
@@ -182,10 +132,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             }
         }
 
-        private static int ReadDirtyTypeCount(Bus bus) =>
-            (
-                (System.Collections.ICollection)MessageBusInspection.ReadField(bus, "_dirtyTypes")
-            ).Count;
+        private static int ReadDirtyTypeCount(Bus bus) => ((System.Collections.ICollection)MessageBusInspection.ReadField(bus, "_dirtyTypes")).Count;
 
         private static void Tick(Bus bus)
         {
@@ -208,100 +155,33 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             public Type MessageType => typeof(OuterMessage);
         }
 
-        private static MessageRegistrationHandle Register(
-            MessageRegistrationToken token,
-            MessageScenario scenario,
-            bool useFast,
-            Action record,
-            int priority
-        )
+        private static MessageRegistrationHandle Register(MessageRegistrationToken token, MessageScenario scenario, bool useFast, Action record, int priority)
         {
             Action<ProbeMessage> scalar = _ => record();
             Action<InstanceId, ProbeMessage> context = (_, __) => record();
             MessageHandler.FastHandler<ProbeMessage> fast = (in ProbeMessage _) => record();
-            MessageHandler.FastHandlerWithContext<ProbeMessage> fastContext = (
-                in InstanceId _,
-                in ProbeMessage __
-            ) => record();
+            MessageHandler.FastHandlerWithContext<ProbeMessage> fastContext = (in InstanceId _, in ProbeMessage __) => record();
             return (scenario.Kind, scenario.UsePostProcessor, !useFast) switch
             {
-                (MessageKind.Untargeted, false, true) => token.RegisterUntargeted(
-                    scalar,
-                    priority: priority
-                ),
-                (MessageKind.Untargeted, false, false) => token.RegisterUntargeted(
-                    fast,
-                    priority: priority
-                ),
-                (MessageKind.Untargeted, true, _) => token.RegisterUntargetedPostProcessor(
-                    fast,
-                    priority: priority
-                ),
-                (MessageKind.Targeted, false, true) => token.RegisterTargeted(
-                    Context,
-                    scalar,
-                    priority: priority
-                ),
-                (MessageKind.Targeted, false, false) => token.RegisterTargeted(
-                    Context,
-                    fast,
-                    priority: priority
-                ),
-                (MessageKind.Targeted, true, true) => token.RegisterTargetedPostProcessor(
-                    Context,
-                    scalar,
-                    priority: priority
-                ),
-                (MessageKind.Targeted, true, false) => token.RegisterTargetedPostProcessor(
-                    Context,
-                    fast,
-                    priority: priority
-                ),
-                (MessageKind.Broadcast, false, true) => token.RegisterBroadcast(
-                    Context,
-                    scalar,
-                    priority: priority
-                ),
-                (MessageKind.Broadcast, false, false) => token.RegisterBroadcast(
-                    Context,
-                    fast,
-                    priority: priority
-                ),
-                (MessageKind.Broadcast, true, true) => token.RegisterBroadcastPostProcessor(
-                    Context,
-                    scalar,
-                    priority: priority
-                ),
-                (MessageKind.Broadcast, true, false) => token.RegisterBroadcastPostProcessor(
-                    Context,
-                    fast,
-                    priority: priority
-                ),
-                (MessageKind.TargetedWithoutTargeting, false, true) =>
-                    token.RegisterTargetedWithoutTargeting(context, priority: priority),
-                (MessageKind.TargetedWithoutTargeting, false, false) =>
-                    token.RegisterTargetedWithoutTargeting(fastContext, priority: priority),
-                (MessageKind.TargetedWithoutTargeting, true, true) =>
-                    token.RegisterTargetedWithoutTargetingPostProcessor(
-                        context,
-                        priority: priority
-                    ),
-                (MessageKind.TargetedWithoutTargeting, true, false) =>
-                    token.RegisterTargetedWithoutTargetingPostProcessor(
-                        fastContext,
-                        priority: priority
-                    ),
-                (MessageKind.BroadcastWithoutSource, false, true) =>
-                    token.RegisterBroadcastWithoutSource(context, priority: priority),
-                (MessageKind.BroadcastWithoutSource, false, false) =>
-                    token.RegisterBroadcastWithoutSource(fastContext, priority: priority),
-                (MessageKind.BroadcastWithoutSource, true, true) =>
-                    token.RegisterBroadcastWithoutSourcePostProcessor(context, priority: priority),
-                (MessageKind.BroadcastWithoutSource, true, false) =>
-                    token.RegisterBroadcastWithoutSourcePostProcessor(
-                        fastContext,
-                        priority: priority
-                    ),
+                (MessageKind.Untargeted, false, true) => token.RegisterUntargeted(scalar, priority: priority),
+                (MessageKind.Untargeted, false, false) => token.RegisterUntargeted(fast, priority: priority),
+                (MessageKind.Untargeted, true, _) => token.RegisterUntargetedPostProcessor(fast, priority: priority),
+                (MessageKind.Targeted, false, true) => token.RegisterTargeted(Context, scalar, priority: priority),
+                (MessageKind.Targeted, false, false) => token.RegisterTargeted(Context, fast, priority: priority),
+                (MessageKind.Targeted, true, true) => token.RegisterTargetedPostProcessor(Context, scalar, priority: priority),
+                (MessageKind.Targeted, true, false) => token.RegisterTargetedPostProcessor(Context, fast, priority: priority),
+                (MessageKind.Broadcast, false, true) => token.RegisterBroadcast(Context, scalar, priority: priority),
+                (MessageKind.Broadcast, false, false) => token.RegisterBroadcast(Context, fast, priority: priority),
+                (MessageKind.Broadcast, true, true) => token.RegisterBroadcastPostProcessor(Context, scalar, priority: priority),
+                (MessageKind.Broadcast, true, false) => token.RegisterBroadcastPostProcessor(Context, fast, priority: priority),
+                (MessageKind.TargetedWithoutTargeting, false, true) => token.RegisterTargetedWithoutTargeting(context, priority: priority),
+                (MessageKind.TargetedWithoutTargeting, false, false) => token.RegisterTargetedWithoutTargeting(fastContext, priority: priority),
+                (MessageKind.TargetedWithoutTargeting, true, true) => token.RegisterTargetedWithoutTargetingPostProcessor(context, priority: priority),
+                (MessageKind.TargetedWithoutTargeting, true, false) => token.RegisterTargetedWithoutTargetingPostProcessor(fastContext, priority: priority),
+                (MessageKind.BroadcastWithoutSource, false, true) => token.RegisterBroadcastWithoutSource(context, priority: priority),
+                (MessageKind.BroadcastWithoutSource, false, false) => token.RegisterBroadcastWithoutSource(fastContext, priority: priority),
+                (MessageKind.BroadcastWithoutSource, true, true) => token.RegisterBroadcastWithoutSourcePostProcessor(context, priority: priority),
+                (MessageKind.BroadcastWithoutSource, true, false) => token.RegisterBroadcastWithoutSourcePostProcessor(fastContext, priority: priority),
                 _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
             };
         }
@@ -328,10 +208,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             }
         }
 
-        private readonly struct ProbeMessage
-            : IUntargetedMessage,
-                ITargetedMessage,
-                IBroadcastMessage
+        private readonly struct ProbeMessage : IUntargetedMessage, ITargetedMessage, IBroadcastMessage
         {
             public Type MessageType => typeof(ProbeMessage);
         }

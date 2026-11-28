@@ -17,30 +17,17 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
     public sealed class StickyStateRetentionTests
     {
         [Test]
-        public void ReplacementClearAndResetReleasePreviousPayload(
-            [Values(false, true)] bool referenceMessage,
-            [Values(0, 1, 2)] int release
-        )
+        public void ReplacementClearAndResetReleasePreviousPayload([Values(false, true)] bool referenceMessage, [Values(0, 1, 2)] int release)
         {
-            using DiagnosticsScope diagnostics = new DiagnosticsScope(
-                diagnosticsTargets: DiagnosticsTarget.Off
-            );
+            using DiagnosticsScope diagnostics = new DiagnosticsScope(diagnosticsTargets: DiagnosticsTarget.Off);
             MessageBus bus = new MessageBus();
             WeakReference payload = Publish(bus, referenceMessage);
             bus.Trim(force: true);
             Collect();
-            Assert.That(
-                payload.IsAlive,
-                Is.True,
-                "Trim must retain intentionally published current state."
-            );
+            Assert.That(payload.IsAlive, Is.True, "Trim must retain intentionally published current state.");
             Release(bus, referenceMessage, release);
             Collect();
-            Assert.That(
-                payload.IsAlive,
-                Is.False,
-                $"referenceMessage={referenceMessage},release={release}: old payload must become collectible."
-            );
+            Assert.That(payload.IsAlive, Is.False, $"referenceMessage={referenceMessage},release={release}: old payload must become collectible.");
             GC.KeepAlive(bus);
         }
 
@@ -48,44 +35,21 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
         public void EmptyHolderIsReleasedImmediatelyAndResetClearsEveryType()
         {
             MessageBus bus = new MessageBus();
-            FieldInfo storage = typeof(MessageBus).GetField(
-                "_stickyValues",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
+            FieldInfo storage = typeof(MessageBus).GetField("_stickyValues", BindingFlags.Instance | BindingFlags.NonPublic);
             Assert.That(storage, Is.Not.Null, "The retained-state holder must be inspectable.");
-            Assert.That(
-                storage.GetValue(bus),
-                Is.Null,
-                "Ordinary buses allocate no state dictionary."
-            );
+            Assert.That(storage.GetValue(bus), Is.Null, "Ordinary buses allocate no state dictionary.");
             Publish(bus, false);
             Publish(bus, true);
-            Assert.That(
-                storage.GetValue(bus),
-                Is.Not.Null,
-                "Explicit publication creates owned state."
-            );
+            Assert.That(storage.GetValue(bus), Is.Not.Null, "Explicit publication creates owned state.");
             bus.ClearLatest<ValueState>();
-            Assert.That(
-                bus.TryGetLatest<ReferenceState>(out _),
-                Is.True,
-                "Clearing one type preserves another."
-            );
+            Assert.That(bus.TryGetLatest<ReferenceState>(out _), Is.True, "Clearing one type preserves another.");
             bus.ClearLatest<ReferenceState>();
-            Assert.That(
-                storage.GetValue(bus),
-                Is.Null,
-                "Final clear releases the dictionary immediately without a sweep."
-            );
+            Assert.That(storage.GetValue(bus), Is.Null, "Final clear releases the dictionary immediately without a sweep.");
             Publish(bus, false);
             Publish(bus, true);
             bus.ResetState();
             Assert.That(bus.TryGetLatest<ValueState>(out _), Is.False, "Reset clears value state.");
-            Assert.That(
-                bus.TryGetLatest<ReferenceState>(out _),
-                Is.False,
-                "Reset clears reference state."
-            );
+            Assert.That(bus.TryGetLatest<ReferenceState>(out _), Is.False, "Reset clears reference state.");
             Assert.That(storage.GetValue(bus), Is.Null, "Reset drops every holder.");
         }
 
@@ -94,9 +58,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
         [Test]
         public void ReplayGroupEnrollmentReleasesRemovedReceiver([Values(false, true)] bool throws)
         {
-            using DiagnosticsScope diagnostics = new DiagnosticsScope(
-                diagnosticsTargets: DiagnosticsTarget.Off
-            );
+            using DiagnosticsScope diagnostics = new DiagnosticsScope(diagnosticsTargets: DiagnosticsTarget.Off);
             MessageBus bus = new MessageBus();
             MessageHandler handler = new MessageHandler(new InstanceId(984), bus) { active = true };
             using MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
@@ -104,16 +66,8 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             bus.EmitSticky(ref message);
             WeakReference receiver = EnrollAndRemove(token, throws);
             Collect();
-            Assert.That(
-                receiver.IsAlive,
-                Is.False,
-                $"throws={throws}: completed replay must release its receiver while the token stays alive."
-            );
-            Assert.That(
-                bus.RegisteredUntargeted,
-                Is.Zero,
-                "Group disposal removes the subscription."
-            );
+            Assert.That(receiver.IsAlive, Is.False, $"throws={throws}: completed replay must release its receiver while the token stays alive.");
+            Assert.That(bus.RegisteredUntargeted, Is.Zero, "Group disposal removes the subscription.");
             GC.KeepAlive(token);
             GC.KeepAlive(bus);
         }
@@ -124,10 +78,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             using MessageRegistrationGroup group = token.CreateGroup();
             ReplayReceiver receiver = new ReplayReceiver(group, throws);
             WeakReference observed = new WeakReference(receiver);
-            receiver.Handle = token.RegisterUntargeted<ValueState>(
-                receiver.Receive,
-                replayLatest: true
-            );
+            receiver.Handle = token.RegisterUntargeted<ValueState>(receiver.Receive, replayLatest: true);
             if (throws)
             {
                 Assert.Throws<InvalidOperationException>(() => token.Enable());

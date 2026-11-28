@@ -81,11 +81,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         public void MessageRegistrationHandlePhysicalSize()
         {
             int sizeBytes = Marshal.SizeOf(typeof(MessageRegistrationHandle));
-            Assert.AreEqual(
-                16,
-                sizeBytes,
-                "The { long id; int slot/hash } handle layout must remain 16 bytes after alignment."
-            );
+            Assert.AreEqual(16, sizeBytes, "The { long id; int slot/hash } handle layout must remain 16 bytes after alignment.");
             Debug.Log($"DX_STRUCTURE_SIZE type=MessageRegistrationHandle bytes={sizeBytes}");
             TestContext.Out.WriteLine($"message-registration-handle-size,{sizeBytes}");
         }
@@ -93,8 +89,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         private const string BaselineOutputEnvVar = "DX_PERF_BASELINE";
         private const string BaselineModeEnvVar = "DX_PERF_BASELINE_MODE";
         private const string PackageName = "com.wallstop-studios.dxmessaging";
-        private const string BaselineCsvHeader =
-            "scenario,platform,commit,runIndex,emitsPerSecond,gcAllocations,wallClockMs,gcAllocatedBytes";
+        private const string BaselineCsvHeader = "scenario,platform,commit,runIndex,emitsPerSecond,gcAllocations,wallClockMs,gcAllocatedBytes";
         private static readonly InstanceId Target = new(31001);
         private static readonly InstanceId Source = new(31002);
         private static readonly InstanceId MissingTarget = new(31003);
@@ -169,9 +164,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         [TestCaseSource(nameof(RegistrationAttributionBenchmarkCases))]
         public void RegistrationAttributionBenchmark(RegistrationAttributionOperation operation)
         {
-            DispatchBenchmarkResult result = RegistrationAttributionBenchmarks.RunScenario(
-                operation
-            );
+            DispatchBenchmarkResult result = RegistrationAttributionBenchmarks.RunScenario(operation);
             Debug.Log(result.ToStructuredLog());
             TestContext.Out.WriteLine(result.ToCsvRow());
         }
@@ -180,9 +173,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         [TestCaseSource(nameof(DeregistrationAttributionBenchmarkCases))]
         public void DeregistrationAttributionBenchmark(DeregistrationAttributionOperation operation)
         {
-            DispatchBenchmarkResult result = DeregistrationAttributionBenchmarks.RunScenario(
-                operation
-            );
+            DispatchBenchmarkResult result = DeregistrationAttributionBenchmarks.RunScenario(operation);
             Debug.Log(result.ToStructuredLog());
             TestContext.Out.WriteLine(result.ToCsvRow());
         }
@@ -190,22 +181,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         [Test, Performance, Category("PerfBench"), Order(DispatchTwinDiagnosticOrder)]
         public void DirectAndTokenDispatchTwinPalindromeDiagnostic()
         {
-            DispatchBenchmarkResult tokenA = RunScenario(
-                DispatchBenchmarkScenario.UntargetedFloodOneHandler,
-                logResult: false
-            );
-            DispatchBenchmarkResult directA = RunScenario(
-                DispatchBenchmarkScenario.UntargetedFloodOneDirectHandler,
-                logResult: false
-            );
-            DispatchBenchmarkResult directB = RunScenario(
-                DispatchBenchmarkScenario.UntargetedFloodOneDirectHandler,
-                logResult: false
-            );
-            DispatchBenchmarkResult tokenB = RunScenario(
-                DispatchBenchmarkScenario.UntargetedFloodOneHandler,
-                logResult: false
-            );
+            DispatchBenchmarkResult tokenA = RunScenario(DispatchBenchmarkScenario.UntargetedFloodOneHandler, logResult: false);
+            DispatchBenchmarkResult directA = RunScenario(DispatchBenchmarkScenario.UntargetedFloodOneDirectHandler, logResult: false);
+            DispatchBenchmarkResult directB = RunScenario(DispatchBenchmarkScenario.UntargetedFloodOneDirectHandler, logResult: false);
+            DispatchBenchmarkResult tokenB = RunScenario(DispatchBenchmarkScenario.UntargetedFloodOneHandler, logResult: false);
 
             Assert.Greater(tokenA.EmitsPerSecond, 0d);
             Assert.Greater(directA.EmitsPerSecond, 0d);
@@ -216,10 +195,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             double tokenToDirectB = tokenB.EmitsPerSecond / directB.EmitsPerSecond;
             double ratioSpreadPercent = Math.Abs(tokenToDirectB / tokenToDirectA - 1d) * 100d;
             double centeredTokenToDirect = Math.Sqrt(tokenToDirectA * tokenToDirectB);
-            double tokenDriftPercent =
-                Math.Abs(tokenB.EmitsPerSecond / tokenA.EmitsPerSecond - 1d) * 100d;
-            double directDriftPercent =
-                Math.Abs(directB.EmitsPerSecond / directA.EmitsPerSecond - 1d) * 100d;
+            double tokenDriftPercent = Math.Abs(tokenB.EmitsPerSecond / tokenA.EmitsPerSecond - 1d) * 100d;
+            double directDriftPercent = Math.Abs(directB.EmitsPerSecond / directA.EmitsPerSecond - 1d) * 100d;
 
             Debug.Log(
                 "DXM_DISPATCH_TWIN "
@@ -239,39 +216,17 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         [Test, Performance, Category("PerfBench"), Order(DeregistrationAttributionDiagnosticOrder)]
         public void DirectHandlerAndBusDeregistrationPalindromeDiagnostic()
         {
-            DeregistrationAttributionPalindromeDiagnostic diagnostic =
-                DeregistrationAttributionBenchmarks.RunPairedDiagnostic();
-            Assert.IsTrue(
-                diagnostic.JointTrialSelection,
-                "The measured diagnostic must select one complete trial."
-            );
-            Assert.IsTrue(
-                diagnostic.SameTrialArms,
-                "The measured diagnostic must retain all four arms from one trial."
-            );
-            Assert.IsTrue(
-                diagnostic.PreparationDirectionAlternated,
-                "The measured diagnostic must alternate preparation direction across trials."
-            );
-            Assert.AreEqual(
-                DeregistrationAttributionBenchmarks.PalindromeTimingTrials,
-                diagnostic.TimingTrials,
-                "The measured diagnostic must report its actual trial count."
-            );
+            DeregistrationAttributionPalindromeDiagnostic diagnostic = DeregistrationAttributionBenchmarks.RunPairedDiagnostic();
+            Assert.IsTrue(diagnostic.JointTrialSelection, "The measured diagnostic must select one complete trial.");
+            Assert.IsTrue(diagnostic.SameTrialArms, "The measured diagnostic must retain all four arms from one trial.");
+            Assert.IsTrue(diagnostic.PreparationDirectionAlternated, "The measured diagnostic must alternate preparation direction across trials.");
+            Assert.AreEqual(DeregistrationAttributionBenchmarks.PalindromeTimingTrials, diagnostic.TimingTrials, "The measured diagnostic must report its actual trial count.");
             string[] trialRecords = diagnostic.TrialSequence.Split(',');
-            Assert.AreEqual(
-                DeregistrationAttributionBenchmarks.PalindromeTimingTrials,
-                trialRecords.Length,
-                "The measured diagnostic must retain every trial record."
-            );
+            Assert.AreEqual(DeregistrationAttributionBenchmarks.PalindromeTimingTrials, trialRecords.Length, "The measured diagnostic must retain every trial record.");
             for (int trial = 0; trial < trialRecords.Length; trial++)
             {
                 string expectedPrefix = $"{trial}:{((trial & 1) == 0 ? 'F' : 'R')}:";
-                StringAssert.StartsWith(
-                    expectedPrefix,
-                    trialRecords[trial],
-                    $"trial={trial}, expectedPrefix={expectedPrefix}: trial provenance changed."
-                );
+                StringAssert.StartsWith(expectedPrefix, trialRecords[trial], $"trial={trial}, expectedPrefix={expectedPrefix}: trial provenance changed.");
             }
             string evidence = diagnostic.ToStructuredLog();
             Debug.Log(evidence);
@@ -282,11 +237,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         public void UpdateDispatchThroughputBaseline()
         {
             string outputPath = ResolveBaselineOutputPath();
-            bool replaceAllRows = string.Equals(
-                Environment.GetEnvironmentVariable(BaselineModeEnvVar),
-                "replace",
-                StringComparison.OrdinalIgnoreCase
-            );
+            bool replaceAllRows = string.Equals(Environment.GetEnvironmentVariable(BaselineModeEnvVar), "replace", StringComparison.OrdinalIgnoreCase);
 
             List<DispatchBenchmarkResult> results = new();
             foreach (DispatchBenchmarkScenario scenario in DispatchBenchmarkScenarios.All)
@@ -298,10 +249,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             TestContext.Out.WriteLine($"Updated performance baseline: {outputPath}");
         }
 
-        public static DispatchBenchmarkResult RunScenario(
-            DispatchBenchmarkScenario scenario,
-            bool logResult = true
-        )
+        public static DispatchBenchmarkResult RunScenario(DispatchBenchmarkScenario scenario, bool logResult = true)
         {
             DispatchBenchmarkResult result = MeasureScenario(scenario);
             if (logResult)
@@ -363,51 +311,30 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         private static IEnumerable<TestCaseData> DeregistrationAttributionBenchmarkCases()
         {
-            foreach (
-                DeregistrationAttributionOperation operation in Enum.GetValues(
-                    typeof(DeregistrationAttributionOperation)
-                )
-            )
+            foreach (DeregistrationAttributionOperation operation in Enum.GetValues(typeof(DeregistrationAttributionOperation)))
             {
-                yield return new TestCaseData(operation).SetName(
-                    DeregistrationAttributionBenchmarks.ScenarioKey(operation)
-                );
+                yield return new TestCaseData(operation).SetName(DeregistrationAttributionBenchmarks.ScenarioKey(operation));
             }
         }
 
         private static IEnumerable<TestCaseData> RegistrationAttributionBenchmarkCases()
         {
-            foreach (
-                RegistrationAttributionOperation operation in Enum.GetValues(
-                    typeof(RegistrationAttributionOperation)
-                )
-            )
+            foreach (RegistrationAttributionOperation operation in Enum.GetValues(typeof(RegistrationAttributionOperation)))
             {
-                yield return new TestCaseData(operation).SetName(
-                    RegistrationAttributionBenchmarks.ScenarioKey(operation)
-                );
+                yield return new TestCaseData(operation).SetName(RegistrationAttributionBenchmarks.ScenarioKey(operation));
             }
         }
 
-        private static DispatchBenchmarkResult MeasureEmitScenario(
-            DispatchBenchmarkScenario scenario
-        )
+        private static DispatchBenchmarkResult MeasureEmitScenario(DispatchBenchmarkScenario scenario)
         {
             using BenchmarkRegistrationScope scope = new();
-            Assert.IsFalse(
-                scope.Bus.DiagnosticsMode,
-                "Dispatch throughput rows must isolate the diagnostics-off production path."
-            );
-            Assert.IsFalse(
-                scope.PrimaryToken.DiagnosticMode,
-                "Dispatch throughput rows must not record per-registration diagnostics."
-            );
+            Assert.IsFalse(scope.Bus.DiagnosticsMode, "Dispatch throughput rows must isolate the diagnostics-off production path.");
+            Assert.IsFalse(scope.PrimaryToken.DiagnosticMode, "Dispatch throughput rows must not record per-registration diagnostics.");
             InvocationCounter handlerInvocations = new();
             ConfigureScenario(scope, scenario, handlerInvocations);
 
             BenchmarkMeasurement measurement = BenchmarkProtocol.Measure(
-                () =>
-                    EmitMany(scope.Bus, scenario, DispatchBenchmarkScenarios.WarmupEmits(scenario)),
+                () => EmitMany(scope.Bus, scenario, DispatchBenchmarkScenarios.WarmupEmits(scenario)),
                 () =>
                 {
                     EmitMany(scope.Bus, scenario, BenchmarkProtocol.BatchSize);
@@ -425,8 +352,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 duplicated dispatch as well as the probe-batch accounting bug; the loose ">0" it
                 replaced caught neither.
             */
-            long expectedHandlerInvocations =
-                (long)perEmit * (warmupEmits + measurement.TotalEmittedOperations);
+            long expectedHandlerInvocations = (long)perEmit * (warmupEmits + measurement.TotalEmittedOperations);
             long observedHandlerInvocations = handlerInvocations.Count;
             long deltaHandlerInvocations = observedHandlerInvocations - expectedHandlerInvocations;
             Assert.AreEqual(
@@ -524,9 +450,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         {
             // Pay first-touch constructor/JIT costs outside both measurement passes.
             MessageBus warmupBus;
-            using (
-                IDisposable registry = MessageBusInspection.IsolateIdleSweepRegistryForBenchmark()
-            )
+            using (IDisposable registry = MessageBusInspection.IsolateIdleSweepRegistryForBenchmark())
             {
                 warmupBus = new MessageBus();
             }
@@ -534,9 +458,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             long startTimestamp;
             long endTimestamp;
             AllocationProbe.SettleHeapForMeasurement();
-            using (
-                IDisposable registry = MessageBusInspection.IsolateIdleSweepRegistryForBenchmark()
-            )
+            using (IDisposable registry = MessageBusInspection.IsolateIdleSweepRegistryForBenchmark())
             {
                 startTimestamp = Stopwatch.GetTimestamp();
                 for (int index = 0; index < timedBuses.Length; index++)
@@ -545,11 +467,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 }
                 endTimestamp = Stopwatch.GetTimestamp();
             }
-            Assert.AreEqual(
-                ConstructionBatchSize,
-                CountConstructed(timedBuses),
-                "The construction benchmark must retain every MessageBus through the timed pass."
-            );
+            Assert.AreEqual(ConstructionBatchSize, CountConstructed(timedBuses), "The construction benchmark must retain every MessageBus through the timed pass.");
             Array.Clear(timedBuses, 0, timedBuses.Length);
 
             /*
@@ -559,9 +477,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             MessageBus[] allocationBuses = new MessageBus[ConstructionBatchSize];
             AllocationProbe.SettleHeapForMeasurement();
             AllocationProbe.AllocationSample sample;
-            using (
-                IDisposable registry = MessageBusInspection.IsolateIdleSweepRegistryForBenchmark()
-            )
+            using (IDisposable registry = MessageBusInspection.IsolateIdleSweepRegistryForBenchmark())
             {
                 sample = AllocationProbe.MeasureWithBytes(() =>
                 {
@@ -585,8 +501,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         private static DispatchBenchmarkResult MeasureMessageRegistrationTokenConstruction()
         {
-            using IDisposable registry =
-                MessageBusInspection.IsolateIdleSweepRegistryForBenchmark();
+            using IDisposable registry = MessageBusInspection.IsolateIdleSweepRegistryForBenchmark();
 
             /*
                 Token creation requires both a handler and a bus. Build those dependencies before
@@ -605,10 +520,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             MessageBus warmupBus = new();
             MessageHandler warmupHandler = new(new InstanceId(34001), warmupBus);
-            MessageRegistrationToken warmupToken = MessageRegistrationToken.Create(
-                warmupHandler,
-                warmupBus
-            );
+            MessageRegistrationToken warmupToken = MessageRegistrationToken.Create(warmupHandler, warmupBus);
             warmupToken.Dispose();
 
             long startTimestamp = 0;
@@ -622,11 +534,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     tokens[index] = MessageRegistrationToken.Create(handlers[index], buses[index]);
                 }
                 endTimestamp = Stopwatch.GetTimestamp();
-                Assert.AreEqual(
-                    ConstructionBatchSize,
-                    CountConstructed(tokens),
-                    "The construction benchmark must retain every MessageRegistrationToken through the timed pass."
-                );
+                Assert.AreEqual(ConstructionBatchSize, CountConstructed(tokens), "The construction benchmark must retain every MessageRegistrationToken through the timed pass.");
             }
             finally
             {
@@ -641,10 +549,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 {
                     for (int index = 0; index < tokens.Length; index++)
                     {
-                        tokens[index] = MessageRegistrationToken.Create(
-                            handlers[index],
-                            buses[index]
-                        );
+                        tokens[index] = MessageRegistrationToken.Create(handlers[index], buses[index]);
                     }
                 });
                 Assert.AreEqual(
@@ -844,27 +749,16 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             profiler, so the rendered doc omits its allocation columns. Profiler-bearing editor
             runs still report the per-kind registration allocation numbers for local analysis.
         */
-        private static DispatchBenchmarkResult MeasureRegistrationMarginal(
-            DispatchBenchmarkScenario scenario
-        )
+        private static DispatchBenchmarkResult MeasureRegistrationMarginal(DispatchBenchmarkScenario scenario)
         {
             switch (scenario)
             {
                 case DispatchBenchmarkScenario.UntargetedRegistrationMarginal:
-                    return MeasureRegistrationMarginal<SimpleUntargetedMessage>(
-                        scenario,
-                        static (token, handler) => token.RegisterUntargeted(handler)
-                    );
+                    return MeasureRegistrationMarginal<SimpleUntargetedMessage>(scenario, static (token, handler) => token.RegisterUntargeted(handler));
                 case DispatchBenchmarkScenario.TargetedRegistrationMarginal:
-                    return MeasureRegistrationMarginal<SimpleTargetedMessage>(
-                        scenario,
-                        static (token, handler) => token.RegisterTargeted(Target, handler)
-                    );
+                    return MeasureRegistrationMarginal<SimpleTargetedMessage>(scenario, static (token, handler) => token.RegisterTargeted(Target, handler));
                 case DispatchBenchmarkScenario.BroadcastRegistrationMarginal:
-                    return MeasureRegistrationMarginal<SimpleBroadcastMessage>(
-                        scenario,
-                        static (token, handler) => token.RegisterBroadcast(Source, handler)
-                    );
+                    return MeasureRegistrationMarginal<SimpleBroadcastMessage>(scenario, static (token, handler) => token.RegisterBroadcast(Source, handler));
                 default:
                     throw new ArgumentOutOfRangeException(nameof(scenario), scenario, null);
             }
@@ -872,17 +766,12 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         private static DispatchBenchmarkResult MeasureRegistrationMarginal<T>(
             DispatchBenchmarkScenario scenario,
-            Func<
-                MessageRegistrationToken,
-                MessageHandler.FastHandler<T>,
-                MessageRegistrationHandle
-            > register
+            Func<MessageRegistrationToken, MessageHandler.FastHandler<T>, MessageRegistrationHandle> register
         )
             where T : DxMessaging.Core.IMessage
         {
             int total = RegistrationMarginalWarmup + RegistrationMarginalCount;
-            using IDisposable registry =
-                MessageBusInspection.IsolateIdleSweepRegistryForBenchmark();
+            using IDisposable registry = MessageBusInspection.IsolateIdleSweepRegistryForBenchmark();
 
             /*
                 Pre-build distinct handler delegates OUTSIDE the measured window. Each captures
@@ -904,9 +793,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     _ = captured;
                 };
             }
-            MessageRegistrationHandle[] warmupHandles = new MessageRegistrationHandle[
-                RegistrationMarginalWarmup
-            ];
+            MessageRegistrationHandle[] warmupHandles = new MessageRegistrationHandle[RegistrationMarginalWarmup];
 
             /*
                 Pre-warm the complete registration path, including token-arena growth and the
@@ -936,22 +823,15 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 long startTimestamp = Stopwatch.GetTimestamp();
                 RegisterMarginalBatch(timingScope.PrimaryToken, handlers, register);
                 long endTimestamp = Stopwatch.GetTimestamp();
-                AssertRegistrationMarginalPopulation(
-                    ObserveRegistrationMarginalPopulation(timingScope)
-                );
+                AssertRegistrationMarginalPopulation(ObserveRegistrationMarginalPopulation(timingScope));
                 completedTimingTrials++;
-                double trialMilliseconds =
-                    TimestampDeltaToSeconds(startTimestamp, endTimestamp) * 1000d;
+                double trialMilliseconds = TimestampDeltaToSeconds(startTimestamp, endTimestamp) * 1000d;
                 if (trialMilliseconds < milliseconds)
                 {
                     milliseconds = trialMilliseconds;
                 }
             }
-            Assert.AreEqual(
-                RegistrationMarginalTimingTrials,
-                completedTimingTrials,
-                "Marginal latency must execute every fresh timing population."
-            );
+            Assert.AreEqual(RegistrationMarginalTimingTrials, completedTimingTrials, "Marginal latency must execute every fresh timing population.");
 
             /*
                 Allocation instrumentation is deliberately separate from the latency clock.
@@ -962,27 +842,16 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 has no functional allocation recorder and honestly skips this allocation-only
                 pass while retaining the validated seven-trial latency result.
             */
-            AllocationProbe.MinimumMeasurement<RegistrationMarginalPopulation> sample =
-                MeasureRegistrationMarginalAllocation(handlers, warmupHandles, register);
+            AllocationProbe.MinimumMeasurement<RegistrationMarginalPopulation> sample = MeasureRegistrationMarginalAllocation(handlers, warmupHandles, register);
 
-            return DispatchBenchmarkResult.ForRegistrationScenario(
-                GetScenarioName(scenario),
-                runIndex: -1,
-                sample.GcAllocations,
-                sample.GcAllocatedBytes,
-                milliseconds
-            );
+            return DispatchBenchmarkResult.ForRegistrationScenario(GetScenarioName(scenario), runIndex: -1, sample.GcAllocations, sample.GcAllocatedBytes, milliseconds);
         }
 
         private static void WarmRegistrationMarginalScope<T>(
             BenchmarkRegistrationScope scope,
             MessageHandler.FastHandler<T>[] handlers,
             MessageRegistrationHandle[] handles,
-            Func<
-                MessageRegistrationToken,
-                MessageHandler.FastHandler<T>,
-                MessageRegistrationHandle
-            > register
+            Func<MessageRegistrationToken, MessageHandler.FastHandler<T>, MessageRegistrationHandle> register
         )
             where T : DxMessaging.Core.IMessage
         {
@@ -999,11 +868,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         private static void RegisterMarginalBatch<T>(
             MessageRegistrationToken token,
             MessageHandler.FastHandler<T>[] handlers,
-            Func<
-                MessageRegistrationToken,
-                MessageHandler.FastHandler<T>,
-                MessageRegistrationHandle
-            > register
+            Func<MessageRegistrationToken, MessageHandler.FastHandler<T>, MessageRegistrationHandle> register
         )
             where T : DxMessaging.Core.IMessage
         {
@@ -1017,11 +882,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         private static AllocationProbe.MinimumMeasurement<RegistrationMarginalPopulation> MeasureRegistrationMarginalAllocation<T>(
             MessageHandler.FastHandler<T>[] handlers,
             MessageRegistrationHandle[] warmupHandles,
-            Func<
-                MessageRegistrationToken,
-                MessageHandler.FastHandler<T>,
-                MessageRegistrationHandle
-            > register
+            Func<MessageRegistrationToken, MessageHandler.FastHandler<T>, MessageRegistrationHandle> register
         )
             where T : DxMessaging.Core.IMessage
         {
@@ -1032,12 +893,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             AllocationProbe.SettleHeapForMeasurement();
             if (!AllocationProbe.IsFunctional)
             {
-                return new AllocationProbe.MinimumMeasurement<RegistrationMarginalPopulation>(
-                    AllocationProbe.Unmeasured,
-                    AllocationProbe.Unmeasured,
-                    -1,
-                    default
-                );
+                return new AllocationProbe.MinimumMeasurement<RegistrationMarginalPopulation>(AllocationProbe.Unmeasured, AllocationProbe.Unmeasured, -1, default);
             }
 
             long minimumCount = long.MaxValue;
@@ -1061,14 +917,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     population = ObserveRegistrationMarginalPopulation(scope);
                     AssertRegistrationMarginalPopulation(population);
                     completedAttempts++;
-                    if (
-                        AllocationProbe.ShouldReplaceMinimumAttempt(
-                            allocation.Allocations,
-                            allocation.Bytes,
-                            minimumCount,
-                            minimumBytes
-                        )
-                    )
+                    if (AllocationProbe.ShouldReplaceMinimumAttempt(allocation.Allocations, allocation.Bytes, minimumCount, minimumBytes))
                     {
                         minimumCount = allocation.Allocations;
                         minimumBytes = allocation.Bytes;
@@ -1086,46 +935,23 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 AllocationProbe.SettleHeapForMeasurement();
             }
 
-            Assert.AreEqual(
-                RegistrationMarginalAllocationAttempts,
-                completedAttempts,
-                "Marginal allocation must execute every fresh measurement population."
-            );
+            Assert.AreEqual(RegistrationMarginalAllocationAttempts, completedAttempts, "Marginal allocation must execute every fresh measurement population.");
             AssertRegistrationMarginalPopulation(minimumPopulation);
-            return new AllocationProbe.MinimumMeasurement<RegistrationMarginalPopulation>(
-                minimumCount,
-                minimumBytes,
-                minimumAttempt,
-                minimumPopulation
-            );
+            return new AllocationProbe.MinimumMeasurement<RegistrationMarginalPopulation>(minimumCount, minimumBytes, minimumAttempt, minimumPopulation);
         }
 
-        private static RegistrationMarginalPopulation ObserveRegistrationMarginalPopulation(
-            BenchmarkRegistrationScope scope
-        )
+        private static RegistrationMarginalPopulation ObserveRegistrationMarginalPopulation(BenchmarkRegistrationScope scope)
         {
             return new RegistrationMarginalPopulation(
                 scope.PrimaryToken._metadata.Count,
-                scope.Bus.RegisteredUntargeted
-                    + scope.Bus.RegisteredTargeted
-                    + scope.Bus.RegisteredBroadcast
+                scope.Bus.RegisteredUntargeted + scope.Bus.RegisteredTargeted + scope.Bus.RegisteredBroadcast
             );
         }
 
-        private static void AssertRegistrationMarginalPopulation(
-            RegistrationMarginalPopulation population
-        )
+        private static void AssertRegistrationMarginalPopulation(RegistrationMarginalPopulation population)
         {
-            Assert.AreEqual(
-                RegistrationMarginalCount,
-                population.TokenRegistrations,
-                "The measured marginal batch must leave 1,000 live token registrations."
-            );
-            Assert.AreEqual(
-                1,
-                population.BusHandlerEntries,
-                "The measured marginal batch must reach the bus's single refcounted handler entry."
-            );
+            Assert.AreEqual(RegistrationMarginalCount, population.TokenRegistrations, "The measured marginal batch must leave 1,000 live token registrations.");
+            Assert.AreEqual(1, population.BusHandlerEntries, "The measured marginal batch must reach the bus's single refcounted handler entry.");
         }
 
         private readonly struct RegistrationMarginalPopulation
@@ -1248,9 +1074,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             BenchmarkProtocol.MeasureColdLatency reports the median of the 32 samples.
             Registration and scope teardown remain untimed.
         */
-        private static DispatchBenchmarkResult MeasureColdFirstDispatch(
-            DispatchBenchmarkScenario scenario
-        )
+        private static DispatchBenchmarkResult MeasureColdFirstDispatch(DispatchBenchmarkScenario scenario)
         {
             ColdDispatchKind kind = ColdDispatchKindFor(scenario);
             Type[] markerTypes = RegistrationFloodMarkerTypes.All;
@@ -1286,11 +1110,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             then invokes one typed bus emission. Distinct closed types alone do not
             establish separate JIT compilation events.
         */
-        private static void BuildColdDispatchClosures(
-            ColdDispatchKind kind,
-            Type[] markerTypes,
-            Func<ColdTrialState>[] setUpActions
-        )
+        private static void BuildColdDispatchClosures(ColdDispatchKind kind, Type[] markerTypes, Func<ColdTrialState>[] setUpActions)
         {
             string setUpHelperName;
             switch (kind)
@@ -1312,18 +1132,13 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             for (int index = 0; index < markerTypes.Length; index++)
             {
                 MethodInfo closedSetUp = setUpHelper.MakeGenericMethod(markerTypes[index]);
-                setUpActions[index] =
-                    (Func<ColdTrialState>)
-                        Delegate.CreateDelegate(typeof(Func<ColdTrialState>), closedSetUp);
+                setUpActions[index] = (Func<ColdTrialState>)Delegate.CreateDelegate(typeof(Func<ColdTrialState>), closedSetUp);
             }
         }
 
         private static MethodInfo GetColdDispatchHelper(string methodName)
         {
-            MethodInfo method = typeof(DispatchThroughputBenchmarks).GetMethod(
-                methodName,
-                BindingFlags.NonPublic | BindingFlags.Static
-            );
+            MethodInfo method = typeof(DispatchThroughputBenchmarks).GetMethod(methodName, BindingFlags.NonPublic | BindingFlags.Static);
             if (method == null)
             {
                 throw new MissingMethodException(methodName);
@@ -1437,72 +1252,40 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     RegisterGlobalAcceptAllFast(scope, handlerInvocations);
                     return;
                 case DispatchBenchmarkScenario.TargetedPostStableRoute:
-                    _ = scope.PrimaryToken.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
-                        Target,
-                        CountTargetedPostProcessed
-                    );
+                    _ = scope.PrimaryToken.RegisterTargetedPostProcessor<SimpleTargetedMessage>(Target, CountTargetedPostProcessed);
                     return;
                 case DispatchBenchmarkScenario.TargetedPostRewrittenEmptyFinalRoute:
-                    IMessageBus.TargetedInterceptor<SimpleTargetedMessage> emptyTargetInterceptor =
-                        rewriteObserver == null ? RewriteTarget : rewriteObserver.RewriteTarget;
-                    _ = scope.PrimaryToken.RegisterTargetedInterceptor<SimpleTargetedMessage>(
-                        emptyTargetInterceptor
-                    );
+                    IMessageBus.TargetedInterceptor<SimpleTargetedMessage> emptyTargetInterceptor = rewriteObserver == null ? RewriteTarget : rewriteObserver.RewriteTarget;
+                    _ = scope.PrimaryToken.RegisterTargetedInterceptor<SimpleTargetedMessage>(emptyTargetInterceptor);
                     return;
                 case DispatchBenchmarkScenario.TargetedPostRewrittenPopulatedFinalRoute:
-                    IMessageBus.TargetedInterceptor<SimpleTargetedMessage> targetInterceptor =
-                        rewriteObserver == null ? RewriteTarget : rewriteObserver.RewriteTarget;
-                    _ = scope.PrimaryToken.RegisterTargetedInterceptor<SimpleTargetedMessage>(
-                        targetInterceptor
-                    );
-                    _ = scope.PrimaryToken.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
-                        RewrittenTarget,
-                        CountTargetedPostProcessed
-                    );
+                    IMessageBus.TargetedInterceptor<SimpleTargetedMessage> targetInterceptor = rewriteObserver == null ? RewriteTarget : rewriteObserver.RewriteTarget;
+                    _ = scope.PrimaryToken.RegisterTargetedInterceptor<SimpleTargetedMessage>(targetInterceptor);
+                    _ = scope.PrimaryToken.RegisterTargetedPostProcessor<SimpleTargetedMessage>(RewrittenTarget, CountTargetedPostProcessed);
                     return;
                 case DispatchBenchmarkScenario.BroadcastPostStableRoute:
-                    _ = scope.PrimaryToken.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(
-                        Source,
-                        CountBroadcastPostProcessed
-                    );
+                    _ = scope.PrimaryToken.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(Source, CountBroadcastPostProcessed);
                     return;
                 case DispatchBenchmarkScenario.BroadcastPostRewrittenEmptyFinalRoute:
-                    IMessageBus.BroadcastInterceptor<SimpleBroadcastMessage> emptySourceInterceptor =
-                        rewriteObserver == null ? RewriteSource : rewriteObserver.RewriteSource;
-                    _ = scope.PrimaryToken.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(
-                        emptySourceInterceptor
-                    );
+                    IMessageBus.BroadcastInterceptor<SimpleBroadcastMessage> emptySourceInterceptor = rewriteObserver == null ? RewriteSource : rewriteObserver.RewriteSource;
+                    _ = scope.PrimaryToken.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(emptySourceInterceptor);
                     return;
                 case DispatchBenchmarkScenario.BroadcastPostRewrittenPopulatedFinalRoute:
-                    IMessageBus.BroadcastInterceptor<SimpleBroadcastMessage> sourceInterceptor =
-                        rewriteObserver == null ? RewriteSource : rewriteObserver.RewriteSource;
-                    _ = scope.PrimaryToken.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(
-                        sourceInterceptor
-                    );
-                    _ = scope.PrimaryToken.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(
-                        RewrittenSource,
-                        CountBroadcastPostProcessed
-                    );
+                    IMessageBus.BroadcastInterceptor<SimpleBroadcastMessage> sourceInterceptor = rewriteObserver == null ? RewriteSource : rewriteObserver.RewriteSource;
+                    _ = scope.PrimaryToken.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(sourceInterceptor);
+                    _ = scope.PrimaryToken.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(RewrittenSource, CountBroadcastPostProcessed);
                     return;
                 case DispatchBenchmarkScenario.InterceptorHeavyFourInterceptors:
                     for (int priority = 0; priority < 4; priority++)
                     {
-                        _ =
-                            scope.PrimaryToken.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(
-                                AllowUntargeted,
-                                priority
-                            );
+                        _ = scope.PrimaryToken.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(AllowUntargeted, priority);
                     }
                     RegisterUntargeted(scope, handlerInvocations, 0);
                     return;
                 case DispatchBenchmarkScenario.PostProcessingHeavyFourPostProcessors:
                     for (int priority = 0; priority < 4; priority++)
                     {
-                        _ =
-                            scope.PrimaryToken.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
-                                CountPostProcessed,
-                                priority
-                            );
+                        _ = scope.PrimaryToken.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(CountPostProcessed, priority);
                     }
                     RegisterUntargeted(scope, handlerInvocations, 0);
                     return;
@@ -1549,92 +1332,46 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         )
         {
             token ??= scope.CreateToken(active);
-            _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                (in SimpleUntargetedMessage message) => handlerInvocations.Increment(),
-                priority
-            );
+            _ = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage message) => handlerInvocations.Increment(), priority);
         }
 
-        private static void RegisterTargeted(
-            BenchmarkRegistrationScope scope,
-            InvocationCounter handlerInvocations,
-            int priority
-        )
+        private static void RegisterTargeted(BenchmarkRegistrationScope scope, InvocationCounter handlerInvocations, int priority)
         {
             MessageRegistrationToken token = scope.CreateToken();
-            _ = token.RegisterTargeted<SimpleTargetedMessage>(
-                Target,
-                (in SimpleTargetedMessage message) => handlerInvocations.Increment(),
-                priority
-            );
+            _ = token.RegisterTargeted<SimpleTargetedMessage>(Target, (in SimpleTargetedMessage message) => handlerInvocations.Increment(), priority);
         }
 
-        private static void RegisterBroadcast(
-            BenchmarkRegistrationScope scope,
-            InvocationCounter handlerInvocations,
-            int priority
-        )
+        private static void RegisterBroadcast(BenchmarkRegistrationScope scope, InvocationCounter handlerInvocations, int priority)
         {
             MessageRegistrationToken token = scope.CreateToken();
-            _ = token.RegisterBroadcast<SimpleBroadcastMessage>(
-                Source,
-                (in SimpleBroadcastMessage message) => handlerInvocations.Increment(),
-                priority
-            );
+            _ = token.RegisterBroadcast<SimpleBroadcastMessage>(Source, (in SimpleBroadcastMessage message) => handlerInvocations.Increment(), priority);
         }
 
-        private static void RegisterTargetedWithoutTargetingAction(
-            BenchmarkRegistrationScope scope,
-            InvocationCounter handlerInvocations
-        )
+        private static void RegisterTargetedWithoutTargetingAction(BenchmarkRegistrationScope scope, InvocationCounter handlerInvocations)
         {
-            Action<InstanceId, SimpleTargetedMessage> callback = (
-                InstanceId target,
-                SimpleTargetedMessage message
-            ) => handlerInvocations.Increment();
+            Action<InstanceId, SimpleTargetedMessage> callback = (InstanceId target, SimpleTargetedMessage message) => handlerInvocations.Increment();
             _ = scope.PrimaryToken.RegisterTargetedWithoutTargeting(callback);
         }
 
-        private static void RegisterTargetedWithoutTargetingFast(
-            BenchmarkRegistrationScope scope,
-            InvocationCounter handlerInvocations
-        )
+        private static void RegisterTargetedWithoutTargetingFast(BenchmarkRegistrationScope scope, InvocationCounter handlerInvocations)
         {
-            MessageHandler.FastHandlerWithContext<SimpleTargetedMessage> callback = (
-                in InstanceId target,
-                in SimpleTargetedMessage message
-            ) => handlerInvocations.Increment();
+            MessageHandler.FastHandlerWithContext<SimpleTargetedMessage> callback = (in InstanceId target, in SimpleTargetedMessage message) => handlerInvocations.Increment();
             _ = scope.PrimaryToken.RegisterTargetedWithoutTargeting(callback);
         }
 
-        private static void RegisterBroadcastWithoutSourceAction(
-            BenchmarkRegistrationScope scope,
-            InvocationCounter handlerInvocations
-        )
+        private static void RegisterBroadcastWithoutSourceAction(BenchmarkRegistrationScope scope, InvocationCounter handlerInvocations)
         {
-            Action<InstanceId, SimpleBroadcastMessage> callback = (
-                InstanceId source,
-                SimpleBroadcastMessage message
-            ) => handlerInvocations.Increment();
+            Action<InstanceId, SimpleBroadcastMessage> callback = (InstanceId source, SimpleBroadcastMessage message) => handlerInvocations.Increment();
             _ = scope.PrimaryToken.RegisterBroadcastWithoutSource(callback);
         }
 
-        private static void RegisterBroadcastWithoutSourceFast(
-            BenchmarkRegistrationScope scope,
-            InvocationCounter handlerInvocations
-        )
+        private static void RegisterBroadcastWithoutSourceFast(BenchmarkRegistrationScope scope, InvocationCounter handlerInvocations)
         {
-            MessageHandler.FastHandlerWithContext<SimpleBroadcastMessage> callback = (
-                in InstanceId source,
-                in SimpleBroadcastMessage message
-            ) => handlerInvocations.Increment();
+            MessageHandler.FastHandlerWithContext<SimpleBroadcastMessage> callback = (in InstanceId source, in SimpleBroadcastMessage message) => handlerInvocations.Increment();
             _ = scope.PrimaryToken.RegisterBroadcastWithoutSource(callback);
         }
 
-        private static void RegisterGlobalAcceptAllAction(
-            BenchmarkRegistrationScope scope,
-            InvocationCounter handlerInvocations
-        )
+        private static void RegisterGlobalAcceptAllAction(BenchmarkRegistrationScope scope, InvocationCounter handlerInvocations)
         {
             Action<IUntargetedMessage> untargeted = message => handlerInvocations.Increment();
             Action<InstanceId, ITargetedMessage> targeted = IgnoreGlobalTargetedAction;
@@ -1642,40 +1379,21 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             _ = scope.PrimaryToken.RegisterGlobalAcceptAll(untargeted, targeted, broadcast);
         }
 
-        private static void RegisterGlobalAcceptAllFast(
-            BenchmarkRegistrationScope scope,
-            InvocationCounter handlerInvocations
-        )
+        private static void RegisterGlobalAcceptAllFast(BenchmarkRegistrationScope scope, InvocationCounter handlerInvocations)
         {
-            MessageHandler.FastHandler<IUntargetedMessage> untargeted = (
-                in IUntargetedMessage message
-            ) => handlerInvocations.Increment();
-            MessageHandler.FastHandlerWithContext<ITargetedMessage> targeted =
-                IgnoreGlobalTargetedFast;
-            MessageHandler.FastHandlerWithContext<IBroadcastMessage> broadcast =
-                IgnoreGlobalBroadcastFast;
+            MessageHandler.FastHandler<IUntargetedMessage> untargeted = (in IUntargetedMessage message) => handlerInvocations.Increment();
+            MessageHandler.FastHandlerWithContext<ITargetedMessage> targeted = IgnoreGlobalTargetedFast;
+            MessageHandler.FastHandlerWithContext<IBroadcastMessage> broadcast = IgnoreGlobalBroadcastFast;
             _ = scope.PrimaryToken.RegisterGlobalAcceptAll(untargeted, targeted, broadcast);
         }
 
-        private static void IgnoreGlobalTargetedFast(
-            in InstanceId target,
-            in ITargetedMessage message
-        ) { }
+        private static void IgnoreGlobalTargetedFast(in InstanceId target, in ITargetedMessage message) { }
 
-        private static void IgnoreGlobalBroadcastFast(
-            in InstanceId source,
-            in IBroadcastMessage message
-        ) { }
+        private static void IgnoreGlobalBroadcastFast(in InstanceId source, in IBroadcastMessage message) { }
 
-        private static void IgnoreGlobalTargetedAction(
-            InstanceId target,
-            ITargetedMessage message
-        ) { }
+        private static void IgnoreGlobalTargetedAction(InstanceId target, ITargetedMessage message) { }
 
-        private static void IgnoreGlobalBroadcastAction(
-            InstanceId source,
-            IBroadcastMessage message
-        ) { }
+        private static void IgnoreGlobalBroadcastAction(InstanceId source, IBroadcastMessage message) { }
 
         private static void EmitMany(MessageBus bus, DispatchBenchmarkScenario scenario, int count)
         {
@@ -1776,10 +1494,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             }
         }
 
-        public static (string[] Topology, long Invocations) ObserveTopologyForContract(
-            DispatchBenchmarkScenario scenario,
-            int emitCount
-        )
+        public static (string[] Topology, long Invocations) ObserveTopologyForContract(DispatchBenchmarkScenario scenario, int emitCount)
         {
             BenchmarkRegistrationScope scope = new();
             using LeakWatcher watcher = new(scope.Bus);
@@ -1808,10 +1523,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             Untimed inspection of the actual registrations, shared with the comparison bridge.
             Empty tokens remain visible: allocating an unused primary token is topology drift.
         */
-        public static string[] CaptureTopologyForContract(
-            MessageBus bus,
-            IReadOnlyList<MessageRegistrationToken> tokens
-        )
+        public static string[] CaptureTopologyForContract(MessageBus bus, IReadOnlyList<MessageRegistrationToken> tokens)
         {
             List<string> topology = new()
             {
@@ -1823,12 +1535,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 MessageRegistrationToken token = tokens[index];
                 topology.Add($"token:{index}:{token.Enabled}:{token.DiagnosticMode}");
-                foreach (
-                    KeyValuePair<
-                        MessageRegistrationHandle,
-                        MessageRegistrationMetadata
-                    > pair in token._metadata
-                )
+                foreach (KeyValuePair<MessageRegistrationHandle, MessageRegistrationMetadata> pair in token._metadata)
                 {
                     MessageRegistrationMetadata metadata = pair.Value;
                     topology.Add(
@@ -1840,9 +1547,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             return topology.ToArray();
         }
 
-        internal static DispatchScenarioContractObservation ConfigureAndEmitOnceForContract(
-            DispatchBenchmarkScenario scenario
-        )
+        internal static DispatchScenarioContractObservation ConfigureAndEmitOnceForContract(DispatchBenchmarkScenario scenario)
         {
             using BenchmarkRegistrationScope scope = new();
             InvocationCounter handlerInvocations = new();
@@ -1883,9 +1588,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             );
         }
 
-        internal static RewriteBatchContractObservation ObserveRewrittenPostRouteBatchForContract(
-            DispatchBenchmarkScenario scenario
-        )
+        internal static RewriteBatchContractObservation ObserveRewrittenPostRouteBatchForContract(DispatchBenchmarkScenario scenario)
         {
             switch (scenario)
             {
@@ -1903,24 +1606,12 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             RewriteContextObserver observer = new();
             ConfigureScenario(scope, scenario, handlerInvocations, observer);
             EmitMany(scope.Bus, scenario, 2);
-            return new RewriteBatchContractObservation(
-                observer.InvocationCount,
-                observer.FirstInput,
-                observer.SecondInput,
-                observer.LastFinal,
-                handlerInvocations.Count
-            );
+            return new RewriteBatchContractObservation(observer.InvocationCount, observer.FirstInput, observer.SecondInput, observer.LastFinal, handlerInvocations.Count);
         }
 
         internal readonly struct RewriteBatchContractObservation
         {
-            internal RewriteBatchContractObservation(
-                int invocationCount,
-                InstanceId firstInput,
-                InstanceId secondInput,
-                InstanceId lastFinal,
-                long handlerInvocations
-            )
+            internal RewriteBatchContractObservation(int invocationCount, InstanceId firstInput, InstanceId secondInput, InstanceId lastFinal, long handlerInvocations)
             {
                 InvocationCount = invocationCount;
                 FirstInput = firstInput;
@@ -2021,10 +1712,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 return _registrationFloodBuilders;
             }
 
-            MethodInfo builderMethod = typeof(DispatchThroughputBenchmarks).GetMethod(
-                nameof(RegisterFloodMessage),
-                BindingFlags.NonPublic | BindingFlags.Static
-            );
+            MethodInfo builderMethod = typeof(DispatchThroughputBenchmarks).GetMethod(nameof(RegisterFloodMessage), BindingFlags.NonPublic | BindingFlags.Static);
             if (builderMethod == null)
             {
                 throw new MissingMethodException(nameof(RegisterFloodMessage));
@@ -2036,18 +1724,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 for (int innerIndex = 0; innerIndex < markerTypes.Length; innerIndex++)
                 {
-                    Type markerType = typeof(RegistrationFloodMarker<,>).MakeGenericType(
-                        markerTypes[outerIndex],
-                        markerTypes[innerIndex]
-                    );
+                    Type markerType = typeof(RegistrationFloodMarker<,>).MakeGenericType(markerTypes[outerIndex], markerTypes[innerIndex]);
                     MethodInfo closedMethod = builderMethod.MakeGenericMethod(markerType);
-                    builders.Add(
-                        (Action<MessageRegistrationToken>)
-                            Delegate.CreateDelegate(
-                                typeof(Action<MessageRegistrationToken>),
-                                closedMethod
-                            )
-                    );
+                    builders.Add((Action<MessageRegistrationToken>)Delegate.CreateDelegate(typeof(Action<MessageRegistrationToken>), closedMethod));
                     if (builders.Count == 1000)
                     {
                         break;
@@ -2062,9 +1741,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             if (builders.Count < 1000)
             {
-                throw new InvalidOperationException(
-                    $"Expected at least 1000 marker types for the registration flood, found {builders.Count}."
-                );
+                throw new InvalidOperationException($"Expected at least 1000 marker types for the registration flood, found {builders.Count}.");
             }
 
             _registrationFloodBuilders = builders.ToArray();
@@ -2092,9 +1769,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         internal static string ResolvePackageRoot()
         {
 #if UNITY_EDITOR
-            string packageInfoRoot = ResolvePackageInfoRoot(
-                typeof(DispatchThroughputBenchmarks).Assembly
-            );
+            string packageInfoRoot = ResolvePackageInfoRoot(typeof(DispatchThroughputBenchmarks).Assembly);
             if (packageInfoRoot != null)
             {
                 return packageInfoRoot;
@@ -2123,13 +1798,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 #if UNITY_EDITOR
         private static string ResolvePackageInfoRoot(Assembly assembly)
         {
-            UnityEditor.PackageManager.PackageInfo packageInfo =
-                UnityEditor.PackageManager.PackageInfo.FindForAssembly(assembly);
-            if (
-                packageInfo != null
-                && string.Equals(packageInfo.name, PackageName, StringComparison.Ordinal)
-                && Directory.Exists(packageInfo.resolvedPath)
-            )
+            UnityEditor.PackageManager.PackageInfo packageInfo = UnityEditor.PackageManager.PackageInfo.FindForAssembly(assembly);
+            if (packageInfo != null && string.Equals(packageInfo.name, PackageName, StringComparison.Ordinal) && Directory.Exists(packageInfo.resolvedPath))
             {
                 return FindPackageRoot(packageInfo.resolvedPath);
             }
@@ -2182,17 +1852,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             return Directory.GetParent(assetsPath)?.FullName ?? Directory.GetCurrentDirectory();
         }
 
-        private static void WriteBaselineRows(
-            string outputPath,
-            IReadOnlyList<DispatchBenchmarkResult> results,
-            bool replaceAllRows
-        )
+        private static void WriteBaselineRows(string outputPath, IReadOnlyList<DispatchBenchmarkResult> results, bool replaceAllRows)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(outputPath) ?? ".");
 
-            List<string> rows = replaceAllRows
-                ? new List<string>()
-                : ReadExistingBaselineRows(outputPath);
+            List<string> rows = replaceAllRows ? new List<string>() : ReadExistingBaselineRows(outputPath);
             for (int index = 0; index < results.Count; index++)
             {
                 DispatchBenchmarkResult result = results[index];
@@ -2224,10 +1888,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             for (int index = 0; index < lines.Length; index++)
             {
                 string line = lines[index];
-                if (
-                    string.IsNullOrWhiteSpace(line)
-                    || line.StartsWith("scenario,", StringComparison.OrdinalIgnoreCase)
-                )
+                if (string.IsNullOrWhiteSpace(line) || line.StartsWith("scenario,", StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }
@@ -2238,10 +1899,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             return rows;
         }
 
-        private static void RemoveMatchingBaselineRow(
-            List<string> rows,
-            DispatchBenchmarkResult result
-        )
+        private static void RemoveMatchingBaselineRow(List<string> rows, DispatchBenchmarkResult result)
         {
             for (int index = rows.Count - 1; 0 <= index; index--)
             {
@@ -2317,12 +1975,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             _ = token.RegisterUntargeted<RegistrationFloodMessage<TMarker>>(NoOpFloodHandler);
         }
 
-        private static void NoOpFloodHandler<TMarker>(
-            in RegistrationFloodMessage<TMarker> message
-        ) { }
+        private static void NoOpFloodHandler<TMarker>(in RegistrationFloodMessage<TMarker> message) { }
 
-        private readonly struct RegistrationFloodMessage<TMarker>
-            : DxMessaging.Core.Messages.IUntargetedMessage { }
+        private readonly struct RegistrationFloodMessage<TMarker> : DxMessaging.Core.Messages.IUntargetedMessage { }
 
         /*
             Per-kind cold first-dispatch setup helpers. Reflection closes each helper
@@ -2371,9 +2026,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         private static ColdTrialState SetUpColdUntargetedTrial<TMarker>()
         {
             BenchmarkRegistrationScope scope = new();
-            _ = scope.PrimaryToken.RegisterUntargeted<ColdDispatchUntargetedMessage<TMarker>>(
-                (in ColdDispatchUntargetedMessage<TMarker> message) => { }
-            );
+            _ = scope.PrimaryToken.RegisterUntargeted<ColdDispatchUntargetedMessage<TMarker>>((in ColdDispatchUntargetedMessage<TMarker> message) => { });
             MessageBus bus = scope.Bus;
             return new ColdTrialState(scope, () =>
             {
@@ -2386,10 +2039,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         {
             BenchmarkRegistrationScope scope = new();
             InstanceId target = Target;
-            _ = scope.PrimaryToken.RegisterTargeted<ColdDispatchTargetedMessage<TMarker>>(
-                target,
-                (in ColdDispatchTargetedMessage<TMarker> message) => { }
-            );
+            _ = scope.PrimaryToken.RegisterTargeted<ColdDispatchTargetedMessage<TMarker>>(target, (in ColdDispatchTargetedMessage<TMarker> message) => { });
             MessageBus bus = scope.Bus;
             return new ColdTrialState(scope, () =>
             {
@@ -2403,10 +2053,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         {
             BenchmarkRegistrationScope scope = new();
             InstanceId source = Source;
-            _ = scope.PrimaryToken.RegisterBroadcast<ColdDispatchBroadcastMessage<TMarker>>(
-                source,
-                (in ColdDispatchBroadcastMessage<TMarker> message) => { }
-            );
+            _ = scope.PrimaryToken.RegisterBroadcast<ColdDispatchBroadcastMessage<TMarker>>(source, (in ColdDispatchBroadcastMessage<TMarker> message) => { });
             MessageBus bus = scope.Bus;
             return new ColdTrialState(scope, () =>
             {
@@ -2416,14 +2063,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             });
         }
 
-        private readonly struct ColdDispatchUntargetedMessage<TMarker>
-            : DxMessaging.Core.Messages.IUntargetedMessage { }
+        private readonly struct ColdDispatchUntargetedMessage<TMarker> : DxMessaging.Core.Messages.IUntargetedMessage { }
 
-        private readonly struct ColdDispatchTargetedMessage<TMarker>
-            : DxMessaging.Core.Messages.ITargetedMessage { }
+        private readonly struct ColdDispatchTargetedMessage<TMarker> : DxMessaging.Core.Messages.ITargetedMessage { }
 
-        private readonly struct ColdDispatchBroadcastMessage<TMarker>
-            : DxMessaging.Core.Messages.IBroadcastMessage { }
+        private readonly struct ColdDispatchBroadcastMessage<TMarker> : DxMessaging.Core.Messages.IBroadcastMessage { }
 
         private readonly struct RegistrationFloodMarker<TOuter, TInner> { }
 
@@ -2600,14 +2244,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             public void RegisterUntargetedDirect(InvocationCounter handlerInvocations)
             {
                 MessageHandler handler = new(new InstanceId(_nextOwner++), Bus) { active = true };
-                MessageHandler.FastHandler<SimpleUntargetedMessage> callback = (
-                    in SimpleUntargetedMessage message
-                ) => handlerInvocations.Increment();
-                _directUntargetedDeregistration = handler.RegisterUntargetedMessageHandler(
-                    callback,
-                    callback,
-                    messageBus: Bus
-                );
+                MessageHandler.FastHandler<SimpleUntargetedMessage> callback = (in SimpleUntargetedMessage message) => handlerInvocations.Increment();
+                _directUntargetedDeregistration = handler.RegisterUntargetedMessageHandler(callback, callback, messageBus: Bus);
                 _hasDirectUntargetedDeregistration = true;
                 _handlers.Add(handler);
             }
@@ -2716,14 +2354,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         /// </summary>
         public bool IsWallClockScenario => EmitsPerSecond == 0;
 
-        public static DispatchBenchmarkResult ForEmitScenario(
-            string scenario,
-            int runIndex,
-            double emitsPerSecond,
-            long gcAllocations,
-            long gcAllocatedBytes,
-            double wallClockMs
-        )
+        public static DispatchBenchmarkResult ForEmitScenario(string scenario, int runIndex, double emitsPerSecond, long gcAllocations, long gcAllocatedBytes, double wallClockMs)
         {
             return new DispatchBenchmarkResult(
                 scenario,
@@ -2738,13 +2369,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             );
         }
 
-        public static DispatchBenchmarkResult ForRegistrationScenario(
-            string scenario,
-            int runIndex,
-            long gcAllocations,
-            long gcAllocatedBytes,
-            double wallClockMs
-        )
+        public static DispatchBenchmarkResult ForRegistrationScenario(string scenario, int runIndex, long gcAllocations, long gcAllocatedBytes, double wallClockMs)
         {
             return new DispatchBenchmarkResult(
                 scenario,
@@ -2763,13 +2388,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         /// Builds a generic wall-clock result for one-time work that is not itself a
         /// registration scenario, such as bus and token construction.
         /// </summary>
-        public static DispatchBenchmarkResult ForWallClockScenario(
-            string scenario,
-            int runIndex,
-            long gcAllocations,
-            long gcAllocatedBytes,
-            double wallClockMs
-        )
+        public static DispatchBenchmarkResult ForWallClockScenario(string scenario, int runIndex, long gcAllocations, long gcAllocatedBytes, double wallClockMs)
         {
             return new DispatchBenchmarkResult(
                 scenario,
@@ -2793,13 +2412,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         /// It is NOT a registration scenario, so <see cref="IsRegistrationScenario"/> stays
         /// false.
         /// </summary>
-        public static DispatchBenchmarkResult ForColdLatencyScenario(
-            string scenario,
-            int runIndex,
-            long medianGcAllocations,
-            long medianGcAllocatedBytes,
-            double medianWallClockMs
-        )
+        public static DispatchBenchmarkResult ForColdLatencyScenario(string scenario, int runIndex, long medianGcAllocations, long medianGcAllocatedBytes, double medianWallClockMs)
         {
             return new DispatchBenchmarkResult(
                 scenario,
@@ -2866,9 +2479,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 #elif ENABLE_MONO
             return "Mono";
 #else
-            return Type.GetType("Mono.Runtime", throwOnError: false) == null
-                ? "UnknownBackend"
-                : "Mono";
+            return Type.GetType("Mono.Runtime", throwOnError: false) == null ? "UnknownBackend" : "Mono";
 #endif
         }
 
@@ -2877,17 +2488,12 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             return ResolveArchitecture(RuntimeInformation.ProcessArchitecture);
         }
 
-        internal static string ResolveArchitecture(Architecture architecture) =>
-            architecture.ToString().ToLowerInvariant();
+        internal static string ResolveArchitecture(Architecture architecture) => architecture.ToString().ToLowerInvariant();
 
         private static string ResolveBuildConfiguration()
         {
 #if UNITY_EDITOR
-            return
-                UnityEditor.Compilation.CompilationPipeline.codeOptimization
-                == UnityEditor.Compilation.CodeOptimization.Release
-                ? "Release"
-                : "Debug";
+            return UnityEditor.Compilation.CompilationPipeline.codeOptimization == UnityEditor.Compilation.CodeOptimization.Release ? "Release" : "Debug";
 #else
             return Debug.isDebugBuild ? "Debug" : "Release";
 #endif
@@ -2948,8 +2554,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             }
 
             string refName = head.Substring(RefPrefix.Length).Trim();
-            string commit = ReadGitRefCommit(gitPath, refName)
-                ?? ReadGitRefCommit(commonGitPath, refName);
+            string commit = ReadGitRefCommit(gitPath, refName) ?? ReadGitRefCommit(commonGitPath, refName);
             return string.IsNullOrWhiteSpace(commit) ? null : commit;
         }
 
@@ -2967,9 +2572,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 return gitPath;
             }
 
-            return Path.IsPathRooted(commonDir)
-                ? commonDir
-                : Path.GetFullPath(Path.Combine(gitPath, commonDir));
+            return Path.IsPathRooted(commonDir) ? commonDir : Path.GetFullPath(Path.Combine(gitPath, commonDir));
         }
 
         private static string ReadGitRefCommit(string gitPath, string refName)
@@ -3006,14 +2609,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 }
 
                 int separatorIndex = line.IndexOf(' ');
-                if (
-                    0 < separatorIndex
-                    && string.Equals(
-                        line.Substring(separatorIndex + 1),
-                        refName,
-                        StringComparison.Ordinal
-                    )
-                )
+                if (0 < separatorIndex && string.Equals(line.Substring(separatorIndex + 1), refName, StringComparison.Ordinal))
                 {
                     return line.Substring(0, separatorIndex);
                 }

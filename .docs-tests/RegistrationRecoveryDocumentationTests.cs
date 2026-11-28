@@ -19,51 +19,24 @@ internal sealed class RegistrationRecoveryDocumentationTests
         string path = Path.Combine(root, "docs", "advanced", "registration-builders.md");
         string example = DocsSnippetCompilationTests
             .ExtractCodeBlocks(path, "csharp")
-            .Single(code =>
-                code.Contains("public sealed class RegistrationOwner", StringComparison.Ordinal)
-            );
+            .Single(code => code.Contains("public sealed class RegistrationOwner", StringComparison.Ordinal));
         _runtimeImage = RuntimeHashCompilationTests.CompilePortableRuntimeImage(false);
         string helperRoot = Path.Combine(root, "Tests", "Runtime", "TestUtilities");
         CSharpParseOptions options = new(LanguageVersion.CSharp9);
-        List<SyntaxTree> trees = new()
-        {
-            CSharpSyntaxTree.ParseText(example, options, path),
-            CSharpSyntaxTree.ParseText(ProbeSource, options, "RegistrationRecoveryProbe.cs"),
-        };
-        foreach (
-            string helper in new[]
-            {
-                "DelegatingMessageBus.cs",
-                "LeakWatcher.cs",
-                "EntryStorageInspection.cs",
-                "MessageBusInspection.cs",
-            }
-        )
+        List<SyntaxTree> trees = new() { CSharpSyntaxTree.ParseText(example, options, path), CSharpSyntaxTree.ParseText(ProbeSource, options, "RegistrationRecoveryProbe.cs") };
+        foreach (string helper in new[] { "DelegatingMessageBus.cs", "LeakWatcher.cs", "EntryStorageInspection.cs", "MessageBusInspection.cs" })
         {
             string helperPath = Path.Combine(helperRoot, helper);
-            trees.Add(
-                CSharpSyntaxTree.ParseText(File.ReadAllText(helperPath), options, helperPath)
-            );
+            trees.Add(CSharpSyntaxTree.ParseText(File.ReadAllText(helperPath), options, helperPath));
         }
-        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
-            ?? throw new InvalidOperationException("Runtime references are unavailable.");
+        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") ?? throw new InvalidOperationException("Runtime references are unavailable.");
         CSharpCompilation compilation = CSharpCompilation.Create(
             "WallstopStudios.DxMessaging.Tests.Runtime",
             trees,
-            references
-                .Split(Path.PathSeparator)
-                .Select(file => MetadataReference.CreateFromFile(file))
-                .Append(MetadataReference.CreateFromImage(_runtimeImage)),
-            new CSharpCompilationOptions(
-                OutputKind.DynamicallyLinkedLibrary,
-                generalDiagnosticOption: ReportDiagnostic.Error
-            )
+            references.Split(Path.PathSeparator).Select(file => MetadataReference.CreateFromFile(file)).Append(MetadataReference.CreateFromImage(_runtimeImage)),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, generalDiagnosticOption: ReportDiagnostic.Error)
         );
-        Assert.That(
-            compilation.GetDiagnostics(),
-            Is.Empty,
-            "Compile actual documented source and production helpers without tolerated diagnostics."
-        );
+        Assert.That(compilation.GetDiagnostics(), Is.Empty, "Compile actual documented source and production helpers without tolerated diagnostics.");
         using MemoryStream stream = new();
         Microsoft.CodeAnalysis.Emit.EmitResult emitted = compilation.Emit(stream);
         Assert.That(emitted.Success, Is.True, string.Join("\n", emitted.Diagnostics));
@@ -79,16 +52,9 @@ internal sealed class RegistrationRecoveryDocumentationTests
             context.LoadFromStream(new MemoryStream(_runtimeImage));
             Assembly probe = context.LoadFromStream(new MemoryStream(_probeImage));
             string[]? errors =
-                probe
-                    .GetType("RegistrationRecoveryExample.RecoveryProbe", throwOnError: true)!
-                    .GetMethod("Run")!
-                    .Invoke(null, new object[] { scenario }) as string[];
+                probe.GetType("RegistrationRecoveryExample.RecoveryProbe", throwOnError: true)!.GetMethod("Run")!.Invoke(null, new object[] { scenario }) as string[];
             Assert.That(errors, Is.Not.Null, "Actual guide caller: " + scenario);
-            Assert.That(
-                errors,
-                Is.Empty,
-                "Actual guide ownership: " + scenario + "\n" + string.Join("\n", errors!)
-            );
+            Assert.That(errors, Is.Empty, "Actual guide ownership: " + scenario + "\n" + string.Join("\n", errors!));
         }
         finally
         {
@@ -127,9 +93,7 @@ internal sealed class RegistrationRecoveryDocumentationTests
             }
         )
         {
-            yield return new TestCaseData(scenario).SetName(
-                $"DocumentedOwnerRetainsRecoveryAndDrainsRegistrations({scenario})"
-            );
+            yield return new TestCaseData(scenario).SetName($"DocumentedOwnerRetainsRecoveryAndDrainsRegistrations({scenario})");
         }
     }
 

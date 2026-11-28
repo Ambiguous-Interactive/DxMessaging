@@ -19,13 +19,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
     public readonly struct StickyLatencyCase
     {
-        public StickyLatencyCase(
-            StickyLatencyOperation operation,
-            bool referencePayload,
-            StickyBenchmarkCallback callback,
-            bool hasLatest = false,
-            bool replay = false
-        )
+        public StickyLatencyCase(StickyLatencyOperation operation, bool referencePayload, StickyBenchmarkCallback callback, bool hasLatest = false, bool replay = false)
         {
             Operation = operation;
             ReferencePayload = referencePayload;
@@ -96,50 +90,21 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         {
             foreach (bool referencePayload in new[] { false, true })
             {
-                foreach (
-                    StickyLatencyOperation operation in new[]
-                    {
-                        StickyLatencyOperation.FirstOrdinaryEmit,
-                        StickyLatencyOperation.FirstStickyEmit,
-                    }
-                )
+                foreach (StickyLatencyOperation operation in new[] { StickyLatencyOperation.FirstOrdinaryEmit, StickyLatencyOperation.FirstStickyEmit })
                 {
-                    foreach (
-                        StickyBenchmarkCallback callback in new[]
-                        {
-                            StickyBenchmarkCallback.None,
-                            StickyBenchmarkCallback.Action,
-                            StickyBenchmarkCallback.Fast,
-                        }
-                    )
+                    foreach (StickyBenchmarkCallback callback in new[] { StickyBenchmarkCallback.None, StickyBenchmarkCallback.Action, StickyBenchmarkCallback.Fast })
                     {
-                        StickyLatencyCase benchmarkCase = new(
-                            operation,
-                            referencePayload,
-                            callback
-                        );
+                        StickyLatencyCase benchmarkCase = new(operation, referencePayload, callback);
                         yield return new TestCaseData(benchmarkCase).SetName(benchmarkCase.Key);
                     }
                 }
-                foreach (
-                    StickyBenchmarkCallback callback in new[]
-                    {
-                        StickyBenchmarkCallback.Action,
-                        StickyBenchmarkCallback.Fast,
-                    }
-                )
+                foreach (StickyBenchmarkCallback callback in new[] { StickyBenchmarkCallback.Action, StickyBenchmarkCallback.Fast })
                 {
                     foreach (bool hasLatest in new[] { false, true })
                     {
                         foreach (bool replay in new[] { false, true })
                         {
-                            StickyLatencyCase benchmarkCase = new(
-                                StickyLatencyOperation.Register,
-                                referencePayload,
-                                callback,
-                                hasLatest,
-                                replay
-                            );
+                            StickyLatencyCase benchmarkCase = new(StickyLatencyOperation.Register, referencePayload, callback, hasLatest, replay);
                             yield return new TestCaseData(benchmarkCase).SetName(benchmarkCase.Key);
                         }
                     }
@@ -147,10 +112,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             }
         }
 
-        private static ColdLatencyMeasurement Measure<TMessage>(
-            StickyLatencyCase benchmarkCase,
-            TMessage message
-        )
+        private static ColdLatencyMeasurement Measure<TMessage>(StickyLatencyCase benchmarkCase, TMessage message)
             where TMessage : IValue
         {
             using IDisposable registry = BenchmarkProtocol.IsolateIdleSweepRegistry();
@@ -160,13 +122,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 state.Execute();
                 completed = true;
             };
-            using (
-                State<TMessage> warmup = new(
-                    benchmarkCase,
-                    message,
-                    new MessageBus { DiagnosticsMode = false }
-                )
-            )
+            using (State<TMessage> warmup = new(benchmarkCase, message, new MessageBus { DiagnosticsMode = false }))
             {
                 operation(warmup);
                 warmup.Verify();
@@ -177,11 +133,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 _ =>
                 {
                     completed = false;
-                    return new State<TMessage>(
-                        benchmarkCase,
-                        message,
-                        new MessageBus { DiagnosticsMode = false }
-                    );
+                    return new State<TMessage>(benchmarkCase, message, new MessageBus { DiagnosticsMode = false });
                 },
                 operation,
                 state =>
@@ -208,10 +160,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 : RunForContract(benchmarkCase, new ValueMessage(PayloadValue));
         }
 
-        private static StickyLatencyObservation RunForContract<TMessage>(
-            StickyLatencyCase benchmarkCase,
-            TMessage message
-        )
+        private static StickyLatencyObservation RunForContract<TMessage>(StickyLatencyCase benchmarkCase, TMessage message)
             where TMessage : IValue
         {
             using IDisposable registry = BenchmarkProtocol.IsolateIdleSweepRegistry();
@@ -351,35 +300,15 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 string context = _case.Key;
                 bool registration = _case.Operation == StickyLatencyOperation.Register;
-                int expectedCalls = registration
-                    ? (_case.HasLatest && _case.Replay ? 1 : 0)
-                    : (_case.Callback == StickyBenchmarkCallback.None ? 0 : 1);
+                int expectedCalls = registration ? (_case.HasLatest && _case.Replay ? 1 : 0) : (_case.Callback == StickyBenchmarkCallback.None ? 0 : 1);
                 Assert.That(_executions, Is.EqualTo(1), context);
                 Assert.That(_existingCalls, Is.Zero, context);
                 Assert.That(_newCalls, Is.EqualTo(expectedCalls), context);
                 Assert.That(_sum, Is.EqualTo(expectedCalls * PayloadValue), context);
-                Assert.That(
-                    BenchmarkProtocol.CountRegistrations(_existing),
-                    Is.EqualTo(registration ? 1 : 0),
-                    context
-                );
-                Assert.That(
-                    BenchmarkProtocol.CountRegistrations(_added),
-                    Is.EqualTo(
-                        registration || _case.Callback != StickyBenchmarkCallback.None ? 1 : 0
-                    ),
-                    context
-                );
+                Assert.That(BenchmarkProtocol.CountRegistrations(_existing), Is.EqualTo(registration ? 1 : 0), context);
+                Assert.That(BenchmarkProtocol.CountRegistrations(_added), Is.EqualTo(registration || _case.Callback != StickyBenchmarkCallback.None ? 1 : 0), context);
                 bool present = _bus.TryGetLatest(out TMessage latest);
-                Assert.That(
-                    present,
-                    Is.EqualTo(
-                        registration
-                            ? _case.HasLatest
-                            : _case.Operation == StickyLatencyOperation.FirstStickyEmit
-                    ),
-                    context
-                );
+                Assert.That(present, Is.EqualTo(registration ? _case.HasLatest : _case.Operation == StickyLatencyOperation.FirstStickyEmit), context);
                 if (present)
                 {
                     Assert.That(latest, Is.EqualTo(_message), context);

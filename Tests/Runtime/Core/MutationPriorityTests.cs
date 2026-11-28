@@ -22,22 +22,11 @@ namespace DxMessaging.Tests.Runtime.Core
         /// Targeted/Broadcast pair collapsed into this single method.
         /// </summary>
         [Test]
-        public void PriorityInsertedNextEmissionOrder(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.KindsWithComponentTarget)
-            )]
-                MessageScenario scenario
-        )
+        public void PriorityInsertedNextEmissionOrder([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.KindsWithComponentTarget))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(PriorityInsertedNextEmissionOrder) + "_" + scenario,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(PriorityInsertedNextEmissionOrder) + "_" + scenario, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
-            MessageRegistrationToken token = GetToken(
-                host.GetComponent<EmptyMessageAwareComponent>()
-            );
+            MessageRegistrationToken token = GetToken(host.GetComponent<EmptyMessageAwareComponent>());
 
             List<int> order = new();
             bool added = false;
@@ -53,34 +42,18 @@ namespace DxMessaging.Tests.Runtime.Core
                     if (!added)
                     {
                         added = true;
-                        low = RegisterCounter(
-                            scenario,
-                            token,
-                            host,
-                            () => order.Add(0),
-                            priority: 0
-                        );
+                        low = RegisterCounter(scenario, token, host, () => order.Add(0), priority: 0);
                     }
                 },
                 priority: 1
             );
 
             EmitForScenario(scenario, host);
-            CollectionAssert.AreEqual(
-                new[] { 1 },
-                order,
-                "[{0}] Lower-priority handler added mid-emission must not run in the same emission.",
-                scenario.Kind
-            );
+            CollectionAssert.AreEqual(new[] { 1 }, order, "[{0}] Lower-priority handler added mid-emission must not run in the same emission.", scenario.Kind);
 
             order.Clear();
             EmitForScenario(scenario, host);
-            CollectionAssert.AreEqual(
-                new[] { 0, 1 },
-                order,
-                "[{0}] Lower-priority handler must run first on the next emission.",
-                scenario.Kind
-            );
+            CollectionAssert.AreEqual(new[] { 0, 1 }, order, "[{0}] Lower-priority handler must run first on the next emission.", scenario.Kind);
 
             token.RemoveRegistration(high);
             if (low != default)
@@ -89,43 +62,21 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private static MessageRegistrationHandle RegisterCounter(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            InstanceId target,
-            Action onInvoked,
-            int priority = 0
-        )
+        private static MessageRegistrationHandle RegisterCounter(MessageScenario scenario, MessageRegistrationToken token, InstanceId target, Action onInvoked, int priority = 0)
         {
             switch (scenario.Kind)
             {
                 case MessageKind.Targeted:
                 {
-                    return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        target,
-                        (in SimpleTargetedMessage _) => onInvoked(),
-                        priority
-                    );
+                    return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(scenario, token, target, (in SimpleTargetedMessage _) => onInvoked(), priority);
                 }
                 case MessageKind.Broadcast:
                 {
-                    return ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        target,
-                        (in SimpleBroadcastMessage _) => onInvoked(),
-                        priority
-                    );
+                    return ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(scenario, token, target, (in SimpleBroadcastMessage _) => onInvoked(), priority);
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "MutationPriorityTests only covers component-target kinds."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "MutationPriorityTests only covers component-target kinds.");
                 }
             }
         }
@@ -148,11 +99,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "MutationPriorityTests only covers component-target kinds."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "MutationPriorityTests only covers component-target kinds.");
                 }
             }
         }

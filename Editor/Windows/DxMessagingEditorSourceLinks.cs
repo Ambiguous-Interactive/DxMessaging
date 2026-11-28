@@ -70,11 +70,7 @@ namespace DxMessaging.Editor.Windows
 
         private readonly struct SourceTypeDeclaration
         {
-            internal SourceTypeDeclaration(
-                string sourceNamespace,
-                IReadOnlyList<string> typeNames,
-                int line
-            )
+            internal SourceTypeDeclaration(string sourceNamespace, IReadOnlyList<string> typeNames, int line)
             {
                 Namespace = sourceNamespace ?? string.Empty;
                 TypeNames = typeNames?.ToArray() ?? Array.Empty<string>();
@@ -113,8 +109,7 @@ namespace DxMessaging.Editor.Windows
 
             internal string AssemblyName { get; }
 
-            internal string CacheKey =>
-                string.IsNullOrWhiteSpace(AssemblyName) ? TypeName : $"{TypeName} [{AssemblyName}]";
+            internal string CacheKey => string.IsNullOrWhiteSpace(AssemblyName) ? TypeName : $"{TypeName} [{AssemblyName}]";
         }
 
         private sealed class MessageSourceAssemblyIndex
@@ -135,10 +130,7 @@ namespace DxMessaging.Editor.Windows
 
         private readonly struct MessageSourceIndexBuildResult
         {
-            internal MessageSourceIndexBuildResult(
-                IReadOnlyDictionary<string, SourceLocation> locations,
-                bool isComplete
-            )
+            internal MessageSourceIndexBuildResult(IReadOnlyDictionary<string, SourceLocation> locations, bool isComplete)
             {
                 Locations = locations;
                 IsComplete = isComplete;
@@ -149,13 +141,8 @@ namespace DxMessaging.Editor.Windows
             internal bool IsComplete { get; }
         }
 
-        private static readonly Dictionary<string, SourceLocation> MessageSourceLocationCache = new(
-            StringComparer.Ordinal
-        );
-        private static readonly Dictionary<
-            string,
-            MessageSourceAssemblyIndex
-        > MessageSourceAssemblyIndexes = new(StringComparer.Ordinal);
+        private static readonly Dictionary<string, SourceLocation> MessageSourceLocationCache = new(StringComparer.Ordinal);
+        private static readonly Dictionary<string, MessageSourceAssemblyIndex> MessageSourceAssemblyIndexes = new(StringComparer.Ordinal);
         internal static event Action MessageSourceIndexChanged;
         private static readonly Regex SourceNamespaceDeclarationPattern = new(
             @"^\s*namespace\s+([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\s*([;{]?)",
@@ -235,8 +222,7 @@ namespace DxMessaging.Editor.Windows
         /// </summary>
         internal static bool IsUnknownCallSite(string value)
         {
-            return string.IsNullOrWhiteSpace(value)
-                || string.Equals(value.Trim(), UnknownCallSite, StringComparison.Ordinal);
+            return string.IsNullOrWhiteSpace(value) || string.Equals(value.Trim(), UnknownCallSite, StringComparison.Ordinal);
         }
 
         internal static string CreateCompactCallSiteLabel(string value)
@@ -282,26 +268,17 @@ namespace DxMessaging.Editor.Windows
             int lineSeparator = text.LastIndexOf(':', pathEnd - 1);
             if (
                 lineSeparator <= pathStart + 4
-                || !int.TryParse(
-                    text.Substring(lineSeparator + 1, pathEnd - lineSeparator - 1),
-                    NumberStyles.None,
-                    CultureInfo.InvariantCulture,
-                    out int line
-                )
+                || !int.TryParse(text.Substring(lineSeparator + 1, pathEnd - lineSeparator - 1), NumberStyles.None, CultureInfo.InvariantCulture, out int line)
                 || line <= 0
             )
             {
                 return false;
             }
 
-            string assetPath = text.Substring(pathStart + 4, lineSeparator - pathStart - 4)
-                .Replace('\\', '/');
+            string assetPath = text.Substring(pathStart + 4, lineSeparator - pathStart - 4).Replace('\\', '/');
             if (Path.IsPathRooted(assetPath))
             {
-                assetPath = (FileUtil.GetProjectRelativePath(assetPath) ?? string.Empty).Replace(
-                    '\\',
-                    '/'
-                );
+                assetPath = (FileUtil.GetProjectRelativePath(assetPath) ?? string.Empty).Replace('\\', '/');
             }
             if (string.IsNullOrWhiteSpace(assetPath))
             {
@@ -312,10 +289,7 @@ namespace DxMessaging.Editor.Windows
             return true;
         }
 
-        internal static bool TryResolveMessageSource(
-            string messageTypeName,
-            out SourceLocation location
-        )
+        internal static bool TryResolveMessageSource(string messageTypeName, out SourceLocation location)
         {
             location = default;
             CapturedTypeIdentity identity = ParseCapturedTypeIdentity(messageTypeName);
@@ -329,40 +303,23 @@ namespace DxMessaging.Editor.Windows
                 return location.IsValid;
             }
 
-            IEnumerable<System.Reflection.Assembly> candidateAssemblies =
-                LoadedAssemblyUtility.GetAssemblies();
+            IEnumerable<System.Reflection.Assembly> candidateAssemblies = LoadedAssemblyUtility.GetAssemblies();
             if (!string.IsNullOrWhiteSpace(identity.AssemblyName))
             {
-                candidateAssemblies = candidateAssemblies.Where(assembly =>
-                    string.Equals(
-                        assembly.GetName().Name,
-                        identity.AssemblyName,
-                        StringComparison.Ordinal
-                    )
-                );
+                candidateAssemblies = candidateAssemblies.Where(assembly => string.Equals(assembly.GetName().Name, identity.AssemblyName, StringComparison.Ordinal));
             }
 
-            Type messageType = candidateAssemblies
-                .Select(assembly => assembly.GetType(identity.TypeName, throwOnError: false))
-                .FirstOrDefault(candidate => candidate != null);
+            Type messageType = candidateAssemblies.Select(assembly => assembly.GetType(identity.TypeName, throwOnError: false)).FirstOrDefault(candidate => candidate != null);
             messageType ??= TypeCache
                 .GetTypesDerivedFrom<IMessage>()
                 .FirstOrDefault(candidate =>
-                    string.Equals(candidate.FullName, identity.TypeName, StringComparison.Ordinal)
-                    && IsTypeFromCapturedAssembly(candidate, identity.AssemblyName)
+                    string.Equals(candidate.FullName, identity.TypeName, StringComparison.Ordinal) && IsTypeFromCapturedAssembly(candidate, identity.AssemblyName)
                 );
-            if (
-                messageType == null
-                && identity.TypeName.IndexOf('.') < 0
-                && identity.TypeName.IndexOf('+') < 0
-            )
+            if (messageType == null && identity.TypeName.IndexOf('.') < 0 && identity.TypeName.IndexOf('+') < 0)
             {
                 Type[] simpleNameMatches = TypeCache
                     .GetTypesDerivedFrom<IMessage>()
-                    .Where(candidate =>
-                        string.Equals(candidate.Name, identity.TypeName, StringComparison.Ordinal)
-                        && IsTypeFromCapturedAssembly(candidate, identity.AssemblyName)
-                    )
+                    .Where(candidate => string.Equals(candidate.Name, identity.TypeName, StringComparison.Ordinal) && IsTypeFromCapturedAssembly(candidate, identity.AssemblyName))
                     .Take(2)
                     .ToArray();
                 messageType = simpleNameMatches.Length == 1 ? simpleNameMatches[0] : null;
@@ -373,30 +330,18 @@ namespace DxMessaging.Editor.Windows
                 return false;
             }
 
-            string compilationAssemblyName = string.IsNullOrWhiteSpace(identity.AssemblyName)
-                ? messageType.Assembly.GetName().Name
-                : identity.AssemblyName;
+            string compilationAssemblyName = string.IsNullOrWhiteSpace(identity.AssemblyName) ? messageType.Assembly.GetName().Name : identity.AssemblyName;
             UnityEditor.Compilation.Assembly compilationAssembly = CompilationPipeline
                 .GetAssemblies()
-                .FirstOrDefault(candidate =>
-                    string.Equals(candidate.name, compilationAssemblyName, StringComparison.Ordinal)
-                );
+                .FirstOrDefault(candidate => string.Equals(candidate.name, compilationAssemblyName, StringComparison.Ordinal));
             if (compilationAssembly == null)
             {
                 MessageSourceLocationCache[identity.CacheKey] = default;
                 return false;
             }
 
-            string declarationKey = CreateSourceDeclarationKey(
-                messageType.Namespace,
-                CreateSourceTypeNameChain(messageType)
-            );
-            if (
-                MessageSourceAssemblyIndexes.TryGetValue(
-                    compilationAssembly.name,
-                    out MessageSourceAssemblyIndex existingIndex
-                )
-            )
+            string declarationKey = CreateSourceDeclarationKey(messageType.Namespace, CreateSourceTypeNameChain(messageType));
+            if (MessageSourceAssemblyIndexes.TryGetValue(compilationAssembly.name, out MessageSourceAssemblyIndex existingIndex))
             {
                 if (existingIndex.Locations == null)
                 {
@@ -411,14 +356,9 @@ namespace DxMessaging.Editor.Windows
 
                 if (!existingIndex.IsComplete)
                 {
-                    if (
-                        existingIndex.BuildTask == null
-                        && existingIndex.RetryAfterUtc <= DateTime.UtcNow
-                    )
+                    if (existingIndex.BuildTask == null && existingIndex.RetryAfterUtc <= DateTime.UtcNow)
                     {
-                        existingIndex.BuildTask = CreateMessageSourceIndexBuildTask(
-                            compilationAssembly
-                        );
+                        existingIndex.BuildTask = CreateMessageSourceIndexBuildTask(compilationAssembly);
                         RegisterMessageSourceIndexDrain();
                     }
                     return false;
@@ -428,36 +368,21 @@ namespace DxMessaging.Editor.Windows
                 return false;
             }
 
-            MessageSourceAssemblyIndexes.Add(
-                compilationAssembly.name,
-                new MessageSourceAssemblyIndex(
-                    CreateMessageSourceIndexBuildTask(compilationAssembly)
-                )
-            );
+            MessageSourceAssemblyIndexes.Add(compilationAssembly.name, new MessageSourceAssemblyIndex(CreateMessageSourceIndexBuildTask(compilationAssembly)));
             RegisterMessageSourceIndexDrain();
             return false;
         }
 
         private static bool IsTypeFromCapturedAssembly(Type type, string assemblyName)
         {
-            return string.IsNullOrWhiteSpace(assemblyName)
-                || string.Equals(
-                    type.Assembly.GetName().Name,
-                    assemblyName,
-                    StringComparison.Ordinal
-                );
+            return string.IsNullOrWhiteSpace(assemblyName) || string.Equals(type.Assembly.GetName().Name, assemblyName, StringComparison.Ordinal);
         }
 
-        private static Task<MessageSourceIndexBuildResult> CreateMessageSourceIndexBuildTask(
-            UnityEditor.Compilation.Assembly compilationAssembly
-        )
+        private static Task<MessageSourceIndexBuildResult> CreateMessageSourceIndexBuildTask(UnityEditor.Compilation.Assembly compilationAssembly)
         {
             MessageSourceFile[] sourceFiles = compilationAssembly
                 .sourceFiles.Select(CreateMessageSourceFile)
-                .Where(sourceFile =>
-                    !string.IsNullOrWhiteSpace(sourceFile.FullPath)
-                    && !string.IsNullOrWhiteSpace(sourceFile.AssetPath)
-                )
+                .Where(sourceFile => !string.IsNullOrWhiteSpace(sourceFile.FullPath) && !string.IsNullOrWhiteSpace(sourceFile.AssetPath))
                 .ToArray();
             return Task.Run(() => BuildMessageSourceAssemblyIndex(sourceFiles));
         }
@@ -475,21 +400,13 @@ namespace DxMessaging.Editor.Windows
                 return default;
             }
 
-            string fullPath = Path.IsPathRooted(sourceFile)
-                ? sourceFile
-                : Path.GetFullPath(sourceFile);
-            string assetPath = Path.IsPathRooted(sourceFile)
-                ? FileUtil.GetProjectRelativePath(fullPath)
-                : sourceFile;
+            string fullPath = Path.IsPathRooted(sourceFile) ? sourceFile : Path.GetFullPath(sourceFile);
+            string assetPath = Path.IsPathRooted(sourceFile) ? FileUtil.GetProjectRelativePath(fullPath) : sourceFile;
             assetPath = (assetPath ?? string.Empty).Replace('\\', '/');
-            return string.IsNullOrWhiteSpace(assetPath)
-                ? default
-                : new MessageSourceFile(fullPath, assetPath);
+            return string.IsNullOrWhiteSpace(assetPath) ? default : new MessageSourceFile(fullPath, assetPath);
         }
 
-        private static MessageSourceIndexBuildResult BuildMessageSourceAssemblyIndex(
-            IReadOnlyList<MessageSourceFile> sourceFiles
-        )
+        private static MessageSourceIndexBuildResult BuildMessageSourceAssemblyIndex(IReadOnlyList<MessageSourceFile> sourceFiles)
         {
             Dictionary<string, SourceLocation> locations = new(StringComparer.Ordinal);
             if (sourceFiles == null)
@@ -518,16 +435,10 @@ namespace DxMessaging.Editor.Windows
 
                 foreach (SourceTypeDeclaration declaration in FindSourceTypeDeclarations(lines))
                 {
-                    string key = CreateSourceDeclarationKey(
-                        declaration.Namespace,
-                        declaration.TypeNames
-                    );
+                    string key = CreateSourceDeclarationKey(declaration.Namespace, declaration.TypeNames);
                     if (!locations.ContainsKey(key))
                     {
-                        locations.Add(
-                            key,
-                            new SourceLocation(sourceFile.AssetPath, declaration.Line)
-                        );
+                        locations.Add(key, new SourceLocation(sourceFile.AssetPath, declaration.Line));
                     }
                 }
             }
@@ -549,10 +460,7 @@ namespace DxMessaging.Editor.Windows
                     MessageSourceIndexBuildResult result = index.BuildTask.GetAwaiter().GetResult();
                     if (!result.IsComplete && index.Locations != null)
                     {
-                        Dictionary<string, SourceLocation> mergedLocations = new(
-                            index.Locations,
-                            StringComparer.Ordinal
-                        );
+                        Dictionary<string, SourceLocation> mergedLocations = new(index.Locations, StringComparer.Ordinal);
                         foreach (KeyValuePair<string, SourceLocation> pair in result.Locations)
                         {
                             mergedLocations[pair.Key] = pair.Value;
@@ -564,21 +472,14 @@ namespace DxMessaging.Editor.Windows
                         index.Locations = result.Locations;
                     }
                     index.IsComplete = result.IsComplete;
-                    index.RetryAfterUtc = result.IsComplete
-                        ? DateTime.MaxValue
-                        : DateTime.UtcNow.AddSeconds(5);
+                    index.RetryAfterUtc = result.IsComplete ? DateTime.MaxValue : DateTime.UtcNow.AddSeconds(5);
                 }
                 catch (Exception exception)
                 {
-                    index.Locations = new Dictionary<string, SourceLocation>(
-                        StringComparer.Ordinal
-                    );
+                    index.Locations = new Dictionary<string, SourceLocation>(StringComparer.Ordinal);
                     index.IsComplete = false;
                     index.RetryAfterUtc = DateTime.UtcNow.AddSeconds(5);
-                    DxMessagingEditorLog.LogWarning(
-                        "Could not index message source files.",
-                        exception
-                    );
+                    DxMessagingEditorLog.LogWarning("Could not index message source files.", exception);
                 }
                 index.BuildTask = null;
                 changed = true;
@@ -597,21 +498,13 @@ namespace DxMessaging.Editor.Windows
 
         internal static void AllowIncompleteMessageSourceIndexRetries()
         {
-            foreach (
-                MessageSourceAssemblyIndex index in MessageSourceAssemblyIndexes.Values.Where(
-                    index => index.BuildTask == null && !index.IsComplete
-                )
-            )
+            foreach (MessageSourceAssemblyIndex index in MessageSourceAssemblyIndexes.Values.Where(index => index.BuildTask == null && !index.IsComplete))
             {
                 index.RetryAfterUtc = DateTime.MinValue;
             }
         }
 
-        internal static int FindTypeDeclarationLine(
-            IReadOnlyList<string> lines,
-            string targetNamespace,
-            IReadOnlyList<string> targetTypeNames
-        )
+        internal static int FindTypeDeclarationLine(IReadOnlyList<string> lines, string targetNamespace, IReadOnlyList<string> targetTypeNames)
         {
             if (lines == null || targetTypeNames == null || targetTypeNames.Count == 0)
             {
@@ -620,19 +513,13 @@ namespace DxMessaging.Editor.Windows
 
             SourceTypeDeclaration match = FindSourceTypeDeclarations(lines)
                 .FirstOrDefault(declaration =>
-                    string.Equals(
-                        declaration.Namespace,
-                        targetNamespace ?? string.Empty,
-                        StringComparison.Ordinal
-                    )
+                    string.Equals(declaration.Namespace, targetNamespace ?? string.Empty, StringComparison.Ordinal)
                     && declaration.TypeNames.SequenceEqual(targetTypeNames, StringComparer.Ordinal)
                 );
             return match.Line;
         }
 
-        private static IReadOnlyList<SourceTypeDeclaration> FindSourceTypeDeclarations(
-            IReadOnlyList<string> lines
-        )
+        private static IReadOnlyList<SourceTypeDeclaration> FindSourceTypeDeclarations(IReadOnlyList<string> lines)
         {
             List<SourceTypeDeclaration> declarations = new();
             if (lines == null)
@@ -645,11 +532,7 @@ namespace DxMessaging.Editor.Windows
             string[] codeLines = new string[lines.Count];
             for (int index = 0; index < lines.Count; index++)
             {
-                codeLines[index] = StripSourceCommentsAndLiterals(
-                    lines[index] ?? string.Empty,
-                    ref insideBlockComment,
-                    ref insideVerbatimString
-                );
+                codeLines[index] = StripSourceCommentsAndLiterals(lines[index] ?? string.Empty, ref insideBlockComment, ref insideVerbatimString);
             }
 
             List<SourceScope> scopes = new();
@@ -663,10 +546,7 @@ namespace DxMessaging.Editor.Windows
             {
                 string code = codeLines[index];
                 Match namespaceMatch = SourceNamespaceDeclarationPattern.Match(code);
-                if (
-                    namespaceMatch.Success
-                    && string.Equals(namespaceMatch.Groups[2].Value, ";", StringComparison.Ordinal)
-                )
+                if (namespaceMatch.Success && string.Equals(namespaceMatch.Groups[2].Value, ";", StringComparison.Ordinal))
                 {
                     fileScopedNamespace = namespaceMatch.Groups[1].Value;
                     hasPendingScope = false;
@@ -682,30 +562,15 @@ namespace DxMessaging.Editor.Windows
                 if (typeMatch.Success)
                 {
                     string declaredTypeName = typeMatch.Groups[1].Value.TrimStart('@');
-                    if (
-                        code.Substring(typeMatch.Index + typeMatch.Length)
-                            .TrimStart()
-                            .StartsWith("<", StringComparison.Ordinal)
-                    )
+                    if (code.Substring(typeMatch.Index + typeMatch.Length).TrimStart().StartsWith("<", StringComparison.Ordinal))
                     {
-                        declaredTypeName += TryReadSourceGenericParameters(
-                            codeLines,
-                            index,
-                            typeMatch.Index + typeMatch.Length,
-                            out string genericParameters
-                        )
+                        declaredTypeName += TryReadSourceGenericParameters(codeLines, index, typeMatch.Index + typeMatch.Length, out string genericParameters)
                             ? "`" + CountSourceGenericParameters(genericParameters)
                             : "`?";
                     }
                     string currentNamespace = CreateSourceNamespace(fileScopedNamespace, scopes);
-                    string[] currentTypeNames = scopes
-                        .Where(scope => scope.Kind == SourceScopeKind.Type)
-                        .Select(scope => scope.Name)
-                        .Concat(new[] { declaredTypeName })
-                        .ToArray();
-                    declarations.Add(
-                        new SourceTypeDeclaration(currentNamespace, currentTypeNames, index + 1)
-                    );
+                    string[] currentTypeNames = scopes.Where(scope => scope.Kind == SourceScopeKind.Type).Select(scope => scope.Name).Concat(new[] { declaredTypeName }).ToArray();
+                    declarations.Add(new SourceTypeDeclaration(currentNamespace, currentTypeNames, index + 1));
 
                     hasPendingScope = true;
                     pendingScopeKind = SourceScopeKind.Type;
@@ -733,9 +598,7 @@ namespace DxMessaging.Editor.Windows
                         braceDepth++;
                         if (hasPendingScope)
                         {
-                            scopes.Add(
-                                new SourceScope(pendingScopeKind, pendingScopeName, braceDepth)
-                            );
+                            scopes.Add(new SourceScope(pendingScopeKind, pendingScopeName, braceDepth));
                             hasPendingScope = false;
                         }
                     }
@@ -757,12 +620,7 @@ namespace DxMessaging.Editor.Windows
             return declarations;
         }
 
-        private static bool TryReadSourceGenericParameters(
-            IReadOnlyList<string> codeLines,
-            int declarationLine,
-            int declarationEnd,
-            out string genericParameters
-        )
+        private static bool TryReadSourceGenericParameters(IReadOnlyList<string> codeLines, int declarationLine, int declarationEnd, out string genericParameters)
         {
             genericParameters = string.Empty;
             if (codeLines == null || declarationLine < 0 || codeLines.Count <= declarationLine)
@@ -870,39 +728,23 @@ namespace DxMessaging.Editor.Windows
             return count;
         }
 
-        private static string CreateSourceDeclarationKey(
-            string sourceNamespace,
-            IReadOnlyList<string> typeNames
-        )
+        private static string CreateSourceDeclarationKey(string sourceNamespace, IReadOnlyList<string> typeNames)
         {
             string typeName = string.Join("+", typeNames ?? Array.Empty<string>());
-            return string.IsNullOrWhiteSpace(sourceNamespace)
-                ? typeName
-                : sourceNamespace + "." + typeName;
+            return string.IsNullOrWhiteSpace(sourceNamespace) ? typeName : sourceNamespace + "." + typeName;
         }
 
-        private static string CreateSourceNamespace(
-            string fileScopedNamespace,
-            IReadOnlyList<SourceScope> scopes
-        )
+        private static string CreateSourceNamespace(string fileScopedNamespace, IReadOnlyList<SourceScope> scopes)
         {
             return string.Join(
                 ".",
                 new[] { fileScopedNamespace ?? string.Empty }
-                    .Concat(
-                        scopes
-                            .Where(scope => scope.Kind == SourceScopeKind.Namespace)
-                            .Select(scope => scope.Name)
-                    )
+                    .Concat(scopes.Where(scope => scope.Kind == SourceScopeKind.Namespace).Select(scope => scope.Name))
                     .Where(value => !string.IsNullOrWhiteSpace(value))
             );
         }
 
-        private static string StripSourceCommentsAndLiterals(
-            string line,
-            ref bool insideBlockComment,
-            ref bool insideVerbatimString
-        )
+        private static string StripSourceCommentsAndLiterals(string line, ref bool insideBlockComment, ref bool insideVerbatimString)
         {
             StringBuilder code = new(line.Length);
             for (int index = 0; index < line.Length; index++)
@@ -955,13 +797,7 @@ namespace DxMessaging.Editor.Windows
                 if (line[index] == '"' || line[index] == '\'')
                 {
                     char quote = line[index];
-                    bool verbatim =
-                        quote == '"'
-                        && 0 < index
-                        && (
-                            line[index - 1] == '@'
-                            || (line[index - 1] == '$' && 1 < index && line[index - 2] == '@')
-                        );
+                    bool verbatim = quote == '"' && 0 < index && (line[index - 1] == '@' || (line[index - 1] == '$' && 1 < index && line[index - 2] == '@'));
                     code.Append(' ');
                     if (verbatim)
                     {
@@ -999,27 +835,18 @@ namespace DxMessaging.Editor.Windows
                 return new CapturedTypeIdentity(captured, string.Empty);
             }
 
-            string assemblyName = captured.Substring(
-                assemblyStart + 2,
-                captured.Length - assemblyStart - 3
-            );
+            string assemblyName = captured.Substring(assemblyStart + 2, captured.Length - assemblyStart - 3);
             return string.IsNullOrWhiteSpace(assemblyName)
                 ? new CapturedTypeIdentity(captured, string.Empty)
                 : new CapturedTypeIdentity(captured.Substring(0, assemblyStart), assemblyName);
         }
 
-        internal static Button CreateSourceLinkButton(
-            string label,
-            SourceLocation location,
-            bool includeLocationInText = true
-        )
+        internal static Button CreateSourceLinkButton(string label, SourceLocation location, bool includeLocationInText = true)
         {
             Button button = new()
             {
                 name = SourceLinkButtonName,
-                text = includeLocationInText
-                    ? $"{label} - {Path.GetFileName(location.AssetPath)}:{location.Line}"
-                    : label,
+                text = includeLocationInText ? $"{label} - {Path.GetFileName(location.AssetPath)}:{location.Line}" : label,
                 tooltip = $"Open {location.AssetPath}:{location.Line}",
                 userData = location,
             };
@@ -1070,9 +897,7 @@ namespace DxMessaging.Editor.Windows
             string typeName = assemblyQualifiedName.Substring(0, assemblySeparator).Trim();
             string remainder = assemblyQualifiedName.Substring(assemblySeparator + 1);
             int nameEnd = remainder.IndexOf(',');
-            string assemblyName = (
-                nameEnd < 0 ? remainder : remainder.Substring(0, nameEnd)
-            ).Trim();
+            string assemblyName = (nameEnd < 0 ? remainder : remainder.Substring(0, nameEnd)).Trim();
             return string.IsNullOrEmpty(assemblyName) ? typeName : $"{typeName} [{assemblyName}]";
         }
 
@@ -1080,15 +905,9 @@ namespace DxMessaging.Editor.Windows
         /// Resolves the declaring source file of a type captured as an assembly-qualified name,
         /// which is the shape the Message Monitor records.
         /// </summary>
-        internal static bool TryResolveSourceForAssemblyQualifiedName(
-            string assemblyQualifiedName,
-            out SourceLocation location
-        )
+        internal static bool TryResolveSourceForAssemblyQualifiedName(string assemblyQualifiedName, out SourceLocation location)
         {
-            return TryResolveMessageSource(
-                CreateSourceLookupName(assemblyQualifiedName),
-                out location
-            );
+            return TryResolveMessageSource(CreateSourceLookupName(assemblyQualifiedName), out location);
         }
 
         /// <summary>
@@ -1098,12 +917,7 @@ namespace DxMessaging.Editor.Windows
         /// interactive" for the diagnostics windows, so an element that skips it does not get
         /// the affordance by accident and one that takes it cannot forget a piece of it.
         /// </summary>
-        internal static void MakeActivatable(
-            VisualElement element,
-            string tooltip,
-            Action onActivate,
-            bool addLinkClass = true
-        )
+        internal static void MakeActivatable(VisualElement element, string tooltip, Action onActivate, bool addLinkClass = true)
         {
             if (element == null || onActivate == null)
             {
@@ -1150,9 +964,7 @@ namespace DxMessaging.Editor.Windows
         /// </summary>
         private static bool IsActivationKey(KeyDownEvent evt)
         {
-            return evt.keyCode == KeyCode.Return
-                || evt.keyCode == KeyCode.KeypadEnter
-                || evt.keyCode == KeyCode.Space;
+            return evt.keyCode == KeyCode.Return || evt.keyCode == KeyCode.KeypadEnter || evt.keyCode == KeyCode.Space;
         }
 
         /// <summary>

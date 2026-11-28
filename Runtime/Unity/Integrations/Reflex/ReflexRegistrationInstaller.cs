@@ -113,12 +113,7 @@ namespace DxMessaging.Unity.Integrations.Reflex
             {
                 throw new ArgumentNullException(nameof(builder));
             }
-            ReflexContainerBuilderCompatibility.RegisterSingletonFactory(
-                builder,
-                _ => new MessageBus(),
-                typeof(MessageBus),
-                typeof(IMessageBus)
-            );
+            ReflexContainerBuilderCompatibility.RegisterSingletonFactory(builder, _ => new MessageBus(), typeof(MessageBus), typeof(IMessageBus));
         }
 
         /// <summary>
@@ -128,10 +123,7 @@ namespace DxMessaging.Unity.Integrations.Reflex
         /// </summary>
         /// <param name="builder">Container builder receiving the registration.</param>
         /// <param name="factory">Delegate that constructs the <see cref="MessageBus"/> instance using the resolver.</param>
-        public static void AddDxMessagingBus(
-            this ContainerBuilder builder,
-            Func<Container, MessageBus> factory
-        )
+        public static void AddDxMessagingBus(this ContainerBuilder builder, Func<Container, MessageBus> factory)
         {
             if (builder == null)
             {
@@ -141,12 +133,7 @@ namespace DxMessaging.Unity.Integrations.Reflex
             {
                 throw new ArgumentNullException(nameof(factory));
             }
-            ReflexContainerBuilderCompatibility.RegisterSingletonFactory(
-                builder,
-                factory,
-                typeof(MessageBus),
-                typeof(IMessageBus)
-            );
+            ReflexContainerBuilderCompatibility.RegisterSingletonFactory(builder, factory, typeof(MessageBus), typeof(IMessageBus));
         }
 
         /// <summary>
@@ -165,22 +152,13 @@ namespace DxMessaging.Unity.Integrations.Reflex
             {
                 throw new ArgumentNullException(nameof(clock));
             }
-            ReflexContainerBuilderCompatibility.RegisterSingletonFactory(
-                builder,
-                _ => MessageBus.CreateForInternalUse(clock),
-                typeof(MessageBus),
-                typeof(IMessageBus)
-            );
+            ReflexContainerBuilderCompatibility.RegisterSingletonFactory(builder, _ => MessageBus.CreateForInternalUse(clock), typeof(MessageBus), typeof(IMessageBus));
         }
     }
 
     internal static class ReflexContainerBuilderCompatibility
     {
-        internal static void RegisterSingletonType(
-            ContainerBuilder builder,
-            Type concrete,
-            params Type[] contracts
-        )
+        internal static void RegisterSingletonType(ContainerBuilder builder, Type concrete, params Type[] contracts)
         {
 #if REFLEX_14_OR_NEWER
             builder.RegisterType(concrete, contracts, Lifetime.Singleton, Resolution.Lazy);
@@ -189,11 +167,7 @@ namespace DxMessaging.Unity.Integrations.Reflex
 #endif
         }
 
-        internal static void RegisterSingletonFactory<T>(
-            ContainerBuilder builder,
-            Func<Container, T> factory,
-            params Type[] contracts
-        )
+        internal static void RegisterSingletonFactory<T>(ContainerBuilder builder, Func<Container, T> factory, params Type[] contracts)
         {
 #if REFLEX_14_OR_NEWER
             builder.RegisterFactory(factory, contracts, Lifetime.Singleton, Resolution.Lazy);

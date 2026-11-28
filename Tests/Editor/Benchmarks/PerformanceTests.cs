@@ -31,63 +31,22 @@ namespace DxMessaging.Tests.Editor.Benchmarks
                 Stopwatch timer = Stopwatch.StartNew();
 
                 ComplexTargetedMessage message = new(Guid.NewGuid());
-                ReflexiveMessage reflexiveMessage = new(
-                    nameof(SimpleMessageAwareComponent.HandleSlowComplexTargetedMessage),
-                    ReflexiveSendMode.Flat,
-                    message
-                );
+                ReflexiveMessage reflexiveMessage = new(nameof(SimpleMessageAwareComponent.HandleSlowComplexTargetedMessage), ReflexiveSendMode.Flat, message);
 
                 RunWithComponent(component => Unity(timer, timeout, component.gameObject, message));
 
-                RunWithComponent(
-                    (component, token) =>
-                        NormalGameObject(timer, timeout, component, token, message)
-                );
-                RunWithComponent(
-                    (component, token) => NormalComponent(timer, timeout, component, token, message)
-                );
-                RunWithComponent(
-                    (component, token) =>
-                        NoCopyGameObject(timer, timeout, component, token, message)
-                );
-                RunWithComponent(
-                    (component, token) => NoCopyComponent(timer, timeout, component, token, message)
-                );
+                RunWithComponent((component, token) => NormalGameObject(timer, timeout, component, token, message));
+                RunWithComponent((component, token) => NormalComponent(timer, timeout, component, token, message));
+                RunWithComponent((component, token) => NoCopyGameObject(timer, timeout, component, token, message));
+                RunWithComponent((component, token) => NoCopyComponent(timer, timeout, component, token, message));
 
                 SimpleUntargetedMessage untargetedMessage = new();
-                RunWithComponent(
-                    (component, token) =>
-                        NoCopyUntargeted(timer, timeout, component, token, untargetedMessage)
-                );
-                RunWithComponent(
-                    (component, token) =>
-                        InterceptorHeavyUntargeted(
-                            timer,
-                            timeout,
-                            component,
-                            token,
-                            untargetedMessage
-                        )
-                );
-                RunWithComponent(
-                    (component, token) =>
-                        PostProcessorHeavyUntargeted(
-                            timer,
-                            timeout,
-                            component,
-                            token,
-                            untargetedMessage
-                        )
-                );
-                RunWithComponent(component =>
-                    ReflexiveOneArgument(timer, timeout, component.gameObject, reflexiveMessage)
-                );
-                RunWithComponent(component =>
-                    ReflexiveTwoArguments(timer, timeout, component.gameObject)
-                );
-                RunWithComponent(component =>
-                    ReflexiveThreeArguments(timer, timeout, component.gameObject)
-                );
+                RunWithComponent((component, token) => NoCopyUntargeted(timer, timeout, component, token, untargetedMessage));
+                RunWithComponent((component, token) => InterceptorHeavyUntargeted(timer, timeout, component, token, untargetedMessage));
+                RunWithComponent((component, token) => PostProcessorHeavyUntargeted(timer, timeout, component, token, untargetedMessage));
+                RunWithComponent(component => ReflexiveOneArgument(timer, timeout, component.gameObject, reflexiveMessage));
+                RunWithComponent(component => ReflexiveTwoArguments(timer, timeout, component.gameObject));
+                RunWithComponent(component => ReflexiveThreeArguments(timer, timeout, component.gameObject));
             });
         }
 
@@ -96,12 +55,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             RecordBenchmark(testName, count, duration, allocating);
         }
 
-        private void Unity(
-            Stopwatch timer,
-            TimeSpan timeout,
-            GameObject target,
-            ComplexTargetedMessage message
-        )
+        private void Unity(Stopwatch timer, TimeSpan timeout, GameObject target, ComplexTargetedMessage message)
         {
             int count = 0;
             if (!target.TryGetComponent(out SimpleMessageAwareComponent component))
@@ -114,34 +68,21 @@ namespace DxMessaging.Tests.Editor.Benchmarks
 
             component.slowComplexTargetedHandler = () => ++count;
             // Pre-warm
-            target.SendMessage(
-                nameof(SimpleMessageAwareComponent.HandleSlowComplexTargetedMessage),
-                message
-            );
+            target.SendMessage(nameof(SimpleMessageAwareComponent.HandleSlowComplexTargetedMessage), message);
 
             timer.Restart();
             do
             {
                 for (int i = 0; i < NumInvocationsPerIteration; ++i)
                 {
-                    target.SendMessage(
-                        nameof(SimpleMessageAwareComponent.HandleSlowComplexTargetedMessage),
-                        message
-                    );
+                    target.SendMessage(nameof(SimpleMessageAwareComponent.HandleSlowComplexTargetedMessage), message);
                 }
             } while (timer.Elapsed < timeout);
 
             bool allocating;
             try
             {
-                Assert.That(
-                    () =>
-                        target.SendMessage(
-                            nameof(SimpleMessageAwareComponent.HandleSlowComplexTargetedMessage),
-                            message
-                        ),
-                    Is.Not.AllocatingGCMemory()
-                );
+                Assert.That(() => target.SendMessage(nameof(SimpleMessageAwareComponent.HandleSlowComplexTargetedMessage), message), Is.Not.AllocatingGCMemory());
                 allocating = false;
             }
             catch
@@ -165,13 +106,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             PrepareBenchmarkBehaviourForSendMessage(component);
 
             component.reflexiveThreeArgumentHandler = () => ++count;
-            ReflexiveMessage message = new(
-                nameof(SimpleMessageAwareComponent.HandleReflexiveMessageThreeArguments),
-                ReflexiveSendMode.Flat,
-                1,
-                2,
-                3
-            );
+            ReflexiveMessage message = new(nameof(SimpleMessageAwareComponent.HandleReflexiveMessageThreeArguments), ReflexiveSendMode.Flat, 1, 2, 3);
             InstanceId target = go;
             // Pre-warm
             message.EmitTargeted(target);
@@ -212,12 +147,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             PrepareBenchmarkBehaviourForSendMessage(component);
 
             component.reflexiveTwoArgumentHandler = () => ++count;
-            ReflexiveMessage message = new(
-                nameof(SimpleMessageAwareComponent.HandleReflexiveMessageTwoArguments),
-                ReflexiveSendMode.Flat,
-                1,
-                2
-            );
+            ReflexiveMessage message = new(nameof(SimpleMessageAwareComponent.HandleReflexiveMessageTwoArguments), ReflexiveSendMode.Flat, 1, 2);
             InstanceId target = go;
             // Pre-warm
             message.EmitTargeted(target);
@@ -246,12 +176,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             DisplayCount("Reflexive (Two Arguments)", count, timer.Elapsed, allocating);
         }
 
-        private void ReflexiveOneArgument(
-            Stopwatch timer,
-            TimeSpan timeout,
-            GameObject go,
-            ReflexiveMessage message
-        )
+        private void ReflexiveOneArgument(Stopwatch timer, TimeSpan timeout, GameObject go, ReflexiveMessage message)
         {
             int count = 0;
             if (!go.TryGetComponent(out SimpleMessageAwareComponent component))
@@ -291,13 +216,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             DisplayCount("Reflexive (One Argument)", count, timer.Elapsed, allocating);
         }
 
-        private void NormalGameObject(
-            Stopwatch timer,
-            TimeSpan timeout,
-            EmptyMessageAwareComponent component,
-            MessageRegistrationToken token,
-            ComplexTargetedMessage message
-        )
+        private void NormalGameObject(Stopwatch timer, TimeSpan timeout, EmptyMessageAwareComponent component, MessageRegistrationToken token, ComplexTargetedMessage message)
         {
             int count = 0;
 
@@ -337,13 +256,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             }
         }
 
-        private void NormalComponent(
-            Stopwatch timer,
-            TimeSpan timeout,
-            EmptyMessageAwareComponent component,
-            MessageRegistrationToken token,
-            ComplexTargetedMessage message
-        )
+        private void NormalComponent(Stopwatch timer, TimeSpan timeout, EmptyMessageAwareComponent component, MessageRegistrationToken token, ComplexTargetedMessage message)
         {
             int count = 0;
             InstanceId target = component;
@@ -382,13 +295,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             }
         }
 
-        private void NoCopyGameObject(
-            Stopwatch timer,
-            TimeSpan timeout,
-            EmptyMessageAwareComponent component,
-            MessageRegistrationToken token,
-            ComplexTargetedMessage message
-        )
+        private void NoCopyGameObject(Stopwatch timer, TimeSpan timeout, EmptyMessageAwareComponent component, MessageRegistrationToken token, ComplexTargetedMessage message)
         {
             int count = 0;
 
@@ -428,13 +335,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             }
         }
 
-        private void NoCopyComponent(
-            Stopwatch timer,
-            TimeSpan timeout,
-            EmptyMessageAwareComponent component,
-            MessageRegistrationToken token,
-            ComplexTargetedMessage message
-        )
+        private void NoCopyComponent(Stopwatch timer, TimeSpan timeout, EmptyMessageAwareComponent component, MessageRegistrationToken token, ComplexTargetedMessage message)
         {
             int count = 0;
 
@@ -454,10 +355,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             bool allocating;
             try
             {
-                Assert.That(
-                    () => message.EmitComponentTargeted(component),
-                    Is.Not.AllocatingGCMemory()
-                );
+                Assert.That(() => message.EmitComponentTargeted(component), Is.Not.AllocatingGCMemory());
                 allocating = false;
             }
             catch
@@ -475,13 +373,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             }
         }
 
-        private void NoCopyUntargeted(
-            Stopwatch timer,
-            TimeSpan timeout,
-            EmptyMessageAwareComponent component,
-            MessageRegistrationToken token,
-            SimpleUntargetedMessage message
-        )
+        private void NoCopyUntargeted(Stopwatch timer, TimeSpan timeout, EmptyMessageAwareComponent component, MessageRegistrationToken token, SimpleUntargetedMessage message)
         {
             int count = 0;
 
@@ -565,23 +457,10 @@ namespace DxMessaging.Tests.Editor.Benchmarks
                 allocating = true;
             }
 
-            Assert.Greater(
-                interceptorInvocationCount,
-                0,
-                "Interceptor-heavy benchmark should invoke registered interceptors."
-            );
-            Assert.Greater(
-                handlerInvocationCount,
-                0,
-                "Interceptor-heavy benchmark should invoke handlers."
-            );
+            Assert.Greater(interceptorInvocationCount, 0, "Interceptor-heavy benchmark should invoke registered interceptors.");
+            Assert.Greater(handlerInvocationCount, 0, "Interceptor-heavy benchmark should invoke handlers.");
 
-            DisplayCount(
-                "DxMessaging (Untargeted) - Interceptors",
-                handlerInvocationCount,
-                timer.Elapsed,
-                allocating
-            );
+            DisplayCount("DxMessaging (Untargeted) - Interceptors", handlerInvocationCount, timer.Elapsed, allocating);
             return;
 
             void Handle(in SimpleUntargetedMessage _)
@@ -604,9 +483,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             const int PostProcessorCount = 8;
             for (int i = 0; i < PostProcessorCount; ++i)
             {
-                token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
-                    (in SimpleUntargetedMessage _) => ++postProcessorInvocationCount
-                );
+                token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => ++postProcessorInvocationCount);
             }
 
             token.RegisterUntargeted<SimpleUntargetedMessage>(Handle);
@@ -632,23 +509,10 @@ namespace DxMessaging.Tests.Editor.Benchmarks
                 allocating = true;
             }
 
-            Assert.Greater(
-                postProcessorInvocationCount,
-                0,
-                "Post-processor benchmark should invoke registered post-processors."
-            );
-            Assert.Greater(
-                handlerInvocationCount,
-                0,
-                "Post-processor-heavy benchmark should invoke handlers."
-            );
+            Assert.Greater(postProcessorInvocationCount, 0, "Post-processor benchmark should invoke registered post-processors.");
+            Assert.Greater(handlerInvocationCount, 0, "Post-processor-heavy benchmark should invoke handlers.");
 
-            DisplayCount(
-                "DxMessaging (Untargeted) - Post-Processors",
-                handlerInvocationCount,
-                timer.Elapsed,
-                allocating
-            );
+            DisplayCount("DxMessaging (Untargeted) - Post-Processors", handlerInvocationCount, timer.Elapsed, allocating);
             return;
 
             void Handle(in SimpleUntargetedMessage _)

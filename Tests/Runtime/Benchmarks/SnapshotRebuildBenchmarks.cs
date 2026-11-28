@@ -29,9 +29,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             TestContext.Out.WriteLine(result.ToCsvRow());
         }
 
-        public static SnapshotRebuildBenchmarkResult RunScenario(
-            SnapshotRebuildBenchmarkCase benchmarkCase
-        )
+        public static SnapshotRebuildBenchmarkResult RunScenario(SnapshotRebuildBenchmarkCase benchmarkCase)
         {
             using SnapshotRebuildState state = new(benchmarkCase.Cardinality);
             BenchmarkMeasurement measurement = BenchmarkProtocol.Measure(
@@ -43,33 +41,19 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 }
             );
 
-            long expectedCalls =
-                (long)benchmarkCase.Cardinality
-                * (WarmupOperations + measurement.TotalEmittedOperations);
-            Assert.AreEqual(
-                expectedCalls,
-                state.Calls,
-                $"{benchmarkCase.Key} changed dispatch fan-out during snapshot rebuild."
-            );
+            long expectedCalls = (long)benchmarkCase.Cardinality * (WarmupOperations + measurement.TotalEmittedOperations);
+            Assert.AreEqual(expectedCalls, state.Calls, $"{benchmarkCase.Key} changed dispatch fan-out during snapshot rebuild.");
             Assert.AreEqual(benchmarkCase.Cardinality, state.LiveRegistrations);
             Assert.AreEqual(
                 benchmarkCase.Cardinality + 1,
                 state.OccupiedTypeSlots,
-                "After warmup has replaced every handler, topology must contain the active bus "
-                    + "slot plus one dirty-empty displaced typed-handler slot per cardinality entry."
+                "After warmup has replaced every handler, topology must contain the active bus " + "slot plus one dirty-empty displaced typed-handler slot per cardinality entry."
             );
-            Assert.Zero(
-                state.StaleDispatchCalls,
-                $"{benchmarkCase.Key} reused a stale flat snapshot after replacement."
-            );
+            Assert.Zero(state.StaleDispatchCalls, $"{benchmarkCase.Key} reused a stale flat snapshot after replacement.");
             FlatSnapshotStorageObservation storage = state.ObserveSnapshotStorage();
             Assert.AreEqual(benchmarkCase.Cardinality, storage.EntryCount);
             Assert.GreaterOrEqual(storage.ArrayCapacity, storage.EntryCount);
-            Assert.AreEqual(
-                1,
-                storage.EmptyHolderPoolCount,
-                "Sequential rebuild keeps exactly one released empty holder beside the active holder."
-            );
+            Assert.AreEqual(1, storage.EmptyHolderPoolCount, "Sequential rebuild keeps exactly one released empty holder beside the active holder.");
 
             return new SnapshotRebuildBenchmarkResult(
                 benchmarkCase,
@@ -140,17 +124,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                         {
                             int capturedSlot = slot;
                             int capturedGeneration = generation;
-                            MessageHandler messageHandler = new(
-                                new InstanceId(0x5352_0001 + slot * 2 + generation),
-                                _bus
-                            )
-                            {
-                                active = true,
-                            };
-                            MessageRegistrationToken token = MessageRegistrationToken.Create(
-                                messageHandler,
-                                _bus
-                            );
+                            MessageHandler messageHandler = new(new InstanceId(0x5352_0001 + slot * 2 + generation), _bus) { active = true };
+                            MessageRegistrationToken token = MessageRegistrationToken.Create(messageHandler, _bus);
                             _tokens[TokenIndex(slot, generation)] = token;
                             token.DiagnosticMode = false;
                             _ = token.RegisterUntargeted<SnapshotRebuildMessage>(
@@ -233,15 +208,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             internal FlatSnapshotStorageObservation ObserveSnapshotStorage()
             {
-                if (
-                    !_bus.TryObserveUntargetedFlatSnapshotStorageForBenchmark<SnapshotRebuildMessage>(
-                        out FlatSnapshotStorageObservation observation
-                    )
-                )
+                if (!_bus.TryObserveUntargetedFlatSnapshotStorageForBenchmark<SnapshotRebuildMessage>(out FlatSnapshotStorageObservation observation))
                 {
-                    throw new InvalidOperationException(
-                        "The benchmark must leave an active untargeted flat snapshot."
-                    );
+                    throw new InvalidOperationException("The benchmark must leave an active untargeted flat snapshot.");
                 }
                 return observation;
             }
@@ -305,13 +274,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
     public static class SnapshotRebuildScenarios
     {
-        private static readonly SnapshotRebuildBenchmarkCase[] Cases =
-        {
-            new(1),
-            new(4),
-            new(16),
-            new(64),
-        };
+        private static readonly SnapshotRebuildBenchmarkCase[] Cases = { new(1), new(4), new(16), new(64) };
 
         public static IReadOnlyList<SnapshotRebuildBenchmarkCase> All => Cases;
     }
@@ -463,10 +426,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         [Test]
         public void MatrixCoversRepresentativeCardinalitiesExactlyOnce()
         {
-            CollectionAssert.AreEqual(
-                new[] { 1, 4, 16, 64 },
-                BuildCardinalities(SnapshotRebuildScenarios.All)
-            );
+            CollectionAssert.AreEqual(new[] { 1, 4, 16, 64 }, BuildCardinalities(SnapshotRebuildScenarios.All));
         }
 
         [TestCase(1)]
@@ -475,57 +435,22 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         [TestCase(64)]
         public void OneMutationRebuildPreservesFanOutAndLiveTopology(int cardinality)
         {
-            SnapshotRebuildObservation observation = SnapshotRebuildBenchmarks.RunOnceForContract(
-                cardinality
-            );
+            SnapshotRebuildObservation observation = SnapshotRebuildBenchmarks.RunOnceForContract(cardinality);
 
             Assert.AreEqual(cardinality, observation.DispatchCalls);
             Assert.AreEqual(cardinality, observation.LiveRegistrations);
-            Assert.AreEqual(
-                2,
-                observation.OccupiedTypeSlots,
-                "One replacement must leave one active bus slot and one dirty-empty displaced "
-                    + "typed-handler slot."
-            );
-            Assert.AreEqual(
-                1,
-                observation.ReplacementDispatchCalls,
-                "The first replacement generation must be the one invoked after mutation."
-            );
-            Assert.Zero(
-                observation.StaleDispatchCalls,
-                "The displaced generation must not be invoked by a stale snapshot."
-            );
+            Assert.AreEqual(2, observation.OccupiedTypeSlots, "One replacement must leave one active bus slot and one dirty-empty displaced " + "typed-handler slot.");
+            Assert.AreEqual(1, observation.ReplacementDispatchCalls, "The first replacement generation must be the one invoked after mutation.");
+            Assert.Zero(observation.StaleDispatchCalls, "The displaced generation must not be invoked by a stale snapshot.");
             Assert.AreEqual(cardinality, observation.Storage.EntryCount);
-            Assert.GreaterOrEqual(
-                observation.Storage.ArrayCapacity,
-                observation.Storage.EntryCount
-            );
-            Assert.AreEqual(
-                1,
-                observation.Storage.EmptyHolderPoolCount,
-                "One sequential rebuild must leave exactly one released empty holder."
-            );
+            Assert.GreaterOrEqual(observation.Storage.ArrayCapacity, observation.Storage.EntryCount);
+            Assert.AreEqual(1, observation.Storage.EmptyHolderPoolCount, "One sequential rebuild must leave exactly one released empty holder.");
         }
 
         [Test]
         public void ResultSchemaKeepsCsvAndStructuredLogAligned()
         {
-            SnapshotRebuildBenchmarkResult result = new(
-                new SnapshotRebuildBenchmarkCase(4),
-                1,
-                2d,
-                3d,
-                -1,
-                -1,
-                4,
-                4,
-                1,
-                0,
-                4,
-                16,
-                1
-            );
+            SnapshotRebuildBenchmarkResult result = new(new SnapshotRebuildBenchmarkCase(4), 1, 2d, 3d, -1, -1, 4, 4, 1, 0, 4, 16, 1);
 
             string[] header = SnapshotRebuildBenchmarkResult.CsvHeader.Split(',');
             string[] row = result.ToCsvRow().Split(',');

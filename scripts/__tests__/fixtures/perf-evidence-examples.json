@@ -138,20 +138,8 @@
   },
   "differentialMutations": [
     ["missing message kind", "replays/broadcast.json", null, null, "broadcast\\.json is required"],
-    [
-      "wrong generator profile",
-      "differential-replay-profile.json",
-      "generatorVersion",
-      11,
-      "reviewed native lifecycle profile"
-    ],
-    [
-      "source disagreement",
-      "differential-replay-environment.json",
-      "sourceCommit",
-      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "source identity"
-    ],
+    ["wrong generator profile", "differential-replay-profile.json", "generatorVersion", 11, "reviewed native lifecycle profile"],
+    ["source disagreement", "differential-replay-environment.json", "sourceCommit", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "source identity"],
     [
       "false mismatch",
       "replays/untargeted.json",
@@ -170,23 +158,12 @@
       ],
       "first observable mismatch"
     ],
-    [
-      "non-minimal operation",
-      "replays/targeted.json",
-      "minimized.operations.0.kind",
-      "Emit",
-      "deletion-minimal"
-    ]
+    ["non-minimal operation", "replays/targeted.json", "minimized.operations.0.kind", "Emit", "deletion-minimal"]
   ],
   "differentialExpectedCases": [
     ["Untargeted", 6, 1],
     ["Targeted", 6, 1],
     ["Broadcast", 6, 1]
   ],
-  "shippingDefects": [
-    "missing raw cell",
-    "duplicate row",
-    "summary timing",
-    "missing summary column"
-  ]
+  "shippingDefects": ["missing raw cell", "duplicate row", "summary timing", "missing summary column"]
 }

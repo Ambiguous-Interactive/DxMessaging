@@ -28,9 +28,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void UntargetedSelfDeactivationSkipsSameHandlerSamePriorityPeer()
         {
-            GameObject host = new(
-                nameof(UntargetedSelfDeactivationSkipsSameHandlerSamePriorityPeer)
-            );
+            GameObject host = new(nameof(UntargetedSelfDeactivationSkipsSameHandlerSamePriorityPeer));
             _spawned.Add(host);
             MessageHandler handler = new(host) { active = true };
             MessageBus bus = new();
@@ -51,10 +49,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 },
                 priority: 0
             );
-            _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                (in SimpleUntargetedMessage _) => ++secondCount,
-                priority: 0
-            );
+            _ = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => ++secondCount, priority: 0);
 
             SimpleUntargetedMessage message = new();
             message.EmitUntargeted(bus);
@@ -72,11 +67,7 @@ namespace DxMessaging.Tests.Runtime.Core
             handler.active = true;
             message.EmitUntargeted(bus);
             Assert.AreEqual(2, firstCount, "Reactivated handler must dispatch again.");
-            Assert.AreEqual(
-                1,
-                secondCount,
-                "After reactivation both delegates must fire (positive control)."
-            );
+            Assert.AreEqual(1, secondCount, "After reactivation both delegates must fire (positive control).");
 
             token.Dispose();
         }
@@ -106,11 +97,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 },
                 priority: 0
             );
-            _ = token.RegisterGameObjectTargeted<SimpleTargetedMessage>(
-                host,
-                (in SimpleTargetedMessage _) => ++secondCount,
-                priority: 0
-            );
+            _ = token.RegisterGameObjectTargeted<SimpleTargetedMessage>(host, (in SimpleTargetedMessage _) => ++secondCount, priority: 0);
 
             SimpleTargetedMessage message = new();
             message.EmitGameObjectTargeted(host, bus);
@@ -126,21 +113,13 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             message.EmitGameObjectTargeted(host, bus);
-            Assert.AreEqual(
-                1,
-                firstCount,
-                "A deactivated handler must not dispatch on the next emission."
-            );
+            Assert.AreEqual(1, firstCount, "A deactivated handler must not dispatch on the next emission.");
 
             deactivateOnInvoke = false;
             handler.active = true;
             message.EmitGameObjectTargeted(host, bus);
             Assert.AreEqual(2, firstCount, "Reactivated handler must dispatch again.");
-            Assert.AreEqual(
-                1,
-                secondCount,
-                "After reactivation both delegates must fire (positive control)."
-            );
+            Assert.AreEqual(1, secondCount, "After reactivation both delegates must fire (positive control).");
 
             token.Dispose();
         }

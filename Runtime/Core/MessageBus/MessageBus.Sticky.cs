@@ -71,9 +71,7 @@ namespace DxMessaging.Core.MessageBus
                     index = MessageHelperIndexer.TotalMessages;
                     if (int.MaxValue <= index)
                     {
-                        throw new InvalidOperationException(
-                            "The message type index exceeds the store's supported capacity."
-                        );
+                        throw new InvalidOperationException("The message type index exceeds the store's supported capacity.");
                     }
                     // Publish the shared index only after growth succeeds, so a rejected
                     // capacity cannot consume a type ID.
@@ -101,11 +99,7 @@ namespace DxMessaging.Core.MessageBus
                 where TMessage : IUntargetedMessage
             {
                 int index = MessageHelperIndexer<TMessage>.SequentialId;
-                if (
-                    0 <= index
-                    && index < _values.Length
-                    && _values[index] is StickyValue<TMessage> stored
-                )
+                if (0 <= index && index < _values.Length && _values[index] is StickyValue<TMessage> stored)
                 {
                     message = stored.Value;
                     return true;
@@ -139,9 +133,7 @@ namespace DxMessaging.Core.MessageBus
                 {
                     if (int.MaxValue >> 1 < capacity)
                     {
-                        throw new InvalidOperationException(
-                            "The message type index exceeds the store's supported capacity."
-                        );
+                        throw new InvalidOperationException("The message type index exceeds the store's supported capacity.");
                     }
                     capacity <<= 1;
                 }

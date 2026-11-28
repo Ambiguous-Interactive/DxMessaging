@@ -13,37 +13,18 @@ namespace DxMessaging.Tests.Runtime.Core
     {
         /// <summary>Runs handwritten controls before generated class and readonly-struct calls.</summary>
         [TestCaseSource(nameof(Boundaries))]
-        public void OmittedIntegralDefaultsRetainEndpointValues(
-            int index,
-            string expected,
-            string metadataType,
-            string boundary
-        )
+        public void OmittedIntegralDefaultsRetainEndpointValues(int index, string expected, string metadataType, string boundary)
         {
-            string context =
-                $"index={index}, expected={expected}, metadataType={metadataType}, boundary={boundary}";
+            string context = $"index={index}, expected={expected}, metadataType={metadataType}, boundary={boundary}";
             HandwrittenDefaults manual = new(1);
             Assert.That(manual.Required, Is.EqualTo(1), "Manual constructor ran: " + context);
             AssertValue(manual.Values()[index], expected, metadataType, "Manual: " + context);
             ClassDefaults reference = new(1);
             StructDefaults value = new(1);
-            Assert.That(
-                reference.Required,
-                Is.EqualTo(1),
-                "Generated class constructor ran: " + context
-            );
-            Assert.That(
-                value.Required,
-                Is.EqualTo(1),
-                "Generated struct constructor ran: " + context
-            );
+            Assert.That(reference.Required, Is.EqualTo(1), "Generated class constructor ran: " + context);
+            Assert.That(value.Required, Is.EqualTo(1), "Generated struct constructor ran: " + context);
             AssertValue(reference.Values()[index], expected, metadataType, "Class: " + context);
-            AssertValue(
-                value.Values()[index],
-                expected,
-                metadataType,
-                "Readonly struct: " + context
-            );
+            AssertValue(value.Values()[index], expected, metadataType, "Readonly struct: " + context);
             ClassDefaults explicitReference = new(
                 2,
                 default(sbyte),
@@ -82,109 +63,37 @@ namespace DxMessaging.Tests.Runtime.Core
                 default(ulong),
                 default(ulong)
             );
-            Assert.That(
-                explicitReference.Required,
-                Is.EqualTo(2),
-                "Explicit class constructor ran: " + context
-            );
-            Assert.That(
-                explicitValue.Required,
-                Is.EqualTo(2),
-                "Explicit struct constructor ran: " + context
-            );
-            AssertValue(
-                explicitReference.Values()[index],
-                "0",
-                metadataType,
-                "Explicit class: " + context
-            );
-            AssertValue(
-                explicitValue.Values()[index],
-                "0",
-                metadataType,
-                "Explicit readonly struct: " + context
-            );
+            Assert.That(explicitReference.Required, Is.EqualTo(2), "Explicit class constructor ran: " + context);
+            Assert.That(explicitValue.Required, Is.EqualTo(2), "Explicit struct constructor ran: " + context);
+            AssertValue(explicitReference.Values()[index], "0", metadataType, "Explicit class: " + context);
+            AssertValue(explicitValue.Values()[index], "0", metadataType, "Explicit readonly struct: " + context);
         }
 
-        private static void AssertValue(
-            object value,
-            string expected,
-            string metadataType,
-            string context
-        )
+        private static void AssertValue(object value, string expected, string metadataType, string context)
         {
-            Assert.That(
-                value.GetType().FullName,
-                Is.EqualTo(metadataType),
-                "Exact integral type: " + context
-            );
-            Assert.That(
-                Convert.ToString(value, CultureInfo.InvariantCulture),
-                Is.EqualTo(expected),
-                "Exact integral value: " + context
-            );
+            Assert.That(value.GetType().FullName, Is.EqualTo(metadataType), "Exact integral type: " + context);
+            Assert.That(Convert.ToString(value, CultureInfo.InvariantCulture), Is.EqualTo(expected), "Exact integral value: " + context);
         }
 
         // SYNC: IntegralDefaultBoundaryTests.Cases uses this fixed endpoint roster.
         private static IEnumerable<TestCaseData> Boundaries()
         {
-            yield return new TestCaseData(0, "-128", "System.SByte", "SByteMin").SetName(
-                "GeneratedIntegralDefault(SByteMin)"
-            );
-            yield return new TestCaseData(1, "127", "System.SByte", "SByteMax").SetName(
-                "GeneratedIntegralDefault(SByteMax)"
-            );
-            yield return new TestCaseData(2, "0", "System.Byte", "ByteMin").SetName(
-                "GeneratedIntegralDefault(ByteMin)"
-            );
-            yield return new TestCaseData(3, "255", "System.Byte", "ByteMax").SetName(
-                "GeneratedIntegralDefault(ByteMax)"
-            );
-            yield return new TestCaseData(4, "-32768", "System.Int16", "Int16Min").SetName(
-                "GeneratedIntegralDefault(Int16Min)"
-            );
-            yield return new TestCaseData(5, "32767", "System.Int16", "Int16Max").SetName(
-                "GeneratedIntegralDefault(Int16Max)"
-            );
-            yield return new TestCaseData(6, "0", "System.UInt16", "UInt16Min").SetName(
-                "GeneratedIntegralDefault(UInt16Min)"
-            );
-            yield return new TestCaseData(7, "65535", "System.UInt16", "UInt16Max").SetName(
-                "GeneratedIntegralDefault(UInt16Max)"
-            );
-            yield return new TestCaseData(8, "-2147483648", "System.Int32", "Int32Min").SetName(
-                "GeneratedIntegralDefault(Int32Min)"
-            );
-            yield return new TestCaseData(9, "2147483647", "System.Int32", "Int32Max").SetName(
-                "GeneratedIntegralDefault(Int32Max)"
-            );
-            yield return new TestCaseData(10, "0", "System.UInt32", "UInt32Min").SetName(
-                "GeneratedIntegralDefault(UInt32Min)"
-            );
-            yield return new TestCaseData(11, "4294967295", "System.UInt32", "UInt32Max").SetName(
-                "GeneratedIntegralDefault(UInt32Max)"
-            );
-            yield return new TestCaseData(
-                12,
-                "-9223372036854775808",
-                "System.Int64",
-                "Int64Min"
-            ).SetName("GeneratedIntegralDefault(Int64Min)");
-            yield return new TestCaseData(
-                13,
-                "9223372036854775807",
-                "System.Int64",
-                "Int64Max"
-            ).SetName("GeneratedIntegralDefault(Int64Max)");
-            yield return new TestCaseData(14, "0", "System.UInt64", "UInt64Min").SetName(
-                "GeneratedIntegralDefault(UInt64Min)"
-            );
-            yield return new TestCaseData(
-                15,
-                "18446744073709551615",
-                "System.UInt64",
-                "UInt64Max"
-            ).SetName("GeneratedIntegralDefault(UInt64Max)");
+            yield return new TestCaseData(0, "-128", "System.SByte", "SByteMin").SetName("GeneratedIntegralDefault(SByteMin)");
+            yield return new TestCaseData(1, "127", "System.SByte", "SByteMax").SetName("GeneratedIntegralDefault(SByteMax)");
+            yield return new TestCaseData(2, "0", "System.Byte", "ByteMin").SetName("GeneratedIntegralDefault(ByteMin)");
+            yield return new TestCaseData(3, "255", "System.Byte", "ByteMax").SetName("GeneratedIntegralDefault(ByteMax)");
+            yield return new TestCaseData(4, "-32768", "System.Int16", "Int16Min").SetName("GeneratedIntegralDefault(Int16Min)");
+            yield return new TestCaseData(5, "32767", "System.Int16", "Int16Max").SetName("GeneratedIntegralDefault(Int16Max)");
+            yield return new TestCaseData(6, "0", "System.UInt16", "UInt16Min").SetName("GeneratedIntegralDefault(UInt16Min)");
+            yield return new TestCaseData(7, "65535", "System.UInt16", "UInt16Max").SetName("GeneratedIntegralDefault(UInt16Max)");
+            yield return new TestCaseData(8, "-2147483648", "System.Int32", "Int32Min").SetName("GeneratedIntegralDefault(Int32Min)");
+            yield return new TestCaseData(9, "2147483647", "System.Int32", "Int32Max").SetName("GeneratedIntegralDefault(Int32Max)");
+            yield return new TestCaseData(10, "0", "System.UInt32", "UInt32Min").SetName("GeneratedIntegralDefault(UInt32Min)");
+            yield return new TestCaseData(11, "4294967295", "System.UInt32", "UInt32Max").SetName("GeneratedIntegralDefault(UInt32Max)");
+            yield return new TestCaseData(12, "-9223372036854775808", "System.Int64", "Int64Min").SetName("GeneratedIntegralDefault(Int64Min)");
+            yield return new TestCaseData(13, "9223372036854775807", "System.Int64", "Int64Max").SetName("GeneratedIntegralDefault(Int64Max)");
+            yield return new TestCaseData(14, "0", "System.UInt64", "UInt64Min").SetName("GeneratedIntegralDefault(UInt64Min)");
+            yield return new TestCaseData(15, "18446744073709551615", "System.UInt64", "UInt64Max").SetName("GeneratedIntegralDefault(UInt64Max)");
         }
 
         [DxAutoConstructor]

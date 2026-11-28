@@ -50,24 +50,13 @@ namespace DxMessaging.Tests.Editor
             Assert.That(
                 foldout.text,
                 Does.Contain(DxMessagingEmissionCaptureNotice.DisabledSummary),
-                "The collapsed header must say the capture setting is off, not just that a trace "
-                    + "is absent."
+                "The collapsed header must say the capture setting is off, not just that a trace " + "is absent."
             );
-            Assert.That(
-                foldout.value,
-                Is.True,
-                "The capture-off state must start expanded; a collapsed disclosure is exactly how "
-                    + "the setting stays invisible."
-            );
+            Assert.That(foldout.value, Is.True, "The capture-off state must start expanded; a collapsed disclosure is exactly how " + "the setting stays invisible.");
 
-            Label explanation = foldout.Q<Label>(
-                DxMessagingMessageMonitorWindow.DetailsStackFirstFrameLabelName
-            );
+            Label explanation = foldout.Q<Label>(DxMessagingMessageMonitorWindow.DetailsStackFirstFrameLabelName);
             Assert.That(explanation, Is.Not.Null);
-            Assert.That(
-                explanation.text,
-                Is.EqualTo(DxMessagingEmissionCaptureNotice.DisabledExplanation)
-            );
+            Assert.That(explanation.text, Is.EqualTo(DxMessagingEmissionCaptureNotice.DisabledExplanation));
 
             Button enable = foldout.Q<Button>(DxMessagingEmissionCaptureNotice.EnableButtonName);
             Assert.That(enable, Is.Not.Null, "The explanation must travel with the switch.");
@@ -95,8 +84,7 @@ namespace DxMessaging.Tests.Editor
             Assert.That(
                 foldout.text,
                 Does.Not.Contain(DxMessagingEmissionCaptureNotice.DisabledSummary),
-                "With capture on, an empty trace is a record written before it was enabled, not "
-                    + "the setting."
+                "With capture on, an empty trace is a record written before it was enabled, not " + "the setting."
             );
             Assert.That(foldout.value, Is.False, "Only the capture-off state opens by default.");
             Assert.That(
@@ -112,11 +100,7 @@ namespace DxMessaging.Tests.Editor
             IMessageBus.GlobalDiagnosticsStackTraces = false;
 
             VisualElement section = DxMessagingMessageMonitorWindow.CreateStackTraceSection(
-                new MessageMonitorEntry(
-                    "Sample.Message",
-                    "Context: Player",
-                    "UnityEngine.StackTraceUtility:ExtractStackTrace ()"
-                ),
+                new MessageMonitorEntry("Sample.Message", "Context: Player", "UnityEngine.StackTraceUtility:ExtractStackTrace ()"),
                 DxMessagingMessageMonitorWindow.DetailsStackFoldoutName,
                 DxMessagingMessageMonitorWindow.DetailsStackFirstFrameLabelName
             );
@@ -126,19 +110,13 @@ namespace DxMessaging.Tests.Editor
             Assert.That(
                 foldout.text,
                 Does.Not.Contain(DxMessagingEmissionCaptureNotice.DisabledSummary),
-                "A trace that WAS captured but holds only engine frames is a different fact from "
-                    + "one the setting suppressed, even while the setting is off."
+                "A trace that WAS captured but holds only engine frames is a different fact from " + "one the setting suppressed, even while the setting is off."
             );
-            Assert.That(
-                foldout.Q<Button>(DxMessagingEmissionCaptureNotice.EnableButtonName),
-                Is.Null
-            );
+            Assert.That(foldout.Q<Button>(DxMessagingEmissionCaptureNotice.EnableButtonName), Is.Null);
         }
 
         [Test]
-        public void FlowGraphEmissionSiteRowsNameTheSettingWhenCaptureIsOff(
-            [Values(true, false)] bool captureEnabled
-        )
+        public void FlowGraphEmissionSiteRowsNameTheSettingWhenCaptureIsOff([Values(true, false)] bool captureEnabled)
         {
             IMessageBus.GlobalDiagnosticsStackTraces = captureEnabled;
             VisualElement section = new();
@@ -151,30 +129,16 @@ namespace DxMessaging.Tests.Editor
             DxMessagingFlowGraphWindow.AddSourceDetailValues(
                 section,
                 "Emitted by",
-                new[]
-                {
-                    DxMessagingEditorSourceLinks.UnknownCallSite,
-                    DxMessagingEditorSourceLinks.UnknownCallSite,
-                }
+                new[] { DxMessagingEditorSourceLinks.UnknownCallSite, DxMessagingEditorSourceLinks.UnknownCallSite }
             );
 
             List<Label> labels = section.Query<Label>().ToList();
-            bool namesTheSetting = labels.Exists(label =>
-                label.text.Contains(
-                    DxMessagingEmissionCaptureNotice.DisabledSummary,
-                    StringComparison.Ordinal
-                )
-            );
+            bool namesTheSetting = labels.Exists(label => label.text.Contains(DxMessagingEmissionCaptureNotice.DisabledSummary, StringComparison.Ordinal));
             Button enable = section.Q<Button>(DxMessagingEmissionCaptureNotice.EnableButtonName);
 
             if (captureEnabled)
             {
-                Assert.That(
-                    namesTheSetting,
-                    Is.False,
-                    "With capture on, no emission sites means none were observed, which is what "
-                        + "the plain wording already says."
-                );
+                Assert.That(namesTheSetting, Is.False, "With capture on, no emission sites means none were observed, which is what " + "the plain wording already says.");
                 Assert.That(enable, Is.Null);
             }
             else
@@ -182,8 +146,7 @@ namespace DxMessaging.Tests.Editor
                 Assert.That(
                     namesTheSetting,
                     Is.True,
-                    "\"none captured\" alone reads as \"we looked and found nothing\", which is "
-                        + "wrong when the setting suppressed the capture."
+                    "\"none captured\" alone reads as \"we looked and found nothing\", which is " + "wrong when the setting suppressed the capture."
                 );
                 Assert.That(enable, Is.Not.Null, "The explanation must travel with the switch.");
             }
@@ -198,26 +161,13 @@ namespace DxMessaging.Tests.Editor
             DxMessagingFlowGraphWindow.AddSourceDetailValues(
                 section,
                 "Emitted by",
-                new[]
-                {
-                    DxMessagingEditorSourceLinks.UnknownCallSite,
-                    "Sample:Emit () (at Assets/Sample.cs:12)",
-                }
+                new[] { DxMessagingEditorSourceLinks.UnknownCallSite, "Sample:Emit () (at Assets/Sample.cs:12)" }
             );
 
             List<Label> labels = section.Query<Label>().ToList();
+            Assert.That(labels.Exists(label => label.text.Contains("Sample", StringComparison.Ordinal)), Is.True, "A real call site must survive alongside placeholders.");
             Assert.That(
-                labels.Exists(label => label.text.Contains("Sample", StringComparison.Ordinal)),
-                Is.True,
-                "A real call site must survive alongside placeholders."
-            );
-            Assert.That(
-                labels.Exists(label =>
-                    label.text.Contains(
-                        DxMessagingEditorSourceLinks.UnknownCallSite,
-                        StringComparison.Ordinal
-                    )
-                ),
+                labels.Exists(label => label.text.Contains(DxMessagingEditorSourceLinks.UnknownCallSite, StringComparison.Ordinal)),
                 Is.False,
                 "A placeholder row says nothing; rendering it only buries the real site."
             );
@@ -246,48 +196,27 @@ namespace DxMessaging.Tests.Editor
             Assert.That(
                 IMessageBus.GlobalDiagnosticsStackTraces,
                 Is.True,
-                "The in-memory flip must not wait on an editor-idle tick; the user clicked a "
-                    + "button and the next emission has to carry a site."
+                "The in-memory flip must not wait on an editor-idle tick; the user clicked a " + "button and the next emission has to carry a site."
             );
-            Assert.That(
-                scheduled.Count,
-                Is.EqualTo(1),
-                "The durable settings write must be deferred like every other settings mutation."
-            );
+            Assert.That(scheduled.Count, Is.EqualTo(1), "The durable settings write must be deferred like every other settings mutation.");
         }
 
         [Test]
-        public void CallSiteTooltipExplainsTheSettingOnlyWhenItIsTheReason(
-            [Values(true, false)] bool captureEnabled
-        )
+        public void CallSiteTooltipExplainsTheSettingOnlyWhenItIsTheReason([Values(true, false)] bool captureEnabled)
         {
             IMessageBus.GlobalDiagnosticsStackTraces = captureEnabled;
 
-            string captured = DxMessagingEmissionCaptureNotice.DescribeCallSiteTooltip(
-                "Sample:Emit () (at Assets/Sample.cs:12)"
-            );
+            string captured = DxMessagingEmissionCaptureNotice.DescribeCallSiteTooltip("Sample:Emit () (at Assets/Sample.cs:12)");
             string missing = DxMessagingEmissionCaptureNotice.DescribeCallSiteTooltip(string.Empty);
 
-            Assert.That(
-                captured,
-                Is.EqualTo("Sample:Emit () (at Assets/Sample.cs:12)"),
-                "A real call site is always shown verbatim."
-            );
+            Assert.That(captured, Is.EqualTo("Sample:Emit () (at Assets/Sample.cs:12)"), "A real call site is always shown verbatim.");
             if (captureEnabled)
             {
-                Assert.That(
-                    missing,
-                    Is.Empty,
-                    "With capture on, a missing site is not the setting's doing, so the tooltip "
-                        + "must not assert that it is."
-                );
+                Assert.That(missing, Is.Empty, "With capture on, a missing site is not the setting's doing, so the tooltip " + "must not assert that it is.");
             }
             else
             {
-                Assert.That(
-                    missing,
-                    Does.Contain(DxMessagingEmissionCaptureNotice.SettingsPathHint)
-                );
+                Assert.That(missing, Does.Contain(DxMessagingEmissionCaptureNotice.SettingsPathHint));
             }
         }
     }

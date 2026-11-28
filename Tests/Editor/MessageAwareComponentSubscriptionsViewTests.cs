@@ -42,15 +42,11 @@ namespace DxMessaging.Tests.Editor
         {
             SubscriptionsTestComponent component = CreateComponent(out _);
 
-            MessageAwareComponentSubscriptionsState state =
-                MessageAwareComponentSubscriptionsState.Capture(component);
+            MessageAwareComponentSubscriptionsState state = MessageAwareComponentSubscriptionsState.Capture(component);
 
             Assert.That(state.HasToken, Is.False);
             Assert.That(state.Rows, Is.Empty);
-            Assert.That(
-                MessageAwareComponentSubscriptionsView.CreateSummaryText(state),
-                Is.EqualTo("No token")
-            );
+            Assert.That(MessageAwareComponentSubscriptionsView.CreateSummaryText(state), Is.EqualTo("No token"));
         }
 
         [Test]
@@ -59,8 +55,7 @@ namespace DxMessaging.Tests.Editor
             SubscriptionsTestComponent component = CreateComponent(out _);
             Object.DestroyImmediate(component);
 
-            MessageAwareComponentSubscriptionsState state =
-                MessageAwareComponentSubscriptionsState.Capture(component);
+            MessageAwareComponentSubscriptionsState state = MessageAwareComponentSubscriptionsState.Capture(component);
 
             Assert.That(state.HasToken, Is.False);
             Assert.That(state.Rows, Is.Empty);
@@ -69,83 +64,56 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void CaptureWithTokenButNoRegistrationsReportsEmptyBody()
         {
-            SubscriptionsTestComponent component = CreateComponent(
-                out MessagingComponent messagingComponent
-            );
+            SubscriptionsTestComponent component = CreateComponent(out MessagingComponent messagingComponent);
             component.ConfigureForEditorTest(messagingComponent);
 
-            MessageAwareComponentSubscriptionsState state =
-                MessageAwareComponentSubscriptionsState.Capture(component);
+            MessageAwareComponentSubscriptionsState state = MessageAwareComponentSubscriptionsState.Capture(component);
 
             Assert.That(state.HasToken, Is.True);
             Assert.That(state.Rows, Is.Empty);
-            Assert.That(
-                MessageAwareComponentSubscriptionsView.CreateEmptyBodyText(state),
-                Does.Contain("registered no handlers")
-            );
+            Assert.That(MessageAwareComponentSubscriptionsView.CreateEmptyBodyText(state), Does.Contain("registered no handlers"));
         }
 
         [Test]
         public void CaptureListsEveryRegistrationSortedAndTyped()
         {
-            SubscriptionsTestComponent component = CreateComponent(
-                out MessagingComponent messagingComponent
-            );
+            SubscriptionsTestComponent component = CreateComponent(out MessagingComponent messagingComponent);
             component.ConfigureForEditorTest(messagingComponent);
             component.RegisterTestHandlers();
 
-            MessageAwareComponentSubscriptionsState state =
-                MessageAwareComponentSubscriptionsState.Capture(component);
+            MessageAwareComponentSubscriptionsState state = MessageAwareComponentSubscriptionsState.Capture(component);
 
             Assert.That(state.HasToken, Is.True);
             Assert.That(
                 state.Rows.Select(row => row.MessageTypeName).ToArray(),
-                Is.EqualTo(
-                    new[] { nameof(SubscriptionsAlphaMessage), nameof(SubscriptionsBetaMessage) }
-                ),
+                Is.EqualTo(new[] { nameof(SubscriptionsAlphaMessage), nameof(SubscriptionsBetaMessage) }),
                 "Rows must be ordered by message type name so the section does not reshuffle between polls."
             );
             Assert.That(
                 state.Rows.Select(row => row.RegistrationTypeName).ToArray(),
-                Is.EqualTo(
-                    new[]
-                    {
-                        MessageRegistrationType.Untargeted.ToString(),
-                        MessageRegistrationType.Targeted.ToString(),
-                    }
-                )
+                Is.EqualTo(new[] { MessageRegistrationType.Untargeted.ToString(), MessageRegistrationType.Targeted.ToString() })
             );
         }
 
         [Test]
         public void RowsAreLiveOnlyWhileTheTokenIsEnabled()
         {
-            SubscriptionsTestComponent component = CreateComponent(
-                out MessagingComponent messagingComponent
-            );
+            SubscriptionsTestComponent component = CreateComponent(out MessagingComponent messagingComponent);
             component.ConfigureForEditorTest(messagingComponent);
             component.RegisterTestHandlers();
 
-            MessageAwareComponentSubscriptionsState idle =
-                MessageAwareComponentSubscriptionsState.Capture(component);
+            MessageAwareComponentSubscriptionsState idle = MessageAwareComponentSubscriptionsState.Capture(component);
             Assert.That(idle.TokenEnabled, Is.False);
             Assert.That(idle.Rows.All(row => !row.IsLive), Is.True);
-            Assert.That(
-                MessageAwareComponentSubscriptionsView.CreateSummaryText(idle),
-                Is.EqualTo("Disabled | 2 registrations")
-            );
+            Assert.That(MessageAwareComponentSubscriptionsView.CreateSummaryText(idle), Is.EqualTo("Disabled | 2 registrations"));
 
             component.TestToken.Enable();
             try
             {
-                MessageAwareComponentSubscriptionsState live =
-                    MessageAwareComponentSubscriptionsState.Capture(component);
+                MessageAwareComponentSubscriptionsState live = MessageAwareComponentSubscriptionsState.Capture(component);
                 Assert.That(live.TokenEnabled, Is.True);
                 Assert.That(live.Rows.All(row => row.IsLive), Is.True);
-                Assert.That(
-                    MessageAwareComponentSubscriptionsView.CreateSummaryText(live),
-                    Is.EqualTo("Listening | 2 registrations")
-                );
+                Assert.That(MessageAwareComponentSubscriptionsView.CreateSummaryText(live), Is.EqualTo("Listening | 2 registrations"));
             }
             finally
             {
@@ -156,9 +124,7 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void CallCountsAreUnknownUntilDiagnosticsRecordThem()
         {
-            SubscriptionsTestComponent component = CreateComponent(
-                out MessagingComponent messagingComponent
-            );
+            SubscriptionsTestComponent component = CreateComponent(out MessagingComponent messagingComponent);
             component.ConfigureForEditorTest(messagingComponent);
             component.RegisterTestHandlers();
 
@@ -168,15 +134,9 @@ namespace DxMessaging.Tests.Editor
                 than reading whatever the ambient project default happens to be.
             */
             component.TestToken.DiagnosticMode = false;
-            MessageAwareComponentSubscriptionsState quiet =
-                MessageAwareComponentSubscriptionsState.Capture(component);
+            MessageAwareComponentSubscriptionsState quiet = MessageAwareComponentSubscriptionsState.Capture(component);
             Assert.That(quiet.DiagnosticsEnabled, Is.False);
-            Assert.That(
-                quiet.Rows.All(row =>
-                    row.CallCount == MessageAwareComponentSubscriptionRow.UnknownCallCount
-                ),
-                Is.True
-            );
+            Assert.That(quiet.Rows.All(row => row.CallCount == MessageAwareComponentSubscriptionRow.UnknownCallCount), Is.True);
             Assert.That(
                 MessageAwareComponentSubscriptionsView.CreateRowMetaText(quiet.Rows[0]),
                 Does.Contain("calls n/a"),
@@ -190,27 +150,16 @@ namespace DxMessaging.Tests.Editor
                 SubscriptionsAlphaMessage message = default;
                 MessageHandler.MessageBus.UntargetedBroadcast(ref message);
 
-                MessageAwareComponentSubscriptionsState recorded =
-                    MessageAwareComponentSubscriptionsState.Capture(component);
+                MessageAwareComponentSubscriptionsState recorded = MessageAwareComponentSubscriptionsState.Capture(component);
                 Assert.That(recorded.DiagnosticsEnabled, Is.True);
 
-                MessageAwareComponentSubscriptionRow alpha = recorded.Rows.Single(row =>
-                    row.MessageTypeName == nameof(SubscriptionsAlphaMessage)
-                );
+                MessageAwareComponentSubscriptionRow alpha = recorded.Rows.Single(row => row.MessageTypeName == nameof(SubscriptionsAlphaMessage));
                 Assert.That(alpha.CallCount, Is.EqualTo(1));
-                Assert.That(
-                    MessageAwareComponentSubscriptionsView.CreateRowMetaText(alpha),
-                    Does.Contain("1 call")
-                );
+                Assert.That(MessageAwareComponentSubscriptionsView.CreateRowMetaText(alpha), Does.Contain("1 call"));
 
-                MessageAwareComponentSubscriptionRow beta = recorded.Rows.Single(row =>
-                    row.MessageTypeName == nameof(SubscriptionsBetaMessage)
-                );
+                MessageAwareComponentSubscriptionRow beta = recorded.Rows.Single(row => row.MessageTypeName == nameof(SubscriptionsBetaMessage));
                 Assert.That(beta.CallCount, Is.EqualTo(0));
-                Assert.That(
-                    MessageAwareComponentSubscriptionsView.CreateRowMetaText(beta),
-                    Does.Contain("0 calls")
-                );
+                Assert.That(MessageAwareComponentSubscriptionsView.CreateRowMetaText(beta), Does.Contain("0 calls"));
             }
             finally
             {
@@ -222,9 +171,7 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void RevisionMovesOnlyWhenTheRenderedStateChanges()
         {
-            SubscriptionsTestComponent component = CreateComponent(
-                out MessagingComponent messagingComponent
-            );
+            SubscriptionsTestComponent component = CreateComponent(out MessagingComponent messagingComponent);
             component.ConfigureForEditorTest(messagingComponent);
             component.RegisterTestHandlers();
 
@@ -250,9 +197,7 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void RevisionMovesWhenOneRegistrationIsSwappedForAnother()
         {
-            SubscriptionsTestComponent component = CreateComponent(
-                out MessagingComponent messagingComponent
-            );
+            SubscriptionsTestComponent component = CreateComponent(out MessagingComponent messagingComponent);
             component.ConfigureForEditorTest(messagingComponent);
             component.TestToken.DiagnosticMode = false;
             MessageRegistrationHandle alpha = component.RegisterAlpha();
@@ -262,17 +207,12 @@ namespace DxMessaging.Tests.Editor
             component.TestToken.RemoveRegistration(alpha);
             _ = component.RegisterBeta();
 
-            MessageAwareComponentSubscriptionsState after =
-                MessageAwareComponentSubscriptionsState.Capture(component);
-            Assert.That(
-                after.Rows.Select(row => row.MessageTypeName).ToArray(),
-                Is.EqualTo(new[] { nameof(SubscriptionsBetaMessage) })
-            );
+            MessageAwareComponentSubscriptionsState after = MessageAwareComponentSubscriptionsState.Capture(component);
+            Assert.That(after.Rows.Select(row => row.MessageTypeName).ToArray(), Is.EqualTo(new[] { nameof(SubscriptionsBetaMessage) }));
             Assert.That(
                 after.Revision,
                 Is.Not.EqualTo(before),
-                "A same-size swap must still redraw: with diagnostics off every call count is unknown, "
-                    + "so row identity is the only thing that changed."
+                "A same-size swap must still redraw: with diagnostics off every call count is unknown, " + "so row identity is the only thing that changed."
             );
         }
 
@@ -292,51 +232,20 @@ namespace DxMessaging.Tests.Editor
 
             try
             {
-                MessageAwareComponentSubscriptionsState state =
-                    MessageAwareComponentSubscriptionsState.Capture(
-                        new MessageAwareComponent[] { first, second, third }
-                    );
+                MessageAwareComponentSubscriptionsState state = MessageAwareComponentSubscriptionsState.Capture(new MessageAwareComponent[] { first, second, third });
 
                 Assert.That(state.IsAggregate, Is.True, "Three targets must use aggregate mode.");
                 Assert.That(state.SelectionCount, Is.EqualTo(3), "Every selected target counts.");
-                Assert.That(
-                    state.TokenCount,
-                    Is.EqualTo(3),
-                    "Every configured target has a token."
-                );
-                Assert.That(
-                    state.Rows.Count,
-                    Is.EqualTo(2),
-                    "The selection has two row identities."
-                );
+                Assert.That(state.TokenCount, Is.EqualTo(3), "Every configured target has a token.");
+                Assert.That(state.Rows.Count, Is.EqualTo(2), "The selection has two row identities.");
 
-                MessageAwareComponentSubscriptionRow alpha = state.Rows.Single(row =>
-                    row.MessageTypeName == nameof(SubscriptionsAlphaMessage)
-                );
-                Assert.That(
-                    alpha.SelectedComponentCount,
-                    Is.EqualTo(2),
-                    "Alpha is present on two of the three selected components."
-                );
-                Assert.That(
-                    alpha.Liveness,
-                    Is.EqualTo(MessageAwareComponentSubscriptionLiveness.Mixed),
-                    "One Alpha token is enabled and one is disabled."
-                );
+                MessageAwareComponentSubscriptionRow alpha = state.Rows.Single(row => row.MessageTypeName == nameof(SubscriptionsAlphaMessage));
+                Assert.That(alpha.SelectedComponentCount, Is.EqualTo(2), "Alpha is present on two of the three selected components.");
+                Assert.That(alpha.Liveness, Is.EqualTo(MessageAwareComponentSubscriptionLiveness.Mixed), "One Alpha token is enabled and one is disabled.");
 
-                MessageAwareComponentSubscriptionRow beta = state.Rows.Single(row =>
-                    row.MessageTypeName == nameof(SubscriptionsBetaMessage)
-                );
-                Assert.That(
-                    beta.SelectedComponentCount,
-                    Is.EqualTo(1),
-                    "Beta is present on one of the three selected components."
-                );
-                Assert.That(
-                    beta.Liveness,
-                    Is.EqualTo(MessageAwareComponentSubscriptionLiveness.Live),
-                    "The only component carrying Beta is enabled."
-                );
+                MessageAwareComponentSubscriptionRow beta = state.Rows.Single(row => row.MessageTypeName == nameof(SubscriptionsBetaMessage));
+                Assert.That(beta.SelectedComponentCount, Is.EqualTo(1), "Beta is present on one of the three selected components.");
+                Assert.That(beta.Liveness, Is.EqualTo(MessageAwareComponentSubscriptionLiveness.Live), "The only component carrying Beta is enabled.");
             }
             finally
             {
@@ -348,12 +257,7 @@ namespace DxMessaging.Tests.Editor
         [TestCase(false, false, (int)MessageAwareComponentSubscriptionLiveness.Idle, "disabled")]
         [TestCase(true, true, (int)MessageAwareComponentSubscriptionLiveness.Live, "enabled")]
         [TestCase(false, true, (int)MessageAwareComponentSubscriptionLiveness.Mixed, "mixed")]
-        public void AggregateCaptureClassifiesEnabledState(
-            bool firstEnabled,
-            bool secondEnabled,
-            int expectedValue,
-            string expectedText
-        )
+        public void AggregateCaptureClassifiesEnabledState(bool firstEnabled, bool secondEnabled, int expectedValue, string expectedText)
         {
             SubscriptionsTestComponent first = CreateConfiguredComponent();
             _ = first.RegisterAlpha();
@@ -372,19 +276,11 @@ namespace DxMessaging.Tests.Editor
 
             try
             {
-                MessageAwareComponentSubscriptionLiveness expected =
-                    (MessageAwareComponentSubscriptionLiveness)expectedValue;
-                string caseContext =
-                    $"firstEnabled={firstEnabled}, secondEnabled={secondEnabled}, expectedValue={expectedValue}, expectedText={expectedText}";
-                MessageAwareComponentSubscriptionRow row = MessageAwareComponentSubscriptionsState
-                    .Capture(new MessageAwareComponent[] { first, second })
-                    .Rows.Single();
+                MessageAwareComponentSubscriptionLiveness expected = (MessageAwareComponentSubscriptionLiveness)expectedValue;
+                string caseContext = $"firstEnabled={firstEnabled}, secondEnabled={secondEnabled}, expectedValue={expectedValue}, expectedText={expectedText}";
+                MessageAwareComponentSubscriptionRow row = MessageAwareComponentSubscriptionsState.Capture(new MessageAwareComponent[] { first, second }).Rows.Single();
 
-                Assert.That(
-                    row.Liveness,
-                    Is.EqualTo(expected),
-                    $"{caseContext}: aggregate liveness must classify as {expected}."
-                );
+                Assert.That(row.Liveness, Is.EqualTo(expected), $"{caseContext}: aggregate liveness must classify as {expected}.");
                 Assert.That(
                     MessageAwareComponentSubscriptionsView.CreateRowMetaText(row),
                     Does.EndWith("| " + expectedText),
@@ -408,17 +304,10 @@ namespace DxMessaging.Tests.Editor
             SubscriptionsTestComponent second = CreateConfiguredComponent();
             _ = second.RegisterAlpha();
 
-            MessageAwareComponentSubscriptionsState state =
-                MessageAwareComponentSubscriptionsState.Capture(
-                    new MessageAwareComponent[] { first, second }
-                );
+            MessageAwareComponentSubscriptionsState state = MessageAwareComponentSubscriptionsState.Capture(new MessageAwareComponent[] { first, second });
 
             Assert.That(state.Rows.Count, Is.EqualTo(1), "Equivalent registrations share one row.");
-            Assert.That(
-                state.Rows[0].SelectedComponentCount,
-                Is.EqualTo(2),
-                "Two registrations on one component must not inflate selected-component coverage."
-            );
+            Assert.That(state.Rows[0].SelectedComponentCount, Is.EqualTo(2), "Two registrations on one component must not inflate selected-component coverage.");
         }
 
         [Test]
@@ -431,34 +320,17 @@ namespace DxMessaging.Tests.Editor
 
             SubscriptionsTestComponent empty = CreateConfiguredComponent();
 
-            MessageAwareComponentSubscriptionsState state =
-                MessageAwareComponentSubscriptionsState.Capture(
-                    new MessageAwareComponent[] { registered, empty }
-                );
+            MessageAwareComponentSubscriptionsState state = MessageAwareComponentSubscriptionsState.Capture(new MessageAwareComponent[] { registered, empty });
 
-            Assert.That(
-                state.Rows.Count,
-                Is.EqualTo(3),
-                "One type with two priorities and two registration kinds needs three rows."
-            );
+            Assert.That(state.Rows.Count, Is.EqualTo(3), "One type with two priorities and two registration kinds needs three rows.");
             Assert.That(
                 state.Rows.Select(row => row.Priority).Distinct().OrderBy(value => value).ToArray(),
                 Is.EqualTo(new[] { 0, 10 }),
                 "Priority is part of the aggregate row identity."
             );
             Assert.That(
-                state
-                    .Rows.Select(row => row.RegistrationTypeName)
-                    .Distinct()
-                    .OrderBy(value => value)
-                    .ToArray(),
-                Is.EqualTo(
-                    new[]
-                    {
-                        MessageRegistrationType.Untargeted.ToString(),
-                        MessageRegistrationType.UntargetedPostProcessor.ToString(),
-                    }
-                ),
+                state.Rows.Select(row => row.RegistrationTypeName).Distinct().OrderBy(value => value).ToArray(),
+                Is.EqualTo(new[] { MessageRegistrationType.Untargeted.ToString(), MessageRegistrationType.UntargetedPostProcessor.ToString() }),
                 "Registration kind is part of the aggregate row identity."
             );
         }
@@ -467,10 +339,7 @@ namespace DxMessaging.Tests.Editor
         public void AggregateCaptureRejectsNullSelection()
         {
             Assert.That(
-                () =>
-                    MessageAwareComponentSubscriptionsState.Capture(
-                        (IReadOnlyList<MessageAwareComponent>)null
-                    ),
+                () => MessageAwareComponentSubscriptionsState.Capture((IReadOnlyList<MessageAwareComponent>)null),
                 Throws.ArgumentNullException,
                 "A missing selection is a caller error rather than an empty aggregate."
             );
@@ -482,10 +351,7 @@ namespace DxMessaging.Tests.Editor
             SubscriptionsTestComponent destroyed = CreateComponent(out _);
             Object.DestroyImmediate(destroyed);
 
-            MessageAwareComponentSubscriptionsState state =
-                MessageAwareComponentSubscriptionsState.Capture(
-                    new MessageAwareComponent[] { destroyed, null }
-                );
+            MessageAwareComponentSubscriptionsState state = MessageAwareComponentSubscriptionsState.Capture(new MessageAwareComponent[] { destroyed, null });
 
             Assert.That(state.IsAggregate, Is.False, "No live selection remains to aggregate.");
             Assert.That(state.SelectionCount, Is.Zero, "Destroyed targets leave the denominator.");
@@ -500,37 +366,19 @@ namespace DxMessaging.Tests.Editor
             SubscriptionsTestComponent noToken = CreateComponent(out _);
             SubscriptionsTestComponent alsoNoToken = CreateComponent(out _);
 
-            MessageAwareComponentSubscriptionsState state =
-                MessageAwareComponentSubscriptionsState.Capture(
-                    new MessageAwareComponent[] { configured, noToken, alsoNoToken }
-                );
+            MessageAwareComponentSubscriptionsState state = MessageAwareComponentSubscriptionsState.Capture(new MessageAwareComponent[] { configured, noToken, alsoNoToken });
 
-            Assert.That(
-                state.TokenCount,
-                Is.EqualTo(1),
-                "Only one selected component has a token."
-            );
+            Assert.That(state.TokenCount, Is.EqualTo(1), "Only one selected component has a token.");
             Assert.That(state.Rows, Is.Empty, "The one token has no registered handlers.");
         }
 
         [TestCase(3, 0, "3 selected | No tokens", "do not have registration tokens")]
         [TestCase(3, 1, "3 selected | 1 token | 0 patterns", "other 2 do not")]
         [TestCase(2, 1, "2 selected | 1 token | 0 patterns", "other selected component does not")]
-        [TestCase(
-            3,
-            3,
-            "3 selected | 0 patterns",
-            "have registration tokens but no registered handlers"
-        )]
-        public void AggregateEmptyTextReportsTokenCoverage(
-            int selectionCount,
-            int tokenCount,
-            string expectedSummary,
-            string expectedBody
-        )
+        [TestCase(3, 3, "3 selected | 0 patterns", "have registration tokens but no registered handlers")]
+        public void AggregateEmptyTextReportsTokenCoverage(int selectionCount, int tokenCount, string expectedSummary, string expectedBody)
         {
-            string caseContext =
-                $"selectionCount={selectionCount}, tokenCount={tokenCount}, expectedSummary={expectedSummary}, expectedBody={expectedBody}";
+            string caseContext = $"selectionCount={selectionCount}, tokenCount={tokenCount}, expectedSummary={expectedSummary}, expectedBody={expectedBody}";
             MessageAwareComponentSubscriptionsState state = new(
                 hasToken: 0 < tokenCount,
                 tokenEnabled: false,
@@ -541,16 +389,8 @@ namespace DxMessaging.Tests.Editor
                 tokenCount: tokenCount
             );
 
-            Assert.That(
-                MessageAwareComponentSubscriptionsView.CreateSummaryText(state),
-                Is.EqualTo(expectedSummary),
-                $"{caseContext}: aggregate summary must match."
-            );
-            Assert.That(
-                MessageAwareComponentSubscriptionsView.CreateEmptyBodyText(state),
-                Does.Contain(expectedBody),
-                $"{caseContext}: aggregate empty body must match."
-            );
+            Assert.That(MessageAwareComponentSubscriptionsView.CreateSummaryText(state), Is.EqualTo(expectedSummary), $"{caseContext}: aggregate summary must match.");
+            Assert.That(MessageAwareComponentSubscriptionsView.CreateEmptyBodyText(state), Does.Contain(expectedBody), $"{caseContext}: aggregate empty body must match.");
         }
 
         [Test]
@@ -567,19 +407,11 @@ namespace DxMessaging.Tests.Editor
 
             second.TestToken.Enable();
             long mixed = MessageAwareComponentSubscriptionsState.Capture(selection).Revision;
-            Assert.That(
-                mixed,
-                Is.Not.EqualTo(initial),
-                "Changing one carrier from idle to live must rebuild the mixed-state dot."
-            );
+            Assert.That(mixed, Is.Not.EqualTo(initial), "Changing one carrier from idle to live must rebuild the mixed-state dot.");
 
             second.TestToken.RemoveRegistration(secondAlpha);
             long missing = MessageAwareComponentSubscriptionsState.Capture(selection).Revision;
-            Assert.That(
-                missing,
-                Is.Not.EqualTo(mixed),
-                "Removing one carrier must rebuild the selection-coverage count."
-            );
+            Assert.That(missing, Is.Not.EqualTo(mixed), "Removing one carrier must rebuild the selection-coverage count.");
 
             second.TestToken.Disable();
         }
@@ -593,16 +425,9 @@ namespace DxMessaging.Tests.Editor
             SubscriptionsTestComponent second = CreateConfiguredComponent();
             _ = second.RegisterOtherAlpha();
 
-            MessageAwareComponentSubscriptionsState state =
-                MessageAwareComponentSubscriptionsState.Capture(
-                    new MessageAwareComponent[] { first, second }
-                );
+            MessageAwareComponentSubscriptionsState state = MessageAwareComponentSubscriptionsState.Capture(new MessageAwareComponent[] { first, second });
 
-            Assert.That(
-                state.Rows.Count,
-                Is.EqualTo(2),
-                "Aggregation must key on System.Type rather than the displayed simple name."
-            );
+            Assert.That(state.Rows.Count, Is.EqualTo(2), "Aggregation must key on System.Type rather than the displayed simple name.");
             Assert.That(
                 state.Rows.Select(row => row.MessageTypeName).Distinct().Count(),
                 Is.EqualTo(1),
@@ -615,16 +440,9 @@ namespace DxMessaging.Tests.Editor
             );
 
             VisualElement root = MessageAwareComponentSubscriptionsView.Create(state);
-            List<Label> names = root.Query<Label>(
-                    className: MessageAwareComponentSubscriptionsView.RowNameClassName
-                )
-                .ToList();
+            List<Label> names = root.Query<Label>(className: MessageAwareComponentSubscriptionsView.RowNameClassName).ToList();
             Assert.That(names.Count, Is.EqualTo(2), "Both same-name message rows must render.");
-            Assert.That(
-                names.Select(label => label.tooltip).Distinct().Count(),
-                Is.EqualTo(2),
-                "Qualified tooltips must distinguish rows with the same displayed type name."
-            );
+            Assert.That(names.Select(label => label.tooltip).Distinct().Count(), Is.EqualTo(2), "Qualified tooltips must distinguish rows with the same displayed type name.");
         }
 
         [Test]
@@ -639,10 +457,7 @@ namespace DxMessaging.Tests.Editor
 
             try
             {
-                MessageAwareComponentSubscriptionsState state =
-                    MessageAwareComponentSubscriptionsState.Capture(
-                        new MessageAwareComponent[] { first, second }
-                    );
+                MessageAwareComponentSubscriptionsState state = MessageAwareComponentSubscriptionsState.Capture(new MessageAwareComponent[] { first, second });
                 VisualElement root = MessageAwareComponentSubscriptionsView.Create(state);
 
                 Assert.That(
@@ -655,22 +470,10 @@ namespace DxMessaging.Tests.Editor
                     Is.EqualTo("Untargeted | 2 of 2 selected | mixed"),
                     "Aggregate rows report selection coverage and visible state instead of summed call counts."
                 );
-                VisualElement status = root.Q<VisualElement>(
-                    MessageAwareComponentSubscriptionsView.RowStatusName
-                );
+                VisualElement status = root.Q<VisualElement>(MessageAwareComponentSubscriptionsView.RowStatusName);
                 Assert.That(status, Is.Not.Null, "Every aggregate row needs a status dot.");
-                Assert.That(
-                    status.ClassListContains(
-                        MessageAwareComponentSubscriptionsView.RowMixedClassName
-                    ),
-                    Is.True,
-                    "Disagreeing token states use the mixed-state class."
-                );
-                Assert.That(
-                    status.tooltip,
-                    Does.Contain("differs"),
-                    "The mixed dot tooltip must explain its meaning."
-                );
+                Assert.That(status.ClassListContains(MessageAwareComponentSubscriptionsView.RowMixedClassName), Is.True, "Disagreeing token states use the mixed-state class.");
+                Assert.That(status.tooltip, Does.Contain("differs"), "The mixed dot tooltip must explain its meaning.");
             }
             finally
             {
@@ -681,21 +484,14 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void ViewCarriesTheDesignSystemSubscriptionClasses()
         {
-            SubscriptionsTestComponent component = CreateComponent(
-                out MessagingComponent messagingComponent
-            );
+            SubscriptionsTestComponent component = CreateComponent(out MessagingComponent messagingComponent);
             component.ConfigureForEditorTest(messagingComponent);
             component.RegisterTestHandlers();
 
-            VisualElement root = MessageAwareComponentSubscriptionsView.Create(
-                MessageAwareComponentSubscriptionsState.Capture(component)
-            );
+            VisualElement root = MessageAwareComponentSubscriptionsView.Create(MessageAwareComponentSubscriptionsState.Capture(component));
 
             Assert.That(root.name, Is.EqualTo(MessageAwareComponentSubscriptionsView.RootName));
-            Assert.That(
-                root.ClassListContains(MessageAwareComponentSubscriptionsView.RootClassName),
-                Is.True
-            );
+            Assert.That(root.ClassListContains(MessageAwareComponentSubscriptionsView.RootClassName), Is.True);
 
             Label title = root.Q<Label>(MessageAwareComponentSubscriptionsView.TitleLabelName);
             Assert.That(title, Is.Not.Null);
@@ -713,34 +509,16 @@ namespace DxMessaging.Tests.Editor
                 }
             )
             {
-                Assert.That(
-                    root.Query<VisualElement>()
-                        .ToList()
-                        .Any(element => element.ClassListContains(className)),
-                    Is.True,
-                    $"Subscriptions section must render {className}."
-                );
+                Assert.That(root.Query<VisualElement>().ToList().Any(element => element.ClassListContains(className)), Is.True, $"Subscriptions section must render {className}.");
             }
 
-            List<VisualElement> rows = root.Q<VisualElement>(
-                    MessageAwareComponentSubscriptionsView.RowsName
-                )
-                .Children()
-                .ToList();
+            List<VisualElement> rows = root.Q<VisualElement>(MessageAwareComponentSubscriptionsView.RowsName).Children().ToList();
             Assert.That(rows.Count, Is.EqualTo(2));
             foreach (VisualElement row in rows)
             {
+                Assert.That(row.ClassListContains(MessageAwareComponentSubscriptionsView.RowClassName), Is.True);
                 Assert.That(
-                    row.ClassListContains(MessageAwareComponentSubscriptionsView.RowClassName),
-                    Is.True
-                );
-                Assert.That(
-                    row.Children()
-                        .Count(child =>
-                            child.ClassListContains(
-                                MessageAwareComponentSubscriptionsView.RowIdleClassName
-                            )
-                        ),
+                    row.Children().Count(child => child.ClassListContains(MessageAwareComponentSubscriptionsView.RowIdleClassName)),
                     Is.EqualTo(1),
                     "Each row carries exactly one state dot."
                 );
@@ -755,29 +533,18 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void ViewBadgesEachRowsPriority()
         {
-            SubscriptionsTestComponent component = CreateComponent(
-                out MessagingComponent messagingComponent
-            );
+            SubscriptionsTestComponent component = CreateComponent(out MessagingComponent messagingComponent);
             component.ConfigureForEditorTest(messagingComponent);
             component.RegisterTestHandlers();
 
-            MessageAwareComponentSubscriptionsState state =
-                MessageAwareComponentSubscriptionsState.Capture(component);
+            MessageAwareComponentSubscriptionsState state = MessageAwareComponentSubscriptionsState.Capture(component);
             VisualElement root = MessageAwareComponentSubscriptionsView.Create(state);
 
-            List<Label> badges = root.Query<Label>(
-                    MessageAwareComponentSubscriptionsView.RowPriorityLabelName
-                )
-                .ToList();
+            List<Label> badges = root.Query<Label>(MessageAwareComponentSubscriptionsView.RowPriorityLabelName).ToList();
             Assert.That(badges.Count, Is.EqualTo(state.Rows.Count));
             foreach (Label badge in badges)
             {
-                Assert.That(
-                    badge.ClassListContains(
-                        MessageAwareComponentSubscriptionsView.PriorityClassName
-                    ),
-                    Is.True
-                );
+                Assert.That(badge.ClassListContains(MessageAwareComponentSubscriptionsView.PriorityClassName), Is.True);
                 Assert.That(badge.tooltip, Is.Not.Empty, "A bare number needs the tooltip.");
             }
 
@@ -800,20 +567,14 @@ namespace DxMessaging.Tests.Editor
                 .Create(MessageAwareComponentSubscriptionsState.None)
                 .Q<VisualElement>(MessageAwareComponentSubscriptionsView.RowsName);
 
-            Assert.That(
-                rows.style.paddingLeft.value.value,
-                Is.GreaterThan(0),
-                "Rows must clear the .dx-inspector corner radius; .dx-sub pads vertically only."
-            );
+            Assert.That(rows.style.paddingLeft.value.value, Is.GreaterThan(0), "Rows must clear the .dx-inspector corner radius; .dx-sub pads vertically only.");
             Assert.That(rows.style.paddingRight.value.value, Is.GreaterThan(0));
         }
 
         [Test]
         public void ViewBordersEveryEdgeOfTheSection()
         {
-            VisualElement root = MessageAwareComponentSubscriptionsView.Create(
-                MessageAwareComponentSubscriptionsState.None
-            );
+            VisualElement root = MessageAwareComponentSubscriptionsView.Create(MessageAwareComponentSubscriptionsState.None);
 
             Assert.That(root.style.borderTopWidth.value, Is.EqualTo(1));
             Assert.That(root.style.borderRightWidth.value, Is.EqualTo(1));
@@ -824,27 +585,17 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void ViewWithoutRowsRendersTheThemedEmptyState()
         {
-            VisualElement root = MessageAwareComponentSubscriptionsView.Create(
-                MessageAwareComponentSubscriptionsState.None
-            );
+            VisualElement root = MessageAwareComponentSubscriptionsView.Create(MessageAwareComponentSubscriptionsState.None);
 
             Label body = root.Q<Label>(MessageAwareComponentSubscriptionsView.EmptyBodyName);
             Assert.That(body, Is.Not.Null);
             Assert.That(body.text, Does.Contain("Play mode"));
-            Assert.That(
-                root.Q<VisualElement>(MessageAwareComponentSubscriptionsView.RowsName).childCount,
-                Is.EqualTo(1)
-            );
+            Assert.That(root.Q<VisualElement>(MessageAwareComponentSubscriptionsView.RowsName).childCount, Is.EqualTo(1));
         }
 
-        private SubscriptionsTestComponent CreateComponent(
-            out MessagingComponent messagingComponent
-        )
+        private SubscriptionsTestComponent CreateComponent(out MessagingComponent messagingComponent)
         {
-            GameObject host = EditorUtility.CreateGameObjectWithHideFlags(
-                nameof(MessageAwareComponentSubscriptionsViewTests),
-                HideFlags.HideAndDontSave
-            );
+            GameObject host = EditorUtility.CreateGameObjectWithHideFlags(nameof(MessageAwareComponentSubscriptionsViewTests), HideFlags.HideAndDontSave);
             _createdObjects.Add(host);
             messagingComponent = host.AddComponent<MessagingComponent>();
             return host.AddComponent<SubscriptionsTestComponent>();
@@ -852,9 +603,7 @@ namespace DxMessaging.Tests.Editor
 
         private SubscriptionsTestComponent CreateConfiguredComponent()
         {
-            SubscriptionsTestComponent component = CreateComponent(
-                out MessagingComponent messagingComponent
-            );
+            SubscriptionsTestComponent component = CreateComponent(out MessagingComponent messagingComponent);
             component.ConfigureForEditorTest(messagingComponent);
             return component;
         }
@@ -883,33 +632,22 @@ namespace DxMessaging.Tests.Editor
 
         internal MessageRegistrationHandle RegisterAlpha(int priority = 0)
         {
-            return _messageRegistrationToken.RegisterUntargeted<SubscriptionsAlphaMessage>(
-                OnAlpha,
-                priority
-            );
+            return _messageRegistrationToken.RegisterUntargeted<SubscriptionsAlphaMessage>(OnAlpha, priority);
         }
 
         internal MessageRegistrationHandle RegisterAlphaPostProcessor(int priority = 0)
         {
-            return _messageRegistrationToken.RegisterUntargetedPostProcessor<SubscriptionsAlphaMessage>(
-                OnAlpha,
-                priority
-            );
+            return _messageRegistrationToken.RegisterUntargetedPostProcessor<SubscriptionsAlphaMessage>(OnAlpha, priority);
         }
 
         internal MessageRegistrationHandle RegisterBeta()
         {
-            return _messageRegistrationToken.RegisterComponentTargeted<SubscriptionsBetaMessage>(
-                this,
-                OnBeta
-            );
+            return _messageRegistrationToken.RegisterComponentTargeted<SubscriptionsBetaMessage>(this, OnBeta);
         }
 
         internal MessageRegistrationHandle RegisterOtherAlpha()
         {
-            return _messageRegistrationToken.RegisterUntargeted<Other.SubscriptionsAlphaMessage>(
-                OnOtherAlpha
-            );
+            return _messageRegistrationToken.RegisterUntargeted<Other.SubscriptionsAlphaMessage>(OnOtherAlpha);
         }
 
         private void OnAlpha(in SubscriptionsAlphaMessage message) { }

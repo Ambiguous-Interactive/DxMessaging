@@ -13,15 +13,9 @@ namespace DxMessaging.Tests.Runtime.Core
     public sealed class InterceptorCancellationTests : MessagingTestBase
     {
         [Test]
-        public void InterceptorCancelsHandlersAndPostProcessors(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void InterceptorCancelsHandlersAndPostProcessors([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(InterceptorCancelsHandlersAndPostProcessors) + "_" + scenario,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(InterceptorCancelsHandlersAndPostProcessors) + "_" + scenario, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -32,9 +26,7 @@ namespace DxMessaging.Tests.Runtime.Core
             int laterRan = 0;
 
             _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () => handled++);
-            _ = ScenarioCallbacks.RegisterCountingPostProcessor(scenario, token, hostId, () =>
-                postProcessed++
-            );
+            _ = ScenarioCallbacks.RegisterCountingPostProcessor(scenario, token, hostId, () => postProcessed++);
 
             // Register a canceling interceptor (always false)
             _ = ScenarioCallbacks.RegisterCountingInterceptor(scenario, token, () => false);
@@ -54,11 +46,7 @@ namespace DxMessaging.Tests.Runtime.Core
             ScenarioCallbacks.EmitForKind(scenario, hostId);
 
             Assert.AreEqual(0, handled, "Handlers must not run when interceptor cancels.");
-            Assert.AreEqual(
-                0,
-                postProcessed,
-                "Post-processors must not run when interceptor cancels."
-            );
+            Assert.AreEqual(0, postProcessed, "Post-processors must not run when interceptor cancels.");
             Assert.AreEqual(0, laterRan, "Later interceptors must not run after cancellation.");
         }
 
@@ -72,15 +60,9 @@ namespace DxMessaging.Tests.Runtime.Core
         /// pass vacuously.
         /// </summary>
         [Test]
-        public void CancelledMessageIsHiddenFromGlobalAcceptAll(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void CancelledMessageIsHiddenFromGlobalAcceptAll([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(CancelledMessageIsHiddenFromGlobalAcceptAll) + "_" + scenario,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(CancelledMessageIsHiddenFromGlobalAcceptAll) + "_" + scenario, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -92,11 +74,8 @@ namespace DxMessaging.Tests.Runtime.Core
 
             using (LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName))
             {
-                MessageRegistrationHandle globalHandle = RegisterGlobalCounter(token, () =>
-                    globalCount++
-                );
-                MessageRegistrationHandle cancelHandle =
-                    ScenarioCallbacks.RegisterCountingInterceptor(scenario, token, () => false);
+                MessageRegistrationHandle globalHandle = RegisterGlobalCounter(token, () => globalCount++);
+                MessageRegistrationHandle cancelHandle = ScenarioCallbacks.RegisterCountingInterceptor(scenario, token, () => false);
 
                 ScenarioCallbacks.EmitForKind(scenario, hostId);
                 globalCountAfterCancelledEmit = globalCount;
@@ -111,25 +90,20 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(
                 0,
                 globalCountAfterCancelledEmit,
-                "[{0}] GlobalAcceptAll must NOT observe a message cancelled by an interceptor "
-                    + "(interceptors run before global sinks). globalCountAfterCancelledEmit={1}.",
+                "[{0}] GlobalAcceptAll must NOT observe a message cancelled by an interceptor " + "(interceptors run before global sinks). globalCountAfterCancelledEmit={1}.",
                 scenario.Kind,
                 globalCountAfterCancelledEmit
             );
             Assert.AreEqual(
                 1,
                 globalCountAfterAllowedEmit,
-                "[{0}] GlobalAcceptAll must observe the emission once the cancelling interceptor "
-                    + "is removed. globalCountAfterAllowedEmit={1}.",
+                "[{0}] GlobalAcceptAll must observe the emission once the cancelling interceptor " + "is removed. globalCountAfterAllowedEmit={1}.",
                 scenario.Kind,
                 globalCountAfterAllowedEmit
             );
         }
 
-        private static MessageRegistrationHandle RegisterGlobalCounter(
-            MessageRegistrationToken token,
-            Action onInvoked
-        )
+        private static MessageRegistrationHandle RegisterGlobalCounter(MessageRegistrationToken token, Action onInvoked)
         {
             return token.RegisterGlobalAcceptAll(
                 (IUntargetedMessage message) =>

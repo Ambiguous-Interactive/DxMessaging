@@ -1,11 +1,7 @@
 {
   "name": "WallstopStudios.DxMessaging.Tests.Runtime.AttributesOnly",
   "rootNamespace": "DxMessaging.Tests.Runtime.AttributesOnly",
-  "references": [
-    "UnityEngine.TestRunner",
-    "UnityEditor.TestRunner",
-    "WallstopStudios.DxMessaging.Attributes"
-  ],
+  "references": ["UnityEngine.TestRunner", "UnityEditor.TestRunner", "WallstopStudios.DxMessaging.Attributes"],
   "includePlatforms": [],
   "excludePlatforms": [],
   "allowUnsafeCode": false,

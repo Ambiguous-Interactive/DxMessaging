@@ -41,15 +41,9 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void HandlersManyRegistrationsMaintainOrder(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void HandlersManyRegistrationsMaintainOrder([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(HandlersManyRegistrationsMaintainOrder) + "_" + scenario,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(HandlersManyRegistrationsMaintainOrder) + "_" + scenario, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -72,23 +66,14 @@ namespace DxMessaging.Tests.Runtime.Core
 
             EmitForScenario(scenario, targetId);
 
-            AssertSequence(
-                fastOrder,
-                $"{scenario.Kind} fast handlers should run in registration order even with many entries."
-            );
-            AssertSequence(
-                actionOrder,
-                $"{scenario.Kind} action handlers should run in registration order even with many entries."
-            );
+            AssertSequence(fastOrder, $"{scenario.Kind} fast handlers should run in registration order even with many entries.");
+            AssertSequence(actionOrder, $"{scenario.Kind} action handlers should run in registration order even with many entries.");
         }
 
         [Test]
         public void UntargetedPostProcessorsManyRegistrationsMaintainOrder()
         {
-            GameObject host = new(
-                nameof(UntargetedPostProcessorsManyRegistrationsMaintainOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(UntargetedPostProcessorsManyRegistrationsMaintainOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -98,27 +83,19 @@ namespace DxMessaging.Tests.Runtime.Core
             for (int i = 0; i < ManyRegistrationCount; i++)
             {
                 int index = i;
-                _ = token.RegisterUntargetedPostProcessor(
-                    (in SimpleUntargetedMessage _) => postProcessorOrder.Add(index)
-                );
+                _ = token.RegisterUntargetedPostProcessor((in SimpleUntargetedMessage _) => postProcessorOrder.Add(index));
             }
 
             SimpleUntargetedMessage message = new();
             message.EmitUntargeted();
 
-            AssertSequence(
-                postProcessorOrder,
-                "Untargeted post-processors should run in registration order even with many entries."
-            );
+            AssertSequence(postProcessorOrder, "Untargeted post-processors should run in registration order even with many entries.");
         }
 
         [Test]
         public void TargetedPostProcessorsManyRegistrationsMaintainOrder()
         {
-            GameObject host = new(
-                nameof(TargetedPostProcessorsManyRegistrationsMaintainOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(TargetedPostProcessorsManyRegistrationsMaintainOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -131,39 +108,26 @@ namespace DxMessaging.Tests.Runtime.Core
             for (int i = 0; i < ManyRegistrationCount; i++)
             {
                 int index = i;
-                _ = token.RegisterTargetedPostProcessor(target, (in SimpleTargetedMessage _) =>
-                    fastOrder.Add(index)
-                );
+                _ = token.RegisterTargetedPostProcessor(target, (in SimpleTargetedMessage _) => fastOrder.Add(index));
             }
 
             for (int i = 0; i < ManyRegistrationCount; i++)
             {
                 int index = i;
-                _ = token.RegisterTargetedPostProcessor(target, (SimpleTargetedMessage _) =>
-                    actionOrder.Add(index)
-                );
+                _ = token.RegisterTargetedPostProcessor(target, (SimpleTargetedMessage _) => actionOrder.Add(index));
             }
 
             SimpleTargetedMessage message = new();
             message.EmitComponentTargeted(component);
 
-            AssertSequence(
-                fastOrder,
-                "Targeted fast post-processors should run in registration order even with many entries."
-            );
-            AssertSequence(
-                actionOrder,
-                "Targeted action post-processors should run in registration order even with many entries."
-            );
+            AssertSequence(fastOrder, "Targeted fast post-processors should run in registration order even with many entries.");
+            AssertSequence(actionOrder, "Targeted action post-processors should run in registration order even with many entries.");
         }
 
         [Test]
         public void TargetedWithoutTargetingManyRegistrationsMaintainOrder()
         {
-            GameObject host = new(
-                nameof(TargetedWithoutTargetingManyRegistrationsMaintainOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(TargetedWithoutTargetingManyRegistrationsMaintainOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -174,39 +138,26 @@ namespace DxMessaging.Tests.Runtime.Core
             for (int i = 0; i < ManyRegistrationCount; i++)
             {
                 int index = i;
-                _ = token.RegisterTargetedWithoutTargeting(
-                    (in InstanceId _, in SimpleTargetedMessage _) => fastOrder.Add(index)
-                );
+                _ = token.RegisterTargetedWithoutTargeting((in InstanceId _, in SimpleTargetedMessage _) => fastOrder.Add(index));
             }
 
             for (int i = 0; i < ManyRegistrationCount; i++)
             {
                 int index = i;
-                _ = token.RegisterTargetedWithoutTargeting(
-                    (InstanceId _, SimpleTargetedMessage _) => actionOrder.Add(index)
-                );
+                _ = token.RegisterTargetedWithoutTargeting((InstanceId _, SimpleTargetedMessage _) => actionOrder.Add(index));
             }
 
             SimpleTargetedMessage message = new();
             message.EmitComponentTargeted(component);
 
-            AssertSequence(
-                fastOrder,
-                "Targeted-without-targeting fast handlers should run in registration order even with many entries."
-            );
-            AssertSequence(
-                actionOrder,
-                "Targeted-without-targeting action handlers should run in registration order even with many entries."
-            );
+            AssertSequence(fastOrder, "Targeted-without-targeting fast handlers should run in registration order even with many entries.");
+            AssertSequence(actionOrder, "Targeted-without-targeting action handlers should run in registration order even with many entries.");
         }
 
         [Test]
         public void TargetedWithoutTargetingPostProcessorsManyRegistrationsMaintainOrder()
         {
-            GameObject host = new(
-                nameof(TargetedWithoutTargetingPostProcessorsManyRegistrationsMaintainOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(TargetedWithoutTargetingPostProcessorsManyRegistrationsMaintainOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -217,39 +168,26 @@ namespace DxMessaging.Tests.Runtime.Core
             for (int i = 0; i < ManyRegistrationCount; i++)
             {
                 int index = i;
-                _ = token.RegisterTargetedWithoutTargetingPostProcessor(
-                    (in InstanceId _, in SimpleTargetedMessage _) => fastOrder.Add(index)
-                );
+                _ = token.RegisterTargetedWithoutTargetingPostProcessor((in InstanceId _, in SimpleTargetedMessage _) => fastOrder.Add(index));
             }
 
             for (int i = 0; i < ManyRegistrationCount; i++)
             {
                 int index = i;
-                _ = token.RegisterTargetedWithoutTargetingPostProcessor(
-                    (InstanceId _, SimpleTargetedMessage _) => actionOrder.Add(index)
-                );
+                _ = token.RegisterTargetedWithoutTargetingPostProcessor((InstanceId _, SimpleTargetedMessage _) => actionOrder.Add(index));
             }
 
             SimpleTargetedMessage message = new();
             message.EmitComponentTargeted(component);
 
-            AssertSequence(
-                fastOrder,
-                "Targeted-without-targeting fast post-processors should run in registration order even with many entries."
-            );
-            AssertSequence(
-                actionOrder,
-                "Targeted-without-targeting action post-processors should run in registration order even with many entries."
-            );
+            AssertSequence(fastOrder, "Targeted-without-targeting fast post-processors should run in registration order even with many entries.");
+            AssertSequence(actionOrder, "Targeted-without-targeting action post-processors should run in registration order even with many entries.");
         }
 
         [Test]
         public void BroadcastPostProcessorsManyRegistrationsMaintainOrder()
         {
-            GameObject host = new(
-                nameof(BroadcastPostProcessorsManyRegistrationsMaintainOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(BroadcastPostProcessorsManyRegistrationsMaintainOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -262,39 +200,26 @@ namespace DxMessaging.Tests.Runtime.Core
             for (int i = 0; i < ManyRegistrationCount; i++)
             {
                 int index = i;
-                _ = token.RegisterBroadcastPostProcessor(source, (in SimpleBroadcastMessage _) =>
-                    fastOrder.Add(index)
-                );
+                _ = token.RegisterBroadcastPostProcessor(source, (in SimpleBroadcastMessage _) => fastOrder.Add(index));
             }
 
             for (int i = 0; i < ManyRegistrationCount; i++)
             {
                 int index = i;
-                _ = token.RegisterBroadcastPostProcessor(source, (SimpleBroadcastMessage _) =>
-                    actionOrder.Add(index)
-                );
+                _ = token.RegisterBroadcastPostProcessor(source, (SimpleBroadcastMessage _) => actionOrder.Add(index));
             }
 
             SimpleBroadcastMessage message = new();
             message.EmitComponentBroadcast(component);
 
-            AssertSequence(
-                fastOrder,
-                "Broadcast fast post-processors should run in registration order even with many entries."
-            );
-            AssertSequence(
-                actionOrder,
-                "Broadcast action post-processors should run in registration order even with many entries."
-            );
+            AssertSequence(fastOrder, "Broadcast fast post-processors should run in registration order even with many entries.");
+            AssertSequence(actionOrder, "Broadcast action post-processors should run in registration order even with many entries.");
         }
 
         [Test]
         public void BroadcastWithoutSourceManyRegistrationsMaintainOrder()
         {
-            GameObject host = new(
-                nameof(BroadcastWithoutSourceManyRegistrationsMaintainOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(BroadcastWithoutSourceManyRegistrationsMaintainOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -305,39 +230,26 @@ namespace DxMessaging.Tests.Runtime.Core
             for (int i = 0; i < ManyRegistrationCount; i++)
             {
                 int index = i;
-                _ = token.RegisterBroadcastWithoutSource(
-                    (in InstanceId _, in SimpleBroadcastMessage _) => fastOrder.Add(index)
-                );
+                _ = token.RegisterBroadcastWithoutSource((in InstanceId _, in SimpleBroadcastMessage _) => fastOrder.Add(index));
             }
 
             for (int i = 0; i < ManyRegistrationCount; i++)
             {
                 int index = i;
-                _ = token.RegisterBroadcastWithoutSource(
-                    (InstanceId _, SimpleBroadcastMessage _) => actionOrder.Add(index)
-                );
+                _ = token.RegisterBroadcastWithoutSource((InstanceId _, SimpleBroadcastMessage _) => actionOrder.Add(index));
             }
 
             SimpleBroadcastMessage message = new();
             message.EmitComponentBroadcast(component);
 
-            AssertSequence(
-                fastOrder,
-                "Broadcast-without-source fast handlers should run in registration order even with many entries."
-            );
-            AssertSequence(
-                actionOrder,
-                "Broadcast-without-source action handlers should run in registration order even with many entries."
-            );
+            AssertSequence(fastOrder, "Broadcast-without-source fast handlers should run in registration order even with many entries.");
+            AssertSequence(actionOrder, "Broadcast-without-source action handlers should run in registration order even with many entries.");
         }
 
         [Test]
         public void BroadcastWithoutSourcePostProcessorsManyRegistrationsMaintainOrder()
         {
-            GameObject host = new(
-                nameof(BroadcastWithoutSourcePostProcessorsManyRegistrationsMaintainOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(BroadcastWithoutSourcePostProcessorsManyRegistrationsMaintainOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -348,39 +260,26 @@ namespace DxMessaging.Tests.Runtime.Core
             for (int i = 0; i < ManyRegistrationCount; i++)
             {
                 int index = i;
-                _ = token.RegisterBroadcastWithoutSourcePostProcessor(
-                    (in InstanceId _, in SimpleBroadcastMessage _) => fastOrder.Add(index)
-                );
+                _ = token.RegisterBroadcastWithoutSourcePostProcessor((in InstanceId _, in SimpleBroadcastMessage _) => fastOrder.Add(index));
             }
 
             for (int i = 0; i < ManyRegistrationCount; i++)
             {
                 int index = i;
-                _ = token.RegisterBroadcastWithoutSourcePostProcessor(
-                    (InstanceId _, SimpleBroadcastMessage _) => actionOrder.Add(index)
-                );
+                _ = token.RegisterBroadcastWithoutSourcePostProcessor((InstanceId _, SimpleBroadcastMessage _) => actionOrder.Add(index));
             }
 
             SimpleBroadcastMessage message = new();
             message.EmitComponentBroadcast(component);
 
-            AssertSequence(
-                fastOrder,
-                "Broadcast-without-source fast post-processors should run in registration order even with many entries."
-            );
-            AssertSequence(
-                actionOrder,
-                "Broadcast-without-source action post-processors should run in registration order even with many entries."
-            );
+            AssertSequence(fastOrder, "Broadcast-without-source fast post-processors should run in registration order even with many entries.");
+            AssertSequence(actionOrder, "Broadcast-without-source action post-processors should run in registration order even with many entries.");
         }
 
         [Test]
         public void GlobalAcceptAllActionsManyRegistrationsMaintainOrder()
         {
-            GameObject host = new(
-                nameof(GlobalAcceptAllActionsManyRegistrationsMaintainOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(GlobalAcceptAllActionsManyRegistrationsMaintainOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -392,11 +291,7 @@ namespace DxMessaging.Tests.Runtime.Core
             for (int i = 0; i < ManyRegistrationCount; i++)
             {
                 int index = i;
-                _ = token.RegisterGlobalAcceptAll(
-                    _ => untargetedOrder.Add(index),
-                    (_, _) => targetedOrder.Add(index),
-                    (_, _) => broadcastOrder.Add(index)
-                );
+                _ = token.RegisterGlobalAcceptAll(_ => untargetedOrder.Add(index), (_, _) => targetedOrder.Add(index), (_, _) => broadcastOrder.Add(index));
             }
 
             SimpleUntargetedMessage untargeted = new();
@@ -408,27 +303,15 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleBroadcastMessage broadcast = new();
             broadcast.EmitComponentBroadcast(component);
 
-            AssertSequence(
-                untargetedOrder,
-                "Global accept-all action handlers for untargeted messages should run in registration order even with many entries."
-            );
-            AssertSequence(
-                targetedOrder,
-                "Global accept-all action handlers for targeted messages should run in registration order even with many entries."
-            );
-            AssertSequence(
-                broadcastOrder,
-                "Global accept-all action handlers for broadcast messages should run in registration order even with many entries."
-            );
+            AssertSequence(untargetedOrder, "Global accept-all action handlers for untargeted messages should run in registration order even with many entries.");
+            AssertSequence(targetedOrder, "Global accept-all action handlers for targeted messages should run in registration order even with many entries.");
+            AssertSequence(broadcastOrder, "Global accept-all action handlers for broadcast messages should run in registration order even with many entries.");
         }
 
         [Test]
         public void GlobalAcceptAllFastManyRegistrationsMaintainOrder()
         {
-            GameObject host = new(
-                nameof(GlobalAcceptAllFastManyRegistrationsMaintainOrder),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(GlobalAcceptAllFastManyRegistrationsMaintainOrder), typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -456,30 +339,15 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleBroadcastMessage broadcast = new();
             broadcast.EmitComponentBroadcast(component);
 
-            AssertSequence(
-                untargetedOrder,
-                "Global accept-all fast handlers for untargeted messages should run in registration order even with many entries."
-            );
-            AssertSequence(
-                targetedOrder,
-                "Global accept-all fast handlers for targeted messages should run in registration order even with many entries."
-            );
-            AssertSequence(
-                broadcastOrder,
-                "Global accept-all fast handlers for broadcast messages should run in registration order even with many entries."
-            );
+            AssertSequence(untargetedOrder, "Global accept-all fast handlers for untargeted messages should run in registration order even with many entries.");
+            AssertSequence(targetedOrder, "Global accept-all fast handlers for targeted messages should run in registration order even with many entries.");
+            AssertSequence(broadcastOrder, "Global accept-all fast handlers for broadcast messages should run in registration order even with many entries.");
         }
 
         [Test]
-        public void InterceptorsManyRegistrationsMaintainOrder(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void InterceptorsManyRegistrationsMaintainOrder([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(InterceptorsManyRegistrationsMaintainOrder) + "_" + scenario,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(InterceptorsManyRegistrationsMaintainOrder) + "_" + scenario, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -499,131 +367,74 @@ namespace DxMessaging.Tests.Runtime.Core
 
             EmitForScenario(scenario, targetId);
 
-            AssertSequence(
-                order,
-                $"{scenario.Kind} interceptors should run in registration order even with many entries."
-            );
+            AssertSequence(order, $"{scenario.Kind} interceptors should run in registration order even with many entries.");
         }
 
-        private static MessageRegistrationHandle RegisterFastHandler(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            InstanceId target,
-            Action onInvoked
-        )
+        private static MessageRegistrationHandle RegisterFastHandler(MessageScenario scenario, MessageRegistrationToken token, InstanceId target, Action onInvoked)
         {
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
                 {
-                    return token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (in SimpleUntargetedMessage _) => onInvoked()
-                    );
+                    return token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => onInvoked());
                 }
                 case MessageKind.Targeted:
                 {
-                    return token.RegisterTargeted<SimpleTargetedMessage>(
-                        target,
-                        (in SimpleTargetedMessage _) => onInvoked()
-                    );
+                    return token.RegisterTargeted<SimpleTargetedMessage>(target, (in SimpleTargetedMessage _) => onInvoked());
                 }
                 case MessageKind.Broadcast:
                 {
-                    return token.RegisterBroadcast<SimpleBroadcastMessage>(
-                        target,
-                        (in SimpleBroadcastMessage _) => onInvoked()
-                    );
+                    return token.RegisterBroadcast<SimpleBroadcastMessage>(target, (in SimpleBroadcastMessage _) => onInvoked());
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
 
-        private static MessageRegistrationHandle RegisterActionHandler(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            InstanceId target,
-            Action onInvoked
-        )
+        private static MessageRegistrationHandle RegisterActionHandler(MessageScenario scenario, MessageRegistrationToken token, InstanceId target, Action onInvoked)
         {
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
                 {
-                    return token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (SimpleUntargetedMessage _) => onInvoked()
-                    );
+                    return token.RegisterUntargeted<SimpleUntargetedMessage>((SimpleUntargetedMessage _) => onInvoked());
                 }
                 case MessageKind.Targeted:
                 {
-                    return token.RegisterTargeted<SimpleTargetedMessage>(
-                        target,
-                        (SimpleTargetedMessage _) => onInvoked()
-                    );
+                    return token.RegisterTargeted<SimpleTargetedMessage>(target, (SimpleTargetedMessage _) => onInvoked());
                 }
                 case MessageKind.Broadcast:
                 {
-                    return token.RegisterBroadcast<SimpleBroadcastMessage>(
-                        target,
-                        (SimpleBroadcastMessage _) => onInvoked()
-                    );
+                    return token.RegisterBroadcast<SimpleBroadcastMessage>(target, (SimpleBroadcastMessage _) => onInvoked());
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
 
-        private static MessageRegistrationHandle RegisterInterceptor(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            Func<bool> body
-        )
+        private static MessageRegistrationHandle RegisterInterceptor(MessageScenario scenario, MessageRegistrationToken token, Func<bool> body)
         {
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
                 {
-                    return ScenarioHarness.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(
-                        scenario,
-                        token,
-                        (ref SimpleUntargetedMessage _) => body()
-                    );
+                    return ScenarioHarness.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(scenario, token, (ref SimpleUntargetedMessage _) => body());
                 }
                 case MessageKind.Targeted:
                 {
-                    return ScenarioHarness.RegisterTargetedInterceptor<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        (ref InstanceId _, ref SimpleTargetedMessage __) => body()
-                    );
+                    return ScenarioHarness.RegisterTargetedInterceptor<SimpleTargetedMessage>(scenario, token, (ref InstanceId _, ref SimpleTargetedMessage __) => body());
                 }
                 case MessageKind.Broadcast:
                 {
-                    return ScenarioHarness.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        (ref InstanceId _, ref SimpleBroadcastMessage __) => body()
-                    );
+                    return ScenarioHarness.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(scenario, token, (ref InstanceId _, ref SimpleBroadcastMessage __) => body());
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
@@ -652,11 +463,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }

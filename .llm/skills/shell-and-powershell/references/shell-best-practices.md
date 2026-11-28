@@ -1,21 +1,18 @@
 # Shell Scripting Best Practices
 
-> **One-line summary**: Avoid common shell scripting pitfalls involving `set -e`, error handling,
-> case-sensitive paths, and command exit codes.
+> **One-line summary**: Avoid common shell scripting pitfalls involving `set -e`, error handling, case-sensitive paths, and command exit codes.
 
 ## Overview
 
-Shell scripts in CI/CD pipelines and git hooks must handle errors correctly and account for
-Linux filesystem semantics. This skill documents lessons learned from real PR feedback to help
-avoid subtle bugs that cause intermittent failures.
+Shell scripts in CI/CD pipelines and git hooks must handle errors correctly and account for Linux filesystem semantics. This skill documents lessons learned from real PR feedback
+to help avoid subtle bugs that cause intermittent failures.
 
 ## `set -e` and Error Handling
 
 ### The `set -e` Contract
 
-When a script uses `set -e` (exit on error), the script terminates immediately when any command
-returns a non-zero exit code. This creates a contract: **every command that can fail must either
-be intentionally fatal or have explicit error handling**.
+When a script uses `set -e` (exit on error), the script terminates immediately when any command returns a non-zero exit code. This creates a contract: **every command that can fail
+must either be intentionally fatal or have explicit error handling**.
 
 ### Problem: Comments Claiming "Optional" Without Error Handling
 
@@ -30,8 +27,7 @@ npm cache verify  # CONTRADICTION: If this fails, script exits!
 npm install
 ```
 
-The comment claims the cache verification is "optional," but under `set -e`, a failure
-terminates the entire script. This is a **semantic contradiction**.
+The comment claims the cache verification is "optional," but under `set -e`, a failure terminates the entire script. This is a **semantic contradiction**.
 
 ### Solution: Explicit Error Handling for Non-Fatal Commands
 
@@ -135,8 +131,7 @@ When referencing files in scripts:
 | WSL            | ext4               | Case-sensitive   | Same as Linux      |
 | Docker (Linux) | ext4               | Case-sensitive   | CI/CD environment  |
 
-**Best Practice**: Always develop and test path-sensitive code on Linux or in Docker to catch
-case mismatches before they reach CI/CD.
+**Best Practice**: Always develop and test path-sensitive code on Linux or in Docker to catch case mismatches before they reach CI/CD.
 
 ## See Also
 

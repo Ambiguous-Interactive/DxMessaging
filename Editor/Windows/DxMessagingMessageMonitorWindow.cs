@@ -26,16 +26,11 @@ namespace DxMessaging.Editor.Windows
         internal const string StatusLabelName = "dxmessaging-monitor-status";
         internal const string FilterFieldName = "dxmessaging-monitor-filter";
         internal const string ActiveFilterSummaryName = "dxmessaging-monitor-active-filter";
-        internal const string ActiveFilterSummaryLabelName =
-            "dxmessaging-monitor-active-filter-label";
-        internal const string ActiveFilterTokenScrollViewName =
-            "dxmessaging-monitor-active-filter-token-scroll";
-        internal const string ActiveFilterTokenWrapRowName =
-            "dxmessaging-monitor-active-filter-token-row";
-        internal const string ActiveFilterTokenClassName =
-            "dxmessaging-monitor-active-filter-token";
-        internal const string ActiveFilterClearButtonName =
-            "dxmessaging-monitor-active-filter-clear";
+        internal const string ActiveFilterSummaryLabelName = "dxmessaging-monitor-active-filter-label";
+        internal const string ActiveFilterTokenScrollViewName = "dxmessaging-monitor-active-filter-token-scroll";
+        internal const string ActiveFilterTokenWrapRowName = "dxmessaging-monitor-active-filter-token-row";
+        internal const string ActiveFilterTokenClassName = "dxmessaging-monitor-active-filter-token";
+        internal const string ActiveFilterClearButtonName = "dxmessaging-monitor-active-filter-clear";
         internal const string RefreshButtonName = "dxmessaging-monitor-refresh";
         internal const string ExportButtonName = "dxmessaging-monitor-export";
         internal const string LiveButtonName = "dxmessaging-monitor-live-mode";
@@ -59,43 +54,28 @@ namespace DxMessaging.Editor.Windows
         internal const string DetailsTypeLabelName = "dxmessaging-monitor-details-type";
         internal const string DetailsContextLabelName = "dxmessaging-monitor-details-context";
         internal const string DetailsStackFoldoutName = "dxmessaging-monitor-details-stack-foldout";
-        internal const string DetailsStackFirstFrameLabelName =
-            "dxmessaging-monitor-details-stack-first-frame";
+        internal const string DetailsStackFirstFrameLabelName = "dxmessaging-monitor-details-stack-first-frame";
         internal const string DetailsTypeRowName = "dxmessaging-monitor-details-type-row";
         internal const string DetailsTypeValueLabelName = "dxmessaging-monitor-details-type-value";
         internal const string DetailsContextRowName = "dxmessaging-monitor-details-context-row";
-        internal const string DetailsStackFrameRowClassName =
-            "dxmessaging-monitor-details-stack-frame";
+        internal const string DetailsStackFrameRowClassName = "dxmessaging-monitor-details-stack-frame";
         internal const string DetailsPaneResizerName = "dxmessaging-monitor-details-resizer";
         internal const string ComponentResizerName = "dxmessaging-monitor-component-resizer";
         internal const string BreakdownFoldoutName = "dxmessaging-monitor-breakdown";
-        internal const string VisibleMessageTypeLanesName =
-            "dxmessaging-monitor-message-type-lanes";
-        internal const string VisibleMessageTypeLaneScrollViewName =
-            "dxmessaging-monitor-message-type-lane-scroll";
-        internal const string VisibleMessageTypeLaneRowClassName =
-            "dxmessaging-monitor-message-type-lane-row";
-        internal const string VisibleMessageTypeLanesSummaryLabelName =
-            "dxmessaging-monitor-message-type-lanes-summary";
-        internal const string VisibleMessageTypeLaneTypeLabelName =
-            "dxmessaging-monitor-message-type-lane-type";
-        internal const string VisibleMessageTypeLaneSummaryLabelName =
-            "dxmessaging-monitor-message-type-lane-summary";
-        internal const string VisibleMessageTypeLaneFilterButtonName =
-            "dxmessaging-monitor-message-type-lane-filter";
+        internal const string VisibleMessageTypeLanesName = "dxmessaging-monitor-message-type-lanes";
+        internal const string VisibleMessageTypeLaneScrollViewName = "dxmessaging-monitor-message-type-lane-scroll";
+        internal const string VisibleMessageTypeLaneRowClassName = "dxmessaging-monitor-message-type-lane-row";
+        internal const string VisibleMessageTypeLanesSummaryLabelName = "dxmessaging-monitor-message-type-lanes-summary";
+        internal const string VisibleMessageTypeLaneTypeLabelName = "dxmessaging-monitor-message-type-lane-type";
+        internal const string VisibleMessageTypeLaneSummaryLabelName = "dxmessaging-monitor-message-type-lane-summary";
+        internal const string VisibleMessageTypeLaneFilterButtonName = "dxmessaging-monitor-message-type-lane-filter";
         internal const string VisibleContextLanesName = "dxmessaging-monitor-context-lanes";
-        internal const string VisibleContextLaneScrollViewName =
-            "dxmessaging-monitor-context-lane-scroll";
-        internal const string VisibleContextLaneRowClassName =
-            "dxmessaging-monitor-context-lane-row";
-        internal const string VisibleContextLanesSummaryLabelName =
-            "dxmessaging-monitor-context-lanes-summary";
-        internal const string VisibleContextLaneContextLabelName =
-            "dxmessaging-monitor-context-lane-context";
-        internal const string VisibleContextLaneSummaryLabelName =
-            "dxmessaging-monitor-context-lane-summary";
-        internal const string VisibleContextLaneFilterButtonName =
-            "dxmessaging-monitor-context-lane-filter";
+        internal const string VisibleContextLaneScrollViewName = "dxmessaging-monitor-context-lane-scroll";
+        internal const string VisibleContextLaneRowClassName = "dxmessaging-monitor-context-lane-row";
+        internal const string VisibleContextLanesSummaryLabelName = "dxmessaging-monitor-context-lanes-summary";
+        internal const string VisibleContextLaneContextLabelName = "dxmessaging-monitor-context-lane-context";
+        internal const string VisibleContextLaneSummaryLabelName = "dxmessaging-monitor-context-lane-summary";
+        internal const string VisibleContextLaneFilterButtonName = "dxmessaging-monitor-context-lane-filter";
         internal const string ComponentPanelName = "dxmessaging-monitor-components";
         internal const string ComponentFoldoutName = "dxmessaging-monitor-components-foldout";
         internal const string ComponentScrollViewName = "dxmessaging-monitor-component-scroll";
@@ -116,11 +96,9 @@ namespace DxMessaging.Editor.Windows
         /// </summary>
         internal const string SnapshotModeBadgeText = "SNAPSHOT";
 
-        internal const string SnapshotModeHintText =
-            "Buffered bus history as of the last Refresh. One row per emission, newest first, nothing merged.";
+        internal const string SnapshotModeHintText = "Buffered bus history as of the last Refresh. One row per emission, newest first, nothing merged.";
 
-        internal const string DetailsPaneHeightPreferenceKey =
-            "WallstopStudios.DxMessaging.MessageMonitor.DetailsPaneHeight";
+        internal const string DetailsPaneHeightPreferenceKey = "WallstopStudios.DxMessaging.MessageMonitor.DetailsPaneHeight";
 
         /// <summary>
         /// How the log and the detail pane divide a window that can be dragged down to its 320 px
@@ -211,17 +189,14 @@ namespace DxMessaging.Editor.Windows
                 _detailsPaneHeight = EditorPrefs.GetFloat(DetailsPaneHeightPreferenceKey, 0f);
             }
             EditorApplication.playModeStateChanged += HandlePlayModeStateChanged;
-            DxMessagingEditorSourceLinks.MessageSourceIndexChanged -=
-                HandleMessageSourceIndexChanged;
-            DxMessagingEditorSourceLinks.MessageSourceIndexChanged +=
-                HandleMessageSourceIndexChanged;
+            DxMessagingEditorSourceLinks.MessageSourceIndexChanged -= HandleMessageSourceIndexChanged;
+            DxMessagingEditorSourceLinks.MessageSourceIndexChanged += HandleMessageSourceIndexChanged;
         }
 
         private void OnDisable()
         {
             EditorApplication.playModeStateChanged -= HandlePlayModeStateChanged;
-            DxMessagingEditorSourceLinks.MessageSourceIndexChanged -=
-                HandleMessageSourceIndexChanged;
+            DxMessagingEditorSourceLinks.MessageSourceIndexChanged -= HandleMessageSourceIndexChanged;
             StopLivePump();
             if (0f < _detailsPaneHeight)
             {
@@ -284,18 +259,12 @@ namespace DxMessaging.Editor.Windows
         /// </remarks>
         private void HandlePlayModeStateChanged(PlayModeStateChange change)
         {
-            if (
-                change != PlayModeStateChange.EnteredEditMode
-                && change != PlayModeStateChange.EnteredPlayMode
-            )
+            if (change != PlayModeStateChange.EnteredEditMode && change != PlayModeStateChange.EnteredPlayMode)
             {
                 return;
             }
 
-            if (
-                MessageHandler.MessageBus is MessageBus messageBus
-                && messageBus.EmissionId < LiveRecorder.Cursor
-            )
+            if (MessageHandler.MessageBus is MessageBus messageBus && messageBus.EmissionId < LiveRecorder.Cursor)
             {
                 LiveRecorder.ResetForNewBusRun();
             }
@@ -305,9 +274,7 @@ namespace DxMessaging.Editor.Windows
             }
             if (_liveMode)
             {
-                _liveViewState = _liveViewState.WithSelectedTraceId(
-                    MessageMonitorLiveViewState.FollowNewest
-                );
+                _liveViewState = _liveViewState.WithSelectedTraceId(MessageMonitorLiveViewState.FollowNewest);
                 Refresh();
             }
         }
@@ -328,9 +295,7 @@ namespace DxMessaging.Editor.Windows
         {
             MessageMonitorSnapshot snapshot = MessageHandler.MessageBus is MessageBus messageBus
                 ? CaptureSnapshot(messageBus)
-                : MessageMonitorSnapshot.Unavailable(
-                    "The active global bus is not the default DxMessaging MessageBus."
-                );
+                : MessageMonitorSnapshot.Unavailable("The active global bus is not the default DxMessaging MessageBus.");
             IReadOnlyList<ComponentMonitorEntry> components = CaptureComponentSnapshots();
             BuildMonitorUi(
                 rootVisualElement,
@@ -353,9 +318,7 @@ namespace DxMessaging.Editor.Windows
         private void EnterLiveMode()
         {
             _liveMode = true;
-            _liveViewState = _liveViewState.WithSelectedTraceId(
-                MessageMonitorLiveViewState.FollowNewest
-            );
+            _liveViewState = _liveViewState.WithSelectedTraceId(MessageMonitorLiveViewState.FollowNewest);
             Refresh();
         }
 
@@ -389,9 +352,7 @@ namespace DxMessaging.Editor.Windows
                         OnClear = () =>
                         {
                             LiveRecorder.Clear();
-                            _liveViewState = _liveViewState.WithSelectedTraceId(
-                                MessageMonitorLiveViewState.FollowNewest
-                            );
+                            _liveViewState = _liveViewState.WithSelectedTraceId(MessageMonitorLiveViewState.FollowNewest);
                             RenderLiveBody();
                         },
                         OnStateChanged = state =>
@@ -414,9 +375,7 @@ namespace DxMessaging.Editor.Windows
         /// </summary>
         private void RenderLiveBody()
         {
-            VisualElement body = rootVisualElement.Q<VisualElement>(
-                DxMessagingMessageMonitorLiveView.BodyName
-            );
+            VisualElement body = rootVisualElement.Q<VisualElement>(DxMessagingMessageMonitorLiveView.BodyName);
             if (body == null)
             {
                 Refresh();
@@ -449,9 +408,7 @@ namespace DxMessaging.Editor.Windows
 
         private void StartLivePump()
         {
-            _livePump ??= rootVisualElement
-                .schedule.Execute(PumpLive)
-                .Every(LivePollIntervalMilliseconds);
+            _livePump ??= rootVisualElement.schedule.Execute(PumpLive).Every(LivePollIntervalMilliseconds);
             _livePump.Resume();
         }
 
@@ -535,16 +492,9 @@ namespace DxMessaging.Editor.Windows
                 throw new ArgumentNullException(nameof(messageBus));
             }
 
-            IReadOnlyList<MessageMonitorEntry> entries = messageBus
-                ._emissionBuffer.Reverse()
-                .Select(MessageMonitorEntry.FromEmission)
-                .ToArray();
+            IReadOnlyList<MessageMonitorEntry> entries = messageBus._emissionBuffer.Reverse().Select(MessageMonitorEntry.FromEmission).ToArray();
 
-            return new MessageMonitorSnapshot(
-                messageBus.DiagnosticsMode,
-                IMessageBus.GlobalMessageBufferSize,
-                entries
-            );
+            return new MessageMonitorSnapshot(messageBus.DiagnosticsMode, IMessageBus.GlobalMessageBufferSize, entries);
         }
 
         internal static void BuildMonitorUi(VisualElement root, MessageMonitorSnapshot snapshot)
@@ -552,18 +502,9 @@ namespace DxMessaging.Editor.Windows
             BuildMonitorUi(root, snapshot, MessageMonitorViewState.Default);
         }
 
-        internal static void BuildMonitorUi(
-            VisualElement root,
-            MessageMonitorSnapshot snapshot,
-            IReadOnlyList<ComponentMonitorEntry> componentEntries
-        )
+        internal static void BuildMonitorUi(VisualElement root, MessageMonitorSnapshot snapshot, IReadOnlyList<ComponentMonitorEntry> componentEntries)
         {
-            BuildMonitorUi(
-                root,
-                snapshot,
-                MessageMonitorViewState.Default,
-                componentEntries: componentEntries
-            );
+            BuildMonitorUi(root, snapshot, MessageMonitorViewState.Default, componentEntries: componentEntries);
         }
 
         /// <summary>
@@ -729,10 +670,7 @@ namespace DxMessaging.Editor.Windows
                 && ui.State.ShowBroadcast == next.ShowBroadcast;
 
             ui.State = next;
-            if (
-                ui.Filter != null
-                && !string.Equals(ui.Filter.value, next.FilterText, StringComparison.Ordinal)
-            )
+            if (ui.Filter != null && !string.Equals(ui.Filter.value, next.FilterText, StringComparison.Ordinal))
             {
                 ui.Filter.SetValueWithoutNotify(next.FilterText);
             }
@@ -817,9 +755,7 @@ namespace DxMessaging.Editor.Windows
                 ui.Status.tooltip = statusText;
             }
             SetExportButtonEnabled(ui, filteredEntries.Count);
-            UpdateActiveFilterSummary(ui.ActiveFilter, ui.State.FilterText, () =>
-                ApplyState(ui, ui.State.WithFilterText(string.Empty))
-            );
+            UpdateActiveFilterSummary(ui.ActiveFilter, ui.State.FilterText, () => ApplyState(ui, ui.State.WithFilterText(string.Empty)));
             UpdateRouteKindChipText(ui);
 
             if (ui.Content == null || !ui.Snapshot.Available)
@@ -868,29 +804,17 @@ namespace DxMessaging.Editor.Windows
                 different places, so a reader who found one had no reason to look where the other
                 put it. Whichever mode is showing, the switch is on the word that names it.
             */
-            Label mode = new(SnapshotModeBadgeText)
-            {
-                name = ModeBadgeLabelName,
-                tooltip = SnapshotModeHintText,
-            };
+            Label mode = new(SnapshotModeBadgeText) { name = ModeBadgeLabelName, tooltip = SnapshotModeHintText };
             mode.AddToClassList(DxMessagingEditorTheme.TypeBadgeClassName);
             mode.AddToClassList(DxMessagingEditorTheme.TypeBadgeGlobalObserverClassName);
             mode.style.flexShrink = 0;
             if (onEnterLiveMode != null)
             {
-                DxMessagingEditorSourceLinks.MakeActivatable(
-                    mode,
-                    "Switch to the live log, which drains new emissions as they happen.",
-                    onEnterLiveMode,
-                    addLinkClass: false
-                );
+                DxMessagingEditorSourceLinks.MakeActivatable(mode, "Switch to the live log, which drains new emissions as they happen.", onEnterLiveMode, addLinkClass: false);
             }
             toolbar.Add(mode);
 
-            string statusText = CreateStatusText(
-                ui.Snapshot,
-                FilterEntries(ui.Snapshot.Entries, ui.State).Count
-            );
+            string statusText = CreateStatusText(ui.Snapshot, FilterEntries(ui.Snapshot.Entries, ui.State).Count);
             Label status = new(statusText) { name = StatusLabelName, tooltip = statusText };
             status.style.flexGrow = 1;
             status.style.flexShrink = 1;
@@ -909,9 +833,7 @@ namespace DxMessaging.Editor.Windows
             return CaptureComponentSnapshots(components.Where(IsSceneComponent));
         }
 
-        internal static IReadOnlyList<ComponentMonitorEntry> CaptureComponentSnapshots(
-            IEnumerable<MessagingComponent> components
-        )
+        internal static IReadOnlyList<ComponentMonitorEntry> CaptureComponentSnapshots(IEnumerable<MessagingComponent> components)
         {
             if (components == null)
             {
@@ -940,26 +862,18 @@ namespace DxMessaging.Editor.Windows
             return entries;
         }
 
-        internal static string CreateExportText(
-            MessageMonitorSnapshot snapshot,
-            IReadOnlyList<MessageMonitorEntry> entries
-        )
+        internal static string CreateExportText(MessageMonitorSnapshot snapshot, IReadOnlyList<MessageMonitorEntry> entries)
         {
             if (entries == null)
             {
                 throw new ArgumentNullException(nameof(entries));
             }
 
-            IReadOnlyList<MessageMonitorEntry> exportEntries = snapshot.DiagnosticsEnabled
-                ? entries
-                : Array.Empty<MessageMonitorEntry>();
+            IReadOnlyList<MessageMonitorEntry> exportEntries = snapshot.DiagnosticsEnabled ? entries : Array.Empty<MessageMonitorEntry>();
 
             StringBuilder builder = new();
             builder.AppendLine("{");
-            builder
-                .Append("  \"diagnosticsEnabled\": ")
-                .Append(snapshot.DiagnosticsEnabled ? "true" : "false")
-                .AppendLine(",");
+            builder.Append("  \"diagnosticsEnabled\": ").Append(snapshot.DiagnosticsEnabled ? "true" : "false").AppendLine(",");
             builder.Append("  \"capacity\": ").Append(snapshot.Capacity).AppendLine(",");
             builder.Append("  \"entryCount\": ").Append(exportEntries.Count).AppendLine(",");
             builder.AppendLine("  \"entries\": [");
@@ -967,12 +881,7 @@ namespace DxMessaging.Editor.Windows
             {
                 MessageMonitorEntry entry = exportEntries[i];
                 builder.AppendLine("    {");
-                AppendJsonProperty(
-                    builder,
-                    "messageType",
-                    entry.MessageTypeName,
-                    trailingComma: true
-                );
+                AppendJsonProperty(builder, "messageType", entry.MessageTypeName, trailingComma: true);
                 AppendJsonProperty(builder, "context", entry.ContextText, trailingComma: true);
                 AppendJsonProperty(builder, "stackTrace", entry.StackTrace, trailingComma: false);
                 builder.Append("    }");
@@ -987,41 +896,25 @@ namespace DxMessaging.Editor.Windows
             return builder.ToString();
         }
 
-        private static void RenderMessageSection(
-            MonitorUi ui,
-            VisualElement messageSection,
-            IReadOnlyList<MessageMonitorEntry> filteredEntries
-        )
+        private static void RenderMessageSection(MonitorUi ui, VisualElement messageSection, IReadOnlyList<MessageMonitorEntry> filteredEntries)
         {
             messageSection.Clear();
 
             if (!ui.Snapshot.DiagnosticsEnabled)
             {
-                AddEmptyState(
-                    messageSection,
-                    "Diagnostics are Off",
-                    "Enable diagnostics to collect message history."
-                );
+                AddEmptyState(messageSection, "Diagnostics are Off", "Enable diagnostics to collect message history.");
                 return;
             }
 
             if (ui.Snapshot.Entries.Count == 0)
             {
-                AddEmptyState(
-                    messageSection,
-                    "No messages yet",
-                    "Diagnostics are On. No messages have been recorded yet."
-                );
+                AddEmptyState(messageSection, "No messages yet", "Diagnostics are On. No messages have been recorded yet.");
                 return;
             }
 
             if (filteredEntries.Count == 0)
             {
-                AddEmptyState(
-                    messageSection,
-                    "No matches",
-                    "No messages match the current filter."
-                );
+                AddEmptyState(messageSection, "No matches", "No messages match the current filter.");
                 return;
             }
 
@@ -1040,18 +933,11 @@ namespace DxMessaging.Editor.Windows
             */
             list.style.flexBasis = 0;
             list.style.minHeight = MessageListMinHeight;
-            int selectedEntryIndex = ClampSelectedIndex(
-                ui.State.SelectedEntryIndex,
-                filteredEntries.Count
-            );
+            int selectedEntryIndex = ClampSelectedIndex(ui.State.SelectedEntryIndex, filteredEntries.Count);
             for (int i = 0; i < filteredEntries.Count; i++)
             {
                 int entryIndex = i;
-                list.Add(
-                    CreateRow(filteredEntries[i], i, i == selectedEntryIndex, () =>
-                        ApplyState(ui, ui.State.WithSelectedEntryIndex(entryIndex))
-                    )
-                );
+                list.Add(CreateRow(filteredEntries[i], i, i == selectedEntryIndex, () => ApplyState(ui, ui.State.WithSelectedEntryIndex(entryIndex))));
             }
             messageSection.Add(list);
             ui.List = list;
@@ -1094,9 +980,7 @@ namespace DxMessaging.Editor.Windows
             VisualElement header = new() { name = ListHeaderName };
             header.AddToClassList(DxMessagingEditorTheme.ListHeaderClassName);
             header.Add(CreateHeaderColumn("ROUTE", DxMessagingEditorTheme.ColumnTypeClassName));
-            header.Add(
-                CreateHeaderColumn("MESSAGE", DxMessagingEditorTheme.ColumnMessageClassName)
-            );
+            header.Add(CreateHeaderColumn("MESSAGE", DxMessagingEditorTheme.ColumnMessageClassName));
             header.Add(CreateHeaderColumn("CONTEXT", DxMessagingEditorTheme.ColumnRouteClassName));
             header.Add(CreateHeaderColumn("#", DxMessagingEditorTheme.ColumnCountClassName));
             return header;
@@ -1131,32 +1015,13 @@ namespace DxMessaging.Editor.Windows
             row.style.paddingRight = 8;
             row.style.paddingBottom = 6;
 
-            ui.UntargetedChip = CreateRouteKindChip(
-                UntargetedChipName,
-                DxMessagingEditorPalette.UntargetedKind,
-                ui.State.ShowUntargeted
-            );
-            ui.TargetedChip = CreateRouteKindChip(
-                TargetedChipName,
-                DxMessagingEditorPalette.TargetedKind,
-                ui.State.ShowTargeted
-            );
-            ui.BroadcastChip = CreateRouteKindChip(
-                BroadcastChipName,
-                DxMessagingEditorPalette.BroadcastKind,
-                ui.State.ShowBroadcast
-            );
+            ui.UntargetedChip = CreateRouteKindChip(UntargetedChipName, DxMessagingEditorPalette.UntargetedKind, ui.State.ShowUntargeted);
+            ui.TargetedChip = CreateRouteKindChip(TargetedChipName, DxMessagingEditorPalette.TargetedKind, ui.State.ShowTargeted);
+            ui.BroadcastChip = CreateRouteKindChip(BroadcastChipName, DxMessagingEditorPalette.BroadcastKind, ui.State.ShowBroadcast);
 
             void RaiseRouteKindsChanged()
             {
-                ApplyState(
-                    ui,
-                    ui.State.WithRouteKinds(
-                        ui.UntargetedChip.value,
-                        ui.TargetedChip.value,
-                        ui.BroadcastChip.value
-                    )
-                );
+                ApplyState(ui, ui.State.WithRouteKinds(ui.UntargetedChip.value, ui.TargetedChip.value, ui.BroadcastChip.value));
             }
 
             ui.UntargetedChip.RegisterValueChangedCallback(_ => RaiseRouteKindsChanged());
@@ -1172,11 +1037,7 @@ namespace DxMessaging.Editor.Windows
                 times its height on a narrow window, which takes the space the log needs; the full
                 text stays on the badge tooltip and here.
             */
-            Label hint = new(SnapshotModeHintText)
-            {
-                name = ModeHintLabelName,
-                tooltip = SnapshotModeHintText,
-            };
+            Label hint = new(SnapshotModeHintText) { name = ModeHintLabelName, tooltip = SnapshotModeHintText };
             hint.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
             hint.style.marginBottom = 0;
             hint.style.marginLeft = 8;
@@ -1230,85 +1091,44 @@ namespace DxMessaging.Editor.Windows
                 return;
             }
 
-            IReadOnlyList<MessageMonitorEntry> textMatches = FilterEntries(
-                ui.Snapshot.Entries,
-                ui.State.FilterText
-            );
-            SetRouteKindChipText(
-                ui.UntargetedChip,
-                DxMessagingEditorPalette.UntargetedKind,
-                textMatches,
-                "no target: every registered receiver sees it"
-            );
-            SetRouteKindChipText(
-                ui.TargetedChip,
-                DxMessagingEditorPalette.TargetedKind,
-                textMatches,
-                "sent to one target object"
-            );
-            SetRouteKindChipText(
-                ui.BroadcastChip,
-                DxMessagingEditorPalette.BroadcastKind,
-                textMatches,
-                "sent from one source object"
-            );
+            IReadOnlyList<MessageMonitorEntry> textMatches = FilterEntries(ui.Snapshot.Entries, ui.State.FilterText);
+            SetRouteKindChipText(ui.UntargetedChip, DxMessagingEditorPalette.UntargetedKind, textMatches, "no target: every registered receiver sees it");
+            SetRouteKindChipText(ui.TargetedChip, DxMessagingEditorPalette.TargetedKind, textMatches, "sent to one target object");
+            SetRouteKindChipText(ui.BroadcastChip, DxMessagingEditorPalette.BroadcastKind, textMatches, "sent from one source object");
         }
 
-        private static void SetRouteKindChipText(
-            Toggle chip,
-            string routeKind,
-            IReadOnlyList<MessageMonitorEntry> entries,
-            string meaning
-        )
+        private static void SetRouteKindChipText(Toggle chip, string routeKind, IReadOnlyList<MessageMonitorEntry> entries, string meaning)
         {
             int count = 0;
             for (int index = 0; index < entries.Count; index++)
             {
-                if (
-                    string.Equals(
-                        DxMessagingEditorPalette.NormalizeRouteKind(entries[index].RouteKind),
-                        routeKind,
-                        StringComparison.Ordinal
-                    )
-                )
+                if (string.Equals(DxMessagingEditorPalette.NormalizeRouteKind(entries[index].RouteKind), routeKind, StringComparison.Ordinal))
                 {
                     count++;
                 }
             }
 
             chip.text = $"{routeKind} {count}";
-            chip.tooltip =
-                $"{routeKind} messages are {meaning}. This color marks them in every row; click to show or hide them.";
+            chip.tooltip = $"{routeKind} messages are {meaning}. This color marks them in every row; click to show or hide them.";
         }
 
-        internal static IReadOnlyList<MessageMonitorEntry> FilterEntries(
-            IReadOnlyList<MessageMonitorEntry> entries,
-            MessageMonitorViewState viewState
-        )
+        internal static IReadOnlyList<MessageMonitorEntry> FilterEntries(IReadOnlyList<MessageMonitorEntry> entries, MessageMonitorViewState viewState)
         {
             if (entries == null)
             {
                 throw new ArgumentNullException(nameof(entries));
             }
 
-            bool everyRouteKind =
-                viewState.ShowUntargeted && viewState.ShowTargeted && viewState.ShowBroadcast;
+            bool everyRouteKind = viewState.ShowUntargeted && viewState.ShowTargeted && viewState.ShowBroadcast;
             if (everyRouteKind && string.IsNullOrWhiteSpace(viewState.FilterText))
             {
                 return entries;
             }
 
-            return entries
-                .Where(entry =>
-                    viewState.ShowsRouteKind(entry.RouteKind) && entry.Matches(viewState.FilterText)
-                )
-                .ToArray();
+            return entries.Where(entry => viewState.ShowsRouteKind(entry.RouteKind) && entry.Matches(viewState.FilterText)).ToArray();
         }
 
-        private static IReadOnlyList<MessageMonitorEntry> FilterEntries(
-            IReadOnlyList<MessageMonitorEntry> entries,
-            string filterText
-        )
+        private static IReadOnlyList<MessageMonitorEntry> FilterEntries(IReadOnlyList<MessageMonitorEntry> entries, string filterText)
         {
             if (entries == null)
             {
@@ -1330,11 +1150,7 @@ namespace DxMessaging.Editor.Windows
                 return "Unavailable";
             }
             string enabled = snapshot.DiagnosticsEnabled ? "On" : "Off";
-            if (
-                snapshot.DiagnosticsEnabled
-                && 0 <= visibleCount
-                && visibleCount != snapshot.Entries.Count
-            )
+            if (snapshot.DiagnosticsEnabled && 0 <= visibleCount && visibleCount != snapshot.Entries.Count)
             {
                 return $"Diagnostics {enabled} | {visibleCount}/{snapshot.Entries.Count} shown | {snapshot.Entries.Count}/{snapshot.Capacity}";
             }
@@ -1351,10 +1167,7 @@ namespace DxMessaging.Editor.Windows
         /// is now behind a disclosure, and each lane is the filter button rather than a paragraph
         /// next to one; the full context and message lists moved into the pill tooltips.
         /// </remarks>
-        private static VisualElement CreateBreakdownFoldout(
-            MonitorUi ui,
-            IReadOnlyList<MessageMonitorEntry> filteredEntries
-        )
+        private static VisualElement CreateBreakdownFoldout(MonitorUi ui, IReadOnlyList<MessageMonitorEntry> filteredEntries)
         {
             MessageMonitorTypeLane[] typeLanes = BuildVisibleMessageTypeLanes(filteredEntries);
             MessageMonitorContextLane[] contextLanes = BuildVisibleContextLanes(filteredEntries);
@@ -1362,15 +1175,11 @@ namespace DxMessaging.Editor.Windows
             Foldout breakdown = new()
             {
                 name = BreakdownFoldoutName,
-                text =
-                    $"Breakdown - {FormatCount(typeLanes.Length, "message type")}, {FormatCount(contextLanes.Length, "context")}",
+                text = $"Breakdown - {FormatCount(typeLanes.Length, "message type")}, {FormatCount(contextLanes.Length, "context")}",
                 value = ui.BreakdownExpanded,
             };
-            breakdown.tooltip =
-                "Group the visible messages by type and by context. Every entry is a filter: click one to isolate it.";
-            breakdown.RegisterValueChangedCallback(changed =>
-                ui.BreakdownExpanded = changed.newValue
-            );
+            breakdown.tooltip = "Group the visible messages by type and by context. Every entry is a filter: click one to isolate it.";
+            breakdown.RegisterValueChangedCallback(changed => ui.BreakdownExpanded = changed.newValue);
             /*
                 Expanded, this is the tallest thing in the section, so it has to give space back like
                 everything else; its lane lists scroll, so shrinking costs nothing unreachable.
@@ -1432,10 +1241,7 @@ namespace DxMessaging.Editor.Windows
         )
         {
             VisualElement lanesRoot = new() { name = panelName };
-            DxMessagingEditorTheme.ApplyCompleteBorder(
-                lanesRoot,
-                DxMessagingEditorPalette.BorderPanel
-            );
+            DxMessagingEditorTheme.ApplyCompleteBorder(lanesRoot, DxMessagingEditorPalette.BorderPanel);
             lanesRoot.style.flexShrink = 1;
             lanesRoot.style.minHeight = 0;
             lanesRoot.style.marginBottom = 6;
@@ -1476,11 +1282,7 @@ namespace DxMessaging.Editor.Windows
             return lanesRoot;
         }
 
-        private static VisualElement CreateMessageTypeLanePill(
-            MonitorUi ui,
-            MessageMonitorTypeLane lane,
-            int totalEntries
-        )
+        private static VisualElement CreateMessageTypeLanePill(MonitorUi ui, MessageMonitorTypeLane lane, int totalEntries)
         {
             return CreateLanePill(
                 ui,
@@ -1497,11 +1299,7 @@ namespace DxMessaging.Editor.Windows
             );
         }
 
-        private static VisualElement CreateContextLanePill(
-            MonitorUi ui,
-            MessageMonitorContextLane lane,
-            int totalEntries
-        )
+        private static VisualElement CreateContextLanePill(MonitorUi ui, MessageMonitorContextLane lane, int totalEntries)
         {
             return CreateLanePill(
                 ui,
@@ -1563,19 +1361,14 @@ namespace DxMessaging.Editor.Windows
             pill.style.paddingLeft = 8;
             pill.tooltip = $"{tooltipText}\nClick to filter to {filterText}";
             pill.SetEnabled(!string.IsNullOrWhiteSpace(filterText));
-            pill.RegisterCallback<ClickEvent>(_ =>
-                ApplyState(ui, ui.State.WithFilterText(filterText))
-            );
+            pill.RegisterCallback<ClickEvent>(_ => ApplyState(ui, ui.State.WithFilterText(filterText)));
 
             Label nameLabel = new(laneName) { name = nameLabelName };
             nameLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
             nameLabel.style.marginRight = 6;
             pill.Add(nameLabel);
 
-            Label summaryLabel = new(CreateLanePillSummaryText(entryCount, totalEntries))
-            {
-                name = summaryLabelName,
-            };
+            Label summaryLabel = new(CreateLanePillSummaryText(entryCount, totalEntries)) { name = summaryLabelName };
             summaryLabel.AddToClassList(DxMessagingEditorTheme.PriorityClassName);
             pill.Add(summaryLabel);
 
@@ -1595,8 +1388,7 @@ namespace DxMessaging.Editor.Windows
                 return count;
             }
 
-            int percent = (int)
-                Math.Round((double)entryCount / totalEntries * 100, MidpointRounding.AwayFromZero);
+            int percent = (int)Math.Round((double)entryCount / totalEntries * 100, MidpointRounding.AwayFromZero);
             return $"{count} - {percent.ToString(CultureInfo.InvariantCulture)}%";
         }
 
@@ -1615,9 +1407,7 @@ namespace DxMessaging.Editor.Windows
             return $"\"{(value ?? string.Empty).Replace("\\", "\\\\").Replace("\"", "\\\"")}\"";
         }
 
-        private static string CreateVisibleMessageTypeLanesSummaryText(
-            IReadOnlyList<MessageMonitorTypeLane> lanes
-        )
+        private static string CreateVisibleMessageTypeLanesSummaryText(IReadOnlyList<MessageMonitorTypeLane> lanes)
         {
             int totalEntries = lanes.Sum(lane => lane.EntryCount);
             if (lanes.Count == 0 || totalEntries <= 0 || lanes[0].EntryCount <= 0)
@@ -1629,9 +1419,7 @@ namespace DxMessaging.Editor.Windows
             return $"{FormatCount(lanes.Count, "message type lane")} | Entries: {totalEntries} | Busiest message type: {busiestLane.MessageTypeName} | Share: {CreateEntryShareText(busiestLane.EntryCount, totalEntries)}";
         }
 
-        private static string CreateVisibleContextLanesSummaryText(
-            IReadOnlyList<MessageMonitorContextLane> lanes
-        )
+        private static string CreateVisibleContextLanesSummaryText(IReadOnlyList<MessageMonitorContextLane> lanes)
         {
             int totalEntries = lanes.Sum(lane => lane.EntryCount);
             if (lanes.Count == 0 || totalEntries <= 0 || lanes[0].EntryCount <= 0)
@@ -1643,9 +1431,7 @@ namespace DxMessaging.Editor.Windows
             return $"{FormatCount(lanes.Count, "context lane")} | Entries: {totalEntries} | Busiest context: {busiestLane.ContextText} | Share: {CreateEntryShareText(busiestLane.EntryCount, totalEntries)}";
         }
 
-        private static MessageMonitorTypeLane[] BuildVisibleMessageTypeLanes(
-            IReadOnlyList<MessageMonitorEntry> entries
-        )
+        private static MessageMonitorTypeLane[] BuildVisibleMessageTypeLanes(IReadOnlyList<MessageMonitorEntry> entries)
         {
             var laneGroups = entries
                 .GroupBy(entry => NormalizeMessageTypeIdentity(entry))
@@ -1663,9 +1449,7 @@ namespace DxMessaging.Editor.Windows
                     return new
                     {
                         MessageTypeName = NormalizeMessageTypeName(firstEntry.MessageTypeName),
-                        MessageTypeDisplayPath = NormalizeMessageTypeName(
-                            firstEntry.MessageTypeDisplayPath
-                        ),
+                        MessageTypeDisplayPath = NormalizeMessageTypeName(firstEntry.MessageTypeDisplayPath),
                         EntryCount = groupEntries.Length,
                         Contexts = contexts,
                     };
@@ -1673,18 +1457,13 @@ namespace DxMessaging.Editor.Windows
                 .ToArray();
 
             HashSet<string> duplicateDisplayNames = new(
-                laneGroups
-                    .GroupBy(group => group.MessageTypeName, StringComparer.Ordinal)
-                    .Where(group => 1 < group.Count())
-                    .Select(group => group.Key),
+                laneGroups.GroupBy(group => group.MessageTypeName, StringComparer.Ordinal).Where(group => 1 < group.Count()).Select(group => group.Key),
                 StringComparer.Ordinal
             );
 
             return laneGroups
                 .Select(group => new MessageMonitorTypeLane(
-                    duplicateDisplayNames.Contains(group.MessageTypeName)
-                        ? group.MessageTypeDisplayPath
-                        : group.MessageTypeName,
+                    duplicateDisplayNames.Contains(group.MessageTypeName) ? group.MessageTypeDisplayPath : group.MessageTypeName,
                     group.EntryCount,
                     group.Contexts
                 ))
@@ -1693,9 +1472,7 @@ namespace DxMessaging.Editor.Windows
                 .ToArray();
         }
 
-        private static MessageMonitorContextLane[] BuildVisibleContextLanes(
-            IReadOnlyList<MessageMonitorEntry> entries
-        )
+        private static MessageMonitorContextLane[] BuildVisibleContextLanes(IReadOnlyList<MessageMonitorEntry> entries)
         {
             HashSet<string> duplicateDisplayNames = CreateDuplicateMessageTypeDisplayNames(entries);
 
@@ -1704,26 +1481,16 @@ namespace DxMessaging.Editor.Windows
                 .Select(group =>
                 {
                     MessageMonitorEntry[] groupEntries = group.ToArray();
-                    string[] messageTypes = CreateVisibleMessageTypeDisplayNames(
-                        groupEntries,
-                        duplicateDisplayNames
-                    );
+                    string[] messageTypes = CreateVisibleMessageTypeDisplayNames(groupEntries, duplicateDisplayNames);
 
-                    return new MessageMonitorContextLane(
-                        group.Key,
-                        groupEntries.Length,
-                        messageTypes
-                    );
+                    return new MessageMonitorContextLane(group.Key, groupEntries.Length, messageTypes);
                 })
                 .OrderByDescending(lane => lane.EntryCount)
                 .ThenBy(lane => lane.ContextText, StringComparer.Ordinal)
                 .ToArray();
         }
 
-        private static string[] CreateVisibleMessageTypeDisplayNames(
-            IReadOnlyList<MessageMonitorEntry> entries,
-            HashSet<string> duplicateDisplayNames
-        )
+        private static string[] CreateVisibleMessageTypeDisplayNames(IReadOnlyList<MessageMonitorEntry> entries, HashSet<string> duplicateDisplayNames)
         {
             var typeGroups = entries
                 .GroupBy(entry => NormalizeMessageTypeIdentity(entry))
@@ -1733,53 +1500,35 @@ namespace DxMessaging.Editor.Windows
                     return new
                     {
                         MessageTypeName = NormalizeMessageTypeName(firstEntry.MessageTypeName),
-                        MessageTypeDisplayPath = NormalizeMessageTypeName(
-                            firstEntry.MessageTypeDisplayPath
-                        ),
+                        MessageTypeDisplayPath = NormalizeMessageTypeName(firstEntry.MessageTypeDisplayPath),
                     };
                 })
                 .ToArray();
 
             return typeGroups
-                .Select(group =>
-                    duplicateDisplayNames.Contains(group.MessageTypeName)
-                        ? group.MessageTypeDisplayPath
-                        : group.MessageTypeName
-                )
+                .Select(group => duplicateDisplayNames.Contains(group.MessageTypeName) ? group.MessageTypeDisplayPath : group.MessageTypeName)
                 .OrderBy(messageType => messageType, StringComparer.Ordinal)
                 .ToArray();
         }
 
-        private static HashSet<string> CreateDuplicateMessageTypeDisplayNames(
-            IReadOnlyList<MessageMonitorEntry> entries
-        )
+        private static HashSet<string> CreateDuplicateMessageTypeDisplayNames(IReadOnlyList<MessageMonitorEntry> entries)
         {
-            string[] typeNames = entries
-                .GroupBy(entry => NormalizeMessageTypeIdentity(entry))
-                .Select(group => NormalizeMessageTypeName(group.First().MessageTypeName))
-                .ToArray();
+            string[] typeNames = entries.GroupBy(entry => NormalizeMessageTypeIdentity(entry)).Select(group => NormalizeMessageTypeName(group.First().MessageTypeName)).ToArray();
 
             return new HashSet<string>(
-                typeNames
-                    .GroupBy(typeName => typeName, StringComparer.Ordinal)
-                    .Where(group => 1 < group.Count())
-                    .Select(group => group.Key),
+                typeNames.GroupBy(typeName => typeName, StringComparer.Ordinal).Where(group => 1 < group.Count()).Select(group => group.Key),
                 StringComparer.Ordinal
             );
         }
 
         private static string NormalizeMessageTypeName(string messageTypeName)
         {
-            return string.IsNullOrWhiteSpace(messageTypeName)
-                ? "<unknown>"
-                : messageTypeName.Trim();
+            return string.IsNullOrWhiteSpace(messageTypeName) ? "<unknown>" : messageTypeName.Trim();
         }
 
         private static string NormalizeMessageTypeIdentity(MessageMonitorEntry entry)
         {
-            return string.IsNullOrWhiteSpace(entry.MessageTypeIdentity)
-                ? NormalizeMessageTypeName(entry.MessageTypeName)
-                : entry.MessageTypeIdentity.Trim();
+            return string.IsNullOrWhiteSpace(entry.MessageTypeIdentity) ? NormalizeMessageTypeName(entry.MessageTypeName) : entry.MessageTypeIdentity.Trim();
         }
 
         private static string NormalizeContextText(string contextText)
@@ -1794,8 +1543,7 @@ namespace DxMessaging.Editor.Windows
                 return $"{count}/{total} (n/a)";
             }
 
-            int percent = (int)
-                Math.Round((double)count / total * 100, MidpointRounding.AwayFromZero);
+            int percent = (int)Math.Round((double)count / total * 100, MidpointRounding.AwayFromZero);
             return $"{count}/{total} ({percent}%)";
         }
 
@@ -1804,11 +1552,7 @@ namespace DxMessaging.Editor.Windows
             return count == 1 ? $"1 {noun}" : $"{count} {noun}s";
         }
 
-        private static VisualElement CreateControlRow(
-            MonitorUi ui,
-            Action onRefresh,
-            Action onEnterLiveMode
-        )
+        private static VisualElement CreateControlRow(MonitorUi ui, Action onRefresh, Action onEnterLiveMode)
         {
             VisualElement controls = new();
             controls.style.flexShrink = 0;
@@ -1824,13 +1568,10 @@ namespace DxMessaging.Editor.Windows
             TextField filter = new("Filter") { name = FilterFieldName };
             filter.AddToClassList(DxMessagingEditorTheme.SearchClassName);
             filter.SetValueWithoutNotify(ui.State.FilterText);
-            filter.tooltip =
-                "Use plain text, or field filters such as type:, message:, context:, and stack:.";
+            filter.tooltip = "Use plain text, or field filters such as type:, message:, context:, and stack:.";
             filter.style.flexGrow = 1;
             filter.style.marginRight = 8;
-            filter.RegisterValueChangedCallback(evt =>
-                ApplyState(ui, ui.State.WithFilterText(evt.newValue))
-            );
+            filter.RegisterValueChangedCallback(evt => ApplyState(ui, ui.State.WithFilterText(evt.newValue)));
             ui.Filter = filter;
             filterRow.Add(filter);
 
@@ -1858,9 +1599,7 @@ namespace DxMessaging.Editor.Windows
                 text = "Copy JSON",
                 tooltip = "Copy the currently visible entries to the clipboard as JSON.",
             };
-            export.RegisterCallback<ClickEvent>(_ =>
-                ui.OnCopyExport?.Invoke(CreateExportText(ui.Snapshot, ui.FilteredEntries()))
-            );
+            export.RegisterCallback<ClickEvent>(_ => ui.OnCopyExport?.Invoke(CreateExportText(ui.Snapshot, ui.FilteredEntries())));
             export.AddToClassList(DxMessagingEditorTheme.ToolButtonClassName);
             export.style.flexShrink = 0;
             ui.Export = export;
@@ -1879,9 +1618,7 @@ namespace DxMessaging.Editor.Windows
             live.style.flexShrink = 0;
             filterRow.Add(live);
 
-            ui.ActiveFilter = CreateActiveFilterSummary(ui.State.FilterText, () =>
-                ApplyState(ui, ui.State.WithFilterText(string.Empty))
-            );
+            ui.ActiveFilter = CreateActiveFilterSummary(ui.State.FilterText, () => ApplyState(ui, ui.State.WithFilterText(string.Empty)));
             controls.Add(ui.ActiveFilter);
 
             SetExportButtonEnabled(ui, ui.FilteredEntries().Count);
@@ -1905,11 +1642,7 @@ namespace DxMessaging.Editor.Windows
             return summary;
         }
 
-        private static void UpdateActiveFilterSummary(
-            VisualElement summary,
-            string filterText,
-            Action onClear
-        )
+        private static void UpdateActiveFilterSummary(VisualElement summary, string filterText, Action onClear)
         {
             if (summary == null)
             {
@@ -1924,19 +1657,13 @@ namespace DxMessaging.Editor.Windows
             }
 
             summary.style.display = DisplayStyle.Flex;
-            bool typedFilter = MessageMonitorFilterQuery.TryCreateDisplayTokens(
-                filterText,
-                out string[] displayTokens
-            );
+            bool typedFilter = MessageMonitorFilterQuery.TryCreateDisplayTokens(filterText, out string[] displayTokens);
             if (!typedFilter)
             {
                 displayTokens = new[] { filterText.Trim() };
             }
 
-            Label label = new(typedFilter ? "Active typed filters" : "Active text filter")
-            {
-                name = ActiveFilterSummaryLabelName,
-            };
+            Label label = new(typedFilter ? "Active typed filters" : "Active text filter") { name = ActiveFilterSummaryLabelName };
             label.style.unityFontStyleAndWeight = FontStyle.Bold;
             label.style.marginRight = 8;
             label.style.flexShrink = 0;
@@ -1949,10 +1676,7 @@ namespace DxMessaging.Editor.Windows
             clear.style.flexShrink = 0;
             summary.Add(clear);
 
-            ScrollView tokenScroll = new(ScrollViewMode.Vertical)
-            {
-                name = ActiveFilterTokenScrollViewName,
-            };
+            ScrollView tokenScroll = new(ScrollViewMode.Vertical) { name = ActiveFilterTokenScrollViewName };
             tokenScroll.style.flexGrow = 1;
             tokenScroll.style.flexShrink = 1;
             tokenScroll.style.maxHeight = 72;
@@ -1971,10 +1695,7 @@ namespace DxMessaging.Editor.Windows
                 tokenLabel.style.paddingRight = 5;
                 tokenLabel.style.paddingBottom = 2;
                 tokenLabel.style.paddingLeft = 5;
-                DxMessagingEditorTheme.ApplyCompleteBorder(
-                    tokenLabel,
-                    DxMessagingEditorPalette.Border
-                );
+                DxMessagingEditorTheme.ApplyCompleteBorder(tokenLabel, DxMessagingEditorPalette.Border);
                 tokenLabel.style.whiteSpace = WhiteSpace.Normal;
                 tokenRow.Add(tokenLabel);
             }
@@ -1982,9 +1703,7 @@ namespace DxMessaging.Editor.Windows
 
         private static void SetExportButtonEnabled(MonitorUi ui, int visibleEntryCount)
         {
-            ui.Export?.SetEnabled(
-                ui.OnCopyExport != null && ui.Snapshot.DiagnosticsEnabled && 0 < visibleEntryCount
-            );
+            ui.Export?.SetEnabled(ui.OnCopyExport != null && ui.Snapshot.DiagnosticsEnabled && 0 < visibleEntryCount);
         }
 
         private static bool IsSceneComponent(MessagingComponent component)
@@ -1999,39 +1718,23 @@ namespace DxMessaging.Editor.Windows
         private static MessagingComponent[] FindMessagingComponentsInLoadedScenes()
         {
 #if UNITY_6000_4_OR_NEWER
-            return UnityEngine.Object.FindObjectsByType<MessagingComponent>(
-                FindObjectsInactive.Include
-            );
+            return UnityEngine.Object.FindObjectsByType<MessagingComponent>(FindObjectsInactive.Include);
 #elif UNITY_2023_1_OR_NEWER
-            return UnityEngine.Object.FindObjectsByType<MessagingComponent>(
-                FindObjectsInactive.Include,
-                FindObjectsSortMode.None
-            );
+            return UnityEngine.Object.FindObjectsByType<MessagingComponent>(FindObjectsInactive.Include, FindObjectsSortMode.None);
 #else
             return UnityEngine.Object.FindObjectsOfType<MessagingComponent>(includeInactive: true);
 #endif
         }
 
-        private static ComponentMonitorEntry CreateComponentMonitorEntry(
-            MessagingComponent component
-        )
+        private static ComponentMonitorEntry CreateComponentMonitorEntry(MessagingComponent component)
         {
-            MessagingComponentInspectorState state = MessagingComponentInspectorSnapshot.Capture(
-                component,
-                resolveSerializedProviderBus: false
-            );
+            MessagingComponentInspectorState state = MessagingComponentInspectorSnapshot.Capture(component, resolveSerializedProviderBus: false);
             int listenerCount = state.Listeners.Count;
             int enabledListenerCount = state.Listeners.Count(listener => listener.TokenEnabled);
-            int diagnosticsListenerCount = state.Listeners.Count(listener =>
-                listener.DiagnosticsEnabled
-            );
+            int diagnosticsListenerCount = state.Listeners.Count(listener => listener.DiagnosticsEnabled);
             int registrationCount = state.Listeners.Sum(listener => listener.Registrations.Count);
-            int callCount = state.Listeners.Sum(listener =>
-                listener.Registrations.Sum(registration => registration.CallCount)
-            );
-            int localEmissionCount = state.Listeners.Sum(listener =>
-                listener.EmissionHistory.Count
-            );
+            int callCount = state.Listeners.Sum(listener => listener.Registrations.Sum(registration => registration.CallCount));
+            int localEmissionCount = state.Listeners.Sum(listener => listener.EmissionHistory.Count);
 
             return new ComponentMonitorEntry(
                 GetHierarchyPath(component.transform),
@@ -2048,10 +1751,7 @@ namespace DxMessaging.Editor.Windows
             );
         }
 
-        private static ComponentMonitorEntry CreateFailedComponentMonitorEntry(
-            MessagingComponent component,
-            Exception exception
-        )
+        private static ComponentMonitorEntry CreateFailedComponentMonitorEntry(MessagingComponent component, Exception exception)
         {
             return new ComponentMonitorEntry(
                 GetHierarchyPath(component != null ? component.transform : null),
@@ -2130,12 +1830,7 @@ namespace DxMessaging.Editor.Windows
 
         private static void AddEmptyState(VisualElement root, string title, string body)
         {
-            VisualElement empty = DxMessagingEditorTheme.CreateEmptyState(
-                title,
-                body,
-                bodyName: EmptyStateLabelName,
-                titleName: EmptyStateTitleLabelName
-            );
+            VisualElement empty = DxMessagingEditorTheme.CreateEmptyState(title, body, bodyName: EmptyStateLabelName, titleName: EmptyStateTitleLabelName);
             empty.style.marginTop = 8;
             root.Add(empty);
         }
@@ -2149,12 +1844,7 @@ namespace DxMessaging.Editor.Windows
         /// row buried the log under call stacks; it belongs to whichever row is selected, which is
         /// where <see cref="CreateDetailsPane"/> puts it, behind a collapsed disclosure.
         /// </remarks>
-        private static VisualElement CreateRow(
-            MessageMonitorEntry entry,
-            int entryIndex,
-            bool selected,
-            Action onSelected
-        )
+        private static VisualElement CreateRow(MessageMonitorEntry entry, int entryIndex, bool selected, Action onSelected)
         {
             VisualElement row = new();
             row.AddToClassList(RowClassName);
@@ -2178,26 +1868,15 @@ namespace DxMessaging.Editor.Windows
             VisualElement dot = new();
             DxMessagingEditorTheme.AddRouteKindDotClasses(dot, routeKind);
             route.Add(dot);
-            Label kind = new(string.IsNullOrEmpty(routeKind) ? "Other" : routeKind)
-            {
-                name = RouteKindLabelName,
-            };
+            Label kind = new(string.IsNullOrEmpty(routeKind) ? "Other" : routeKind) { name = RouteKindLabelName };
             route.Add(kind);
             row.Add(route);
 
-            Label type = new(entry.MessageTypeName)
-            {
-                name = MessageTypeLabelName,
-                tooltip = entry.MessageTypeDisplayPath,
-            };
+            Label type = new(entry.MessageTypeName) { name = MessageTypeLabelName, tooltip = entry.MessageTypeDisplayPath };
             type.AddToClassList(DxMessagingEditorTheme.RowMessageClassName);
             row.Add(type);
 
-            Label context = new(entry.ContextText)
-            {
-                name = ContextLabelName,
-                tooltip = entry.ContextText,
-            };
+            Label context = new(entry.ContextText) { name = ContextLabelName, tooltip = entry.ContextText };
             context.AddToClassList(DxMessagingEditorTheme.RowRouteClassName);
             row.Add(context);
 
@@ -2214,9 +1893,7 @@ namespace DxMessaging.Editor.Windows
         /// </summary>
         internal static string CreateTraceText(MessageMonitorEntry entry)
         {
-            return entry.TraceId <= 0
-                ? string.Empty
-                : "#" + entry.TraceId.ToString(CultureInfo.InvariantCulture);
+            return entry.TraceId <= 0 ? string.Empty : "#" + entry.TraceId.ToString(CultureInfo.InvariantCulture);
         }
 
         /// <summary>
@@ -2232,11 +1909,8 @@ namespace DxMessaging.Editor.Windows
                 text = $"Component Diagnostics ({ui.Components.Count})",
                 value = ui.ComponentsExpanded,
             };
-            foldout.tooltip =
-                "Registration state of every MessagingComponent in the loaded scenes.";
-            foldout.RegisterValueChangedCallback(changed =>
-                ui.ComponentsExpanded = changed.newValue
-            );
+            foldout.tooltip = "Registration state of every MessagingComponent in the loaded scenes.";
+            foldout.RegisterValueChangedCallback(changed => ui.ComponentsExpanded = changed.newValue);
             /*
                 Shrinks, with a floor at its own header. A zero-shrink item still claims its full
                 preferred height, so a populated, expanded panel would push past the bottom of a short
@@ -2259,10 +1933,7 @@ namespace DxMessaging.Editor.Windows
             return foldout;
         }
 
-        private static VisualElement CreateComponentPanel(
-            IReadOnlyList<ComponentMonitorEntry> componentEntries,
-            MonitorUi ui = null
-        )
+        private static VisualElement CreateComponentPanel(IReadOnlyList<ComponentMonitorEntry> componentEntries, MonitorUi ui = null)
         {
             VisualElement panel = new() { name = ComponentPanelName };
             DxMessagingEditorTheme.ApplyCompleteBorder(panel, DxMessagingEditorPalette.BorderPanel);
@@ -2276,10 +1947,7 @@ namespace DxMessaging.Editor.Windows
 
             if (componentEntries.Count == 0)
             {
-                Label empty = new("No MessagingComponent instances are loaded in open scenes.")
-                {
-                    name = ComponentEmptyStateLabelName,
-                };
+                Label empty = new("No MessagingComponent instances are loaded in open scenes.") { name = ComponentEmptyStateLabelName };
                 empty.AddToClassList(DxMessagingEditorTheme.EmptyBodyClassName);
                 empty.style.whiteSpace = WhiteSpace.Normal;
                 empty.style.marginTop = 6;
@@ -2287,10 +1955,7 @@ namespace DxMessaging.Editor.Windows
                 return panel;
             }
 
-            ScrollView componentScroll = new(ScrollViewMode.Vertical)
-            {
-                name = ComponentScrollViewName,
-            };
+            ScrollView componentScroll = new(ScrollViewMode.Vertical) { name = ComponentScrollViewName };
             componentScroll.style.maxHeight = 180;
             componentScroll.style.flexShrink = 1;
             componentScroll.style.minHeight = 0;
@@ -2335,12 +2000,7 @@ namespace DxMessaging.Editor.Windows
             row.style.paddingLeft = 10;
 
             string activeText = componentEntry.ActiveInHierarchy ? "active" : "inactive";
-            Label name = new(
-                $"{componentEntry.HierarchyPath} ({componentEntry.ComponentTypeName}, {activeText})"
-            )
-            {
-                name = ComponentNameLabelName,
-            };
+            Label name = new($"{componentEntry.HierarchyPath} ({componentEntry.ComponentTypeName}, {activeText})") { name = ComponentNameLabelName };
             name.style.unityFontStyleAndWeight = FontStyle.Bold;
             row.Add(name);
 
@@ -2354,20 +2014,14 @@ namespace DxMessaging.Editor.Windows
             summary.style.whiteSpace = WhiteSpace.Normal;
             row.Add(summary);
 
-            Label provider = new(componentEntry.ProviderStatusText)
-            {
-                name = ComponentProviderLabelName,
-            };
+            Label provider = new(componentEntry.ProviderStatusText) { name = ComponentProviderLabelName };
             provider.style.marginTop = 2;
             provider.style.whiteSpace = WhiteSpace.Normal;
             row.Add(provider);
 
             if (!string.IsNullOrWhiteSpace(componentEntry.WarningText))
             {
-                Label warning = new(componentEntry.WarningText)
-                {
-                    name = ComponentWarningLabelName,
-                };
+                Label warning = new(componentEntry.WarningText) { name = ComponentWarningLabelName };
                 warning.AddToClassList(DxMessagingEditorTheme.WarningClassName);
                 warning.style.marginTop = 4;
                 warning.style.whiteSpace = WhiteSpace.Normal;
@@ -2394,10 +2048,7 @@ namespace DxMessaging.Editor.Windows
             details.style.flexShrink = 1;
             details.style.minHeight = 0;
             details.style.overflow = Overflow.Hidden;
-            DxMessagingEditorTheme.ApplyCompleteBorder(
-                details,
-                DxMessagingEditorPalette.BorderPanel
-            );
+            DxMessagingEditorTheme.ApplyCompleteBorder(details, DxMessagingEditorPalette.BorderPanel);
 
             VisualElement head = new();
             head.AddToClassList(DxMessagingEditorTheme.DetailHeadClassName);
@@ -2405,11 +2056,7 @@ namespace DxMessaging.Editor.Windows
             Label badge = new(string.IsNullOrEmpty(routeKind) ? "Other" : routeKind);
             DxMessagingEditorTheme.AddRouteKindTypeBadgeClasses(badge, routeKind);
             head.Add(badge);
-            Label type = new(entry.MessageTypeName)
-            {
-                name = DetailsTypeLabelName,
-                tooltip = entry.MessageTypeDisplayPath,
-            };
+            Label type = new(entry.MessageTypeName) { name = DetailsTypeLabelName, tooltip = entry.MessageTypeDisplayPath };
             type.AddToClassList(DxMessagingEditorTheme.DetailTitleClassName);
             head.Add(type);
             Label trace = new(CreateTraceText(entry));
@@ -2435,13 +2082,7 @@ namespace DxMessaging.Editor.Windows
             card.Add(CreateContextDetailRow(entry, DetailsContextLabelName));
             body.Add(card);
 
-            body.Add(
-                CreateStackTraceSection(
-                    entry,
-                    DetailsStackFoldoutName,
-                    DetailsStackFirstFrameLabelName
-                )
-            );
+            body.Add(CreateStackTraceSection(entry, DetailsStackFoldoutName, DetailsStackFirstFrameLabelName));
 
             return details;
         }
@@ -2454,27 +2095,14 @@ namespace DxMessaging.Editor.Windows
         /// </summary>
         internal static VisualElement CreateTypeDetailRow(MessageMonitorEntry entry)
         {
-            VisualElement row = CreateKeyValue(
-                "Type",
-                entry.MessageTypeDisplayPath,
-                DetailsTypeValueLabelName
-            );
+            VisualElement row = CreateKeyValue("Type", entry.MessageTypeDisplayPath, DetailsTypeValueLabelName);
             row.name = DetailsTypeRowName;
             if (
-                DxMessagingEditorSourceLinks.TryResolveSourceForAssemblyQualifiedName(
-                    entry.MessageTypeIdentity,
-                    out DxMessagingEditorSourceLinks.SourceLocation location
-                )
+                DxMessagingEditorSourceLinks.TryResolveSourceForAssemblyQualifiedName(entry.MessageTypeIdentity, out DxMessagingEditorSourceLinks.SourceLocation location)
                 && AssetDatabase.LoadMainAssetAtPath(location.AssetPath) != null
             )
             {
-                row.Add(
-                    DxMessagingEditorSourceLinks.CreateSourceLinkButton(
-                        "Open source",
-                        location,
-                        includeLocationInText: false
-                    )
-                );
+                row.Add(DxMessagingEditorSourceLinks.CreateSourceLinkButton("Open source", location, includeLocationInText: false));
             }
             return row;
         }
@@ -2485,10 +2113,7 @@ namespace DxMessaging.Editor.Windows
         /// object is gone -- the normal case for a log that outlives its scene -- stays readable
         /// but inert rather than offering a link that would do nothing.
         /// </summary>
-        internal static VisualElement CreateContextDetailRow(
-            MessageMonitorEntry entry,
-            string valueName
-        )
+        internal static VisualElement CreateContextDetailRow(MessageMonitorEntry entry, string valueName)
         {
             VisualElement row = CreateKeyValue("Context", entry.ContextText, valueName);
             row.name = DetailsContextRowName;
@@ -2502,13 +2127,9 @@ namespace DxMessaging.Editor.Windows
                 `Q<T>(null)` matches ANY descendant and would return the key label, so an unnamed
                 value falls back to the row rather than linking the wrong element.
             */
-            VisualElement value = string.IsNullOrEmpty(valueName)
-                ? null
-                : row.Q<VisualElement>(valueName);
-            DxMessagingEditorSourceLinks.MakeActivatable(
-                value ?? row,
-                "Select and ping this object in the Hierarchy.",
-                () => DxMessagingEditorSourceLinks.TryRevealContext(context)
+            VisualElement value = string.IsNullOrEmpty(valueName) ? null : row.Q<VisualElement>(valueName);
+            DxMessagingEditorSourceLinks.MakeActivatable(value ?? row, "Select and ping this object in the Hierarchy.", () =>
+                DxMessagingEditorSourceLinks.TryRevealContext(context)
             );
             return row;
         }
@@ -2519,15 +2140,9 @@ namespace DxMessaging.Editor.Windows
         /// reported them as noise at the top of every trace, and they are -- they describe the
         /// act of taking the stack, never the code that emitted.
         /// </summary>
-        internal static VisualElement CreateStackTraceSection(
-            MessageMonitorEntry entry,
-            string foldoutName,
-            string labelName
-        )
+        internal static VisualElement CreateStackTraceSection(MessageMonitorEntry entry, string foldoutName, string labelName)
         {
-            IReadOnlyList<string> frames = DxMessagingEditorSourceLinks.ReadCallSiteFrames(
-                entry.StackTrace
-            );
+            IReadOnlyList<string> frames = DxMessagingEditorSourceLinks.ReadCallSiteFrames(entry.StackTrace);
             bool captured = 0 < frames.Count;
             /*
                 Three distinct facts, and calling any of them by another's name would be a lie:
@@ -2536,8 +2151,7 @@ namespace DxMessaging.Editor.Windows
                 capture is ON is a record written before it was turned on (or built by hand).
             */
             bool captureFramesOnly = !captured && !string.IsNullOrWhiteSpace(entry.StackTrace);
-            bool captureDisabled =
-                !captured && !captureFramesOnly && !DxMessagingEmissionCaptureNotice.CaptureEnabled;
+            bool captureDisabled = !captured && !captureFramesOnly && !DxMessagingEmissionCaptureNotice.CaptureEnabled;
             string emptyText;
             string emptyBody;
             if (captureFramesOnly)
@@ -2575,9 +2189,7 @@ namespace DxMessaging.Editor.Windows
                         The switch travels with the explanation: an empty pane that only says
                         "off" still leaves the user hunting through project settings.
                     */
-                    stackFrames.Add(
-                        DxMessagingEmissionCaptureNotice.CreateDisabledNotice(labelName)
-                    );
+                    stackFrames.Add(DxMessagingEmissionCaptureNotice.CreateDisabledNotice(labelName));
                 }
                 else
                 {
@@ -2625,18 +2237,11 @@ namespace DxMessaging.Editor.Windows
                 frameRow.Add(frameLabel);
 
                 if (
-                    DxMessagingEditorSourceLinks.TryParseSourceLocation(
-                        frame,
-                        out DxMessagingEditorSourceLinks.SourceLocation frameLocation
-                    )
+                    DxMessagingEditorSourceLinks.TryParseSourceLocation(frame, out DxMessagingEditorSourceLinks.SourceLocation frameLocation)
                     && AssetDatabase.LoadMainAssetAtPath(frameLocation.AssetPath) != null
                 )
                 {
-                    Button open = DxMessagingEditorSourceLinks.CreateSourceLinkButton(
-                        "Open",
-                        frameLocation,
-                        includeLocationInText: false
-                    );
+                    Button open = DxMessagingEditorSourceLinks.CreateSourceLinkButton("Open", frameLocation, includeLocationInText: false);
                     open.AddToClassList(DxMessagingEditorTheme.DetailStackLinkClassName);
                     frameRow.Add(open);
                 }
@@ -2647,11 +2252,7 @@ namespace DxMessaging.Editor.Windows
             return stackFoldout;
         }
 
-        internal static VisualElement CreateKeyValue(
-            string key,
-            string value,
-            string valueName = null
-        )
+        internal static VisualElement CreateKeyValue(string key, string value, string valueName = null)
         {
             VisualElement pair = new();
             pair.AddToClassList(DxMessagingEditorTheme.KeyValueClassName);
@@ -2681,19 +2282,9 @@ namespace DxMessaging.Editor.Windows
             return entryCount <= selectedEntryIndex ? entryCount - 1 : selectedEntryIndex;
         }
 
-        private static void AppendJsonProperty(
-            StringBuilder builder,
-            string name,
-            string value,
-            bool trailingComma
-        )
+        private static void AppendJsonProperty(StringBuilder builder, string name, string value, bool trailingComma)
         {
-            builder
-                .Append("      \"")
-                .Append(name)
-                .Append("\": \"")
-                .Append(EscapeJson(value))
-                .Append("\"");
+            builder.Append("      \"").Append(name).Append("\": \"").Append(EscapeJson(value)).Append("\"");
             if (trailingComma)
             {
                 builder.Append(",");
@@ -2763,13 +2354,7 @@ namespace DxMessaging.Editor.Windows
         private readonly bool _hideTargeted;
         private readonly bool _hideBroadcast;
 
-        internal MessageMonitorViewState(
-            string filterText = "",
-            int selectedEntryIndex = 0,
-            bool showUntargeted = true,
-            bool showTargeted = true,
-            bool showBroadcast = true
-        )
+        internal MessageMonitorViewState(string filterText = "", int selectedEntryIndex = 0, bool showUntargeted = true, bool showTargeted = true, bool showBroadcast = true)
         {
             _filterText = filterText;
             SelectedEntryIndex = selectedEntryIndex;
@@ -2795,34 +2380,17 @@ namespace DxMessaging.Editor.Windows
 
         internal bool ShowsRouteKind(string routeKind)
         {
-            return DxMessagingEditorPalette.ShowsRouteKind(
-                routeKind,
-                ShowUntargeted,
-                ShowTargeted,
-                ShowBroadcast
-            );
+            return DxMessagingEditorPalette.ShowsRouteKind(routeKind, ShowUntargeted, ShowTargeted, ShowBroadcast);
         }
 
         internal MessageMonitorViewState WithFilterText(string filterText)
         {
-            return new MessageMonitorViewState(
-                filterText,
-                selectedEntryIndex: 0,
-                ShowUntargeted,
-                ShowTargeted,
-                ShowBroadcast
-            );
+            return new MessageMonitorViewState(filterText, selectedEntryIndex: 0, ShowUntargeted, ShowTargeted, ShowBroadcast);
         }
 
         internal MessageMonitorViewState WithSelectedEntryIndex(int selectedEntryIndex)
         {
-            return new MessageMonitorViewState(
-                FilterText,
-                selectedEntryIndex,
-                ShowUntargeted,
-                ShowTargeted,
-                ShowBroadcast
-            );
+            return new MessageMonitorViewState(FilterText, selectedEntryIndex, ShowUntargeted, ShowTargeted, ShowBroadcast);
         }
 
         /// <summary>
@@ -2830,19 +2398,9 @@ namespace DxMessaging.Editor.Windows
         /// selection back to the newest row, because the old index pointed into a different row
         /// set.
         /// </summary>
-        internal MessageMonitorViewState WithRouteKinds(
-            bool showUntargeted,
-            bool showTargeted,
-            bool showBroadcast
-        )
+        internal MessageMonitorViewState WithRouteKinds(bool showUntargeted, bool showTargeted, bool showBroadcast)
         {
-            return new MessageMonitorViewState(
-                FilterText,
-                selectedEntryIndex: 0,
-                showUntargeted,
-                showTargeted,
-                showBroadcast
-            );
+            return new MessageMonitorViewState(FilterText, selectedEntryIndex: 0, showUntargeted, showTargeted, showBroadcast);
         }
     }
 
@@ -2900,15 +2458,9 @@ namespace DxMessaging.Editor.Windows
 
     internal readonly struct MessageMonitorTypeLane
     {
-        internal MessageMonitorTypeLane(
-            string messageTypeName,
-            int entryCount,
-            IReadOnlyList<string> contexts
-        )
+        internal MessageMonitorTypeLane(string messageTypeName, int entryCount, IReadOnlyList<string> contexts)
         {
-            MessageTypeName = string.IsNullOrWhiteSpace(messageTypeName)
-                ? "<unknown>"
-                : messageTypeName.Trim();
+            MessageTypeName = string.IsNullOrWhiteSpace(messageTypeName) ? "<unknown>" : messageTypeName.Trim();
             EntryCount = entryCount;
             Contexts = contexts ?? Array.Empty<string>();
         }
@@ -2926,15 +2478,9 @@ namespace DxMessaging.Editor.Windows
 
     internal readonly struct MessageMonitorContextLane
     {
-        internal MessageMonitorContextLane(
-            string contextText,
-            int entryCount,
-            IReadOnlyList<string> messageTypes
-        )
+        internal MessageMonitorContextLane(string contextText, int entryCount, IReadOnlyList<string> messageTypes)
         {
-            ContextText = string.IsNullOrWhiteSpace(contextText)
-                ? "Context: none"
-                : contextText.Trim();
+            ContextText = string.IsNullOrWhiteSpace(contextText) ? "Context: none" : contextText.Trim();
             EntryCount = entryCount;
             MessageTypes = messageTypes ?? Array.Empty<string>();
         }
@@ -2947,19 +2493,12 @@ namespace DxMessaging.Editor.Windows
 
         internal int MessageTypeCount => MessageTypes.Count;
 
-        internal string MessageTypesText =>
-            MessageTypes.Count == 0 ? "none" : string.Join(", ", MessageTypes);
+        internal string MessageTypesText => MessageTypes.Count == 0 ? "none" : string.Join(", ", MessageTypes);
     }
 
     internal readonly struct MessageMonitorSnapshot
     {
-        internal MessageMonitorSnapshot(
-            bool diagnosticsEnabled,
-            int capacity,
-            IReadOnlyList<MessageMonitorEntry> entries,
-            bool available = true,
-            string unavailableReason = ""
-        )
+        internal MessageMonitorSnapshot(bool diagnosticsEnabled, int capacity, IReadOnlyList<MessageMonitorEntry> entries, bool available = true, string unavailableReason = "")
         {
             DiagnosticsEnabled = diagnosticsEnabled;
             Capacity = capacity;
@@ -2980,13 +2519,7 @@ namespace DxMessaging.Editor.Windows
 
         internal static MessageMonitorSnapshot Unavailable(string reason)
         {
-            return new MessageMonitorSnapshot(
-                diagnosticsEnabled: false,
-                capacity: 0,
-                entries: Array.Empty<MessageMonitorEntry>(),
-                available: false,
-                unavailableReason: reason
-            );
+            return new MessageMonitorSnapshot(diagnosticsEnabled: false, capacity: 0, entries: Array.Empty<MessageMonitorEntry>(), available: false, unavailableReason: reason);
         }
     }
 
@@ -3006,12 +2539,8 @@ namespace DxMessaging.Editor.Windows
         )
         {
             MessageTypeName = messageTypeName;
-            MessageTypeIdentity = string.IsNullOrWhiteSpace(messageTypeIdentity)
-                ? messageTypeName
-                : messageTypeIdentity;
-            MessageTypeDisplayPath = string.IsNullOrWhiteSpace(messageTypeDisplayPath)
-                ? messageTypeName
-                : messageTypeDisplayPath;
+            MessageTypeIdentity = string.IsNullOrWhiteSpace(messageTypeIdentity) ? messageTypeName : messageTypeIdentity;
+            MessageTypeDisplayPath = string.IsNullOrWhiteSpace(messageTypeDisplayPath) ? messageTypeName : messageTypeDisplayPath;
             ContextText = contextText;
             StackTrace = stackTrace;
             RouteKind = routeKind ?? string.Empty;
@@ -3095,12 +2624,7 @@ namespace DxMessaging.Editor.Windows
                 return true;
             }
 
-            if (
-                !MessageMonitorFilterQuery.TryCreateTerms(
-                    filterText,
-                    out MessageMonitorFilterTerm[] terms
-                )
-            )
+            if (!MessageMonitorFilterQuery.TryCreateTerms(filterText, out MessageMonitorFilterTerm[] terms))
             {
                 return ContainsAnyField(filterText);
             }
@@ -3118,16 +2642,11 @@ namespace DxMessaging.Editor.Windows
             switch (term.Facet)
             {
                 case MessageMonitorFilterFacet.MessageType:
-                    return Contains(MessageTypeName, term.Text)
-                        || Contains(MessageTypeDisplayPath, term.Text);
+                    return Contains(MessageTypeName, term.Text) || Contains(MessageTypeDisplayPath, term.Text);
                 case MessageMonitorFilterFacet.Context:
                     if (term.Exact)
                     {
-                        return string.Equals(
-                            ContextText,
-                            term.Text,
-                            StringComparison.OrdinalIgnoreCase
-                        );
+                        return string.Equals(ContextText, term.Text, StringComparison.OrdinalIgnoreCase);
                     }
 
                     return Contains(ContextText, term.Text);
@@ -3140,10 +2659,7 @@ namespace DxMessaging.Editor.Windows
 
         private bool ContainsAnyField(string filterText)
         {
-            return Contains(MessageTypeName, filterText)
-                || Contains(MessageTypeDisplayPath, filterText)
-                || Contains(ContextText, filterText)
-                || Contains(StackTrace, filterText);
+            return Contains(MessageTypeName, filterText) || Contains(MessageTypeDisplayPath, filterText) || Contains(ContextText, filterText) || Contains(StackTrace, filterText);
         }
 
         private static string CreateMessageTypeIdentity(Type messageType, string fallback)
@@ -3168,8 +2684,7 @@ namespace DxMessaging.Editor.Windows
 
         private static bool Contains(string value, string filterText)
         {
-            return !string.IsNullOrEmpty(value)
-                && 0 <= value.IndexOf(filterText, StringComparison.OrdinalIgnoreCase);
+            return !string.IsNullOrEmpty(value) && 0 <= value.IndexOf(filterText, StringComparison.OrdinalIgnoreCase);
         }
 
         private static string FormatContext(InstanceId? context)
@@ -3311,11 +2826,7 @@ namespace DxMessaging.Editor.Windows
             current.Clear();
         }
 
-        private static bool TryCreateFilterTerm(
-            string token,
-            out MessageMonitorFilterTerm term,
-            out string displayToken
-        )
+        private static bool TryCreateFilterTerm(string token, out MessageMonitorFilterTerm term, out string displayToken)
         {
             int separatorIndex = token.IndexOf(':');
             if (separatorIndex <= 0)
@@ -3327,10 +2838,7 @@ namespace DxMessaging.Editor.Windows
 
             string prefix = token.Substring(0, separatorIndex);
             string rawValue = token.Substring(separatorIndex + 1);
-            if (
-                !TryCreateFilterValue(rawValue, out string value, out bool exact)
-                || !TryCreateFilterFacet(prefix, out MessageMonitorFilterFacet facet)
-            )
+            if (!TryCreateFilterValue(rawValue, out string value, out bool exact) || !TryCreateFilterFacet(prefix, out MessageMonitorFilterFacet facet))
             {
                 term = default;
                 displayToken = string.Empty;
@@ -3338,8 +2846,7 @@ namespace DxMessaging.Editor.Windows
             }
 
             term = new MessageMonitorFilterTerm(facet, value, exact);
-            displayToken =
-                $"{CreateFacetDisplayPrefix(prefix, facet)}:{CreateFilterValueDisplay(value, exact)}";
+            displayToken = $"{CreateFacetDisplayPrefix(prefix, facet)}:{CreateFilterValueDisplay(value, exact)}";
             return true;
         }
 
@@ -3363,10 +2870,7 @@ namespace DxMessaging.Editor.Windows
                 }
 
                 exact = true;
-                return TryUnescapeQuotedFilterValue(
-                        trimmedValue.Substring(1, trimmedValue.Length - 2),
-                        out value
-                    ) && !string.IsNullOrWhiteSpace(value);
+                return TryUnescapeQuotedFilterValue(trimmedValue.Substring(1, trimmedValue.Length - 2), out value) && !string.IsNullOrWhiteSpace(value);
             }
 
             value = trimmedValue;
@@ -3440,10 +2944,7 @@ namespace DxMessaging.Editor.Windows
             }
         }
 
-        private static string CreateFacetDisplayPrefix(
-            string prefix,
-            MessageMonitorFilterFacet facet
-        )
+        private static string CreateFacetDisplayPrefix(string prefix, MessageMonitorFilterFacet facet)
         {
             string normalizedPrefix = prefix?.Trim().ToLowerInvariant();
             if (string.Equals(normalizedPrefix, "message", StringComparison.Ordinal))

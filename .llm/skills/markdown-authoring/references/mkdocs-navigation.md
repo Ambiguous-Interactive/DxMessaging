@@ -4,7 +4,8 @@
 
 ## Overview
 
-The `mkdocs.yml` file contains a `nav` section that defines the documentation site's navigation structure. When documentation files are added to the `docs/` directory but not added to the `nav` section, they become "orphaned" -- the files exist but are not discoverable through the sidebar navigation.
+The `mkdocs.yml` file contains a `nav` section that defines the documentation site's navigation structure. When documentation files are added to the `docs/` directory but not added
+to the `nav` section, they become "orphaned" -- the files exist but are not discoverable through the sidebar navigation.
 
 This skill ensures that navigation stays synchronized with the actual documentation files.
 

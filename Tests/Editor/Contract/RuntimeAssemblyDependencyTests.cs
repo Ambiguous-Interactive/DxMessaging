@@ -12,11 +12,7 @@ namespace DxMessaging.Tests.Editor.Contract
     [TestFixture]
     public sealed class RuntimeAssemblyDependencyTests
     {
-        private static readonly AssembliesType[] CompilationKinds =
-        {
-            AssembliesType.Editor,
-            AssembliesType.Player,
-        };
+        private static readonly AssembliesType[] CompilationKinds = { AssembliesType.Editor, AssembliesType.Player };
 
         /// <summary>Assigns SDK sources to a known boundary without compiling them as Unity scripts.</summary>
         [Test]
@@ -25,40 +21,21 @@ namespace DxMessaging.Tests.Editor.Contract
             const string sourceRoot = "Packages/com.wallstop-studios.dxmessaging/SourceGenerators";
             const string definition = sourceRoot + "/WallstopStudios.DxMessaging.DotNetOnly.asmdef";
             const string developmentAssembly = "WallstopStudios.DxMessaging.DotNetOnly";
-            string[] scripts = AssetDatabase
-                .FindAssets("t:MonoScript", new[] { sourceRoot })
-                .Select(AssetDatabase.GUIDToAssetPath)
-                .ToArray();
-            Assert.That(
-                scripts,
-                Is.Not.Empty,
-                "The full checkout must expose its SDK sources to the ownership check."
-            );
+            string[] scripts = AssetDatabase.FindAssets("t:MonoScript", new[] { sourceRoot }).Select(AssetDatabase.GUIDToAssetPath).ToArray();
+            Assert.That(scripts, Is.Not.Empty, "The full checkout must expose its SDK sources to the ownership check.");
             foreach (string script in scripts)
             {
                 Assert.That(
                     CompilationPipeline.GetAssemblyDefinitionFilePathFromScriptPath(script),
                     Is.EqualTo(definition),
-                    script
-                        + ": SDK sources need an explicit owner to avoid Unity compilation warnings."
+                    script + ": SDK sources need an explicit owner to avoid Unity compilation warnings."
                 );
             }
             foreach (AssembliesType kind in CompilationKinds)
             {
-                string[] names = CompilationPipeline
-                    .GetAssemblies(kind)
-                    .Select(assembly => assembly.name)
-                    .ToArray();
-                CollectionAssert.Contains(
-                    names,
-                    "WallstopStudios.DxMessaging",
-                    kind + ": retain the real runtime assembly."
-                );
-                CollectionAssert.DoesNotContain(
-                    names,
-                    developmentAssembly,
-                    kind + ": build SDK projects with dotnet instead of Unity."
-                );
+                string[] names = CompilationPipeline.GetAssemblies(kind).Select(assembly => assembly.name).ToArray();
+                CollectionAssert.Contains(names, "WallstopStudios.DxMessaging", kind + ": retain the real runtime assembly.");
+                CollectionAssert.DoesNotContain(names, developmentAssembly, kind + ": build SDK projects with dotnet instead of Unity.");
             }
         }
 
@@ -66,29 +43,17 @@ namespace DxMessaging.Tests.Editor.Contract
         [TestCase(AssembliesType.Editor, true)]
         [TestCase(AssembliesType.Player, true)]
         [TestCase(AssembliesType.PlayerWithoutTestAssemblies, false)]
-        public void MessageRecorderAssemblyFollowsTestBuildBoundary(
-            AssembliesType kind,
-            bool expected
-        )
+        public void MessageRecorderAssemblyFollowsTestBuildBoundary(AssembliesType kind, bool expected)
         {
             const string supportAssembly = "WallstopStudios.DxMessaging.Testing";
-            bool included = CompilationPipeline
-                .GetAssemblies(kind)
-                .Any(assembly => assembly.name == supportAssembly);
-            Assert.That(
-                included,
-                Is.EqualTo(expected),
-                kind + ": message recorders belong only to test-enabled compilations."
-            );
+            bool included = CompilationPipeline.GetAssemblies(kind).Any(assembly => assembly.name == supportAssembly);
+            Assert.That(included, Is.EqualTo(expected), kind + ": message recorders belong only to test-enabled compilations.");
         }
 
         [Test]
         public void RuntimeAssemblyDoesNotReferenceOptionalImguiModule()
         {
-            string[] referencedAssemblies = typeof(DxMessagingRuntimeSettings)
-                .Assembly.GetReferencedAssemblies()
-                .Select(reference => reference.Name)
-                .ToArray();
+            string[] referencedAssemblies = typeof(DxMessagingRuntimeSettings).Assembly.GetReferencedAssemblies().Select(reference => reference.Name).ToArray();
 
             CollectionAssert.DoesNotContain(
                 referencedAssemblies,
@@ -100,29 +65,12 @@ namespace DxMessaging.Tests.Editor.Contract
         [Test]
         public void RuntimeSettingsResourceMenuRemainsInEditorAssembly()
         {
-            Assert.AreNotSame(
-                typeof(DxMessagingRuntimeSettings).Assembly,
-                typeof(DxMessagingRuntimeSettingsCreator).Assembly
-            );
-            MethodInfo createMethod = typeof(DxMessagingRuntimeSettingsCreator).GetMethod(
-                "CreateAssetInResources",
-                BindingFlags.NonPublic | BindingFlags.Static
-            );
-            Assert.IsNotNull(
-                createMethod,
-                "The Resources-folder creation command must remain available."
-            );
-            CustomAttributeData menuItem = createMethod
-                .GetCustomAttributesData()
-                .SingleOrDefault(attribute => attribute.AttributeType == typeof(MenuItem));
-            Assert.IsNotNull(
-                menuItem,
-                "The Resources-folder creation command must remain a Unity menu item."
-            );
-            Assert.AreEqual(
-                "Assets/Create/Wallstop Studios/DxMessaging/Runtime Settings (in Resources)",
-                menuItem.ConstructorArguments[0].Value
-            );
+            Assert.AreNotSame(typeof(DxMessagingRuntimeSettings).Assembly, typeof(DxMessagingRuntimeSettingsCreator).Assembly);
+            MethodInfo createMethod = typeof(DxMessagingRuntimeSettingsCreator).GetMethod("CreateAssetInResources", BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.IsNotNull(createMethod, "The Resources-folder creation command must remain available.");
+            CustomAttributeData menuItem = createMethod.GetCustomAttributesData().SingleOrDefault(attribute => attribute.AttributeType == typeof(MenuItem));
+            Assert.IsNotNull(menuItem, "The Resources-folder creation command must remain a Unity menu item.");
+            Assert.AreEqual("Assets/Create/Wallstop Studios/DxMessaging/Runtime Settings (in Resources)", menuItem.ConstructorArguments[0].Value);
         }
     }
 }

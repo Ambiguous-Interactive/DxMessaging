@@ -1,24 +1,16 @@
 # Tests Must Be Parameterized by Message Kind
 
-> **One-line summary**: Any test that exercises DxMessaging dispatch across more
-> than one of `Untargeted`, `Targeted`, or `Broadcast` must be a single
-> parameterized method driven by `MessageScenario`, not three near-identical
-> triplets.
+> **One-line summary**: Any test that exercises DxMessaging dispatch across more than one of `Untargeted`, `Targeted`, or `Broadcast` must be a single parameterized method driven
+> by `MessageScenario`, not three near-identical triplets.
 
 ## Overview
 
-DxMessaging exposes three dispatch kinds: untargeted, targeted, and broadcast.
-Historically the test suite shipped a triplet of test methods for every
-behavior - one per kind - copy-pasted into ~720 lines of duplicated assertions
-with subtly different formatting. Adding a new shared behavior meant writing
-the same body three times; fixing a bug meant fixing it three times; missing
-the third copy was a routine source of coverage drift.
+DxMessaging exposes three dispatch kinds: untargeted, targeted, and broadcast. Historically the test suite shipped a triplet of test methods for every behavior - one per kind -
+copy-pasted into ~720 lines of duplicated assertions with subtly different formatting. Adding a new shared behavior meant writing the same body three times; fixing a bug meant
+fixing it three times; missing the third copy was a routine source of coverage drift.
 
-The project now ships a parameterized scenario harness
-(`Tests/Runtime/TestUtilities/`) that lets a single test method cover all
-kinds. The contract is enforced by
-`TestAttributeContractTests.EveryEmitTestUsesScenarioParameterization` so a
-regression cannot land silently.
+The project now ships a parameterized scenario harness (`Tests/Runtime/TestUtilities/`) that lets a single test method cover all kinds. The contract is enforced by
+`TestAttributeContractTests.EveryEmitTestUsesScenarioParameterization` so a regression cannot land silently.
 
 ## Problem Statement
 
@@ -44,14 +36,12 @@ public IEnumerator HandlerReceivesEmittedBroadcastMessage()
 }
 ```
 
-Three signatures, three bodies, one behavior. Every fix has to land three
-times. Coverage parity is a manual review item.
+Three signatures, three bodies, one behavior. Every fix has to land three times. Coverage parity is a manual review item.
 
 ## Solution
 
-Replace the triplet with one method that takes a `MessageScenario` from
-`MessageScenarios.AllKinds` via NUnit `[ValueSource]`, and uses
-`ScenarioHarness` to pick the right register / emit overload.
+Replace the triplet with one method that takes a `MessageScenario` from `MessageScenarios.AllKinds` via NUnit `[ValueSource]`, and uses `ScenarioHarness` to pick the right register
+/ emit overload.
 
 ```csharp
 namespace DxMessaging.Tests.Runtime.Core
@@ -113,17 +103,13 @@ namespace DxMessaging.Tests.Runtime.Core
 }
 ```
 
-NUnit produces three discovered tests - `HandlerReceivesEmittedMessage(Untargeted)`,
-`HandlerReceivesEmittedMessage(Targeted)`, `HandlerReceivesEmittedMessage(Broadcast)` -
-from one source method. Adding a fourth kind means adding one entry to
-`MessageScenarios.AllKinds`; the test does not change.
+NUnit produces three discovered tests - `HandlerReceivesEmittedMessage(Untargeted)`, `HandlerReceivesEmittedMessage(Targeted)`, `HandlerReceivesEmittedMessage(Broadcast)` - from
+one source method. Adding a fourth kind means adding one entry to `MessageScenarios.AllKinds`; the test does not change.
 
 ## Exception: Kind-Specific Fixtures
 
-Some assertions are intrinsically kind-specific. Untargeted dispatch fans out to
-every registered handler regardless of receiver identity; targeted and broadcast
-do not. The fan-out shape, the empty-target case, and the broadcast-from-source
-routing all have semantics that do not translate cleanly to the other kinds.
+Some assertions are intrinsically kind-specific. Untargeted dispatch fans out to every registered handler regardless of receiver identity; targeted and broadcast do not. The
+fan-out shape, the empty-target case, and the broadcast-from-source routing all have semantics that do not translate cleanly to the other kinds.
 
 Those tests live in fixtures whose names match `*Specific*Tests`:
 
@@ -131,18 +117,14 @@ Those tests live in fixtures whose names match `*Specific*Tests`:
 - `EmitTargetedSpecificTests`
 - `EmitBroadcastSpecificTests`
 
-The contract test exempts any fixture matching that pattern. Tests that DO
-generalize across kinds belong in `EmitTests` (or another non-`*Specific*`
-fixture) and MUST be parameterized.
+The contract test exempts any fixture matching that pattern. Tests that DO generalize across kinds belong in `EmitTests` (or another non-`*Specific*` fixture) and MUST be
+parameterized.
 
 ## Enforcement
 
-`Tests/Runtime/Core/TestAttributeContractTests.cs` contains
-`EveryEmitTestUsesScenarioParameterization`. The test reflects over every
-`[UnityTest]` method in the `DxMessaging.Tests.Runtime` namespace, ignores any
-fixture whose name ends with `Tests` and contains `Specific`, and fails the
-build for any remaining method whose name mentions `Untargeted`, `Targeted`,
-or `Broadcast` but whose parameter list does not include `MessageScenario`.
+`Tests/Runtime/Core/TestAttributeContractTests.cs` contains `EveryEmitTestUsesScenarioParameterization`. The test reflects over every `[UnityTest]` method in the
+`DxMessaging.Tests.Runtime` namespace, ignores any fixture whose name ends with `Tests` and contains `Specific`, and fails the build for any remaining method whose name mentions
+`Untargeted`, `Targeted`, or `Broadcast` but whose parameter list does not include `MessageScenario`.
 
 If a new test triplet sneaks in, CI fails with a pointer back to this skill.
 

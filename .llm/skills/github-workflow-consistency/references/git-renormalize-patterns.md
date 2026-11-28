@@ -1,14 +1,11 @@
 # Git Renormalize Pattern Validation
 
-> **One-line summary**: Ensure `git add --renormalize` patterns match actual repository
-> files to prevent CI failures from unmatched pathspecs.
+> **One-line summary**: Ensure `git add --renormalize` patterns match actual repository files to prevent CI failures from unmatched pathspecs.
 
 ## Overview
 
-The `git add --renormalize` command applies `.gitattributes` normalization rules to files
-matching specified patterns. This command **fails with exit code 128** when a pathspec
-pattern matches zero files. This skill documents best practices for pattern validation
-and synchronization across workflow sections.
+The `git add --renormalize` command applies `.gitattributes` normalization rules to files matching specified patterns. This command **fails with exit code 128** when a pathspec
+pattern matches zero files. This skill documents best practices for pattern validation and synchronization across workflow sections.
 
 ## Solution
 
@@ -56,12 +53,10 @@ git ls-files "*.yaml"              # Returns: .pre-commit-config.yaml
 git add --renormalize -- "*.yaml"  # FAILS: pathspec did not match any files
 ```
 
-**Solution**: Exclude `yaml` from extension loops since `.yaml` files are typically dotfiles.
-Use `yml` for non-dotfile YAML files.
+**Solution**: Exclude `yaml` from extension loops since `.yaml` files are typically dotfiles. Use `yml` for non-dotfile YAML files.
 
-**Generalized rule**: Exclude any extension when ALL tracked files of that extension are
-dotfiles. Verify with: `git ls-files "*.$ext" "**/*.$ext"` -- if all results start with `.`,
-exclude that extension.
+**Generalized rule**: Exclude any extension when ALL tracked files of that extension are dotfiles. Verify with: `git ls-files "*.$ext" "**/*.$ext"` -- if all results start with
+`.`, exclude that extension.
 
 ### `file_pattern` in `git-auto-commit-action`
 
@@ -126,8 +121,7 @@ git ls-files '*.MD'   # Different from '*.md' on Linux
 
 ## Integration with Workflow Consistency
 
-This skill complements the [Workflow Consistency skill](./workflow-consistency.md) by
-ensuring pattern validation for renormalize commands and path trigger synchronization.
+This skill complements the [Workflow Consistency skill](./workflow-consistency.md) by ensuring pattern validation for renormalize commands and path trigger synchronization.
 
 ## Validation Checklist
 

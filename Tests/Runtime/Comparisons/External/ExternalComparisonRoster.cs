@@ -13,10 +13,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
     /// </summary>
     public static class ExternalComparisonRoster
     {
-        public static readonly IReadOnlyList<(
-            string key,
-            Func<IMessagingTechBridge> factory
-        )> Bridges = new (string key, Func<IMessagingTechBridge> factory)[]
+        public static readonly IReadOnlyList<(string key, Func<IMessagingTechBridge> factory)> Bridges = new (string key, Func<IMessagingTechBridge> factory)[]
         {
             ("MessagePipe", () => new MessagePipeBridge()),
             ("UniRx", () => new UniRxBridge()),

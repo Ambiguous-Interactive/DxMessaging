@@ -26,9 +26,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         public void DistinctTypeFirstPublication(bool sticky, bool referencePayload)
         {
             using IDisposable registry = BenchmarkProtocol.IsolateIdleSweepRegistry();
-            TrialFactory[] factories = sticky
-                ? BuildFactories<MeasuredSticky>(sticky, referencePayload)
-                : BuildFactories<MeasuredOrdinary>(sticky, referencePayload);
+            TrialFactory[] factories = sticky ? BuildFactories<MeasuredSticky>(sticky, referencePayload) : BuildFactories<MeasuredOrdinary>(sticky, referencePayload);
             Type[] types = new Type[factories.Length];
             for (int index = 0; index < factories.Length; ++index)
             {
@@ -74,8 +72,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             TestContext.Out.WriteLine(result.ToCsvRow());
         }
 
-        internal static string Key(bool sticky, bool referencePayload) =>
-            $"Sticky_FirstType_{(sticky ? "StickyEmit" : "OrdinaryEmit")}_{(referencePayload ? "Class" : "Struct")}";
+        internal static string Key(bool sticky, bool referencePayload) => $"Sticky_FirstType_{(sticky ? "StickyEmit" : "OrdinaryEmit")}_{(referencePayload ? "Class" : "Struct")}";
 
         internal static void ReserveTypes(List<Type> used, Type[] requested)
         {
@@ -89,36 +86,27 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             }
             if (requested.Length == 0)
             {
-                throw new ArgumentException(
-                    "A first-type row must reserve its message types.",
-                    nameof(requested)
-                );
+                throw new ArgumentException("A first-type row must reserve its message types.", nameof(requested));
             }
             for (int index = 0; index < requested.Length; ++index)
             {
                 Type type = requested[index];
                 if (type == null)
                 {
-                    throw new InvalidOperationException(
-                        "First-type measurement requires non-null message types."
-                    );
+                    throw new InvalidOperationException("First-type measurement requires non-null message types.");
                 }
                 foreach (Type prior in used)
                 {
                     if (ReferenceEquals(type, prior))
                     {
-                        throw new InvalidOperationException(
-                            $"First-type measurement already reserved message type: {type}."
-                        );
+                        throw new InvalidOperationException($"First-type measurement already reserved message type: {type}.");
                     }
                 }
                 for (int prior = 0; prior < index; ++prior)
                 {
                     if (ReferenceEquals(type, requested[prior]))
                     {
-                        throw new InvalidOperationException(
-                            $"First-type measurement repeats message type: {type}."
-                        );
+                        throw new InvalidOperationException($"First-type measurement repeats message type: {type}.");
                     }
                 }
             }
@@ -128,16 +116,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         internal static Type RunContract(bool sticky, bool referencePayload, int index)
         {
             using IDisposable registry = BenchmarkProtocol.IsolateIdleSweepRegistry();
-            TrialFactory[] factories = sticky
-                ? BuildFactories<ContractSticky>(sticky, referencePayload)
-                : BuildFactories<ContractOrdinary>(sticky, referencePayload);
+            TrialFactory[] factories = sticky ? BuildFactories<ContractSticky>(sticky, referencePayload) : BuildFactories<ContractOrdinary>(sticky, referencePayload);
             TrialFactory factory = factories[index];
             using ITrial state = factory.Create();
-            Assert.That(
-                state.MessageType,
-                Is.EqualTo(factory.MessageType),
-                "Factory type must match the timed state."
-            );
+            Assert.That(state.MessageType, Is.EqualTo(factory.MessageType), "Factory type must match the timed state.");
             state.Execute();
             state.Verify();
             return state.MessageType;
@@ -183,18 +165,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         private static TrialFactory CreateFactory<TArm, TMarker>(bool sticky, bool referencePayload)
         {
             return referencePayload
-                ? new TrialFactory(typeof(ReferenceMessage<TArm, TMarker>), () =>
-                    new Trial<ReferenceMessage<TArm, TMarker>>(
-                        sticky,
-                        new ReferenceMessage<TArm, TMarker>(7)
-                    )
-                )
-                : new TrialFactory(typeof(ValueMessage<TArm, TMarker>), () =>
-                    new Trial<ValueMessage<TArm, TMarker>>(
-                        sticky,
-                        new ValueMessage<TArm, TMarker>(7)
-                    )
-                );
+                ? new TrialFactory(typeof(ReferenceMessage<TArm, TMarker>), () => new Trial<ReferenceMessage<TArm, TMarker>>(sticky, new ReferenceMessage<TArm, TMarker>(7)))
+                : new TrialFactory(typeof(ValueMessage<TArm, TMarker>), () => new Trial<ValueMessage<TArm, TMarker>>(sticky, new ValueMessage<TArm, TMarker>(7)));
         }
 
         private readonly struct TrialFactory
@@ -221,18 +193,14 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             int Value { get; }
         }
 
-        private readonly struct ValueMessage<TArm, TMarker>
-            : IValue,
-                IUntargetedMessage<ValueMessage<TArm, TMarker>>
+        private readonly struct ValueMessage<TArm, TMarker> : IValue, IUntargetedMessage<ValueMessage<TArm, TMarker>>
         {
             internal ValueMessage(int value) => Value = value;
 
             public int Value { get; }
         }
 
-        private sealed class ReferenceMessage<TArm, TMarker>
-            : IValue,
-                IUntargetedMessage<ReferenceMessage<TArm, TMarker>>
+        private sealed class ReferenceMessage<TArm, TMarker> : IValue, IUntargetedMessage<ReferenceMessage<TArm, TMarker>>
         {
             internal ReferenceMessage(int value) => Value = value;
 

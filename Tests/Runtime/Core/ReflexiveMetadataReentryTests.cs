@@ -31,9 +31,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     foreach (ReentryAction action in Enum.GetValues(typeof(ReentryAction)))
                     {
-                        yield return new TestCaseData(warm, slot, action).SetName(
-                            $"ReflexiveReentry_warm{warm}_slot{slot}_{action}"
-                        );
+                        yield return new TestCaseData(warm, slot, action).SetName($"ReflexiveReentry_warm{warm}_slot{slot}_{action}");
                     }
                 }
             }
@@ -44,14 +42,9 @@ namespace DxMessaging.Tests.Runtime.Core
         /// recursively emits. Retain every complete cycle before reporting failures.
         /// </remarks>
         [TestCaseSource(nameof(Cases))]
-        public void MetadataReentryPreservesBothDeliveries(
-            bool warmCache,
-            int metadataSlot,
-            ReentryAction action
-        )
+        public void MetadataReentryPreservesBothDeliveries(bool warmCache, int metadataSlot, ReentryAction action)
         {
-            DxMessagingRuntimeSettings settings =
-                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            DxMessagingRuntimeSettings settings = ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
             try
             {
                 settings._bufferMaxDistinctEntries = 4;
@@ -63,13 +56,9 @@ namespace DxMessaging.Tests.Runtime.Core
                     for (int cycle = 0; cycle < 10; ++cycle)
                     {
                         bus.ResetState();
-                        GameObject host = new(
-                            "ReflexiveReentry" + cycle,
-                            typeof(ReflexiveReentryReceiver)
-                        );
+                        GameObject host = new("ReflexiveReentry" + cycle, typeof(ReflexiveReentryReceiver));
                         _spawned.Add(host);
-                        ReflexiveReentryReceiver receiver =
-                            host.GetComponent<ReflexiveReentryReceiver>();
+                        ReflexiveReentryReceiver receiver = host.GetComponent<ReflexiveReentryReceiver>();
                         Assert.That(host.GetComponents<MonoBehaviour>(), Has.Length.EqualTo(1));
                         List<string> deliveries = new();
                         bool validArguments = true;
@@ -100,9 +89,7 @@ namespace DxMessaging.Tests.Runtime.Core
                             else if (action != ReentryAction.Observe)
                             {
                                 ReflexiveMessage nested = new(
-                                    action == ReentryAction.DifferentMethod
-                                        ? nameof(ReflexiveReentryReceiver.ReceiveOther)
-                                        : nameof(ReflexiveReentryReceiver.Receive),
+                                    action == ReentryAction.DifferentMethod ? nameof(ReflexiveReentryReceiver.ReceiveOther) : nameof(ReflexiveReentryReceiver.Receive),
                                     ReflexiveSendMode.Flat,
                                     new object[] { 1, 2 },
                                     types
@@ -112,31 +99,16 @@ namespace DxMessaging.Tests.Runtime.Core
                             }
                         });
                         types[metadataSlot] = metadata;
-                        message = new ReflexiveMessage(
-                            nameof(ReflexiveReentryReceiver.Receive),
-                            ReflexiveSendMode.Flat,
-                            new object[] { 1, 2 },
-                            types
-                        );
-                        Assert.That(
-                            metadata.Reads,
-                            Is.Zero,
-                            "Construction must not invoke metadata."
-                        );
+                        message = new ReflexiveMessage(nameof(ReflexiveReentryReceiver.Receive), ReflexiveSendMode.Flat, new object[] { 1, 2 }, types);
+                        Assert.That(metadata.Reads, Is.Zero, "Construction must not invoke metadata.");
                         Assert.That(callbacks, Is.Zero);
                         if (warmCache)
                         {
                             message.EmitTargeted(target, bus);
-                            Assert.That(
-                                deliveries,
-                                Is.EqualTo(new[] { nameof(ReflexiveReentryReceiver.Receive) })
-                            );
+                            Assert.That(deliveries, Is.EqualTo(new[] { nameof(ReflexiveReentryReceiver.Receive) }));
                             Assert.That(metadata.Reads, Is.GreaterThan(0));
                         }
-                        Assert.That(
-                            MessageBusInspection.ReflexiveMethodCacheCount(bus),
-                            Is.EqualTo(warmCache ? 1 : 0)
-                        );
+                        Assert.That(MessageBusInspection.ReflexiveMethodCacheCount(bus), Is.EqualTo(warmCache ? 1 : 0));
                         deliveries.Clear();
                         int readsBefore = metadata.Reads;
                         long generationBefore = MessageBus.GetResetGeneration(bus);
@@ -169,14 +141,9 @@ namespace DxMessaging.Tests.Runtime.Core
                         int nextDeliveries = deliveries.Count;
                         bool nestedExpected = !warmCache && action != ReentryAction.Observe;
                         int expectedDeliveries = nestedExpected ? 2 : 1;
-                        int expectedCacheCount =
-                            !warmCache && action == ReentryAction.DifferentMethod ? 2 : 1;
+                        int expectedCacheCount = !warmCache && action == ReentryAction.DifferentMethod ? 2 : 1;
                         string expectedTrace = nestedExpected
-                            ? (
-                                action == ReentryAction.DifferentMethod
-                                    ? nameof(ReflexiveReentryReceiver.ReceiveOther)
-                                    : nameof(ReflexiveReentryReceiver.Receive)
-                            )
+                            ? (action == ReentryAction.DifferentMethod ? nameof(ReflexiveReentryReceiver.ReceiveOther) : nameof(ReflexiveReentryReceiver.Receive))
                                 + ","
                                 + nameof(ReflexiveReentryReceiver.Receive)
                             : nameof(ReflexiveReentryReceiver.Receive);
@@ -197,13 +164,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         TestContext.Out.WriteLine("DXM_REFLEXIVE_REENTRY " + observation);
                         if (!passed)
                         {
-                            failures.Add(
-                                observation
-                                    + "; exception="
-                                    + error
-                                    + "; recoveryException="
-                                    + recoveryError
-                            );
+                            failures.Add(observation + "; exception=" + error + "; recoveryException=" + recoveryError);
                         }
                     }
                 }

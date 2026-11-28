@@ -4,7 +4,8 @@
 
 ## Overview
 
-Collection pooling provides reusable instances of common collection types (List, HashSet, Stack, Queue, StringBuilder) with automatic cleanup. The RAII (Resource Acquisition Is Initialization) pattern via `IDisposable` ensures collections are:
+Collection pooling provides reusable instances of common collection types (List, HashSet, Stack, Queue, StringBuilder) with automatic cleanup. The RAII (Resource Acquisition Is
+Initialization) pattern via `IDisposable` ensures collections are:
 
 1. **Rented** when entering scope
 1. **Cleared** when exiting scope (removing stale data)

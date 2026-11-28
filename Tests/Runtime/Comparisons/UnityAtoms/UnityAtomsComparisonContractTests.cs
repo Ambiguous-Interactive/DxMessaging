@@ -22,11 +22,9 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
         private const int AllocationEmits = 1024;
         private const int AllocationAttempts = 16;
 
-        private static IEnumerable<TestCaseData> BridgeCases() =>
-            ComparisonBridgeContract.IdentityCases(UnityAtomsComparisonRoster.Bridges);
+        private static IEnumerable<TestCaseData> BridgeCases() => ComparisonBridgeContract.IdentityCases(UnityAtomsComparisonRoster.Bridges);
 
-        private static IEnumerable<TestCaseData> BridgeScenarioCases() =>
-            ComparisonBridgeContract.EmitOnceAccountingCases(UnityAtomsComparisonRoster.Bridges);
+        private static IEnumerable<TestCaseData> BridgeScenarioCases() => ComparisonBridgeContract.EmitOnceAccountingCases(UnityAtomsComparisonRoster.Bridges);
 
         private static IEnumerable<TestCaseData> SupportedScenarioCases()
         {
@@ -43,10 +41,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
         [Test]
         [Category("ComparisonContract")]
         [TestCaseSource(nameof(BridgeCases))]
-        public void BridgeHasConsistentTechIdentity(
-            string rosterKey,
-            Func<IMessagingTechBridge> factory
-        )
+        public void BridgeHasConsistentTechIdentity(string rosterKey, Func<IMessagingTechBridge> factory)
         {
             ComparisonBridgeContract.AssertTechIdentity(rosterKey, factory);
         }
@@ -54,11 +49,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
         [Test]
         [Category("ComparisonContract")]
         [TestCaseSource(nameof(BridgeScenarioCases))]
-        public void SupportedScenarioEmitOnceAdvancesProgressByDeclaredFanOut(
-            string rosterKey,
-            Func<IMessagingTechBridge> factory,
-            ComparisonScenario scenario
-        )
+        public void SupportedScenarioEmitOnceAdvancesProgressByDeclaredFanOut(string rosterKey, Func<IMessagingTechBridge> factory, ComparisonScenario scenario)
         {
             ComparisonBridgeContract.AssertEmitOnceAccounting(rosterKey, factory, scenario);
         }
@@ -66,17 +57,9 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
         [Test]
         [Category("ComparisonContract")]
         [TestCaseSource(nameof(BridgeScenarioCases))]
-        public void StructScenarioDispatchesNonPrimitiveStructPayload(
-            string rosterKey,
-            Func<IMessagingTechBridge> factory,
-            ComparisonScenario scenario
-        )
+        public void StructScenarioDispatchesNonPrimitiveStructPayload(string rosterKey, Func<IMessagingTechBridge> factory, ComparisonScenario scenario)
         {
-            ComparisonBridgeContract.AssertStructScenarioPayloadFidelity(
-                rosterKey,
-                factory,
-                scenario
-            );
+            ComparisonBridgeContract.AssertStructScenarioPayloadFidelity(rosterKey, factory, scenario);
         }
 
         [Test]
@@ -87,24 +70,12 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
             using UnityAtomsBridge bridge = new();
             bridge.Prepare(scenario);
 
-            Assert.IsNotEmpty(
-                bridge.CreatedEvents,
-                $"Unity Atoms '{scenario}' must create at least one event for dispatch."
-            );
+            Assert.IsNotEmpty(bridge.CreatedEvents, $"Unity Atoms '{scenario}' must create at least one event for dispatch.");
             foreach (ScriptableObject created in bridge.CreatedEvents)
             {
-                System.Reflection.PropertyInfo replayBufferSize = created
-                    .GetType()
-                    .GetProperty("ReplayBufferSize");
-                Assert.IsNotNull(
-                    replayBufferSize,
-                    $"Unity Atoms event type '{created.GetType().FullName}' must expose ReplayBufferSize."
-                );
-                Assert.AreEqual(
-                    0,
-                    replayBufferSize.GetValue(created),
-                    $"Unity Atoms '{scenario}' must disable replay buffering on every created event."
-                );
+                System.Reflection.PropertyInfo replayBufferSize = created.GetType().GetProperty("ReplayBufferSize");
+                Assert.IsNotNull(replayBufferSize, $"Unity Atoms event type '{created.GetType().FullName}' must expose ReplayBufferSize.");
+                Assert.AreEqual(0, replayBufferSize.GetValue(created), $"Unity Atoms '{scenario}' must disable replay buffering on every created event.");
             }
         }
 
@@ -118,19 +89,13 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
             {
                 bridge.Prepare(scenario);
                 List<ScriptableObject> createdEvents = new(bridge.CreatedEvents);
-                Assert.IsNotEmpty(
-                    createdEvents,
-                    $"Unity Atoms '{scenario}' must create at least one event for dispatch."
-                );
+                Assert.IsNotEmpty(createdEvents, $"Unity Atoms '{scenario}' must create at least one event for dispatch.");
 
                 bridge.Dispose();
 
                 foreach (ScriptableObject created in createdEvents)
                 {
-                    Assert.IsTrue(
-                        created == null,
-                        $"Dispose must synchronously destroy every Unity Atoms event from '{scenario}'."
-                    );
+                    Assert.IsTrue(created == null, $"Dispose must synchronously destroy every Unity Atoms event from '{scenario}'.");
                 }
             }
             finally
@@ -151,17 +116,13 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
                 bridge.EmitOnce();
             }
 
-            long floor = AllocationProbe.MeasureMin(
-                AllocationAttempts,
-                prepare: null,
-                operation: () =>
+            long floor = AllocationProbe.MeasureMin(AllocationAttempts, prepare: null, operation: () =>
+            {
+                for (int index = 0; index < AllocationEmits; index++)
                 {
-                    for (int index = 0; index < AllocationEmits; index++)
-                    {
-                        bridge.EmitOnce();
-                    }
+                    bridge.EmitOnce();
                 }
-            );
+            });
             if (floor == AllocationProbe.Unmeasured)
             {
                 Assert.Ignore("GC.Alloc probe is non-functional on this backend.");

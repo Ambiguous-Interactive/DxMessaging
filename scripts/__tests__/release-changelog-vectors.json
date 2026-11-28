@@ -29,32 +29,8 @@
     "- The oldest documented change.",
     ""
   ],
-  "sectionWithInfoFence": [
-    "## [5.0.0]",
-    "",
-    "- intro",
-    "",
-    "```ts {1,2}",
-    "## [9.9.9]",
-    "```",
-    "",
-    "- tail after the fence",
-    "",
-    "## [4.0.0]",
-    "",
-    "- older"
-  ],
-  "sectionWithoutEntries": [
-    "## [6.0.0]",
-    "",
-    "### Added",
-    "",
-    "### Fixed",
-    "",
-    "## [5.0.0]",
-    "",
-    "- x"
-  ],
+  "sectionWithInfoFence": ["## [5.0.0]", "", "- intro", "", "```ts {1,2}", "## [9.9.9]", "```", "", "- tail after the fence", "", "## [4.0.0]", "", "- older"],
+  "sectionWithoutEntries": ["## [6.0.0]", "", "### Added", "", "### Fixed", "", "## [5.0.0]", "", "- x"],
   "prepareFullChangelog": [
     "# Changelog",
     "",
@@ -103,29 +79,7 @@
     "- Older entry.",
     ""
   ],
-  "prepareOnlyHeadings": [
-    "# Changelog",
-    "",
-    "## [Unreleased]",
-    "",
-    "### Added",
-    "",
-    "### Fixed",
-    "",
-    "## [3.0.1]",
-    ""
-  ],
-  "prepareOnlyFixExpected": [
-    "# Changelog",
-    "",
-    "## [Unreleased]",
-    "",
-    "## [1.2.3]",
-    "",
-    "### Fixed",
-    "",
-    "- Only a fix.",
-    ""
-  ],
+  "prepareOnlyHeadings": ["# Changelog", "", "## [Unreleased]", "", "### Added", "", "### Fixed", "", "## [3.0.1]", ""],
+  "prepareOnlyFixExpected": ["# Changelog", "", "## [Unreleased]", "", "## [1.2.3]", "", "### Fixed", "", "- Only a fix.", ""],
   "prepareOnlyFix": ["# Changelog", "", "## [Unreleased]", "", "### Fixed", "", "- Only a fix.", ""]
 }

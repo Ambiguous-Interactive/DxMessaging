@@ -17,14 +17,7 @@ namespace DxMessaging.Editor.Windows
     /// </remarks>
     internal readonly struct MessageMonitorLiveEntry
     {
-        internal MessageMonitorLiveEntry(
-            MessageMonitorEntry entry,
-            long firstTraceId,
-            long lastTraceId,
-            int count,
-            double firstObservedSeconds,
-            double lastObservedSeconds
-        )
+        internal MessageMonitorLiveEntry(MessageMonitorEntry entry, long firstTraceId, long lastTraceId, int count, double firstObservedSeconds, double lastObservedSeconds)
         {
             Entry = entry;
             FirstTraceId = firstTraceId;
@@ -57,14 +50,7 @@ namespace DxMessaging.Editor.Windows
 
         internal MessageMonitorLiveEntry Fold(long traceId, double observedSeconds)
         {
-            return new MessageMonitorLiveEntry(
-                Entry,
-                FirstTraceId,
-                traceId,
-                Count + 1,
-                FirstObservedSeconds,
-                observedSeconds
-            );
+            return new MessageMonitorLiveEntry(Entry, FirstTraceId, traceId, Count + 1, FirstObservedSeconds, observedSeconds);
         }
     }
 
@@ -109,18 +95,11 @@ namespace DxMessaging.Editor.Windows
 
         private bool _started;
 
-        internal MessageMonitorLiveRecorder(
-            int capacity = DefaultCapacity,
-            Func<double> clock = null
-        )
+        internal MessageMonitorLiveRecorder(int capacity = DefaultCapacity, Func<double> clock = null)
         {
             if (capacity <= 0)
             {
-                throw new ArgumentOutOfRangeException(
-                    nameof(capacity),
-                    capacity,
-                    "The live recorder needs room for at least one row."
-                );
+                throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "The live recorder needs room for at least one row.");
             }
 
             Capacity = capacity;
@@ -271,13 +250,7 @@ namespace DxMessaging.Editor.Windows
         /// </remarks>
         internal void ResetForNewBusRun()
         {
-            if (
-                _entries.Count == 0
-                && ObservedCount == 0
-                && MissedCount == 0
-                && !_started
-                && Cursor == 0
-            )
+            if (_entries.Count == 0 && ObservedCount == 0 && MissedCount == 0 && !_started && Cursor == 0)
             {
                 return;
             }
@@ -317,9 +290,7 @@ namespace DxMessaging.Editor.Windows
             return highestTraceId;
         }
 
-        private List<MessageMonitorEntry> CollectNewerThanCursor(
-            IReadOnlyList<MessageMonitorEntry> busEntries
-        )
+        private List<MessageMonitorEntry> CollectNewerThanCursor(IReadOnlyList<MessageMonitorEntry> busEntries)
         {
             List<MessageMonitorEntry> pending = new();
             for (int index = 0; index < busEntries.Count; index++)
@@ -344,16 +315,7 @@ namespace DxMessaging.Editor.Windows
                 return;
             }
 
-            _entries.Add(
-                new MessageMonitorLiveEntry(
-                    entry,
-                    entry.TraceId,
-                    entry.TraceId,
-                    count: 1,
-                    observedSeconds,
-                    observedSeconds
-                )
-            );
+            _entries.Add(new MessageMonitorLiveEntry(entry, entry.TraceId, entry.TraceId, count: 1, observedSeconds, observedSeconds));
         }
 
         private void Trim()
@@ -368,11 +330,7 @@ namespace DxMessaging.Editor.Windows
 
         private static bool IsSameRun(MessageMonitorEntry left, MessageMonitorEntry right)
         {
-            return string.Equals(
-                    left.MessageTypeIdentity,
-                    right.MessageTypeIdentity,
-                    StringComparison.Ordinal
-                )
+            return string.Equals(left.MessageTypeIdentity, right.MessageTypeIdentity, StringComparison.Ordinal)
                 && string.Equals(left.ContextText, right.ContextText, StringComparison.Ordinal)
                 && string.Equals(left.RouteKind, right.RouteKind, StringComparison.Ordinal);
         }

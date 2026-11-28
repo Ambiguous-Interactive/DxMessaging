@@ -38,16 +38,10 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
         }
 
         [Test]
-        public void TrimEvictsEmptyTypeSlots(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void TrimEvictsEmptyTypeSlots([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             MessageBus bus = MessageBus.CreateForInternalUse(new FakeClock(), idleEvictionTicks: 0);
-            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(
-                bus,
-                label: scenario.DisplayName
-            );
+            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(bus, label: scenario.DisplayName);
             using IDisposable cleanup = ForceTrimCleanup(bus);
             MessageRegistrationToken token = CreateEnabledToken(bus);
             int baseline = bus.OccupiedTypeSlots;
@@ -60,27 +54,12 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             token.RemoveRegistration(second);
             token.RemoveRegistration(third);
 
-            Assert.GreaterOrEqual(
-                bus.OccupiedTypeSlots,
-                baseline + 3,
-                "[{0}] deregistered distinct message types must remain occupied until trim.",
-                scenario.Kind
-            );
+            Assert.GreaterOrEqual(bus.OccupiedTypeSlots, baseline + 3, "[{0}] deregistered distinct message types must remain occupied until trim.", scenario.Kind);
 
             IMessageBus.TrimResult result = bus.Trim(force: true);
 
-            Assert.GreaterOrEqual(
-                result.TypeSlotsEvicted,
-                3,
-                "[{0}] trim must evict every empty distinct type slot.",
-                scenario.Kind
-            );
-            Assert.AreEqual(
-                baseline,
-                bus.OccupiedTypeSlots,
-                "[{0}] occupied type slots must return to the pre-test baseline.",
-                scenario.Kind
-            );
+            Assert.GreaterOrEqual(result.TypeSlotsEvicted, 3, "[{0}] trim must evict every empty distinct type slot.", scenario.Kind);
+            Assert.AreEqual(baseline, bus.OccupiedTypeSlots, "[{0}] occupied type slots must return to the pre-test baseline.", scenario.Kind);
         }
 
         [TestCase(false, false)]
@@ -89,15 +68,8 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
         [TestCase(true, true)]
         public void UntargetedPlanSweepDropsBorrowedEntryArray(bool force, bool prepared)
         {
-            MessageBus bus = MessageBus.CreateForInternalUse(
-                new FakeClock(),
-                idleEvictionTicks: 0,
-                trimApiEnabled: true
-            );
-            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(
-                bus,
-                label: nameof(UntargetedPlanSweepDropsBorrowedEntryArray)
-            );
+            MessageBus bus = MessageBus.CreateForInternalUse(new FakeClock(), idleEvictionTicks: 0, trimApiEnabled: true);
+            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(bus, label: nameof(UntargetedPlanSweepDropsBorrowedEntryArray));
             using IDisposable cleanup = ForceTrimCleanup(bus);
             MessageHandler handler = CreateActiveHandler(bus);
             PreparedUntargetedEmitter<UntargetedOne> bound = prepared ? new(bus) : null;
@@ -105,14 +77,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             try
             {
                 Action<UntargetedOne> callback = _ => { };
-                deregister = (
-                    handler.RegisterUntargetedMessageHandler(
-                        callback,
-                        callback,
-                        priority: 0,
-                        messageBus: bus
-                    )
-                ).AsAction();
+                deregister = (handler.RegisterUntargetedMessageHandler(callback, callback, priority: 0, messageBus: bus)).AsAction();
                 UntargetedOne message = new UntargetedOne();
                 if (prepared)
                 {
@@ -123,75 +88,31 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     bus.UntargetedBroadcast(ref message);
                 }
 
-                const BindingFlags declaredInstanceFields =
-                    BindingFlags.Instance
-                    | BindingFlags.Public
-                    | BindingFlags.NonPublic
-                    | BindingFlags.DeclaredOnly;
-                FieldInfo plansField = typeof(MessageBus).GetField(
-                    "_untargetedDispatchPlans",
-                    declaredInstanceFields
-                );
-                Assert.That(
-                    plansField,
-                    Is.Not.Null,
-                    "MessageBus must retain the untargeted plan cache field registered for sweep."
-                );
+                const BindingFlags declaredInstanceFields = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
+                FieldInfo plansField = typeof(MessageBus).GetField("_untargetedDispatchPlans", declaredInstanceFields);
+                Assert.That(plansField, Is.Not.Null, "MessageBus must retain the untargeted plan cache field registered for sweep.");
                 object plan = null;
-                foreach (
-                    object candidate in (System.Collections.IEnumerable)plansField.GetValue(bus)
-                )
+                foreach (object candidate in (System.Collections.IEnumerable)plansField.GetValue(bus))
                 {
-                    Assert.That(
-                        plan,
-                        Is.Null,
-                        "The scenario must create exactly one untargeted dispatch plan."
-                    );
+                    Assert.That(plan, Is.Null, "The scenario must create exactly one untargeted dispatch plan.");
                     plan = candidate;
                 }
 
                 Assert.That(plan, Is.Not.Null, "The first emit must create a dispatch plan.");
                 Type planType = plan.GetType();
                 FieldInfo entriesField = planType.GetField("handleEntries", declaredInstanceFields);
-                FieldInfo countField = planType.GetField(
-                    "handleEntryCount",
-                    declaredInstanceFields
-                );
-                Assert.That(
-                    entriesField,
-                    Is.Not.Null,
-                    "The untargeted plan must expose its borrowed entry-array field to this contract."
-                );
-                Assert.That(
-                    countField,
-                    Is.Not.Null,
-                    "The untargeted plan must expose its borrowed entry-count field to this contract."
-                );
-                Assert.That(
-                    entriesField.GetValue(plan),
-                    Is.Not.Null,
-                    "The first untargeted fast emit must publish the settled borrowed route."
-                );
-                Assert.That(
-                    (int)countField.GetValue(plan),
-                    Is.GreaterThan(0),
-                    "The borrowed route must describe the invocable handler entry."
-                );
+                FieldInfo countField = planType.GetField("handleEntryCount", declaredInstanceFields);
+                Assert.That(entriesField, Is.Not.Null, "The untargeted plan must expose its borrowed entry-array field to this contract.");
+                Assert.That(countField, Is.Not.Null, "The untargeted plan must expose its borrowed entry-count field to this contract.");
+                Assert.That(entriesField.GetValue(plan), Is.Not.Null, "The first untargeted fast emit must publish the settled borrowed route.");
+                Assert.That((int)countField.GetValue(plan), Is.GreaterThan(0), "The borrowed route must describe the invocable handler entry.");
 
                 deregister();
                 deregister = null;
                 _ = bus.Trim(force);
 
-                Assert.That(
-                    entriesField.GetValue(plan),
-                    Is.Null,
-                    "Sweeping stale untargeted plans must drop the borrowed entry array."
-                );
-                Assert.That(
-                    countField.GetValue(plan),
-                    Is.EqualTo(0),
-                    "Sweeping stale untargeted plans must reset the cached entry count."
-                );
+                Assert.That(entriesField.GetValue(plan), Is.Null, "Sweeping stale untargeted plans must drop the borrowed entry array.");
+                Assert.That(countField.GetValue(plan), Is.EqualTo(0), "Sweeping stale untargeted plans must reset the cached entry count.");
                 GC.KeepAlive(bound);
             }
             finally
@@ -202,25 +123,14 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
         }
 
         [Test]
-        public void TrimEvictsEmptyTargetSlots(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.KindsWithComponentTarget)
-            )]
-                MessageScenario scenario
-        )
+        public void TrimEvictsEmptyTargetSlots([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.KindsWithComponentTarget))] MessageScenario scenario)
         {
             MessageBus bus = MessageBus.CreateForInternalUse(new FakeClock(), idleEvictionTicks: 0);
-            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(
-                bus,
-                label: scenario.DisplayName
-            );
+            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(bus, label: scenario.DisplayName);
             using IDisposable cleanup = ForceTrimCleanup(bus);
             MessageRegistrationToken token = CreateEnabledToken(bus);
 
-            List<MessageRegistrationHandle> handles = new List<MessageRegistrationHandle>(
-                DistinctTargetCount
-            );
+            List<MessageRegistrationHandle> handles = new List<MessageRegistrationHandle>(DistinctTargetCount);
             for (int i = 0; i < DistinctTargetCount; ++i)
             {
                 handles.Add(RegisterFirst(scenario, token, new InstanceId(0x5A18_0000 + i)));
@@ -231,90 +141,41 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 token.RemoveRegistration(handle);
             }
 
-            Assert.GreaterOrEqual(
-                bus.OccupiedTargetSlots,
-                DistinctTargetCount,
-                "[{0}] every deregistered context must remain visible until trim.",
-                scenario.Kind
-            );
+            Assert.GreaterOrEqual(bus.OccupiedTargetSlots, DistinctTargetCount, "[{0}] every deregistered context must remain visible until trim.", scenario.Kind);
 
             IMessageBus.TrimResult result = bus.Trim(force: true);
 
             Assert.GreaterOrEqual(result.TargetSlotsEvicted, DistinctTargetCount);
-            Assert.AreEqual(
-                0,
-                bus.OccupiedTargetSlots,
-                "[{0}] trim must reclaim every empty target/source slot.",
-                scenario.Kind
-            );
+            Assert.AreEqual(0, bus.OccupiedTargetSlots, "[{0}] trim must reclaim every empty target/source slot.", scenario.Kind);
         }
 
         [Test]
-        public void IdleEvictionFiresAfterInterval(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void IdleEvictionFiresAfterInterval([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             FakeClock clock = new FakeClock();
-            MessageBus bus = MessageBus.CreateForInternalUse(
-                clock,
-                idleEvictionTicks: 0,
-                evictionTickIntervalSeconds: 1d,
-                idleEvictionEnabled: true,
-                trimApiEnabled: true
-            );
-            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(
-                bus,
-                label: scenario.DisplayName
-            );
+            MessageBus bus = MessageBus.CreateForInternalUse(clock, idleEvictionTicks: 0, evictionTickIntervalSeconds: 1d, idleEvictionEnabled: true, trimApiEnabled: true);
+            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(bus, label: scenario.DisplayName);
             using IDisposable cleanup = ForceTrimCleanup(bus);
             MessageRegistrationToken token = CreateEnabledToken(bus);
             MessageRegistrationHandle handle = RegisterFirst(scenario, token, DefaultContext);
             token.RemoveRegistration(handle);
             EmitSweepSampleWindow(bus);
 
-            Assert.GreaterOrEqual(
-                bus.OccupiedTypeSlots + bus.OccupiedTargetSlots,
-                1,
-                "[{0}] the fresh empty slot must not be reclaimed before cadence elapses.",
-                scenario.Kind
-            );
+            Assert.GreaterOrEqual(bus.OccupiedTypeSlots + bus.OccupiedTargetSlots, 1, "[{0}] the fresh empty slot must not be reclaimed before cadence elapses.", scenario.Kind);
 
             clock.Advance(1d);
             EmitSweepSampleWindow(bus);
 
-            Assert.AreEqual(
-                0,
-                bus.OccupiedTypeSlots,
-                "[{0}] idle sweep must reclaim empty type slots after cadence.",
-                scenario.Kind
-            );
-            Assert.AreEqual(
-                0,
-                bus.OccupiedTargetSlots,
-                "[{0}] idle sweep must reclaim empty target/source slots after cadence.",
-                scenario.Kind
-            );
+            Assert.AreEqual(0, bus.OccupiedTypeSlots, "[{0}] idle sweep must reclaim empty type slots after cadence.", scenario.Kind);
+            Assert.AreEqual(0, bus.OccupiedTargetSlots, "[{0}] idle sweep must reclaim empty target/source slots after cadence.", scenario.Kind);
         }
 
         [Test]
-        public void PreparedEmitterRefreshesAfterIdleSweep(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void PreparedEmitterRefreshesAfterIdleSweep([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             FakeClock clock = new FakeClock();
-            MessageBus bus = MessageBus.CreateForInternalUse(
-                clock,
-                idleEvictionTicks: 0,
-                evictionTickIntervalSeconds: 1d,
-                idleEvictionEnabled: true,
-                trimApiEnabled: true
-            );
-            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(
-                bus,
-                label: scenario.DisplayName
-            );
+            MessageBus bus = MessageBus.CreateForInternalUse(clock, idleEvictionTicks: 0, evictionTickIntervalSeconds: 1d, idleEvictionEnabled: true, trimApiEnabled: true);
+            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(bus, label: scenario.DisplayName);
             using IDisposable cleanup = ForceTrimCleanup(bus);
             MessageRegistrationToken token = CreateEnabledToken(bus);
             PreparedUntargetedEmitter<UntargetedOne> untargeted = new(bus);
@@ -344,12 +205,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 }
             }
 
-            MessageRegistrationHandle first = RegisterCountingFirst(
-                scenario,
-                token,
-                DefaultContext,
-                () => calls++
-            );
+            MessageRegistrationHandle first = RegisterCountingFirst(scenario, token, DefaultContext, () => calls++);
             EmitPrepared();
             Assert.AreEqual(1, calls, "The first prepared emission must reach the live handler.");
             token.RemoveRegistration(first);
@@ -360,57 +216,30 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             Assert.AreEqual(0, bus.OccupiedTypeSlots);
             Assert.AreEqual(0, bus.OccupiedTargetSlots);
 
-            MessageRegistrationHandle second = RegisterCountingFirst(
-                scenario,
-                token,
-                DefaultContext,
-                () => calls++
-            );
+            MessageRegistrationHandle second = RegisterCountingFirst(scenario, token, DefaultContext, () => calls++);
             EmitPrepared();
             Assert.AreEqual(2, calls, "The same prepared handle must use the fresh route.");
             token.RemoveRegistration(second);
         }
 
         [Test]
-        public void IdleEvictionLeavesNonEmptySlotsAlone(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void IdleEvictionLeavesNonEmptySlotsAlone([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             FakeClock clock = new FakeClock();
-            MessageBus bus = MessageBus.CreateForInternalUse(
-                clock,
-                idleEvictionTicks: 0,
-                evictionTickIntervalSeconds: 0d,
-                idleEvictionEnabled: true,
-                trimApiEnabled: true
-            );
-            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(
-                bus,
-                label: scenario.DisplayName
-            );
+            MessageBus bus = MessageBus.CreateForInternalUse(clock, idleEvictionTicks: 0, evictionTickIntervalSeconds: 0d, idleEvictionEnabled: true, trimApiEnabled: true);
+            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(bus, label: scenario.DisplayName);
             using IDisposable cleanup = ForceTrimCleanup(bus);
             MessageRegistrationToken token = CreateEnabledToken(bus);
             int calls = 0;
 
-            MessageRegistrationHandle handle = RegisterCountingFirst(
-                scenario,
-                token,
-                DefaultContext,
-                () => calls++
-            );
+            MessageRegistrationHandle handle = RegisterCountingFirst(scenario, token, DefaultContext, () => calls++);
             try
             {
                 clock.Advance(3600d);
                 EmitSweepSampleWindow(bus);
                 EmitFirst(scenario, bus, DefaultContext);
 
-                Assert.AreEqual(
-                    1,
-                    calls,
-                    "[{0}] idle sweep must not remove live registrations.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(1, calls, "[{0}] idle sweep must not remove live registrations.", scenario.Kind);
                 Assert.GreaterOrEqual(bus.OccupiedTypeSlots, 1);
             }
             finally
@@ -420,16 +249,10 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
         }
 
         [Test]
-        public void TrimDoesNotDisturbActiveDispatch(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void TrimDoesNotDisturbActiveDispatch([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             MessageBus bus = MessageBus.CreateForInternalUse(new FakeClock(), idleEvictionTicks: 0);
-            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(
-                bus,
-                label: scenario.DisplayName
-            );
+            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(bus, label: scenario.DisplayName);
             using IDisposable cleanup = ForceTrimCleanup(bus);
             MessageRegistrationToken token = CreateEnabledToken(bus);
             int trimmingHandlerCalls = 0;
@@ -446,24 +269,13 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 },
                 priority: 0
             );
-            MessageRegistrationHandle trailingHandle = RegisterCountingFirst(
-                scenario,
-                token,
-                DefaultContext,
-                () => trailingHandlerCalls++,
-                priority: 1
-            );
+            MessageRegistrationHandle trailingHandle = RegisterCountingFirst(scenario, token, DefaultContext, () => trailingHandlerCalls++, priority: 1);
             try
             {
                 EmitFirst(scenario, bus, DefaultContext);
 
                 Assert.AreEqual(1, trimmingHandlerCalls);
-                Assert.AreEqual(
-                    1,
-                    trailingHandlerCalls,
-                    "[{0}] trim during dispatch must not disturb the active snapshot.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(1, trailingHandlerCalls, "[{0}] trim during dispatch must not disturb the active snapshot.", scenario.Kind);
             }
             finally
             {
@@ -474,18 +286,11 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
 
         [Test]
         public void NonForceTrimDuringActiveContextDispatchKeepsDirtyTargetCandidate(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.KindsWithComponentTarget)
-            )]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.KindsWithComponentTarget))] MessageScenario scenario
         )
         {
             MessageBus bus = MessageBus.CreateForInternalUse(new FakeClock(), idleEvictionTicks: 0);
-            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(
-                bus,
-                label: scenario.DisplayName
-            );
+            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(bus, label: scenario.DisplayName);
             using IDisposable cleanup = ForceTrimCleanup(bus);
             MessageRegistrationToken token = CreateEnabledToken(bus);
             int calls = 0;
@@ -506,12 +311,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
 
             EmitFirst(scenario, bus, DefaultContext);
 
-            Assert.AreEqual(
-                1,
-                calls,
-                "[{0}] the self-removing handler must run exactly once.",
-                scenario.Kind
-            );
+            Assert.AreEqual(1, calls, "[{0}] the self-removing handler must run exactly once.", scenario.Kind);
             Assert.AreEqual(
                 0,
                 inDispatchTargetEvictions,
@@ -548,16 +348,10 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
         /// dispatch paths) breaks loudly.
         /// </summary>
         [Test]
-        public void NonForceTrimRequiresOneTickAdvancementWithZeroIdleBudget(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void NonForceTrimRequiresOneTickAdvancementWithZeroIdleBudget([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             MessageBus bus = MessageBus.CreateForInternalUse(new FakeClock(), idleEvictionTicks: 0);
-            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(
-                bus,
-                label: scenario.DisplayName
-            );
+            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(bus, label: scenario.DisplayName);
             using IDisposable cleanup = ForceTrimCleanup(bus);
             MessageRegistrationToken token = CreateEnabledToken(bus);
             MessageRegistrationHandle handle = RegisterFirst(scenario, token, DefaultContext);
@@ -582,20 +376,13 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             EmitSweepProbe(bus);
             IMessageBus.TrimResult afterProbe = bus.Trim(force: false);
             int totalEvicted = afterProbe.TypeSlotsEvicted + afterProbe.TargetSlotsEvicted;
-            Assert.GreaterOrEqual(
-                totalEvicted,
-                1,
-                "[{0}] one tick advancement must make the slot eligible for non-force trim. afterProbe={1}",
-                scenario.Kind,
-                afterProbe
-            );
+            Assert.GreaterOrEqual(totalEvicted, 1, "[{0}] one tick advancement must make the slot eligible for non-force trim. afterProbe={1}", scenario.Kind, afterProbe);
         }
 
         [Test]
         public void RuntimeSettingsHotReloadAppliesCaps()
         {
-            DxMessagingRuntimeSettings settings =
-                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            DxMessagingRuntimeSettings settings = ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
             IDisposable overrideToken = null;
             try
             {
@@ -611,65 +398,32 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 Assert.Greater(DxPools.DescribeAll().ObjectLists.Cached, 0);
 
                 MessageRegistrationToken token = CreateEnabledToken(bus);
-                MessageRegistrationHandle handle = RegisterFirst(
-                    MessageScenario.Targeted(),
-                    token,
-                    DefaultContext
-                );
+                MessageRegistrationHandle handle = RegisterFirst(MessageScenario.Targeted(), token, DefaultContext);
                 token.RemoveRegistration(handle);
                 EmitSweepProbe(bus);
                 _ = bus.Trim(force: false);
                 Assert.Greater(MessageBusInspection.ContextMapPoolDiagnostics().Cached, 0);
 
-                GameObject outerTarget = new(
-                    nameof(RuntimeSettingsHotReloadAppliesCaps) + "_Outer",
-                    typeof(SimpleMessageAwareComponent)
-                );
+                GameObject outerTarget = new(nameof(RuntimeSettingsHotReloadAppliesCaps) + "_Outer", typeof(SimpleMessageAwareComponent));
                 _spawned.Add(outerTarget);
-                GameObject nestedTarget = new(
-                    nameof(RuntimeSettingsHotReloadAppliesCaps) + "_Nested",
-                    typeof(SimpleMessageAwareComponent)
-                );
+                GameObject nestedTarget = new(nameof(RuntimeSettingsHotReloadAppliesCaps) + "_Nested", typeof(SimpleMessageAwareComponent));
                 _spawned.Add(nestedTarget);
-                SimpleMessageAwareComponent outerComponent =
-                    outerTarget.GetComponent<SimpleMessageAwareComponent>();
-                SimpleMessageAwareComponent nestedComponent =
-                    nestedTarget.GetComponent<SimpleMessageAwareComponent>();
+                SimpleMessageAwareComponent outerComponent = outerTarget.GetComponent<SimpleMessageAwareComponent>();
+                SimpleMessageAwareComponent nestedComponent = nestedTarget.GetComponent<SimpleMessageAwareComponent>();
                 InstanceId nestedTargetId = nestedTarget;
                 nestedComponent.reflexiveTwoArgumentHandler = () => { };
                 outerComponent.reflexiveTwoArgumentHandler = () =>
                 {
-                    ReflexiveMessage nested = new(
-                        nameof(SimpleMessageAwareComponent.HandleReflexiveMessageTwoArguments),
-                        ReflexiveSendMode.Flat,
-                        3,
-                        4
-                    );
+                    ReflexiveMessage nested = new(nameof(SimpleMessageAwareComponent.HandleReflexiveMessageTwoArguments), ReflexiveSendMode.Flat, 3, 4);
                     nested.EmitTargeted(nestedTargetId, bus);
                 };
-                ReflexiveMessage outer = new(
-                    nameof(SimpleMessageAwareComponent.HandleReflexiveMessageTwoArguments),
-                    ReflexiveSendMode.Flat,
-                    1,
-                    2
-                );
+                ReflexiveMessage outer = new(nameof(SimpleMessageAwareComponent.HandleReflexiveMessageTwoArguments), ReflexiveSendMode.Flat, 1, 2);
                 InstanceId outerTargetId = outerTarget;
                 outer.EmitTargeted(outerTargetId, bus);
 
-                Assert.Greater(
-                    MessageBusInspection.ReflexiveDispatchPoolDiagnostics(bus).Cached,
-                    0,
-                    "Nested reflexive delivery must warm the per-bus state pool."
-                );
-                Assert.AreEqual(
-                    4,
-                    MessageBusInspection.ReflexiveDispatchPoolMaxRetained(bus),
-                    "The reflexive state pool must inherit the initial retained-entry cap."
-                );
-                Assert.IsTrue(
-                    MessageBusInspection.ReflexiveDispatchPoolUsesLru(bus),
-                    "The reflexive state pool must inherit the initial LRU policy."
-                );
+                Assert.Greater(MessageBusInspection.ReflexiveDispatchPoolDiagnostics(bus).Cached, 0, "Nested reflexive delivery must warm the per-bus state pool.");
+                Assert.AreEqual(4, MessageBusInspection.ReflexiveDispatchPoolMaxRetained(bus), "The reflexive state pool must inherit the initial retained-entry cap.");
+                Assert.IsTrue(MessageBusInspection.ReflexiveDispatchPoolUsesLru(bus), "The reflexive state pool must inherit the initial LRU policy.");
 
                 settings._bufferMaxDistinctEntries = 0;
                 settings._bufferUseLruEviction = false;
@@ -679,20 +433,9 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 Assert.IsFalse(DxPools.ObjectLists.UseLru);
                 Assert.AreEqual(0, DxPools.DescribeAll().ObjectLists.Cached);
                 Assert.AreEqual(0, MessageBusInspection.ContextMapPoolDiagnostics().Cached);
-                Assert.AreEqual(
-                    0,
-                    MessageBusInspection.ReflexiveDispatchPoolDiagnostics(bus).Cached,
-                    "Lowering the cap to zero must drain retained reflexive states."
-                );
-                Assert.AreEqual(
-                    0,
-                    MessageBusInspection.ReflexiveDispatchPoolMaxRetained(bus),
-                    "Hot reload must apply the zero cap to the reflexive state pool."
-                );
-                Assert.IsFalse(
-                    MessageBusInspection.ReflexiveDispatchPoolUsesLru(bus),
-                    "Hot reload must apply the LIFO policy to the reflexive state pool."
-                );
+                Assert.AreEqual(0, MessageBusInspection.ReflexiveDispatchPoolDiagnostics(bus).Cached, "Lowering the cap to zero must drain retained reflexive states.");
+                Assert.AreEqual(0, MessageBusInspection.ReflexiveDispatchPoolMaxRetained(bus), "Hot reload must apply the zero cap to the reflexive state pool.");
+                Assert.IsFalse(MessageBusInspection.ReflexiveDispatchPoolUsesLru(bus), "Hot reload must apply the LIFO policy to the reflexive state pool.");
                 GC.KeepAlive(bus);
             }
             finally
@@ -705,48 +448,21 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
 
         [Test]
         public void EmptyPriorityLeafIsReusedAcrossEveryHandlerRoute(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext)
-            )]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext))] MessageScenario scenario
         )
         {
             MessageBus bus = MessageBus.CreateForInternalUse(new FakeClock());
-            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(
-                bus,
-                label: scenario.DisplayName
-            );
+            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(bus, label: scenario.DisplayName);
             using IDisposable cleanup = ForceTrimCleanup(bus);
             MessageHandler handler = CreateActiveHandler(bus);
 
-            Action firstDeregister = RegisterDirect(
-                scenario,
-                handler,
-                bus,
-                DefaultContext,
-                () => { }
-            );
+            Action firstDeregister = RegisterDirect(scenario, handler, bus, DefaultContext, () => { });
             firstDeregister();
             object firstSpare = MessageBusInspection.RecycledHandlerCache(bus);
-            Assert.IsNotNull(
-                firstSpare,
-                "[{0}] removing the sole priority handler must retain one detached empty leaf.",
-                scenario.DisplayName
-            );
+            Assert.IsNotNull(firstSpare, "[{0}] removing the sole priority handler must retain one detached empty leaf.", scenario.DisplayName);
 
-            Action secondDeregister = RegisterDirect(
-                scenario,
-                handler,
-                bus,
-                DefaultContext,
-                () => { }
-            );
-            Assert.IsNull(
-                MessageBusInspection.RecycledHandlerCache(bus),
-                "[{0}] the retained leaf must be rented while the replacement route is live.",
-                scenario.DisplayName
-            );
+            Action secondDeregister = RegisterDirect(scenario, handler, bus, DefaultContext, () => { });
+            Assert.IsNull(MessageBusInspection.RecycledHandlerCache(bus), "[{0}] the retained leaf must be rented while the replacement route is live.", scenario.DisplayName);
             secondDeregister();
 
             Assert.AreSame(
@@ -764,37 +480,18 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             MessageBus bus = MessageBus.CreateForInternalUse(new FakeClock());
             using LeakWatcher watcher = LeakWatcher.WatchWithSlots(bus, label: nameof(MessageBus));
             using IDisposable cleanup = ForceTrimCleanup(bus);
-            MessageHandler firstHandler = new MessageHandler(new InstanceId(0x5A17_0010), bus)
-            {
-                active = true,
-            };
-            MessageHandler secondHandler = new MessageHandler(new InstanceId(0x5A17_0011), bus)
-            {
-                active = true,
-            };
-            MessageBusRegistration first = bus.RegisterUntargeted<UntargetedOne>(
-                firstHandler,
-                priority: 0
-            );
-            MessageBusRegistration second = bus.RegisterUntargeted<UntargetedOne>(
-                secondHandler,
-                priority: 1
-            );
+            MessageHandler firstHandler = new MessageHandler(new InstanceId(0x5A17_0010), bus) { active = true };
+            MessageHandler secondHandler = new MessageHandler(new InstanceId(0x5A17_0011), bus) { active = true };
+            MessageBusRegistration first = bus.RegisterUntargeted<UntargetedOne>(firstHandler, priority: 0);
+            MessageBusRegistration second = bus.RegisterUntargeted<UntargetedOne>(secondHandler, priority: 1);
 
             bus.Deregister<UntargetedOne>(in first);
             object retained = MessageBusInspection.RecycledHandlerCache(bus);
             bus.Deregister<UntargetedOne>(in second);
 
-            Assert.AreSame(
-                retained,
-                MessageBusInspection.RecycledHandlerCache(bus),
-                "Returning a second empty leaf must not replace or grow the one-entry spare."
-            );
+            Assert.AreSame(retained, MessageBusInspection.RecycledHandlerCache(bus), "Returning a second empty leaf must not replace or grow the one-entry spare.");
             bus.ResetState();
-            Assert.IsNull(
-                MessageBusInspection.RecycledHandlerCache(bus),
-                "ResetState must release the detached empty priority leaf."
-            );
+            Assert.IsNull(MessageBusInspection.RecycledHandlerCache(bus), "ResetState must release the detached empty priority leaf.");
             firstHandler.active = false;
             secondHandler.active = false;
         }
@@ -802,8 +499,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
         [Test]
         public void EmptyPriorityLeafHonorsZeroAndHighWaterCaps()
         {
-            DxMessagingRuntimeSettings settings =
-                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            DxMessagingRuntimeSettings settings = ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
             IDisposable overrideToken = null;
             try
             {
@@ -811,73 +507,35 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 overrideToken = RuntimeSettingsFixture.Override(settings);
                 MessageBus bus = MessageBus.CreateForInternalUse(new FakeClock());
                 using IDisposable cleanup = ForceTrimCleanup(bus);
-                MessageHandler firstHandler = new MessageHandler(new InstanceId(0x5A17_0020), bus)
-                {
-                    active = true,
-                };
-                MessageHandler secondHandler = new MessageHandler(new InstanceId(0x5A17_0021), bus)
-                {
-                    active = true,
-                };
-                MessageBusRegistration first = bus.RegisterUntargeted<UntargetedOne>(
-                    firstHandler,
-                    priority: 0
-                );
-                MessageBusRegistration second = bus.RegisterUntargeted<UntargetedOne>(
-                    secondHandler,
-                    priority: 0
-                );
+                MessageHandler firstHandler = new MessageHandler(new InstanceId(0x5A17_0020), bus) { active = true };
+                MessageHandler secondHandler = new MessageHandler(new InstanceId(0x5A17_0021), bus) { active = true };
+                MessageBusRegistration first = bus.RegisterUntargeted<UntargetedOne>(firstHandler, priority: 0);
+                MessageBusRegistration second = bus.RegisterUntargeted<UntargetedOne>(secondHandler, priority: 0);
                 bus.Deregister<UntargetedOne>(in first);
                 bus.Deregister<UntargetedOne>(in second);
 
-                Assert.AreEqual(
-                    2,
-                    MessageBusInspection.RecycledHandlerCacheHighWater(bus),
-                    "A leaf at the configured distinct-handler cap must remain eligible."
-                );
+                Assert.AreEqual(2, MessageBusInspection.RecycledHandlerCacheHighWater(bus), "A leaf at the configured distinct-handler cap must remain eligible.");
 
                 settings._bufferMaxDistinctEntries = 1;
                 DxMessagingRuntimeSettings.RaiseSettingsChanged(settings);
-                Assert.IsNull(
-                    MessageBusInspection.RecycledHandlerCache(bus),
-                    "Lowering the cap below a retained leaf's high-water must drain it immediately."
-                );
+                Assert.IsNull(MessageBusInspection.RecycledHandlerCache(bus), "Lowering the cap below a retained leaf's high-water must drain it immediately.");
 
                 first = bus.RegisterUntargeted<UntargetedOne>(firstHandler, priority: 0);
                 second = bus.RegisterUntargeted<UntargetedOne>(secondHandler, priority: 0);
                 bus.Deregister<UntargetedOne>(in first);
                 bus.Deregister<UntargetedOne>(in second);
-                Assert.IsNull(
-                    MessageBusInspection.RecycledHandlerCache(bus),
-                    "An active leaf whose high-water exceeds the lowered cap must drop on return."
-                );
+                Assert.IsNull(MessageBusInspection.RecycledHandlerCache(bus), "An active leaf whose high-water exceeds the lowered cap must drop on return.");
 
-                MessageBusRegistration small = bus.RegisterUntargeted<UntargetedOne>(
-                    firstHandler,
-                    priority: 0
-                );
+                MessageBusRegistration small = bus.RegisterUntargeted<UntargetedOne>(firstHandler, priority: 0);
                 bus.Deregister<UntargetedOne>(in small);
-                Assert.AreEqual(
-                    1,
-                    MessageBusInspection.RecycledHandlerCacheHighWater(bus),
-                    "A replacement leaf within the cap must be eligible for reuse."
-                );
+                Assert.AreEqual(1, MessageBusInspection.RecycledHandlerCacheHighWater(bus), "A replacement leaf within the cap must be eligible for reuse.");
 
                 settings._bufferMaxDistinctEntries = 0;
                 DxMessagingRuntimeSettings.RaiseSettingsChanged(settings);
-                Assert.IsNull(
-                    MessageBusInspection.RecycledHandlerCache(bus),
-                    "Hot reload to cap zero must drain the retained leaf immediately."
-                );
-                MessageBusRegistration zeroCap = bus.RegisterUntargeted<UntargetedOne>(
-                    firstHandler,
-                    priority: 0
-                );
+                Assert.IsNull(MessageBusInspection.RecycledHandlerCache(bus), "Hot reload to cap zero must drain the retained leaf immediately.");
+                MessageBusRegistration zeroCap = bus.RegisterUntargeted<UntargetedOne>(firstHandler, priority: 0);
                 bus.Deregister<UntargetedOne>(in zeroCap);
-                Assert.IsNull(
-                    MessageBusInspection.RecycledHandlerCache(bus),
-                    "Cap zero must keep subsequent empty priority leaves out of retention."
-                );
+                Assert.IsNull(MessageBusInspection.RecycledHandlerCache(bus), "Cap zero must keep subsequent empty priority leaves out of retention.");
                 firstHandler.active = false;
                 secondHandler.active = false;
                 GC.KeepAlive(bus);
@@ -900,37 +558,22 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             MessageBus bus = MessageBus.CreateForInternalUse(new FakeClock());
             MessageHandler handler = CreateActiveHandler(bus);
             _ = bus.Trim(force: true);
-            MessageBusRegistration registration = bus.RegisterUntargeted<UntargetedOne>(
-                handler,
-                priority: 0
-            );
+            MessageBusRegistration registration = bus.RegisterUntargeted<UntargetedOne>(handler, priority: 0);
             bus.Deregister<UntargetedOne>(in registration);
 
             IMessageBus.TrimResult first = bus.Trim(force: true);
             IMessageBus.TrimResult second = bus.Trim(force: true);
 
-            Assert.AreEqual(
-                1,
-                first.PooledCollectionsEvicted,
-                "Forced trim must count the one detached priority leaf exactly once."
-            );
-            Assert.AreEqual(
-                0,
-                second.PooledCollectionsEvicted,
-                "Repeated forced trim must not count an already-drained priority leaf."
-            );
-            Assert.IsNull(
-                MessageBusInspection.RecycledHandlerCache(bus),
-                "Forced trim must release the detached priority leaf."
-            );
+            Assert.AreEqual(1, first.PooledCollectionsEvicted, "Forced trim must count the one detached priority leaf exactly once.");
+            Assert.AreEqual(0, second.PooledCollectionsEvicted, "Repeated forced trim must not count an already-drained priority leaf.");
+            Assert.IsNull(MessageBusInspection.RecycledHandlerCache(bus), "Forced trim must release the detached priority leaf.");
             handler.active = false;
         }
 
         [Test]
         public void RuntimeSettingsHotReloadUpdatesTrimAndIdleGates()
         {
-            DxMessagingRuntimeSettings settings =
-                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            DxMessagingRuntimeSettings settings = ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
             IDisposable overrideToken = null;
             try
             {
@@ -943,20 +586,12 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 MessageBus bus = MessageBus.CreateForInternalUse(clock);
                 using IDisposable cleanup = ForceTrimCleanup(bus);
                 MessageRegistrationToken token = CreateEnabledToken(bus);
-                MessageRegistrationHandle handle = RegisterFirst(
-                    MessageScenario.Untargeted(),
-                    token,
-                    DefaultContext
-                );
+                MessageRegistrationHandle handle = RegisterFirst(MessageScenario.Untargeted(), token, DefaultContext);
                 token.RemoveRegistration(handle);
 
                 clock.Advance(60d);
                 EmitSweepSampleWindow(bus);
-                Assert.GreaterOrEqual(
-                    bus.OccupiedTypeSlots,
-                    1,
-                    "Initial disabled idle eviction setting must prevent emit-time sweep."
-                );
+                Assert.GreaterOrEqual(bus.OccupiedTypeSlots, 1, "Initial disabled idle eviction setting must prevent emit-time sweep.");
 
                 settings._enableTrimApi = false;
                 settings._evictionEnabled = true;
@@ -966,11 +601,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 Assert.AreEqual(default(IMessageBus.TrimResult), bus.Trim(force: true));
 
                 EmitSweepSampleWindow(bus);
-                Assert.AreEqual(
-                    0,
-                    bus.OccupiedTypeSlots,
-                    "Hot-reloaded idle settings must enable emit-time reclamation on an existing bus."
-                );
+                Assert.AreEqual(0, bus.OccupiedTypeSlots, "Hot-reloaded idle settings must enable emit-time reclamation on an existing bus.");
             }
             finally
             {
@@ -983,8 +614,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
         [Test]
         public void TrimRespectsEnableTrimApiFlag()
         {
-            DxMessagingRuntimeSettings settings =
-                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            DxMessagingRuntimeSettings settings = ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
             IDisposable overrideToken = null;
             try
             {
@@ -994,17 +624,10 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 overrideToken = RuntimeSettingsFixture.Override(settings);
                 MessageBus bus = MessageBus.CreateForInternalUse(new FakeClock());
                 MessageRegistrationToken token = CreateEnabledToken(bus);
-                MessageRegistrationHandle handle = RegisterFirst(
-                    MessageScenario.Untargeted(),
-                    token,
-                    DefaultContext
-                );
+                MessageRegistrationHandle handle = RegisterFirst(MessageScenario.Untargeted(), token, DefaultContext);
                 token.RemoveRegistration(handle);
                 object retainedHandlerCache = MessageBusInspection.RecycledHandlerCache(bus);
-                Assert.IsNotNull(
-                    retainedHandlerCache,
-                    "Removing the sole handler must create the retained empty priority leaf."
-                );
+                Assert.IsNotNull(retainedHandlerCache, "Removing the sole handler must create the retained empty priority leaf.");
                 List<object> pooled = DxPools.ObjectLists.Rent();
                 DxPools.ObjectLists.Return(pooled);
                 int cachedBefore = DxPools.DescribeAll().ObjectLists.Cached;
@@ -1014,11 +637,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 Assert.AreEqual(default(IMessageBus.TrimResult), result);
                 Assert.GreaterOrEqual(bus.OccupiedTypeSlots, 1);
                 Assert.AreEqual(cachedBefore, DxPools.DescribeAll().ObjectLists.Cached);
-                Assert.AreSame(
-                    retainedHandlerCache,
-                    MessageBusInspection.RecycledHandlerCache(bus),
-                    "Disabled Trim must preserve the retained empty priority leaf identity."
-                );
+                Assert.AreSame(retainedHandlerCache, MessageBusInspection.RecycledHandlerCache(bus), "Disabled Trim must preserve the retained empty priority leaf identity.");
             }
             finally
             {
@@ -1029,16 +648,9 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
         }
 
         [Test]
-        public void TrimAfterDeregisterReclaimsHandlerCache(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.KindsWithComponentTarget)
-            )]
-                MessageScenario scenario
-        )
+        public void TrimAfterDeregisterReclaimsHandlerCache([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.KindsWithComponentTarget))] MessageScenario scenario)
         {
-            DxMessagingRuntimeSettings settings =
-                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            DxMessagingRuntimeSettings settings = ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
             IDisposable overrideToken = null;
             try
             {
@@ -1046,20 +658,12 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 settings._bufferUseLruEviction = true;
                 overrideToken = RuntimeSettingsFixture.Override(settings);
                 _ = DxPools.TrimAll(force: true);
-                MessageBus bus = MessageBus.CreateForInternalUse(
-                    new FakeClock(),
-                    idleEvictionTicks: 0
-                );
-                using LeakWatcher watcher = LeakWatcher.WatchWithSlots(
-                    bus,
-                    label: scenario.DisplayName
-                );
+                MessageBus bus = MessageBus.CreateForInternalUse(new FakeClock(), idleEvictionTicks: 0);
+                using LeakWatcher watcher = LeakWatcher.WatchWithSlots(bus, label: scenario.DisplayName);
                 using IDisposable cleanup = ForceTrimCleanup(bus);
                 MessageRegistrationToken token = CreateEnabledToken(bus);
                 MessageRegistrationHandle handle = RegisterFirst(scenario, token, DefaultContext);
-                int priorityDictionariesBefore = DxPools
-                    .DescribeAll()
-                    .TypedHandlerPriorityDicts.Cached;
+                int priorityDictionariesBefore = DxPools.DescribeAll().TypedHandlerPriorityDicts.Cached;
                 token.RemoveRegistration(handle);
                 Assert.Greater(
                     DxPools.DescribeAll().TypedHandlerPriorityDicts.Cached,
@@ -1068,18 +672,11 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     scenario.Kind
                 );
                 EmitSweepProbe(bus);
-                int contextDictionariesBefore = DxPools
-                    .DescribeAll()
-                    .TypedHandlerContextDicts.Cached;
+                int contextDictionariesBefore = DxPools.DescribeAll().TypedHandlerContextDicts.Cached;
 
                 IMessageBus.TrimResult result = bus.Trim(force: false);
 
-                Assert.GreaterOrEqual(
-                    result.TypeSlotsEvicted,
-                    1,
-                    "[{0}] non-force trim must reclaim idle empty typed-handler slots.",
-                    scenario.Kind
-                );
+                Assert.GreaterOrEqual(result.TypeSlotsEvicted, 1, "[{0}] non-force trim must reclaim idle empty typed-handler slots.", scenario.Kind);
                 Assert.Greater(
                     DxPools.DescribeAll().TypedHandlerContextDicts.Cached,
                     contextDictionariesBefore,
@@ -1096,9 +693,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
         }
 
         [Test]
-        public void BusContextDictReturnsToPool(
-            [ValueSource(nameof(ContextDictPoolScenarios))] MessageScenario scenario
-        )
+        public void BusContextDictReturnsToPool([ValueSource(nameof(ContextDictPoolScenarios))] MessageScenario scenario)
         {
             /*
                 Pin the AppDomain-scoped ContextHandlerByTargetDicts pool's MaxRetained to a
@@ -1114,15 +709,8 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             Action secondDeregister = null;
             try
             {
-                MessageBus bus = CreatePoolRetainingBus(
-                    new FakeClock(),
-                    out settings,
-                    out overrideToken
-                );
-                using LeakWatcher watcher = LeakWatcher.WatchWithSlots(
-                    bus,
-                    label: scenario.DisplayName
-                );
+                MessageBus bus = CreatePoolRetainingBus(new FakeClock(), out settings, out overrideToken);
+                using LeakWatcher watcher = LeakWatcher.WatchWithSlots(bus, label: scenario.DisplayName);
                 using IDisposable cleanup = ForceTrimCleanup(bus);
                 MessageHandler handler = CreateActiveHandler(bus);
 
@@ -1134,23 +722,15 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     net-zero delta: the rent decrements Cached, the trim's return increments it back.)
                 */
                 firstDeregister = RegisterDirect(scenario, handler, bus, DefaultContext, () => { });
-                CollectionPoolDiagnostics afterFirstRent =
-                    MessageBusInspection.ContextMapPoolDiagnostics();
+                CollectionPoolDiagnostics afterFirstRent = MessageBusInspection.ContextMapPoolDiagnostics();
                 firstDeregister();
                 firstDeregister = null;
                 EmitSweepProbe(bus);
 
                 IMessageBus.TrimResult firstTrim = bus.Trim(force: false);
-                CollectionPoolDiagnostics afterReturn =
-                    MessageBusInspection.ContextMapPoolDiagnostics();
+                CollectionPoolDiagnostics afterReturn = MessageBusInspection.ContextMapPoolDiagnostics();
 
-                Assert.GreaterOrEqual(
-                    firstTrim.TargetSlotsEvicted,
-                    1,
-                    "[{0}] trim must reclaim the empty context dictionary slot. firstTrim={1}",
-                    scenario.Kind,
-                    firstTrim
-                );
+                Assert.GreaterOrEqual(firstTrim.TargetSlotsEvicted, 1, "[{0}] trim must reclaim the empty context dictionary slot. firstTrim={1}", scenario.Kind, firstTrim);
                 Assert.Greater(
                     afterReturn.Cached,
                     afterFirstRent.Cached,
@@ -1160,15 +740,8 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     afterReturn.Cached
                 );
 
-                secondDeregister = RegisterDirect(
-                    scenario,
-                    handler,
-                    bus,
-                    DefaultContext,
-                    () => { }
-                );
-                CollectionPoolDiagnostics afterRent =
-                    MessageBusInspection.ContextMapPoolDiagnostics();
+                secondDeregister = RegisterDirect(scenario, handler, bus, DefaultContext, () => { });
+                CollectionPoolDiagnostics afterRent = MessageBusInspection.ContextMapPoolDiagnostics();
 
                 Assert.Greater(
                     afterRent.Hits,
@@ -1195,17 +768,11 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
         }
 
         [Test]
-        public void StaleBusContextDeregisterAfterPooledDictionaryReuseDoesNotRemoveReplacement(
-            [ValueSource(nameof(ContextDictPoolScenarios))] MessageScenario scenario
-        )
+        public void StaleBusContextDeregisterAfterPooledDictionaryReuseDoesNotRemoveReplacement([ValueSource(nameof(ContextDictPoolScenarios))] MessageScenario scenario)
         {
             DxMessagingRuntimeSettings settings = null;
             IDisposable overrideToken = null;
-            MessageBus bus = CreatePoolRetainingBus(
-                new FakeClock(),
-                out settings,
-                out overrideToken
-            );
+            MessageBus bus = CreatePoolRetainingBus(new FakeClock(), out settings, out overrideToken);
             int staleCalls = 0;
             int currentCalls = 0;
             List<string> logs = new List<string>();
@@ -1215,76 +782,33 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
 
             using IDisposable cleanup = ForceTrimCleanup(bus);
             MessageHandler handler = CreateActiveHandler(bus);
-            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(
-                bus,
-                label: scenario.DisplayName
-            );
+            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(bus, label: scenario.DisplayName);
             try
             {
-                Action staleDeregister = RegisterDirect(
-                    scenario,
-                    handler,
-                    bus,
-                    DefaultContext,
-                    () => staleCalls++
-                );
+                Action staleDeregister = RegisterDirect(scenario, handler, bus, DefaultContext, () => staleCalls++);
                 EmitFirst(scenario, bus, DefaultContext);
                 staleDeregister();
                 EmitSweepProbe(bus);
 
                 IMessageBus.TrimResult trimResult = bus.Trim(force: false);
-                CollectionPoolDiagnostics afterReturn =
-                    MessageBusInspection.ContextMapPoolDiagnostics();
+                CollectionPoolDiagnostics afterReturn = MessageBusInspection.ContextMapPoolDiagnostics();
 
-                Assert.GreaterOrEqual(
-                    trimResult.TargetSlotsEvicted,
-                    1,
-                    "[{0}] trim must reclaim the stale context slot before replacement.",
-                    scenario.Kind
-                );
-                Assert.Greater(
-                    afterReturn.Cached,
-                    0,
-                    "[{0}] trim must return the bus context dictionary to the private pool.",
-                    scenario.Kind
-                );
+                Assert.GreaterOrEqual(trimResult.TargetSlotsEvicted, 1, "[{0}] trim must reclaim the stale context slot before replacement.", scenario.Kind);
+                Assert.Greater(afterReturn.Cached, 0, "[{0}] trim must return the bus context dictionary to the private pool.", scenario.Kind);
 
-                currentDeregister = RegisterDirect(scenario, handler, bus, DefaultContext, () =>
-                    currentCalls++
-                );
-                CollectionPoolDiagnostics afterRent =
-                    MessageBusInspection.ContextMapPoolDiagnostics();
+                currentDeregister = RegisterDirect(scenario, handler, bus, DefaultContext, () => currentCalls++);
+                CollectionPoolDiagnostics afterRent = MessageBusInspection.ContextMapPoolDiagnostics();
 
-                Assert.Greater(
-                    afterRent.Hits,
-                    afterReturn.Hits,
-                    "[{0}] replacement registration must reuse the pooled context dictionary.",
-                    scenario.Kind
-                );
+                Assert.Greater(afterRent.Hits, afterReturn.Hits, "[{0}] replacement registration must reuse the pooled context dictionary.", scenario.Kind);
 
                 MessagingDebug.enabled = true;
                 MessagingDebug.LogFunction = (_, message) => logs.Add(message);
                 staleDeregister();
                 EmitFirst(scenario, bus, DefaultContext);
 
-                Assert.AreEqual(
-                    1,
-                    staleCalls,
-                    "[{0}] stale deregistration must not revive the old registration.",
-                    scenario.Kind
-                );
-                Assert.AreEqual(
-                    1,
-                    currentCalls,
-                    "[{0}] stale deregistration must not remove the replacement registration.",
-                    scenario.Kind
-                );
-                Assert.AreEqual(
-                    0,
-                    logs.Count,
-                    "[{0}] stale deregistration after pooled dictionary reuse must not log diagnostics.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(1, staleCalls, "[{0}] stale deregistration must not revive the old registration.", scenario.Kind);
+                Assert.AreEqual(1, currentCalls, "[{0}] stale deregistration must not remove the replacement registration.", scenario.Kind);
+                Assert.AreEqual(0, logs.Count, "[{0}] stale deregistration after pooled dictionary reuse must not log diagnostics.", scenario.Kind);
 
                 currentDeregister();
                 currentDeregister = null;
@@ -1309,11 +833,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
         {
             DxMessagingRuntimeSettings settings = null;
             IDisposable overrideToken = null;
-            MessageBus bus = CreatePoolRetainingBus(
-                new FakeClock(),
-                out settings,
-                out overrideToken
-            );
+            MessageBus bus = CreatePoolRetainingBus(new FakeClock(), out settings, out overrideToken);
             using IDisposable cleanup = ForceTrimCleanup(bus);
             using LeakWatcher watcher = LeakWatcher.WatchWithSlots(bus);
             MessageHandler handler = CreateActiveHandler(bus);
@@ -1327,9 +847,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 for (int i = 0; i <= RetainedPoolEntryCount; ++i)
                 {
                     InstanceId target = new InstanceId(0x5A18_0000 + i);
-                    deregistrations.Add(
-                        RegisterDirect(MessageScenario.Targeted(), handler, bus, target, () => { })
-                    );
+                    deregistrations.Add(RegisterDirect(MessageScenario.Targeted(), handler, bus, target, () => { }));
                 }
 
                 foreach (Action deregister in deregistrations)
@@ -1341,60 +859,28 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 EmitSweepProbe(bus);
                 IMessageBus.TrimResult oversizedTrim = bus.Trim(force: false);
                 PoolDiagnosticsSnapshot oversizedPools = DxPools.DescribeAll();
-                CollectionPoolDiagnostics oversizedContextPool =
-                    MessageBusInspection.ContextMapPoolDiagnostics();
+                CollectionPoolDiagnostics oversizedContextPool = MessageBusInspection.ContextMapPoolDiagnostics();
 
                 Assert.GreaterOrEqual(
                     oversizedTrim.TargetSlotsEvicted,
                     RetainedPoolEntryCount + 1,
                     "Trim must reclaim every oversized target slot before evaluating pool retention."
                 );
-                Assert.AreEqual(
-                    0,
-                    oversizedPools.InstanceIdLists.Cached,
-                    "Dirty-target lists that exceeded the pool cap must be dropped instead of cached."
-                );
-                Assert.AreEqual(
-                    0,
-                    oversizedPools.InstanceIdSets.Cached,
-                    "Dirty-target sets that exceeded the pool cap must be dropped instead of cached."
-                );
-                Assert.AreEqual(
-                    0,
-                    oversizedContextPool.Cached,
-                    "Bus context dictionaries that exceeded the pool cap must be dropped instead of cached."
-                );
+                Assert.AreEqual(0, oversizedPools.InstanceIdLists.Cached, "Dirty-target lists that exceeded the pool cap must be dropped instead of cached.");
+                Assert.AreEqual(0, oversizedPools.InstanceIdSets.Cached, "Dirty-target sets that exceeded the pool cap must be dropped instead of cached.");
+                Assert.AreEqual(0, oversizedContextPool.Cached, "Bus context dictionaries that exceeded the pool cap must be dropped instead of cached.");
 
-                smallDeregister = RegisterDirect(
-                    MessageScenario.Targeted(),
-                    handler,
-                    bus,
-                    DefaultContext,
-                    () => { }
-                );
+                smallDeregister = RegisterDirect(MessageScenario.Targeted(), handler, bus, DefaultContext, () => { });
                 smallDeregister();
                 smallDeregister = null;
                 EmitSweepProbe(bus);
                 _ = bus.Trim(force: false);
 
                 PoolDiagnosticsSnapshot smallPools = DxPools.DescribeAll();
-                CollectionPoolDiagnostics smallContextPool =
-                    MessageBusInspection.ContextMapPoolDiagnostics();
-                Assert.Greater(
-                    smallPools.InstanceIdLists.Cached,
-                    0,
-                    "Small dirty-target lists should still return to the pool."
-                );
-                Assert.Greater(
-                    smallPools.InstanceIdSets.Cached,
-                    0,
-                    "Small dirty-target sets should still return to the pool."
-                );
-                Assert.Greater(
-                    smallContextPool.Cached,
-                    0,
-                    "Small bus context dictionaries should still return to the private pool."
-                );
+                CollectionPoolDiagnostics smallContextPool = MessageBusInspection.ContextMapPoolDiagnostics();
+                Assert.Greater(smallPools.InstanceIdLists.Cached, 0, "Small dirty-target lists should still return to the pool.");
+                Assert.Greater(smallPools.InstanceIdSets.Cached, 0, "Small dirty-target sets should still return to the pool.");
+                Assert.Greater(smallContextPool.Cached, 0, "Small bus context dictionaries should still return to the private pool.");
             }
             finally
             {
@@ -1417,11 +903,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
         {
             DxMessagingRuntimeSettings settings = null;
             IDisposable overrideToken = null;
-            MessageBus bus = CreatePoolRetainingBus(
-                new FakeClock(),
-                out settings,
-                out overrideToken
-            );
+            MessageBus bus = CreatePoolRetainingBus(new FakeClock(), out settings, out overrideToken);
             using IDisposable cleanup = ForceTrimCleanup(bus);
             using LeakWatcher watcher = LeakWatcher.WatchWithSlots(bus);
             Action deregister = null;
@@ -1429,23 +911,13 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             {
                 MessageBus.ResetStaticPools();
                 MessageHandler handler = CreateActiveHandler(bus);
-                deregister = RegisterDirect(
-                    MessageScenario.Targeted(),
-                    handler,
-                    bus,
-                    DefaultContext,
-                    () => { }
-                );
+                deregister = RegisterDirect(MessageScenario.Targeted(), handler, bus, DefaultContext, () => { });
                 deregister();
                 deregister = null;
                 EmitSweepProbe(bus);
                 _ = bus.Trim(force: false);
 
-                Assert.Greater(
-                    MessageBusInspection.ContextMapPoolDiagnostics().Cached,
-                    0,
-                    "Setup must return at least one bus context dictionary to the static pool."
-                );
+                Assert.Greater(MessageBusInspection.ContextMapPoolDiagnostics().Cached, 0, "Setup must return at least one bus context dictionary to the static pool.");
 
                 DxMessagingStaticState.Reset();
 
@@ -1472,11 +944,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
         {
             DxMessagingRuntimeSettings settings = null;
             IDisposable overrideToken = null;
-            MessageBus bus = CreatePoolRetainingBus(
-                new FakeClock(),
-                out settings,
-                out overrideToken
-            );
+            MessageBus bus = CreatePoolRetainingBus(new FakeClock(), out settings, out overrideToken);
             using IDisposable cleanup = ForceTrimCleanup(bus);
             using LeakWatcher watcher = LeakWatcher.WatchWithSlots(bus);
             MessageHandler handler = CreateActiveHandler(bus);
@@ -1488,9 +956,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 for (int i = 0; i <= RetainedPoolEntryCount; ++i)
                 {
                     InstanceId target = new InstanceId(0x5A19_0000 + i);
-                    deregistrations.Add(
-                        RegisterDirect(MessageScenario.Targeted(), handler, bus, target, () => { })
-                    );
+                    deregistrations.Add(RegisterDirect(MessageScenario.Targeted(), handler, bus, target, () => { }));
                 }
 
                 for (int i = 0; i < RetainedPoolEntryCount; ++i)
@@ -1535,10 +1001,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
         }
 
         [Test]
-        public void ResetGenerationBumpInvalidatesPostEvictDeregister(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void ResetGenerationBumpInvalidatesPostEvictDeregister([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             MessageBus bus = MessageBus.CreateForInternalUse(new FakeClock(), idleEvictionTicks: 0);
             using IDisposable cleanup = ForceTrimCleanup(bus);
@@ -1550,48 +1013,22 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             bool previousMessagingDebugEnabled = MessagingDebug.enabled;
             Action currentDeregister = null;
 
-            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(
-                bus,
-                label: scenario.DisplayName
-            );
+            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(bus, label: scenario.DisplayName);
             try
             {
-                Action staleDeregister = RegisterDirect(
-                    scenario,
-                    handler,
-                    bus,
-                    DefaultContext,
-                    () => staleCalls++
-                );
+                Action staleDeregister = RegisterDirect(scenario, handler, bus, DefaultContext, () => staleCalls++);
                 staleDeregister();
                 _ = bus.Trim(force: true);
 
-                currentDeregister = RegisterDirect(scenario, handler, bus, DefaultContext, () =>
-                    currentCalls++
-                );
+                currentDeregister = RegisterDirect(scenario, handler, bus, DefaultContext, () => currentCalls++);
                 MessagingDebug.enabled = true;
                 MessagingDebug.LogFunction = (_, message) => logs.Add(message);
                 staleDeregister();
                 EmitFirst(scenario, bus, DefaultContext);
 
-                Assert.AreEqual(
-                    0,
-                    staleCalls,
-                    "[{0}] stale deregistration must not revive or invoke the old handler.",
-                    scenario.Kind
-                );
-                Assert.AreEqual(
-                    1,
-                    currentCalls,
-                    "[{0}] stale deregistration must not remove a later registration.",
-                    scenario.Kind
-                );
-                Assert.AreEqual(
-                    0,
-                    logs.Count,
-                    "[{0}] stale deregistration must not log diagnostics.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(0, staleCalls, "[{0}] stale deregistration must not revive or invoke the old handler.", scenario.Kind);
+                Assert.AreEqual(1, currentCalls, "[{0}] stale deregistration must not remove a later registration.", scenario.Kind);
+                Assert.AreEqual(0, logs.Count, "[{0}] stale deregistration must not log diagnostics.", scenario.Kind);
                 currentDeregister();
                 currentDeregister = null;
                 _ = bus.Trim(force: true);
@@ -1608,151 +1045,56 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
         [Test]
         public void HandlerBusCachesTrackOnlyUsedBusesAndReclaimEmptyEntries(
             [Values(false, true)] bool force,
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario
         )
         {
-            MessageBus firstBus = MessageBus.CreateForInternalUse(
-                new FakeClock(),
-                idleEvictionTicks: 0
-            );
+            MessageBus firstBus = MessageBus.CreateForInternalUse(new FakeClock(), idleEvictionTicks: 0);
             for (int i = 0; i < 32; i++)
             {
                 _ = MessageBus.CreateForInternalUse(new FakeClock(), idleEvictionTicks: 0);
             }
 
-            MessageBus secondBus = MessageBus.CreateForInternalUse(
-                new FakeClock(),
-                idleEvictionTicks: 0
-            );
+            MessageBus secondBus = MessageBus.CreateForInternalUse(new FakeClock(), idleEvictionTicks: 0);
             MessageHandler handler = CreateActiveHandler(firstBus);
-            using LeakWatcher firstWatcher = LeakWatcher.WatchWithSlots(
-                firstBus,
-                label: scenario.DisplayName
-            );
-            using LeakWatcher secondWatcher = LeakWatcher.WatchWithSlots(
-                secondBus,
-                label: scenario.DisplayName
-            );
+            using LeakWatcher firstWatcher = LeakWatcher.WatchWithSlots(firstBus, label: scenario.DisplayName);
+            using LeakWatcher secondWatcher = LeakWatcher.WatchWithSlots(secondBus, label: scenario.DisplayName);
             Action firstDeregister = null;
             Action secondDeregister = null;
             int firstCalls = 0;
             int secondCalls = 0;
             try
             {
-                Assert.AreEqual(
-                    0,
-                    handler._handlersByTypeByMessageBus.Count,
-                    "[{0}] a fresh handler must not allocate bus cache entries.",
-                    scenario.Kind
-                );
-                Assert.IsFalse(
-                    handler.HasTypedHandlersForBus(secondBus),
-                    "[{0}] probing an unused high-index bus must report no handlers.",
-                    scenario.Kind
-                );
-                Assert.AreEqual(
-                    0,
-                    handler._handlersByTypeByMessageBus.Count,
-                    "[{0}] probing an unused bus must not populate the bus map.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(0, handler._handlersByTypeByMessageBus.Count, "[{0}] a fresh handler must not allocate bus cache entries.", scenario.Kind);
+                Assert.IsFalse(handler.HasTypedHandlersForBus(secondBus), "[{0}] probing an unused high-index bus must report no handlers.", scenario.Kind);
+                Assert.AreEqual(0, handler._handlersByTypeByMessageBus.Count, "[{0}] probing an unused bus must not populate the bus map.", scenario.Kind);
 
-                secondDeregister = RegisterDirect(
-                    scenario,
-                    handler,
-                    secondBus,
-                    DefaultContext,
-                    () => secondCalls++
-                );
-                Assert.AreEqual(
-                    1,
-                    handler._handlersByTypeByMessageBus.Count,
-                    "[{0}] one used bus must allocate one cache regardless of earlier bus indices.",
-                    scenario.Kind
-                );
-                firstDeregister = RegisterDirect(scenario, handler, firstBus, DefaultContext, () =>
-                    firstCalls++
-                );
-                Assert.AreEqual(
-                    2,
-                    handler._handlersByTypeByMessageBus.Count,
-                    "[{0}] two used buses must retain exactly two cache entries.",
-                    scenario.Kind
-                );
+                secondDeregister = RegisterDirect(scenario, handler, secondBus, DefaultContext, () => secondCalls++);
+                Assert.AreEqual(1, handler._handlersByTypeByMessageBus.Count, "[{0}] one used bus must allocate one cache regardless of earlier bus indices.", scenario.Kind);
+                firstDeregister = RegisterDirect(scenario, handler, firstBus, DefaultContext, () => firstCalls++);
+                Assert.AreEqual(2, handler._handlersByTypeByMessageBus.Count, "[{0}] two used buses must retain exactly two cache entries.", scenario.Kind);
 
                 EmitFirst(scenario, firstBus, DefaultContext);
                 EmitFirst(scenario, secondBus, DefaultContext);
-                Assert.AreEqual(
-                    1,
-                    firstCalls,
-                    "[{0}] the first bus must dispatch only its registration.",
-                    scenario.Kind
-                );
-                Assert.AreEqual(
-                    1,
-                    secondCalls,
-                    "[{0}] the second bus must dispatch only its registration.",
-                    scenario.Kind
-                );
-                Assert.Greater(
-                    secondBus.OccupiedTypeSlots,
-                    0,
-                    "[{0}] registration must populate bus type slots before reclamation.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(1, firstCalls, "[{0}] the first bus must dispatch only its registration.", scenario.Kind);
+                Assert.AreEqual(1, secondCalls, "[{0}] the second bus must dispatch only its registration.", scenario.Kind);
+                Assert.Greater(secondBus.OccupiedTypeSlots, 0, "[{0}] registration must populate bus type slots before reclamation.", scenario.Kind);
 
                 Action staleDeregister = secondDeregister;
                 secondDeregister();
                 secondDeregister = null;
                 EmitSweepProbe(secondBus);
                 _ = secondBus.Trim(force);
-                Assert.AreEqual(
-                    1,
-                    handler._handlersByTypeByMessageBus.Count,
-                    "[{0}] trimming an empty bus must reclaim its cache and retain the active bus.",
-                    scenario.Kind
-                );
-                Assert.IsFalse(
-                    handler.HasTypedHandlersForBus(secondBus),
-                    "[{0}] the trimmed bus must have no typed handlers.",
-                    scenario.Kind
-                );
-                Assert.AreEqual(
-                    0,
-                    secondBus.OccupiedTypeSlots,
-                    "[{0}] the trimmed bus must reclaim its occupied type slots.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(1, handler._handlersByTypeByMessageBus.Count, "[{0}] trimming an empty bus must reclaim its cache and retain the active bus.", scenario.Kind);
+                Assert.IsFalse(handler.HasTypedHandlersForBus(secondBus), "[{0}] the trimmed bus must have no typed handlers.", scenario.Kind);
+                Assert.AreEqual(0, secondBus.OccupiedTypeSlots, "[{0}] the trimmed bus must reclaim its occupied type slots.", scenario.Kind);
                 EmitFirst(scenario, firstBus, DefaultContext);
-                Assert.AreEqual(
-                    2,
-                    firstCalls,
-                    "[{0}] reclaiming another bus must preserve active registrations.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(2, firstCalls, "[{0}] reclaiming another bus must preserve active registrations.", scenario.Kind);
 
-                secondDeregister = RegisterDirect(
-                    scenario,
-                    handler,
-                    secondBus,
-                    DefaultContext,
-                    () => secondCalls++
-                );
+                secondDeregister = RegisterDirect(scenario, handler, secondBus, DefaultContext, () => secondCalls++);
                 staleDeregister();
                 EmitFirst(scenario, secondBus, DefaultContext);
-                Assert.AreEqual(
-                    2,
-                    secondCalls,
-                    "[{0}] stale cleanup must not remove the replacement bus cache registration.",
-                    scenario.Kind
-                );
-                Assert.AreEqual(
-                    2,
-                    handler._handlersByTypeByMessageBus.Count,
-                    "[{0}] re-registering the reclaimed bus must create just one replacement cache.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(2, secondCalls, "[{0}] stale cleanup must not remove the replacement bus cache registration.", scenario.Kind);
+                Assert.AreEqual(2, handler._handlersByTypeByMessageBus.Count, "[{0}] re-registering the reclaimed bus must create just one replacement cache.", scenario.Kind);
             }
             finally
             {
@@ -1762,26 +1104,17 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 _ = secondBus.Trim(force: true);
             }
 
-            Assert.AreEqual(
-                0,
-                handler._handlersByTypeByMessageBus.Count,
-                "[{0}] cleanup must reclaim every empty bus cache entry.",
-                scenario.Kind
-            );
+            Assert.AreEqual(0, handler._handlersByTypeByMessageBus.Count, "[{0}] cleanup must reclaim every empty bus cache entry.", scenario.Kind);
         }
 
         [Test]
         public void ReentrantBusResetReclaimsCacheAndPreservesReplacementRegistration(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario
         )
         {
             MessageBus bus = MessageBus.CreateForInternalUse(new FakeClock(), idleEvictionTicks: 0);
             MessageHandler handler = CreateActiveHandler(bus);
-            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(
-                bus,
-                label: scenario.DisplayName
-            );
+            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(bus, label: scenario.DisplayName);
             Action staleDeregister = null;
             Action replacementDeregister = null;
             int originalCalls = 0;
@@ -1792,55 +1125,19 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 {
                     originalCalls++;
                     bus.ResetState();
-                    Assert.AreEqual(
-                        0,
-                        handler._handlersByTypeByMessageBus.Count,
-                        "[{0}] resetting during dispatch must release the old bus cache.",
-                        scenario.Kind
-                    );
-                    replacementDeregister = RegisterDirect(
-                        scenario,
-                        handler,
-                        bus,
-                        DefaultContext,
-                        () => replacementCalls++
-                    );
+                    Assert.AreEqual(0, handler._handlersByTypeByMessageBus.Count, "[{0}] resetting during dispatch must release the old bus cache.", scenario.Kind);
+                    replacementDeregister = RegisterDirect(scenario, handler, bus, DefaultContext, () => replacementCalls++);
                 });
 
                 EmitFirst(scenario, bus, DefaultContext);
-                Assert.AreEqual(
-                    1,
-                    originalCalls,
-                    "[{0}] the original callback must execute once before resetting its bus.",
-                    scenario.Kind
-                );
-                Assert.AreEqual(
-                    0,
-                    replacementCalls,
-                    "[{0}] the replacement must not join the emission that reset the bus.",
-                    scenario.Kind
-                );
-                Assert.AreEqual(
-                    1,
-                    handler._handlersByTypeByMessageBus.Count,
-                    "[{0}] registration after reset must retain one replacement cache.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(1, originalCalls, "[{0}] the original callback must execute once before resetting its bus.", scenario.Kind);
+                Assert.AreEqual(0, replacementCalls, "[{0}] the replacement must not join the emission that reset the bus.", scenario.Kind);
+                Assert.AreEqual(1, handler._handlersByTypeByMessageBus.Count, "[{0}] registration after reset must retain one replacement cache.", scenario.Kind);
 
                 staleDeregister();
                 EmitFirst(scenario, bus, DefaultContext);
-                Assert.AreEqual(
-                    1,
-                    originalCalls,
-                    "[{0}] reset must leave the original registration inactive.",
-                    scenario.Kind
-                );
-                Assert.AreEqual(
-                    1,
-                    replacementCalls,
-                    "[{0}] stale deregistration must preserve the replacement after reset.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(1, originalCalls, "[{0}] reset must leave the original registration inactive.", scenario.Kind);
+                Assert.AreEqual(1, replacementCalls, "[{0}] stale deregistration must preserve the replacement after reset.", scenario.Kind);
             }
             finally
             {
@@ -1849,12 +1146,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 _ = bus.Trim(force: true);
             }
 
-            Assert.AreEqual(
-                0,
-                handler._handlersByTypeByMessageBus.Count,
-                "[{0}] replacement cleanup must release the last bus cache.",
-                scenario.Kind
-            );
+            Assert.AreEqual(0, handler._handlersByTypeByMessageBus.Count, "[{0}] replacement cleanup must release the last bus cache.", scenario.Kind);
         }
 
         [Test]
@@ -1864,22 +1156,14 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             [ValueSource(nameof(ContextDictPoolScenarios))] MessageScenario scenario
         )
         {
-            MessageBus bus = CreatePoolRetainingBus(
-                new FakeClock(),
-                out DxMessagingRuntimeSettings settings,
-                out IDisposable overrideToken
-            );
+            MessageBus bus = CreatePoolRetainingBus(new FakeClock(), out DxMessagingRuntimeSettings settings, out IDisposable overrideToken);
             MessageHandler handler = CreateActiveHandler(bus);
             InstanceId anchorContext = new InstanceId(DefaultContext.Id + 1);
             Action anchorDeregister = null;
             Action firstDeregister = null;
             Action trailingDeregister = null;
             Action replacementDeregister = null;
-            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(
-                bus,
-                label: scenario.DisplayName,
-                handler: handler
-            );
+            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(bus, label: scenario.DisplayName, handler: handler);
             try
             {
                 _ = DxPools.TrimAll(force: true);
@@ -1887,19 +1171,13 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 int firstCalls = 0;
                 int trailingCalls = 0;
                 int replacementCalls = 0;
-                anchorDeregister = RegisterDirect(scenario, handler, bus, anchorContext, () =>
-                    anchorCalls++
-                );
+                anchorDeregister = RegisterDirect(scenario, handler, bus, anchorContext, () => anchorCalls++);
                 firstDeregister = RegisterDirect(scenario, handler, bus, DefaultContext, () =>
                 {
                     firstCalls++;
                     firstDeregister();
                     trailingDeregister();
-                    Assert.IsTrue(
-                        handler.HasPendingContextCleanup(bus),
-                        "[{0}] removing the last context handlers during dispatch must queue cleanup.",
-                        scenario.DisplayName
-                    );
+                    Assert.IsTrue(handler.HasPendingContextCleanup(bus), "[{0}] removing the last context handlers during dispatch must queue cleanup.", scenario.DisplayName);
                     if (ageDuringDispatch)
                     {
                         EmitSweepProbe(bus);
@@ -1907,82 +1185,30 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     _ = bus.Trim(forceDuringDispatch);
                     EmitFirst(scenario, bus, anchorContext);
                 });
-                trailingDeregister = RegisterDirect(scenario, handler, bus, DefaultContext, () =>
-                    trailingCalls++
-                );
-                Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>> contexts =
-                    ReadContextHandlers(scenario, handler, bus);
+                trailingDeregister = RegisterDirect(scenario, handler, bus, DefaultContext, () => trailingCalls++);
+                Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>> contexts = ReadContextHandlers(scenario, handler, bus);
                 Dictionary<int, IHandlerActionCache> retiredPriorities = contexts[DefaultContext];
 
                 EmitFirst(scenario, bus, DefaultContext);
 
-                Assert.AreEqual(
-                    1,
-                    firstCalls,
-                    "[{0}] the removing callback must run once.",
-                    scenario.DisplayName
-                );
-                Assert.AreEqual(
-                    1,
-                    trailingCalls,
-                    "[{0}] the frozen trailing callback must survive deregistration and trim.",
-                    scenario.DisplayName
-                );
-                Assert.AreEqual(
-                    1,
-                    anchorCalls,
-                    "[{0}] reentrant dispatch must preserve the other live context.",
-                    scenario.DisplayName
-                );
-                Assert.IsTrue(
-                    contexts.ContainsKey(DefaultContext),
-                    "[{0}] the retired context must remain pending until a sweep outside dispatch.",
-                    scenario.DisplayName
-                );
+                Assert.AreEqual(1, firstCalls, "[{0}] the removing callback must run once.", scenario.DisplayName);
+                Assert.AreEqual(1, trailingCalls, "[{0}] the frozen trailing callback must survive deregistration and trim.", scenario.DisplayName);
+                Assert.AreEqual(1, anchorCalls, "[{0}] reentrant dispatch must preserve the other live context.", scenario.DisplayName);
+                Assert.IsTrue(contexts.ContainsKey(DefaultContext), "[{0}] the retired context must remain pending until a sweep outside dispatch.", scenario.DisplayName);
 
                 EmitSweepProbe(bus);
                 _ = bus.Trim(force: false);
-                Assert.IsFalse(
-                    contexts.ContainsKey(DefaultContext),
-                    "[{0}] the sweep must reclaim pending context storage even after an in-dispatch trim.",
-                    scenario.DisplayName
-                );
-                Assert.IsFalse(
-                    handler.HasPendingContextCleanup(bus),
-                    "[{0}] the completed sweep must return pending-context tracking storage.",
-                    scenario.DisplayName
-                );
-                Assert.AreEqual(
-                    1,
-                    contexts.Count,
-                    "[{0}] only the anchor context may remain after cleanup.",
-                    scenario.DisplayName
-                );
+                Assert.IsFalse(contexts.ContainsKey(DefaultContext), "[{0}] the sweep must reclaim pending context storage even after an in-dispatch trim.", scenario.DisplayName);
+                Assert.IsFalse(handler.HasPendingContextCleanup(bus), "[{0}] the completed sweep must return pending-context tracking storage.", scenario.DisplayName);
+                Assert.AreEqual(1, contexts.Count, "[{0}] only the anchor context may remain after cleanup.", scenario.DisplayName);
 
-                replacementDeregister = RegisterDirect(scenario, handler, bus, DefaultContext, () =>
-                    replacementCalls++
-                );
-                Assert.AreSame(
-                    retiredPriorities,
-                    contexts[DefaultContext],
-                    "[{0}] the replacement context must reuse the returned priority dictionary.",
-                    scenario.DisplayName
-                );
+                replacementDeregister = RegisterDirect(scenario, handler, bus, DefaultContext, () => replacementCalls++);
+                Assert.AreSame(retiredPriorities, contexts[DefaultContext], "[{0}] the replacement context must reuse the returned priority dictionary.", scenario.DisplayName);
                 firstDeregister();
                 trailingDeregister();
                 EmitFirst(scenario, bus, DefaultContext);
-                Assert.AreEqual(
-                    1,
-                    replacementCalls,
-                    "[{0}] stale deregistration must preserve the replacement after dictionary reuse.",
-                    scenario.DisplayName
-                );
-                Assert.AreEqual(
-                    1,
-                    trailingCalls,
-                    "[{0}] later dispatch must not revive the retired snapshot.",
-                    scenario.DisplayName
-                );
+                Assert.AreEqual(1, replacementCalls, "[{0}] stale deregistration must preserve the replacement after dictionary reuse.", scenario.DisplayName);
+                Assert.AreEqual(1, trailingCalls, "[{0}] later dispatch must not revive the retired snapshot.", scenario.DisplayName);
             }
             finally
             {
@@ -1996,49 +1222,27 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             }
         }
 
-        private static Dictionary<
-            InstanceId,
-            Dictionary<int, IHandlerActionCache>
-        > ReadContextHandlers(MessageScenario scenario, MessageHandler handler, MessageBus bus)
+        private static Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>> ReadContextHandlers(MessageScenario scenario, MessageHandler handler, MessageBus bus)
         {
             if (scenario.Kind == MessageKind.Targeted)
             {
-                bool exists = handler
-                    ._handlersByTypeByMessageBus[bus.RegisteredGlobalSequentialIndex]
-                    .TryGetValue<TargetedOne>(out object untyped);
-                Assert.IsTrue(
-                    exists,
-                    "[{0}] the registered targeted handler must exist.",
-                    scenario.DisplayName
-                );
-                int index = scenario.UsePostProcessor
-                    ? TypedSlotIndex.TargetedPostProcessDefault
-                    : TypedSlotIndex.TargetedHandleDefault;
+                bool exists = handler._handlersByTypeByMessageBus[bus.RegisteredGlobalSequentialIndex].TryGetValue<TargetedOne>(out object untyped);
+                Assert.IsTrue(exists, "[{0}] the registered targeted handler must exist.", scenario.DisplayName);
+                int index = scenario.UsePostProcessor ? TypedSlotIndex.TargetedPostProcessDefault : TypedSlotIndex.TargetedHandleDefault;
                 return ((MessageHandler.TypedHandler<TargetedOne>)untyped)._slots[index].byContext;
             }
             if (scenario.Kind == MessageKind.Broadcast)
             {
-                bool exists = handler
-                    ._handlersByTypeByMessageBus[bus.RegisteredGlobalSequentialIndex]
-                    .TryGetValue<BroadcastOne>(out object untyped);
-                Assert.IsTrue(
-                    exists,
-                    "[{0}] the registered broadcast handler must exist.",
-                    scenario.DisplayName
-                );
-                int index = scenario.UsePostProcessor
-                    ? TypedSlotIndex.BroadcastPostProcessDefault
-                    : TypedSlotIndex.BroadcastHandleDefault;
+                bool exists = handler._handlersByTypeByMessageBus[bus.RegisteredGlobalSequentialIndex].TryGetValue<BroadcastOne>(out object untyped);
+                Assert.IsTrue(exists, "[{0}] the registered broadcast handler must exist.", scenario.DisplayName);
+                int index = scenario.UsePostProcessor ? TypedSlotIndex.BroadcastPostProcessDefault : TypedSlotIndex.BroadcastHandleDefault;
                 return ((MessageHandler.TypedHandler<BroadcastOne>)untyped)._slots[index].byContext;
             }
             throw UnsupportedScenario(scenario);
         }
 
         [Test]
-        public void TypedHandlerOuterWrapperReclaimedAfterTrim(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void TypedHandlerOuterWrapperReclaimedAfterTrim([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             MessageBus bus = MessageBus.CreateForInternalUse(new FakeClock(), idleEvictionTicks: 0);
             using IDisposable cleanup = ForceTrimCleanup(bus);
@@ -2046,33 +1250,14 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             Action deregisterFirst = null;
             Action deregisterSecond = null;
             Action deregisterThird = null;
-            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(
-                bus,
-                label: scenario.DisplayName
-            );
+            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(bus, label: scenario.DisplayName);
             try
             {
                 deregisterFirst = RegisterDirect(scenario, handler, bus, DefaultContext, () => { });
-                deregisterSecond = RegisterDirectSecond(
-                    scenario,
-                    handler,
-                    bus,
-                    DefaultContext,
-                    () => { }
-                );
-                deregisterThird = RegisterDirectThird(
-                    scenario,
-                    handler,
-                    bus,
-                    DefaultContext,
-                    () => { }
-                );
+                deregisterSecond = RegisterDirectSecond(scenario, handler, bus, DefaultContext, () => { });
+                deregisterThird = RegisterDirectThird(scenario, handler, bus, DefaultContext, () => { });
 
-                Assert.IsTrue(
-                    3 <= CountHandlerTypeCacheEntries(handler, bus),
-                    "[{0}] typed-handler wrappers must exist while registrations are live.",
-                    scenario.Kind
-                );
+                Assert.IsTrue(3 <= CountHandlerTypeCacheEntries(handler, bus), "[{0}] typed-handler wrappers must exist while registrations are live.", scenario.Kind);
 
                 deregisterFirst();
                 deregisterFirst = null;
@@ -2081,20 +1266,11 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 deregisterThird();
                 deregisterThird = null;
 
-                Assert.IsTrue(
-                    3 <= CountHandlerTypeCacheEntries(handler, bus),
-                    "[{0}] empty typed-handler wrappers must remain until trim.",
-                    scenario.Kind
-                );
+                Assert.IsTrue(3 <= CountHandlerTypeCacheEntries(handler, bus), "[{0}] empty typed-handler wrappers must remain until trim.", scenario.Kind);
 
                 _ = bus.Trim(force: true);
 
-                Assert.AreEqual(
-                    0,
-                    CountHandlerTypeCacheEntries(handler, bus),
-                    "[{0}] trim must remove empty typed-handler outer wrappers.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(0, CountHandlerTypeCacheEntries(handler, bus), "[{0}] trim must remove empty typed-handler outer wrappers.", scenario.Kind);
             }
             finally
             {
@@ -2121,22 +1297,12 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
 
             try
             {
-                foreach (
-                    Action<
-                        MessageHandler,
-                        MessageBus,
-                        List<Action>
-                    > registerRow in RegistrationFloodRows
-                )
+                foreach (Action<MessageHandler, MessageBus, List<Action>> registerRow in RegistrationFloodRows)
                 {
                     registerRow(handler, bus, deregistrations);
                 }
 
-                Assert.AreEqual(
-                    1024,
-                    CountHandlerTypeCacheEntries(handler, bus),
-                    "Scale setup must create one typed-handler wrapper per distinct message type."
-                );
+                Assert.AreEqual(1024, CountHandlerTypeCacheEntries(handler, bus), "Scale setup must create one typed-handler wrapper per distinct message type.");
 
                 foreach (Action deregister in deregistrations)
                 {
@@ -2145,19 +1311,11 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
 
                 deregistrations.Clear();
 
-                Assert.AreEqual(
-                    1024,
-                    CountHandlerTypeCacheEntries(handler, bus),
-                    "Empty typed-handler wrappers must remain in the sparse cache until trim."
-                );
+                Assert.AreEqual(1024, CountHandlerTypeCacheEntries(handler, bus), "Empty typed-handler wrappers must remain in the sparse cache until trim.");
 
                 _ = bus.Trim(force: true);
 
-                Assert.AreEqual(
-                    0,
-                    CountHandlerTypeCacheEntries(handler, bus),
-                    "Trim must remove every empty typed-handler wrapper from the sparse cache."
-                );
+                Assert.AreEqual(0, CountHandlerTypeCacheEntries(handler, bus), "Trim must remove every empty typed-handler wrapper from the sparse cache.");
             }
             finally
             {
@@ -2177,38 +1335,20 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             using IDisposable cleanup = ForceTrimCleanup(bus);
             using LeakWatcher watcher = LeakWatcher.WatchWithSlots(bus);
             MessageHandler handler = CreateActiveHandler(bus);
-            Action deregister = RegisterDirect(
-                MessageScenario.Untargeted(),
-                handler,
-                bus,
-                DefaultContext,
-                () => { }
-            );
+            Action deregister = RegisterDirect(MessageScenario.Untargeted(), handler, bus, DefaultContext, () => { });
 
             deregister();
 
-            Assert.GreaterOrEqual(
-                CountDirtyHandlers(bus),
-                1,
-                "Deregistering the last typed handler must dirty the owning MessageHandler."
-            );
+            Assert.GreaterOrEqual(CountDirtyHandlers(bus), 1, "Deregistering the last typed handler must dirty the owning MessageHandler.");
 
             _ = bus.Trim(force: true);
 
-            Assert.AreEqual(
-                0,
-                CountDirtyHandlers(bus),
-                "Trim must compact dirty-handler candidates after their typed wrappers are reclaimed."
-            );
+            Assert.AreEqual(0, CountDirtyHandlers(bus), "Trim must compact dirty-handler candidates after their typed wrappers are reclaimed.");
         }
 
         [Test]
         public void EmitAfterOuterReclamationDispatchesReplacementOnly(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext)
-            )]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext))] MessageScenario scenario
         )
         {
             MessageBus bus = MessageBus.CreateForInternalUse(new FakeClock(), idleEvictionTicks: 0);
@@ -2218,23 +1358,13 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             int currentCalls = 0;
             Action staleDeregister = null;
             Action currentDeregister = null;
-            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(
-                bus,
-                label: scenario.DisplayName
-            );
+            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(bus, label: scenario.DisplayName);
             try
             {
-                staleDeregister = RegisterDirect(scenario, handler, bus, DefaultContext, () =>
-                    staleCalls++
-                );
+                staleDeregister = RegisterDirect(scenario, handler, bus, DefaultContext, () => staleCalls++);
 
                 EmitFirst(scenario, bus, DefaultContext);
-                Assert.AreEqual(
-                    1,
-                    staleCalls,
-                    "[{0}] setup emission must prove the stale registration was reachable.",
-                    scenario.DisplayName
-                );
+                Assert.AreEqual(1, staleCalls, "[{0}] setup emission must prove the stale registration was reachable.", scenario.DisplayName);
 
                 staleDeregister();
                 staleDeregister = null;
@@ -2247,24 +1377,12 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     trimResult
                 );
 
-                currentDeregister = RegisterDirect(scenario, handler, bus, DefaultContext, () =>
-                    currentCalls++
-                );
+                currentDeregister = RegisterDirect(scenario, handler, bus, DefaultContext, () => currentCalls++);
 
                 EmitFirst(scenario, bus, DefaultContext);
 
-                Assert.AreEqual(
-                    1,
-                    staleCalls,
-                    "[{0}] stale bus dispatch state must not fire the reclaimed registration.",
-                    scenario.DisplayName
-                );
-                Assert.AreEqual(
-                    1,
-                    currentCalls,
-                    "[{0}] replacement registration must dispatch through the production bus path.",
-                    scenario.DisplayName
-                );
+                Assert.AreEqual(1, staleCalls, "[{0}] stale bus dispatch state must not fire the reclaimed registration.", scenario.DisplayName);
+                Assert.AreEqual(1, currentCalls, "[{0}] replacement registration must dispatch through the production bus path.", scenario.DisplayName);
             }
             finally
             {
@@ -2287,11 +1405,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             return new MessageHandler(HandlerOwner, bus) { active = true };
         }
 
-        private static MessageBus CreatePoolRetainingBus(
-            IDxMessagingClock clock,
-            out DxMessagingRuntimeSettings settings,
-            out IDisposable overrideToken
-        )
+        private static MessageBus CreatePoolRetainingBus(IDxMessagingClock clock, out DxMessagingRuntimeSettings settings, out IDisposable overrideToken)
         {
             settings = ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
             settings._bufferMaxDistinctEntries = RetainedPoolEntryCount;
@@ -2316,20 +1430,12 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             });
         }
 
-        private static MessageRegistrationHandle RegisterFirst(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            InstanceId context
-        )
+        private static MessageRegistrationHandle RegisterFirst(MessageScenario scenario, MessageRegistrationToken token, InstanceId context)
         {
             return RegisterCountingFirst(scenario, token, context, () => { });
         }
 
-        private static MessageRegistrationHandle RegisterSecond(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            InstanceId context
-        )
+        private static MessageRegistrationHandle RegisterSecond(MessageScenario scenario, MessageRegistrationToken token, InstanceId context)
         {
             switch (scenario.Kind)
             {
@@ -2343,10 +1449,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 }
                 case MessageKind.Broadcast:
                 {
-                    return token.RegisterBroadcast<BroadcastTwo>(
-                        context,
-                        (in BroadcastTwo _) => { }
-                    );
+                    return token.RegisterBroadcast<BroadcastTwo>(context, (in BroadcastTwo _) => { });
                 }
                 default:
                 {
@@ -2355,11 +1458,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             }
         }
 
-        private static MessageRegistrationHandle RegisterThird(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            InstanceId context
-        )
+        private static MessageRegistrationHandle RegisterThird(MessageScenario scenario, MessageRegistrationToken token, InstanceId context)
         {
             switch (scenario.Kind)
             {
@@ -2369,17 +1468,11 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 }
                 case MessageKind.Targeted:
                 {
-                    return token.RegisterTargeted<TargetedThree>(
-                        context,
-                        (in TargetedThree _) => { }
-                    );
+                    return token.RegisterTargeted<TargetedThree>(context, (in TargetedThree _) => { });
                 }
                 case MessageKind.Broadcast:
                 {
-                    return token.RegisterBroadcast<BroadcastThree>(
-                        context,
-                        (in BroadcastThree _) => { }
-                    );
+                    return token.RegisterBroadcast<BroadcastThree>(context, (in BroadcastThree _) => { });
                 }
                 default:
                 {
@@ -2400,26 +1493,15 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             {
                 case MessageKind.Untargeted:
                 {
-                    return token.RegisterUntargeted<UntargetedOne>(
-                        (in UntargetedOne _) => onMessage(),
-                        priority: priority
-                    );
+                    return token.RegisterUntargeted<UntargetedOne>((in UntargetedOne _) => onMessage(), priority: priority);
                 }
                 case MessageKind.Targeted:
                 {
-                    return token.RegisterTargeted<TargetedOne>(
-                        context,
-                        (in TargetedOne _) => onMessage(),
-                        priority: priority
-                    );
+                    return token.RegisterTargeted<TargetedOne>(context, (in TargetedOne _) => onMessage(), priority: priority);
                 }
                 case MessageKind.Broadcast:
                 {
-                    return token.RegisterBroadcast<BroadcastOne>(
-                        context,
-                        (in BroadcastOne _) => onMessage(),
-                        priority: priority
-                    );
+                    return token.RegisterBroadcast<BroadcastOne>(context, (in BroadcastOne _) => onMessage(), priority: priority);
                 }
                 default:
                 {
@@ -2428,13 +1510,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             }
         }
 
-        private static Action RegisterDirect(
-            MessageScenario scenario,
-            MessageHandler handler,
-            MessageBus bus,
-            InstanceId context,
-            Action onMessage
-        )
+        private static Action RegisterDirect(MessageScenario scenario, MessageHandler handler, MessageBus bus, InstanceId context, Action onMessage)
         {
             if (scenario.UsePostProcessor)
             {
@@ -2446,64 +1522,27 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 case MessageKind.Untargeted:
                 {
                     Action<UntargetedOne> callback = _ => onMessage();
-                    return (
-                        handler.RegisterUntargetedMessageHandler(
-                            callback,
-                            callback,
-                            priority: 0,
-                            messageBus: bus
-                        )
-                    ).AsAction();
+                    return (handler.RegisterUntargetedMessageHandler(callback, callback, priority: 0, messageBus: bus)).AsAction();
                 }
                 case MessageKind.Targeted:
                 {
                     Action<TargetedOne> callback = _ => onMessage();
-                    return (
-                        handler.RegisterTargetedMessageHandler(
-                            context,
-                            callback,
-                            callback,
-                            priority: 0,
-                            messageBus: bus
-                        )
-                    ).AsAction();
+                    return (handler.RegisterTargetedMessageHandler(context, callback, callback, priority: 0, messageBus: bus)).AsAction();
                 }
                 case MessageKind.Broadcast:
                 {
                     Action<BroadcastOne> callback = _ => onMessage();
-                    return (
-                        handler.RegisterSourcedBroadcastMessageHandler(
-                            context,
-                            callback,
-                            callback,
-                            priority: 0,
-                            messageBus: bus
-                        )
-                    ).AsAction();
+                    return (handler.RegisterSourcedBroadcastMessageHandler(context, callback, callback, priority: 0, messageBus: bus)).AsAction();
                 }
                 case MessageKind.TargetedWithoutTargeting:
                 {
                     Action<InstanceId, TargetedOne> callback = (_, _) => onMessage();
-                    return (
-                        handler.RegisterTargetedWithoutTargeting(
-                            callback,
-                            callback,
-                            priority: 0,
-                            messageBus: bus
-                        )
-                    ).AsAction();
+                    return (handler.RegisterTargetedWithoutTargeting(callback, callback, priority: 0, messageBus: bus)).AsAction();
                 }
                 case MessageKind.BroadcastWithoutSource:
                 {
                     Action<InstanceId, BroadcastOne> callback = (_, _) => onMessage();
-                    return (
-                        handler.RegisterSourcedBroadcastWithoutSource(
-                            callback,
-                            callback,
-                            priority: 0,
-                            messageBus: bus
-                        )
-                    ).AsAction();
+                    return (handler.RegisterSourcedBroadcastWithoutSource(callback, callback, priority: 0, messageBus: bus)).AsAction();
                 }
                 default:
                 {
@@ -2512,77 +1551,34 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             }
         }
 
-        private static Action RegisterDirectPostProcessor(
-            MessageScenario scenario,
-            MessageHandler handler,
-            MessageBus bus,
-            InstanceId context,
-            Action onMessage
-        )
+        private static Action RegisterDirectPostProcessor(MessageScenario scenario, MessageHandler handler, MessageBus bus, InstanceId context, Action onMessage)
         {
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
                 {
                     Action<UntargetedOne> callback = _ => onMessage();
-                    return (
-                        handler.RegisterUntargetedPostProcessor(
-                            callback,
-                            callback,
-                            priority: 0,
-                            messageBus: bus
-                        )
-                    ).AsAction();
+                    return (handler.RegisterUntargetedPostProcessor(callback, callback, priority: 0, messageBus: bus)).AsAction();
                 }
                 case MessageKind.Targeted:
                 {
                     Action<TargetedOne> callback = _ => onMessage();
-                    return (
-                        handler.RegisterTargetedPostProcessor(
-                            context,
-                            callback,
-                            callback,
-                            priority: 0,
-                            messageBus: bus
-                        )
-                    ).AsAction();
+                    return (handler.RegisterTargetedPostProcessor(context, callback, callback, priority: 0, messageBus: bus)).AsAction();
                 }
                 case MessageKind.Broadcast:
                 {
                     Action<BroadcastOne> callback = _ => onMessage();
-                    return (
-                        handler.RegisterSourcedBroadcastPostProcessor(
-                            context,
-                            callback,
-                            callback,
-                            priority: 0,
-                            messageBus: bus
-                        )
-                    ).AsAction();
+                    return (handler.RegisterSourcedBroadcastPostProcessor(context, callback, callback, priority: 0, messageBus: bus)).AsAction();
                 }
                 case MessageKind.TargetedWithoutTargeting:
                 {
                     Action<InstanceId, TargetedOne> callback = (_, _) => onMessage();
-                    return (
-                        handler.RegisterTargetedWithoutTargetingPostProcessor(
-                            callback,
-                            callback,
-                            priority: 0,
-                            messageBus: bus
-                        )
-                    ).AsAction();
+                    return (handler.RegisterTargetedWithoutTargetingPostProcessor(callback, callback, priority: 0, messageBus: bus)).AsAction();
                 }
                 case MessageKind.BroadcastWithoutSource:
                 {
                     Action<InstanceId, BroadcastOne> callback = (_, _) => onMessage();
-                    return (
-                        handler.RegisterSourcedBroadcastWithoutSourcePostProcessor(
-                            callback,
-                            callback,
-                            priority: 0,
-                            messageBus: bus
-                        )
-                    ).AsAction();
+                    return (handler.RegisterSourcedBroadcastWithoutSourcePostProcessor(callback, callback, priority: 0, messageBus: bus)).AsAction();
                 }
                 default:
                 {
@@ -2591,53 +1587,24 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             }
         }
 
-        private static Action RegisterDirectSecond(
-            MessageScenario scenario,
-            MessageHandler handler,
-            MessageBus bus,
-            InstanceId context,
-            Action onMessage
-        )
+        private static Action RegisterDirectSecond(MessageScenario scenario, MessageHandler handler, MessageBus bus, InstanceId context, Action onMessage)
         {
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
                 {
                     Action<UntargetedTwo> callback = _ => onMessage();
-                    return (
-                        handler.RegisterUntargetedMessageHandler(
-                            callback,
-                            callback,
-                            priority: 0,
-                            messageBus: bus
-                        )
-                    ).AsAction();
+                    return (handler.RegisterUntargetedMessageHandler(callback, callback, priority: 0, messageBus: bus)).AsAction();
                 }
                 case MessageKind.Targeted:
                 {
                     Action<TargetedTwo> callback = _ => onMessage();
-                    return (
-                        handler.RegisterTargetedMessageHandler(
-                            context,
-                            callback,
-                            callback,
-                            priority: 0,
-                            messageBus: bus
-                        )
-                    ).AsAction();
+                    return (handler.RegisterTargetedMessageHandler(context, callback, callback, priority: 0, messageBus: bus)).AsAction();
                 }
                 case MessageKind.Broadcast:
                 {
                     Action<BroadcastTwo> callback = _ => onMessage();
-                    return (
-                        handler.RegisterSourcedBroadcastMessageHandler(
-                            context,
-                            callback,
-                            callback,
-                            priority: 0,
-                            messageBus: bus
-                        )
-                    ).AsAction();
+                    return (handler.RegisterSourcedBroadcastMessageHandler(context, callback, callback, priority: 0, messageBus: bus)).AsAction();
                 }
                 default:
                 {
@@ -2646,53 +1613,24 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             }
         }
 
-        private static Action RegisterDirectThird(
-            MessageScenario scenario,
-            MessageHandler handler,
-            MessageBus bus,
-            InstanceId context,
-            Action onMessage
-        )
+        private static Action RegisterDirectThird(MessageScenario scenario, MessageHandler handler, MessageBus bus, InstanceId context, Action onMessage)
         {
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
                 {
                     Action<UntargetedThree> callback = _ => onMessage();
-                    return (
-                        handler.RegisterUntargetedMessageHandler(
-                            callback,
-                            callback,
-                            priority: 0,
-                            messageBus: bus
-                        )
-                    ).AsAction();
+                    return (handler.RegisterUntargetedMessageHandler(callback, callback, priority: 0, messageBus: bus)).AsAction();
                 }
                 case MessageKind.Targeted:
                 {
                     Action<TargetedThree> callback = _ => onMessage();
-                    return (
-                        handler.RegisterTargetedMessageHandler(
-                            context,
-                            callback,
-                            callback,
-                            priority: 0,
-                            messageBus: bus
-                        )
-                    ).AsAction();
+                    return (handler.RegisterTargetedMessageHandler(context, callback, callback, priority: 0, messageBus: bus)).AsAction();
                 }
                 case MessageKind.Broadcast:
                 {
                     Action<BroadcastThree> callback = _ => onMessage();
-                    return (
-                        handler.RegisterSourcedBroadcastMessageHandler(
-                            context,
-                            callback,
-                            callback,
-                            priority: 0,
-                            messageBus: bus
-                        )
-                    ).AsAction();
+                    return (handler.RegisterSourcedBroadcastMessageHandler(context, callback, callback, priority: 0, messageBus: bus)).AsAction();
                 }
                 default:
                 {
@@ -2703,10 +1641,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
 
         private static int CountDirtyHandlers(MessageBus bus)
         {
-            FieldInfo field = typeof(MessageBus).GetField(
-                "_dirtyHandlers",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
+            FieldInfo field = typeof(MessageBus).GetField("_dirtyHandlers", BindingFlags.Instance | BindingFlags.NonPublic);
             List<MessageHandler> dirtyHandlers = (List<MessageHandler>)field.GetValue(bus);
             return dirtyHandlers.Count;
         }
@@ -2731,21 +1666,11 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             return count;
         }
 
-        private static Action RegisterUntargetedGenericDirect<T>(
-            MessageHandler handler,
-            MessageBus bus
-        )
+        private static Action RegisterUntargetedGenericDirect<T>(MessageHandler handler, MessageBus bus)
             where T : IUntargetedMessage<T>
         {
             Action<T> callback = _ => { };
-            return (
-                handler.RegisterUntargetedMessageHandler(
-                    callback,
-                    callback,
-                    priority: 0,
-                    messageBus: bus
-                )
-            ).AsAction();
+            return (handler.RegisterUntargetedMessageHandler(callback, callback, priority: 0, messageBus: bus)).AsAction();
         }
 
         private static void EmitFirst(MessageScenario scenario, MessageBus bus, InstanceId context)
@@ -2796,18 +1721,10 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
 
         private static ArgumentOutOfRangeException UnsupportedScenario(MessageScenario scenario)
         {
-            return new ArgumentOutOfRangeException(
-                nameof(scenario),
-                scenario?.Kind,
-                "Unsupported message kind."
-            );
+            return new ArgumentOutOfRangeException(nameof(scenario), scenario?.Kind, "Unsupported message kind.");
         }
 
-        private static readonly Action<
-            MessageHandler,
-            MessageBus,
-            List<Action>
-        >[] RegistrationFloodRows =
+        private static readonly Action<MessageHandler, MessageBus, List<Action>>[] RegistrationFloodRows =
         {
             RegisterRegistrationFloodRow<RegistrationFloodMarker00>,
             RegisterRegistrationFloodRow<RegistrationFloodMarker01>,
@@ -2843,190 +1760,48 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             RegisterRegistrationFloodRow<RegistrationFloodMarker31>,
         };
 
-        private static void RegisterRegistrationFloodRow<TOuter>(
-            MessageHandler handler,
-            MessageBus bus,
-            List<Action> deregistrations
-        )
+        private static void RegisterRegistrationFloodRow<TOuter>(MessageHandler handler, MessageBus bus, List<Action> deregistrations)
         {
-            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker00>(
-                handler,
-                bus,
-                deregistrations
-            );
-            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker01>(
-                handler,
-                bus,
-                deregistrations
-            );
-            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker02>(
-                handler,
-                bus,
-                deregistrations
-            );
-            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker03>(
-                handler,
-                bus,
-                deregistrations
-            );
-            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker04>(
-                handler,
-                bus,
-                deregistrations
-            );
-            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker05>(
-                handler,
-                bus,
-                deregistrations
-            );
-            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker06>(
-                handler,
-                bus,
-                deregistrations
-            );
-            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker07>(
-                handler,
-                bus,
-                deregistrations
-            );
-            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker08>(
-                handler,
-                bus,
-                deregistrations
-            );
-            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker09>(
-                handler,
-                bus,
-                deregistrations
-            );
-            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker10>(
-                handler,
-                bus,
-                deregistrations
-            );
-            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker11>(
-                handler,
-                bus,
-                deregistrations
-            );
-            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker12>(
-                handler,
-                bus,
-                deregistrations
-            );
-            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker13>(
-                handler,
-                bus,
-                deregistrations
-            );
-            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker14>(
-                handler,
-                bus,
-                deregistrations
-            );
-            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker15>(
-                handler,
-                bus,
-                deregistrations
-            );
-            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker16>(
-                handler,
-                bus,
-                deregistrations
-            );
-            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker17>(
-                handler,
-                bus,
-                deregistrations
-            );
-            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker18>(
-                handler,
-                bus,
-                deregistrations
-            );
-            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker19>(
-                handler,
-                bus,
-                deregistrations
-            );
-            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker20>(
-                handler,
-                bus,
-                deregistrations
-            );
-            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker21>(
-                handler,
-                bus,
-                deregistrations
-            );
-            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker22>(
-                handler,
-                bus,
-                deregistrations
-            );
-            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker23>(
-                handler,
-                bus,
-                deregistrations
-            );
-            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker24>(
-                handler,
-                bus,
-                deregistrations
-            );
-            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker25>(
-                handler,
-                bus,
-                deregistrations
-            );
-            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker26>(
-                handler,
-                bus,
-                deregistrations
-            );
-            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker27>(
-                handler,
-                bus,
-                deregistrations
-            );
-            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker28>(
-                handler,
-                bus,
-                deregistrations
-            );
-            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker29>(
-                handler,
-                bus,
-                deregistrations
-            );
-            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker30>(
-                handler,
-                bus,
-                deregistrations
-            );
-            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker31>(
-                handler,
-                bus,
-                deregistrations
-            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker00>(handler, bus, deregistrations);
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker01>(handler, bus, deregistrations);
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker02>(handler, bus, deregistrations);
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker03>(handler, bus, deregistrations);
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker04>(handler, bus, deregistrations);
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker05>(handler, bus, deregistrations);
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker06>(handler, bus, deregistrations);
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker07>(handler, bus, deregistrations);
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker08>(handler, bus, deregistrations);
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker09>(handler, bus, deregistrations);
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker10>(handler, bus, deregistrations);
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker11>(handler, bus, deregistrations);
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker12>(handler, bus, deregistrations);
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker13>(handler, bus, deregistrations);
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker14>(handler, bus, deregistrations);
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker15>(handler, bus, deregistrations);
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker16>(handler, bus, deregistrations);
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker17>(handler, bus, deregistrations);
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker18>(handler, bus, deregistrations);
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker19>(handler, bus, deregistrations);
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker20>(handler, bus, deregistrations);
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker21>(handler, bus, deregistrations);
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker22>(handler, bus, deregistrations);
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker23>(handler, bus, deregistrations);
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker24>(handler, bus, deregistrations);
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker25>(handler, bus, deregistrations);
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker26>(handler, bus, deregistrations);
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker27>(handler, bus, deregistrations);
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker28>(handler, bus, deregistrations);
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker29>(handler, bus, deregistrations);
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker30>(handler, bus, deregistrations);
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker31>(handler, bus, deregistrations);
         }
 
-        private static void RegisterRegistrationFloodEntry<TOuter, TInner>(
-            MessageHandler handler,
-            MessageBus bus,
-            List<Action> deregistrations
-        )
+        private static void RegisterRegistrationFloodEntry<TOuter, TInner>(MessageHandler handler, MessageBus bus, List<Action> deregistrations)
         {
-            deregistrations.Add(
-                RegisterUntargetedGenericDirect<RegistrationFloodMessage<TOuter, TInner>>(
-                    handler,
-                    bus
-                )
-            );
+            deregistrations.Add(RegisterUntargetedGenericDirect<RegistrationFloodMessage<TOuter, TInner>>(handler, bus));
         }
 
-        private readonly struct RegistrationFloodMessage<TOuter, TInner>
-            : IUntargetedMessage<RegistrationFloodMessage<TOuter, TInner>> { }
+        private readonly struct RegistrationFloodMessage<TOuter, TInner> : IUntargetedMessage<RegistrationFloodMessage<TOuter, TInner>> { }
 
         private readonly struct RegistrationFloodMarker00 { }
 

@@ -1,29 +1,24 @@
 # DxMessaging devcontainer maintenance
 
-The devcontainer installs the current npm `latest` dist-tag for these coding
-tools:
+The devcontainer installs the current npm `latest` dist-tag for these coding tools:
 
 - `@openai/codex`
 - `@anthropic-ai/claude-code`
 - `@nanocollective/nanocoder`
 - `@z_ai/mcp-server`
 
-The image installs these tools under `/usr/local`. Container creation and
-each start refresh Codex, Claude Code, Nanocoder, and OpenCode in the
-user-owned npm prefix, `~/.local`, without sudo.
+The image installs these tools under `/usr/local`. Container creation and each start refresh Codex, Claude Code, Nanocoder, and OpenCode in the user-owned npm prefix, `~/.local`,
+without sudo.
 
-OpenCode uses the newest stable v2 release of `@opencode/cli`. The image
-installs it in `~/.local` for offline use and for native updates:
+OpenCode uses the newest stable v2 release of `@opencode/cli`. The image installs it in `~/.local` for offline use and for native updates:
 
 ```bash
 opencode upgrade
 ```
 
-Before your first v2 session, review your OpenCode configuration. V2 allows
-access outside the project by default. To keep the v1 approval prompt, add
-`{ "action": "external_directory", "resource": "*", "effect": "ask" }` to your
-`permissions` array. V1 plugins require a v2 port.
-See the [OpenCode v1 migration guide](https://opencode.ai/docs/migrate-v1/).
+Before your first v2 session, review your OpenCode configuration. V2 allows access outside the project by default. To keep the v1 approval prompt, add
+`{ "action": "external_directory", "resource": "*", "effect": "ask" }` to your `permissions` array. V1 plugins require a v2 port. See the
+[OpenCode v1 migration guide](https://opencode.ai/docs/migrate-v1/).
 
 Run the refresh manually or migrate a running v1 container with:
 
@@ -37,8 +32,7 @@ Rebuild the devcontainer once to replace the legacy v1 image installation.
 
 ## Native, Z.ai, and OpenRouter backends
 
-The ordinary `codex` and `claude` commands keep their native OpenAI and
-Anthropic backends. Container creation also installs opt-in launchers through
+The ordinary `codex` and `claude` commands keep their native OpenAI and Anthropic backends. Container creation also installs opt-in launchers through
 `bash .devcontainer/ai-backends.sh install`:
 
 | Launcher            | Harness     | Backend              | Protocol           |
@@ -48,8 +42,7 @@ Anthropic backends. Container creation also installs opt-in launchers through
 | `codex-openrouter`  | Codex       | OpenRouter           | OpenAI Responses   |
 | `claude-openrouter` | Claude Code | OpenRouter           | Anthropic Messages |
 
-Switching is per process. No command rewrites the native configuration, and
-exiting a launcher returns to the native commands immediately.
+Switching is per process. No command rewrites the native configuration, and exiting a launcher returns to the native commands immediately.
 
 Provide the credentials through a private environment or secret store:
 
@@ -62,50 +55,32 @@ codex-openrouter
 claude-openrouter
 ```
 
-The devcontainer forwards both variables from the host through `remoteEnv` in
-`devcontainer.json`.
+The devcontainer forwards both variables from the host through `remoteEnv` in `devcontainer.json`.
 
 ### Z.ai launchers
 
-Codex uses a `devcontainer-zai` profile layered over your user config
-(`$CODEX_HOME/devcontainer-zai.config.toml` plus a model catalog JSON), Z.ai's
-Responses endpoint at `https://api.z.ai/api/v1`, and the `ZAI_API_KEY`
-environment variable. Claude uses Z.ai's Anthropic endpoint at
-`https://api.z.ai/api/anthropic` and a separate `~/.claude-zai` state
-directory, so native credentials and sessions remain isolated. Claude's
-`haiku`, `sonnet`, and `opus` aliases map to the Z.ai GLM models
-(`glm-5.3-flash[1m]` and `glm-5.3[1m]`).
+Codex uses a `devcontainer-zai` profile layered over your user config (`$CODEX_HOME/devcontainer-zai.config.toml` plus a model catalog JSON), Z.ai's Responses endpoint at
+`https://api.z.ai/api/v1`, and the `ZAI_API_KEY` environment variable. Claude uses Z.ai's Anthropic endpoint at `https://api.z.ai/api/anthropic` and a separate `~/.claude-zai`
+state directory, so native credentials and sessions remain isolated. Claude's `haiku`, `sonnet`, and `opus` aliases map to the Z.ai GLM models (`glm-5.3-flash[1m]` and
+`glm-5.3[1m]`).
 
 ### OpenRouter launchers
 
-Codex uses a `devcontainer-openrouter` profile layered over your user config
-(`$CODEX_HOME/devcontainer-openrouter.config.toml`), OpenRouter's Responses
-endpoint at `https://openrouter.ai/api/v1`, and command-based auth that reads
-`OPENROUTER_API_KEY`. Command-based auth makes Codex refresh OpenRouter's live
-model catalog, so pinned slugs get correct context-window and reasoning
-metadata instead of fallback defaults. The default model is
-`openai/gpt-5.6-sol`; pin any full OpenRouter slug (it must include the
-provider prefix, for example `anthropic/claude-sonnet-5`).
+Codex uses a `devcontainer-openrouter` profile layered over your user config (`$CODEX_HOME/devcontainer-openrouter.config.toml`), OpenRouter's Responses endpoint at
+`https://openrouter.ai/api/v1`, and command-based auth that reads `OPENROUTER_API_KEY`. Command-based auth makes Codex refresh OpenRouter's live model catalog, so pinned slugs get
+correct context-window and reasoning metadata instead of fallback defaults. The default model is `openai/gpt-5.6-sol`; pin any full OpenRouter slug (it must include the provider
+prefix, for example `anthropic/claude-sonnet-5`).
 
-Claude uses OpenRouter's Anthropic-compatible endpoint at
-`https://openrouter.ai/api` with the key in `ANTHROPIC_AUTH_TOKEN` and
-`ANTHROPIC_API_KEY` explicitly blanked, per OpenRouter's documented contract.
-It keeps state in a separate `~/.claude-openrouter` directory. The `fable`,
-`opus`, `sonnet`, and `haiku` aliases plus the subagent model map to
-OpenRouter's tracked Anthropic slugs (`~anthropic/claude-fable-latest`,
-`~anthropic/claude-opus-latest`, `~anthropic/claude-sonnet-latest`,
-`~anthropic/claude-haiku-latest`), and gateway model discovery is enabled so
-the `/model` picker lists gateway models.
+Claude uses OpenRouter's Anthropic-compatible endpoint at `https://openrouter.ai/api` with the key in `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_API_KEY` explicitly blanked, per
+OpenRouter's documented contract. It keeps state in a separate `~/.claude-openrouter` directory. The `fable`, `opus`, `sonnet`, and `haiku` aliases plus the subagent model map to
+OpenRouter's tracked Anthropic slugs (`~anthropic/claude-fable-latest`, `~anthropic/claude-opus-latest`, `~anthropic/claude-sonnet-latest`, `~anthropic/claude-haiku-latest`), and
+gateway model discovery is enabled so the `/model` picker lists gateway models.
 
 ### Credential hygiene
 
-The launchers never write a credential to a repository file or a generated
-profile. Codex profiles authenticate through environment variables, and each
-profile's `shell_environment_policy` excludes the model-server credential from
-harness shell and MCP subprocesses. Claude launchers remove competing
-Bedrock, Vertex, Foundry, gateway, and AWS selectors before setting the
-gateway endpoint, and unset the raw provider key after transferring it to
-`ANTHROPIC_AUTH_TOKEN`.
+The launchers never write a credential to a repository file or a generated profile. Codex profiles authenticate through environment variables, and each profile's
+`shell_environment_policy` excludes the model-server credential from harness shell and MCP subprocesses. Claude launchers remove competing Bedrock, Vertex, Foundry, gateway, and
+AWS selectors before setting the gateway endpoint, and unset the raw provider key after transferring it to `ANTHROPIC_AUTH_TOKEN`.
 
 ### Optional per-process overrides
 
@@ -131,8 +106,7 @@ gateway endpoint, and unset the raw provider key after transferring it to
 | `AI_BACKENDS_CONTAINER_MODE`          | `auto` (`auto`, `yes`, `no`)              | both Claude launchers |
 | `CLAUDE_GATEWAY_SUBPROCESS_ENV_SCRUB` | `auto` (`auto`, `0`, `1`)                 | both Claude launchers |
 
-After moving the checkout, remove the four stale launcher symlinks from their installation
-directory. Then reinstall them:
+After moving the checkout, remove the four stale launcher symlinks from their installation directory. Then reinstall them:
 
 ```bash
 bash .devcontainer/ai-backends.sh install
@@ -142,29 +116,19 @@ The installer refuses dangling symlinks because it cannot prove who created them
 
 ### Claude subprocess isolation
 
-Claude's experimental Linux subprocess scrubber uses `bubblewrap` and `socat`;
-both are baked into the devcontainer. Current Claude Code still asks
-bubblewrap to create a user and mount namespace even with
-`sandbox.enableWeakerNestedSandbox=true`, which Docker's default seccomp and
-AppArmor profiles reject. In an existing devcontainer, both Claude launchers
-therefore default `CLAUDE_GATEWAY_SUBPROCESS_ENV_SCRUB` to `0` and rely on the
-outer container as the process boundary. Controlled Bash and stdio MCP probes
-verified that Claude still removes the model-server credential from those
-children.
+Claude's experimental Linux subprocess scrubber uses `bubblewrap` and `socat`; both are baked into the devcontainer. Current Claude Code still asks bubblewrap to create a user and
+mount namespace even with `sandbox.enableWeakerNestedSandbox=true`, which Docker's default seccomp and AppArmor profiles reject. In an existing devcontainer, both Claude launchers
+therefore default `CLAUDE_GATEWAY_SUBPROCESS_ENV_SCRUB` to `0` and rely on the outer container as the process boundary. Controlled Bash and stdio MCP probes verified that Claude
+still removes the model-server credential from those children.
 
-Outside a container, the launchers retain the stronger scrubber by default.
-Set `CLAUDE_GATEWAY_SUBPROCESS_ENV_SCRUB=1` to request it explicitly; the
-launcher runs a real bubblewrap preflight and exits with actionable guidance
-before starting a model session when the runtime cannot support it. Do not add
-`SYS_ADMIN`, run a privileged container, or globally weaken host AppArmor
-merely to make this optional second sandbox work.
+Outside a container, the launchers retain the stronger scrubber by default. Set `CLAUDE_GATEWAY_SUBPROCESS_ENV_SCRUB=1` to request it explicitly; the launcher runs a real
+bubblewrap preflight and exits with actionable guidance before starting a model session when the runtime cannot support it. Do not add `SYS_ADMIN`, run a privileged container, or
+globally weaken host AppArmor merely to make this optional second sandbox work.
 
 ## Regression tests
 
-`.devcontainer/test-ai-backends.sh` drives the launcher through stub `codex`
-and `claude` binaries and asserts profile generation, permissions, credential
-scrubbing, endpoint selection, and argument forwarding. It runs in the
-devcontainer CI smoke test on both x64 and ARM64:
+`.devcontainer/test-ai-backends.sh` drives the launcher through stub `codex` and `claude` binaries and asserts profile generation, permissions, credential scrubbing, endpoint
+selection, and argument forwarding. It runs in the devcontainer CI smoke test on both x64 and ARM64:
 
 ```bash
 bash .devcontainer/test-ai-backends.sh
@@ -172,17 +136,12 @@ bash .devcontainer/test-ai-backends.sh
 
 ## Fast verification and SDK setup
 
-Both container creation and attachment resolve the exact SDK from `global.json`.
-A missing SDK is installed synchronously into `/usr/share/dotnet`; a failed download,
-failed installation, or unresolved version stops setup before tools run.
+Both container creation and attachment resolve the exact SDK from `global.json`. A missing SDK is installed synchronously into `/usr/share/dotnet`; a failed download, failed
+installation, or unresolved version stops setup before tools run.
 
-Use `npm run test:unit` for the fast script subset. Run a changed file directly with
-`node --test scripts/__tests__/package-script-contract.test.js`. Use
-`npm run test:integration` for the remaining script tests and Python reducers, and
-`npm test` for the complete suite. Both lanes use native Node file isolation with
-at most four test processes. New test files enter the integration lane by default.
+Use `npm run test:unit` for the fast script subset. Run a changed file directly with `node --test scripts/__tests__/package-script-contract.test.js`. Use `npm run test:integration`
+for the remaining script tests and Python reducers, and `npm test` for the complete suite. Both lanes use native Node file isolation with at most four test processes. New test
+files enter the integration lane by default.
 
-The devcontainer workflow builds both supported architectures only when image,
-dependency, setup, or smoke-test inputs change. It validates SDK resolution, cache
-mounts, backend launchers, and agent setup contracts. Static CI owns the full script
-suite, so building an image does not run that suite twice again.
+The devcontainer workflow builds both supported architectures only when image, dependency, setup, or smoke-test inputs change. It validates SDK resolution, cache mounts, backend
+launchers, and agent setup contracts. Static CI owns the full script suite, so building an image does not run that suite twice again.

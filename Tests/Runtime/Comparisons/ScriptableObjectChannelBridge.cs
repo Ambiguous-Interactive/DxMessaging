@@ -69,9 +69,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             {
                 return null;
             }
-            return scenario == ComparisonScenario.StructMessageNoBoxing
-                ? typeof(ComparisonStructPayload)
-                : typeof(int);
+            return scenario == ComparisonScenario.StructMessageNoBoxing ? typeof(ComparisonStructPayload) : typeof(int);
         }
 
         public void Prepare(ComparisonScenario scenario)
@@ -104,8 +102,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 case ComparisonScenario.KeyedToOneOfMany:
                     for (int key = 0; key < KeyCount; key++)
                     {
-                        ScriptableObjectEventChannel channel =
-                            ScriptableObject.CreateInstance<ScriptableObjectEventChannel>();
+                        ScriptableObjectEventChannel channel = ScriptableObject.CreateInstance<ScriptableObjectEventChannel>();
                         channel.Register(Handle);
                         _keyed.Add(channel);
                         if (key == DispatchKey)
@@ -119,8 +116,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                     _churnHandler = Handle;
                     return;
                 case ComparisonScenario.StructMessageNoBoxing:
-                    _structGlobal =
-                        ScriptableObject.CreateInstance<ScriptableObjectStructEventChannel>();
+                    _structGlobal = ScriptableObject.CreateInstance<ScriptableObjectStructEventChannel>();
                     _structGlobal.Register(HandleStruct);
                     return;
                 default:

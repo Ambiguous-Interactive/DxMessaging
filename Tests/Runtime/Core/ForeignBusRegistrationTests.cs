@@ -24,11 +24,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
         [Test]
         public void ForeignHandlerHandlePreservesBothBuses(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext)
-            )]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext))] MessageScenario scenario,
             [Values(false, true)] bool receiverHasRegistration,
             [Values(false, true)] bool diagnostics
         )
@@ -40,17 +36,11 @@ namespace DxMessaging.Tests.Runtime.Core
             using LeakWatcher receiverLeaks = new LeakWatcher(receiver);
             MessageHandler handler = new MessageHandler(new InstanceId(701), origin);
             MessageBusRegistration original = RegisterHandler(origin, handler, scenario);
-            MessageBusRegistration other = receiverHasRegistration
-                ? RegisterHandler(receiver, handler, scenario)
-                : MessageBusRegistration.None;
+            MessageBusRegistration other = receiverHasRegistration ? RegisterHandler(receiver, handler, scenario) : MessageBusRegistration.None;
             try
             {
                 Assert.That(CountHandlers(origin, scenario), Is.EqualTo(1), scenario.ToString());
-                Assert.That(
-                    CountHandlers(receiver, scenario),
-                    Is.EqualTo(receiverHasRegistration ? 1 : 0),
-                    scenario.ToString()
-                );
+                Assert.That(CountHandlers(receiver, scenario), Is.EqualTo(receiverHasRegistration ? 1 : 0), scenario.ToString());
                 capture.Messages.Clear();
                 MessageBusRegistration copy = original;
                 receiver.Deregister<ProbeMessage>(in copy);
@@ -61,29 +51,12 @@ namespace DxMessaging.Tests.Runtime.Core
                 original = MessageBusRegistration.None;
                 AssertAll(() =>
                 {
-                    string label =
-                        $"[{scenario}, receiver={receiverHasRegistration}, diagnostics={diagnostics}]";
-                    Assert.That(
-                        originAfterForeign,
-                        Is.EqualTo(1),
-                        label + " origin route changed."
-                    );
-                    Assert.That(
-                        receiverAfterForeign,
-                        Is.EqualTo(receiverHasRegistration ? 1 : 0),
-                        label + " receiver route changed."
-                    );
+                    string label = $"[{scenario}, receiver={receiverHasRegistration}, diagnostics={diagnostics}]";
+                    Assert.That(originAfterForeign, Is.EqualTo(1), label + " origin route changed.");
+                    Assert.That(receiverAfterForeign, Is.EqualTo(receiverHasRegistration ? 1 : 0), label + " receiver route changed.");
                     Assert.That(foreignLogs, Is.Zero, label + " foreign deregistration logged.");
-                    Assert.That(
-                        CountHandlers(origin, scenario),
-                        Is.Zero,
-                        label + " owner cleanup failed."
-                    );
-                    Assert.That(
-                        CountHandlers(receiver, scenario),
-                        Is.EqualTo(receiverHasRegistration ? 1 : 0),
-                        label + " owner cleanup changed receiver."
-                    );
+                    Assert.That(CountHandlers(origin, scenario), Is.Zero, label + " owner cleanup failed.");
+                    Assert.That(CountHandlers(receiver, scenario), Is.EqualTo(receiverHasRegistration ? 1 : 0), label + " owner cleanup changed receiver.");
                 });
             }
             finally
@@ -96,10 +69,7 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void ForeignGlobalHandlePreservesBothBuses(
-            [Values(false, true)] bool receiverHasRegistration,
-            [Values(false, true)] bool diagnostics
-        )
+        public void ForeignGlobalHandlePreservesBothBuses([Values(false, true)] bool receiverHasRegistration, [Values(false, true)] bool diagnostics)
         {
             using DebugCapture capture = new DebugCapture(diagnostics);
             MessageBus origin = new MessageBus();
@@ -108,9 +78,7 @@ namespace DxMessaging.Tests.Runtime.Core
             using LeakWatcher receiverLeaks = new LeakWatcher(receiver);
             MessageHandler handler = new MessageHandler(new InstanceId(701), origin);
             MessageBusRegistration original = origin.RegisterGlobalAcceptAll(handler);
-            MessageBusRegistration other = receiverHasRegistration
-                ? receiver.RegisterGlobalAcceptAll(handler)
-                : MessageBusRegistration.None;
+            MessageBusRegistration other = receiverHasRegistration ? receiver.RegisterGlobalAcceptAll(handler) : MessageBusRegistration.None;
             try
             {
                 capture.Messages.Clear();
@@ -123,33 +91,12 @@ namespace DxMessaging.Tests.Runtime.Core
                 original = MessageBusRegistration.None;
                 AssertAll(() =>
                 {
-                    string label =
-                        $"[receiver={receiverHasRegistration}, diagnostics={diagnostics}]";
-                    Assert.That(
-                        originAfterForeign,
-                        Is.EqualTo(1),
-                        label + " origin global route changed."
-                    );
-                    Assert.That(
-                        receiverAfterForeign,
-                        Is.EqualTo(receiverHasRegistration ? 1 : 0),
-                        label + " receiver global route changed."
-                    );
-                    Assert.That(
-                        foreignLogs,
-                        Is.Zero,
-                        label + " foreign global deregistration logged."
-                    );
-                    Assert.That(
-                        origin.RegisteredGlobalAcceptAll,
-                        Is.Zero,
-                        label + " owner cleanup failed."
-                    );
-                    Assert.That(
-                        receiver.RegisteredGlobalAcceptAll,
-                        Is.EqualTo(receiverHasRegistration ? 1 : 0),
-                        label + " owner cleanup changed receiver."
-                    );
+                    string label = $"[receiver={receiverHasRegistration}, diagnostics={diagnostics}]";
+                    Assert.That(originAfterForeign, Is.EqualTo(1), label + " origin global route changed.");
+                    Assert.That(receiverAfterForeign, Is.EqualTo(receiverHasRegistration ? 1 : 0), label + " receiver global route changed.");
+                    Assert.That(foreignLogs, Is.Zero, label + " foreign global deregistration logged.");
+                    Assert.That(origin.RegisteredGlobalAcceptAll, Is.Zero, label + " owner cleanup failed.");
+                    Assert.That(receiver.RegisteredGlobalAcceptAll, Is.EqualTo(receiverHasRegistration ? 1 : 0), label + " owner cleanup changed receiver.");
                 });
             }
             finally
@@ -163,8 +110,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
         [Test]
         public void ForeignInterceptorHandlePreservesCallbacksAndOwnerCleanup(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
             [Values(false, true)] bool receiverHasRegistration,
             [Values(false, true)] bool diagnostics
         )
@@ -197,9 +143,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
                 };
             MessageBusRegistration original = Register(origin);
-            MessageBusRegistration other = receiverHasRegistration
-                ? Register(receiver)
-                : MessageBusRegistration.None;
+            MessageBusRegistration other = receiverHasRegistration ? Register(receiver) : MessageBusRegistration.None;
             try
             {
                 capture.Messages.Clear();
@@ -218,33 +162,12 @@ namespace DxMessaging.Tests.Runtime.Core
                 original = MessageBusRegistration.None;
                 AssertAll(() =>
                 {
-                    string label =
-                        $"[{scenario}, receiver={receiverHasRegistration}, diagnostics={diagnostics}]";
-                    Assert.That(
-                        originAfterForeign,
-                        Is.EqualTo(1),
-                        label + " origin interceptor changed."
-                    );
-                    Assert.That(
-                        receiverAfterForeign,
-                        Is.EqualTo(receiverHasRegistration ? 1 : 0),
-                        label + " receiver interceptor changed."
-                    );
-                    Assert.That(
-                        callsAfterForeign,
-                        Is.EqualTo(receiverHasRegistration ? 2 : 1),
-                        label + " callbacks changed."
-                    );
-                    Assert.That(
-                        foreignLogs,
-                        Is.Zero,
-                        label + " foreign interceptor deregistration logged."
-                    );
-                    Assert.That(
-                        origin.RegisteredInterceptors,
-                        Is.Zero,
-                        label + " owner cleanup failed."
-                    );
+                    string label = $"[{scenario}, receiver={receiverHasRegistration}, diagnostics={diagnostics}]";
+                    Assert.That(originAfterForeign, Is.EqualTo(1), label + " origin interceptor changed.");
+                    Assert.That(receiverAfterForeign, Is.EqualTo(receiverHasRegistration ? 1 : 0), label + " receiver interceptor changed.");
+                    Assert.That(callsAfterForeign, Is.EqualTo(receiverHasRegistration ? 2 : 1), label + " callbacks changed.");
+                    Assert.That(foreignLogs, Is.Zero, label + " foreign interceptor deregistration logged.");
+                    Assert.That(origin.RegisteredInterceptors, Is.Zero, label + " owner cleanup failed.");
                 });
             }
             finally
@@ -258,8 +181,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
         [Test]
         public void ForeignHandleCannotConsumeTheOwnersLaterValidDeregistration(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
             [Values(false, true)] bool receiverHasRegistration,
             [Values(false, true)] bool diagnostics
         )
@@ -269,15 +191,9 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageBus receiver = new MessageBus();
             using LeakWatcher originLeaks = new LeakWatcher(origin);
             using LeakWatcher receiverLeaks = new LeakWatcher(receiver);
-            MessageHandler handler = new MessageHandler(new InstanceId(701), origin)
-            {
-                active = true,
-            };
+            MessageHandler handler = new MessageHandler(new InstanceId(701), origin) { active = true };
             using MessageRegistrationToken token = MessageRegistrationToken.Create(handler, origin);
-            using MessageRegistrationToken otherToken = MessageRegistrationToken.Create(
-                handler,
-                receiver
-            );
+            using MessageRegistrationToken otherToken = MessageRegistrationToken.Create(handler, receiver);
             int originCalls = 0;
             int receiverCalls = 0;
             void ReceiveOrigin(in ProbeMessage message)
@@ -312,19 +228,9 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 AssertAll(() =>
                 {
-                    string label =
-                        $"[{scenario}, receiver={receiverHasRegistration}, diagnostics={diagnostics}]";
-                    Assert.That(
-                        originCalls,
-                        Is.EqualTo(1),
-                        label
-                            + " foreign handle consumed the owner registration and lost its peer callback."
-                    );
-                    Assert.That(
-                        receiverCalls,
-                        Is.EqualTo(receiverHasRegistration ? 1 : 0),
-                        label + " receiver callback changed."
-                    );
+                    string label = $"[{scenario}, receiver={receiverHasRegistration}, diagnostics={diagnostics}]";
+                    Assert.That(originCalls, Is.EqualTo(1), label + " foreign handle consumed the owner registration and lost its peer callback.");
+                    Assert.That(receiverCalls, Is.EqualTo(receiverHasRegistration ? 1 : 0), label + " receiver callback changed.");
                 });
             }
             finally
@@ -352,34 +258,13 @@ namespace DxMessaging.Tests.Runtime.Core
             try
             {
                 MessageBusRegistration copy = first;
-                HashSet<MessageBusRegistration> handles = new HashSet<MessageBusRegistration>
-                {
-                    first,
-                    copy,
-                    second,
-                };
+                HashSet<MessageBusRegistration> handles = new HashSet<MessageBusRegistration> { first, copy, second };
                 AssertAll(() =>
                 {
-                    Assert.That(
-                        first,
-                        Is.EqualTo(copy),
-                        "A copy must retain registration identity."
-                    );
-                    Assert.That(
-                        first.GetHashCode(),
-                        Is.EqualTo(copy.GetHashCode()),
-                        "Equal copies must have equal hashes."
-                    );
-                    Assert.That(
-                        first,
-                        Is.Not.EqualTo(second),
-                        "Global registrations from different buses must have distinct identities."
-                    );
-                    Assert.That(
-                        handles.Count,
-                        Is.EqualTo(2),
-                        "A handle set must retain both bus registrations and deduplicate only the copy."
-                    );
+                    Assert.That(first, Is.EqualTo(copy), "A copy must retain registration identity.");
+                    Assert.That(first.GetHashCode(), Is.EqualTo(copy.GetHashCode()), "Equal copies must have equal hashes.");
+                    Assert.That(first, Is.Not.EqualTo(second), "Global registrations from different buses must have distinct identities.");
+                    Assert.That(handles.Count, Is.EqualTo(2), "A handle set must retain both bus registrations and deduplicate only the copy.");
                 });
             }
             finally
@@ -392,9 +277,7 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void EmptyAndExternalHandlesPreserveLiveRegistrations(
-            [Values(false, true)] bool diagnostics
-        )
+        public void EmptyAndExternalHandlesPreserveLiveRegistrations([Values(false, true)] bool diagnostics)
         {
             using DebugCapture capture = new DebugCapture(diagnostics);
             MessageBus bus = new MessageBus();
@@ -412,26 +295,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 AssertAll(() =>
                 {
                     string label = $"[diagnostics={diagnostics}]";
-                    Assert.That(
-                        bus.RegisteredUntargeted,
-                        Is.EqualTo(1),
-                        label + " empty/external handle changed live route."
-                    );
-                    Assert.That(
-                        capture.Messages.Count,
-                        Is.Zero,
-                        label + " empty/external handle logged."
-                    );
-                    Assert.That(
-                        external.ExternalId,
-                        Is.EqualTo(703),
-                        label + " external id round trip changed."
-                    );
-                    Assert.That(
-                        external.ExternalState,
-                        Is.SameAs(state),
-                        label + " external state round trip changed."
-                    );
+                    Assert.That(bus.RegisteredUntargeted, Is.EqualTo(1), label + " empty/external handle changed live route.");
+                    Assert.That(capture.Messages.Count, Is.Zero, label + " empty/external handle logged.");
+                    Assert.That(external.ExternalId, Is.EqualTo(703), label + " external id round trip changed.");
+                    Assert.That(external.ExternalState, Is.SameAs(state), label + " external state round trip changed.");
                 });
             }
             finally
@@ -441,41 +308,19 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private static MessageBusRegistration RegisterHandler(
-            MessageBus bus,
-            MessageHandler handler,
-            MessageScenario scenario
-        ) =>
+        private static MessageBusRegistration RegisterHandler(MessageBus bus, MessageHandler handler, MessageScenario scenario) =>
             (scenario.Kind, scenario.UsePostProcessor) switch
             {
                 (MessageKind.Untargeted, false) => bus.RegisterUntargeted<ProbeMessage>(handler),
-                (MessageKind.Untargeted, true) => bus.RegisterUntargetedPostProcessor<ProbeMessage>(
-                    handler
-                ),
-                (MessageKind.Targeted, false) => bus.RegisterTargeted<ProbeMessage>(
-                    Context,
-                    handler
-                ),
-                (MessageKind.Targeted, true) => bus.RegisterTargetedPostProcessor<ProbeMessage>(
-                    Context,
-                    handler
-                ),
-                (MessageKind.Broadcast, false) => bus.RegisterSourcedBroadcast<ProbeMessage>(
-                    Context,
-                    handler
-                ),
-                (MessageKind.Broadcast, true) => bus.RegisterBroadcastPostProcessor<ProbeMessage>(
-                    Context,
-                    handler
-                ),
-                (MessageKind.TargetedWithoutTargeting, false) =>
-                    bus.RegisterTargetedWithoutTargeting<ProbeMessage>(handler),
-                (MessageKind.TargetedWithoutTargeting, true) =>
-                    bus.RegisterTargetedWithoutTargetingPostProcessor<ProbeMessage>(handler),
-                (MessageKind.BroadcastWithoutSource, false) =>
-                    bus.RegisterSourcedBroadcastWithoutSource<ProbeMessage>(handler),
-                (MessageKind.BroadcastWithoutSource, true) =>
-                    bus.RegisterBroadcastWithoutSourcePostProcessor<ProbeMessage>(handler),
+                (MessageKind.Untargeted, true) => bus.RegisterUntargetedPostProcessor<ProbeMessage>(handler),
+                (MessageKind.Targeted, false) => bus.RegisterTargeted<ProbeMessage>(Context, handler),
+                (MessageKind.Targeted, true) => bus.RegisterTargetedPostProcessor<ProbeMessage>(Context, handler),
+                (MessageKind.Broadcast, false) => bus.RegisterSourcedBroadcast<ProbeMessage>(Context, handler),
+                (MessageKind.Broadcast, true) => bus.RegisterBroadcastPostProcessor<ProbeMessage>(Context, handler),
+                (MessageKind.TargetedWithoutTargeting, false) => bus.RegisterTargetedWithoutTargeting<ProbeMessage>(handler),
+                (MessageKind.TargetedWithoutTargeting, true) => bus.RegisterTargetedWithoutTargetingPostProcessor<ProbeMessage>(handler),
+                (MessageKind.BroadcastWithoutSource, false) => bus.RegisterSourcedBroadcastWithoutSource<ProbeMessage>(handler),
+                (MessageKind.BroadcastWithoutSource, true) => bus.RegisterBroadcastWithoutSourcePostProcessor<ProbeMessage>(handler),
                 _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
             };
 
@@ -485,18 +330,12 @@ namespace DxMessaging.Tests.Runtime.Core
                 : scenario.Kind switch
                 {
                     MessageKind.Untargeted => bus.RegisteredUntargeted,
-                    MessageKind.Targeted or MessageKind.TargetedWithoutTargeting =>
-                        bus.RegisteredTargeted,
-                    MessageKind.Broadcast or MessageKind.BroadcastWithoutSource =>
-                        bus.RegisteredBroadcast,
+                    MessageKind.Targeted or MessageKind.TargetedWithoutTargeting => bus.RegisteredTargeted,
+                    MessageKind.Broadcast or MessageKind.BroadcastWithoutSource => bus.RegisteredBroadcast,
                     _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
                 };
 
-        private static void RegisterCallback(
-            MessageRegistrationToken token,
-            MessageScenario scenario,
-            MessageHandler.FastHandler<ProbeMessage> callback
-        )
+        private static void RegisterCallback(MessageRegistrationToken token, MessageScenario scenario, MessageHandler.FastHandler<ProbeMessage> callback)
         {
             switch (scenario.Kind)
             {
@@ -547,10 +386,7 @@ namespace DxMessaging.Tests.Runtime.Core
 #endif
         }
 
-        private readonly struct ProbeMessage
-            : IUntargetedMessage,
-                ITargetedMessage,
-                IBroadcastMessage
+        private readonly struct ProbeMessage : IUntargetedMessage, ITargetedMessage, IBroadcastMessage
         {
             public Type MessageType => typeof(ProbeMessage);
         }

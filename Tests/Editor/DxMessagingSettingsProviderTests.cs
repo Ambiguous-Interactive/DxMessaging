@@ -41,17 +41,9 @@ namespace DxMessaging.Tests.Editor
             Assert.That(root.ClassListContains(DxMessagingSettingsProvider.RootClassName), Is.True);
             Assert.That(root.ClassListContains(DxMessagingEditorTheme.ThemeClassName), Is.True);
             Assert.That(root.ClassListContains(DxMessagingEditorTheme.WindowClassName), Is.False);
-            List<VisualElement> sections = root.Query<VisualElement>(
-                    className: DxMessagingSettingsProvider.SectionClassName
-                )
-                .ToList();
+            List<VisualElement> sections = root.Query<VisualElement>(className: DxMessagingSettingsProvider.SectionClassName).ToList();
             Assert.That(sections.Count, Is.EqualTo(3));
-            Assert.That(
-                sections.TrueForAll(section =>
-                    section.ClassListContains(DxMessagingEditorTheme.CardClassName)
-                ),
-                Is.True
-            );
+            Assert.That(sections.TrueForAll(section => section.ClassListContains(DxMessagingEditorTheme.CardClassName)), Is.True);
             Assert.That(sections.TrueForAll(HasCompleteBorder), Is.True);
             AssertBoundField(root, nameof(DxMessagingSettings._diagnosticsTargets));
             AssertBoundField(root, nameof(DxMessagingSettings._diagnosticsStackTraces));
@@ -76,17 +68,8 @@ namespace DxMessaging.Tests.Editor
 
             List<PropertyField> fields = root.Query<PropertyField>().ToList();
             List<Label> labels = root.Query<Label>().ToList();
-            Assert.That(
-                fieldsAfterFirstBuild,
-                Is.GreaterThan(0),
-                "The settings UI must bind at least one field, otherwise the rebuild comparison "
-                    + "below passes vacuously."
-            );
-            Assert.That(
-                fields.Count,
-                Is.EqualTo(fieldsAfterFirstBuild),
-                "Rebuilding must replace the previous fields rather than append a second copy."
-            );
+            Assert.That(fieldsAfterFirstBuild, Is.GreaterThan(0), "The settings UI must bind at least one field, otherwise the rebuild comparison " + "below passes vacuously.");
+            Assert.That(fields.Count, Is.EqualTo(fieldsAfterFirstBuild), "Rebuilding must replace the previous fields rather than append a second copy.");
             Assert.That(labels.Exists(label => label.text == "Stale child"), Is.False);
         }
 
@@ -99,26 +82,14 @@ namespace DxMessaging.Tests.Editor
 
             DxMessagingSettingsProvider.BuildSettingsUi(root, serializedSettings);
 
-            Toggle baseCallToggle = root.Q<Toggle>(
-                nameof(DxMessagingSettings._baseCallCheckEnabled)
-            );
-            Toggle consoleBridgeToggle = root.Q<Toggle>(
-                nameof(DxMessagingSettings._useConsoleBridge)
-            );
+            Toggle baseCallToggle = root.Q<Toggle>(nameof(DxMessagingSettings._baseCallCheckEnabled));
+            Toggle consoleBridgeToggle = root.Q<Toggle>(nameof(DxMessagingSettings._useConsoleBridge));
 
             Assert.That(baseCallToggle, Is.Not.Null);
             Assert.That(consoleBridgeToggle, Is.Not.Null);
 
-            DxMessagingSettingsProvider.ApplySettingsToggleValue(
-                serializedSettings,
-                (target, value) => target.BaseCallCheckEnabled = value,
-                false
-            );
-            DxMessagingSettingsProvider.ApplySettingsToggleValue(
-                serializedSettings,
-                (target, value) => target.UseConsoleBridge = value,
-                true
-            );
+            DxMessagingSettingsProvider.ApplySettingsToggleValue(serializedSettings, (target, value) => target.BaseCallCheckEnabled = value, false);
+            DxMessagingSettingsProvider.ApplySettingsToggleValue(serializedSettings, (target, value) => target.UseConsoleBridge = value, true);
 
             Assert.That(settings.BaseCallCheckEnabled, Is.False);
             Assert.That(settings.UseConsoleBridge, Is.True);
@@ -127,8 +98,7 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void CreateProviderIncludesSectionAndInspectorCheckSearchKeywords()
         {
-            SettingsProvider provider =
-                DxMessagingSettingsProvider.CreateDxMessagingSettingsProvider();
+            SettingsProvider provider = DxMessagingSettingsProvider.CreateDxMessagingSettingsProvider();
 
             Assert.That(provider.keywords, Does.Contain("Diagnostics"));
             Assert.That(provider.keywords, Does.Contain("Editor Safety"));
@@ -151,26 +121,16 @@ namespace DxMessaging.Tests.Editor
             PropertyField field = root.Q<PropertyField>(propertyName);
             Assert.That(field, Is.Not.Null, $"Missing PropertyField for {propertyName}.");
             Assert.That(field.bindingPath, Is.EqualTo(propertyName));
-            Assert.That(
-                field.ClassListContains(DxMessagingSettingsProvider.FieldClassName),
-                Is.True
-            );
+            Assert.That(field.ClassListContains(DxMessagingSettingsProvider.FieldClassName), Is.True);
             Assert.That(field.tooltip, Is.Not.Empty);
         }
 
-        private static void AssertToggle(
-            VisualElement root,
-            string toggleName,
-            bool expectedInitialValue
-        )
+        private static void AssertToggle(VisualElement root, string toggleName, bool expectedInitialValue)
         {
             Toggle toggle = root.Q<Toggle>(toggleName);
             Assert.That(toggle, Is.Not.Null, $"Missing Toggle for {toggleName}.");
             Assert.That(toggle.value, Is.EqualTo(expectedInitialValue));
-            Assert.That(
-                toggle.ClassListContains(DxMessagingSettingsProvider.FieldClassName),
-                Is.True
-            );
+            Assert.That(toggle.ClassListContains(DxMessagingSettingsProvider.FieldClassName), Is.True);
             Assert.That(toggle.tooltip, Is.Not.Empty);
         }
 
@@ -178,10 +138,8 @@ namespace DxMessaging.Tests.Editor
         {
             Color borderColor = element.style.borderTopColor.value;
             return element.style.borderTopWidth.value == DxMessagingEditorTheme.CompleteBorderWidth
-                && element.style.borderRightWidth.value
-                    == DxMessagingEditorTheme.CompleteBorderWidth
-                && element.style.borderBottomWidth.value
-                    == DxMessagingEditorTheme.CompleteBorderWidth
+                && element.style.borderRightWidth.value == DxMessagingEditorTheme.CompleteBorderWidth
+                && element.style.borderBottomWidth.value == DxMessagingEditorTheme.CompleteBorderWidth
                 && element.style.borderLeftWidth.value == DxMessagingEditorTheme.CompleteBorderWidth
                 && SameColor(element.style.borderRightColor.value, borderColor)
                 && SameColor(element.style.borderBottomColor.value, borderColor)

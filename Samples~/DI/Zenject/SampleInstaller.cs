@@ -50,9 +50,7 @@ namespace DxMessaging.Samples.DI.Zenject
                     {
                         Configure = token =>
                         {
-                            _ = token.RegisterBroadcastWithoutSource<PlayerSpawned>(
-                                OnPlayerSpawned
-                            );
+                            _ = token.RegisterBroadcastWithoutSource<PlayerSpawned>(OnPlayerSpawned);
                         },
                     }
                 );

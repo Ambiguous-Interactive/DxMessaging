@@ -8,21 +8,9 @@ namespace WallstopStudios.DxMessaging.Docs.Tests;
 [TestFixture]
 internal sealed class RuntimeXmlDocumentationTests
 {
-    [TestCase(
-        false,
-        false,
-        TestName = "Runtime XML grammar, attachment and parameter tags: plain .NET"
-    )]
-    [TestCase(
-        true,
-        false,
-        TestName = "Runtime XML grammar, attachment and parameter tags: Unity player projection"
-    )]
-    [TestCase(
-        true,
-        true,
-        TestName = "Runtime XML grammar, attachment and parameter tags: Unity Editor projection"
-    )]
+    [TestCase(false, false, TestName = "Runtime XML grammar, attachment and parameter tags: plain .NET")]
+    [TestCase(true, false, TestName = "Runtime XML grammar, attachment and parameter tags: Unity player projection")]
+    [TestCase(true, true, TestName = "Runtime XML grammar, attachment and parameter tags: Unity Editor projection")]
     public void RuntimeDocumentationHasValidXmlAndParameterDocumentation(bool unity, bool editor)
     {
         string root = ResolveRepoRoot();
@@ -35,31 +23,16 @@ internal sealed class RuntimeXmlDocumentationTests
 
         ImmutableArray<Diagnostic> diagnostics = GetDocumentationStructureDiagnostics(trees);
 
-        Assert.That(
-            diagnostics,
-            Is.Empty,
-            string.Join(
-                Environment.NewLine,
-                diagnostics.Select(diagnostic => diagnostic.ToString())
-            )
-        );
+        Assert.That(diagnostics, Is.Empty, string.Join(Environment.NewLine, diagnostics.Select(diagnostic => diagnostic.ToString())));
     }
 
-    [TestCase(
-        "/// <summary>A & B.</summary>\npublic sealed class Sample { }",
-        "CS1570",
-        TestName = "Runtime XML guard rejects unescaped text"
-    )]
+    [TestCase("/// <summary>A & B.</summary>\npublic sealed class Sample { }", "CS1570", TestName = "Runtime XML guard rejects unescaped text")]
     [TestCase(
         "[System.Obsolete]\n/// <summary>Sample.</summary>\npublic sealed class Sample { }",
         "CS1587",
         TestName = "Runtime XML guard rejects documentation after an attribute"
     )]
-    [TestCase(
-        "/// <summary>Sample.</summary>\n[System.Obsolete]\npublic sealed class Sample { }",
-        "",
-        TestName = "Runtime XML guard accepts documentation before attributes"
-    )]
+    [TestCase("/// <summary>Sample.</summary>\n[System.Obsolete]\npublic sealed class Sample { }", "", TestName = "Runtime XML guard accepts documentation before attributes")]
     [TestCase(
         "/// <summary>List&lt;string&gt; holds A &amp; B.</summary>\npublic sealed class Sample { }",
         "",
@@ -90,17 +63,11 @@ internal sealed class RuntimeXmlDocumentationTests
         "",
         TestName = "Runtime XML guard accepts matching parameter and type parameter tags"
     )]
-    [TestCase(
-        "public sealed class Sample { public int Value { get; } }",
-        "CS1591",
-        TestName = "Runtime XML guard rejects missing public documentation"
-    )]
+    [TestCase("public sealed class Sample { public int Value { get; } }", "CS1591", TestName = "Runtime XML guard rejects missing public documentation")]
     public void GuardDistinguishesInvalidDocumentation(string source, string expectedCode)
     {
         SyntaxTree tree = Parse(source, "Control.cs", Array.Empty<string>());
-        ImmutableArray<Diagnostic> diagnostics = GetDocumentationStructureDiagnostics(
-            new[] { tree }
-        );
+        ImmutableArray<Diagnostic> diagnostics = GetDocumentationStructureDiagnostics(new[] { tree });
 
         if (expectedCode.Length == 0)
         {
@@ -108,36 +75,22 @@ internal sealed class RuntimeXmlDocumentationTests
         }
         else
         {
-            Assert.That(
-                diagnostics,
-                Has.Some.Matches<Diagnostic>(diagnostic =>
-                    diagnostic is not null && diagnostic.Id == expectedCode
-                )
-            );
+            Assert.That(diagnostics, Has.Some.Matches<Diagnostic>(diagnostic => diagnostic is not null && diagnostic.Id == expectedCode));
         }
     }
 
     private static SyntaxTree Parse(string source, string path, string[] symbols)
     {
-        CSharpParseOptions options = new(
-            LanguageVersion.CSharp9,
-            documentationMode: DocumentationMode.Diagnose,
-            preprocessorSymbols: symbols
-        );
+        CSharpParseOptions options = new(LanguageVersion.CSharp9, documentationMode: DocumentationMode.Diagnose, preprocessorSymbols: symbols);
         return CSharpSyntaxTree.ParseText(source, options, path);
     }
 
-    private static ImmutableArray<Diagnostic> GetDocumentationStructureDiagnostics(
-        IEnumerable<SyntaxTree> trees
-    )
+    private static ImmutableArray<Diagnostic> GetDocumentationStructureDiagnostics(IEnumerable<SyntaxTree> trees)
     {
         CSharpCompilation compilation = CSharpCompilation.Create(
             "RuntimeXmlGrammar",
             syntaxTrees: trees,
-            references: new[]
-            {
-                MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-            },
+            references: new[] { MetadataReference.CreateFromFile(typeof(object).Assembly.Location) },
             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
         );
         /*
@@ -146,16 +99,7 @@ internal sealed class RuntimeXmlDocumentationTests
         */
         return compilation
             .GetDiagnostics()
-            .Where(diagnostic =>
-                diagnostic.Id
-                    is "CS1570"
-                        or "CS1587"
-                        or "CS1572"
-                        or "CS1573"
-                        or "CS1711"
-                        or "CS1712"
-                        or "CS1591"
-            )
+            .Where(diagnostic => diagnostic.Id is "CS1570" or "CS1587" or "CS1572" or "CS1573" or "CS1711" or "CS1712" or "CS1591")
             .ToImmutableArray();
     }
 
@@ -166,9 +110,7 @@ internal sealed class RuntimeXmlDocumentationTests
             return Array.Empty<string>();
         }
 
-        return editor
-            ? new[] { "UNITY_2021_3_OR_NEWER", "UNITY_6000_4_OR_NEWER", "UNITY_EDITOR" }
-            : new[] { "UNITY_2021_3_OR_NEWER", "UNITY_6000_4_OR_NEWER" };
+        return editor ? new[] { "UNITY_2021_3_OR_NEWER", "UNITY_6000_4_OR_NEWER", "UNITY_EDITOR" } : new[] { "UNITY_2021_3_OR_NEWER", "UNITY_6000_4_OR_NEWER" };
     }
 
     private static string ResolveRepoRoot()

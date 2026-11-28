@@ -25,15 +25,12 @@ namespace DxMessaging.Tests
             return MessageBusInspection.ReadField(entries, "_key" + index);
         }
 
-        internal static int InlineCapacity(object entries) =>
-            (int)MessageBusInspection.ReadField(entries.GetType(), "PhysicalInlineCapacity");
+        internal static int InlineCapacity(object entries) => (int)MessageBusInspection.ReadField(entries.GetType(), "PhysicalInlineCapacity");
 
         internal static int MapCapacity(object entries)
         {
             object map = MessageBusInspection.ReadField(entries, "_spillMap");
-            return map == null
-                ? 0
-                : (int)map.GetType().GetMethod("EnsureCapacity").Invoke(map, new object[] { 0 });
+            return map == null ? 0 : (int)map.GetType().GetMethod("EnsureCapacity").Invoke(map, new object[] { 0 });
         }
 
         internal static int OrderCapacity(object entries)
@@ -45,23 +42,14 @@ namespace DxMessaging.Tests
         internal static int OrderSlotCount(object entries)
         {
             object order = MessageBusInspection.ReadField(entries, "_spillOrder");
-            return order == null
-                ? (int)MessageBusInspection.ReadField(entries, "_inlineCount")
-                : ((ICollection)order).Count;
+            return order == null ? (int)MessageBusInspection.ReadField(entries, "_inlineCount") : ((ICollection)order).Count;
         }
 
-        internal static int SkippedPrefixCount(object entries) =>
-            (int)MessageBusInspection.ReadField(entries, "_spillOrderStart");
+        internal static int SkippedPrefixCount(object entries) => (int)MessageBusInspection.ReadField(entries, "_spillOrderStart");
 
-        internal static bool UsesSpillStorage(object entries) =>
-            MessageBusInspection.ReadField(entries, "_spillMap") != null;
+        internal static bool UsesSpillStorage(object entries) => MessageBusInspection.ReadField(entries, "_spillMap") != null;
 
-        internal static void GetRetainedStorageCounts(
-            this MessageHandler handler,
-            IMessageBus bus,
-            out int contextKeys,
-            out int priorityCaches
-        )
+        internal static void GetRetainedStorageCounts(this MessageHandler handler, IMessageBus bus, out int contextKeys, out int priorityCaches)
         {
             contextKeys = 0;
             priorityCaches = 0;
@@ -69,19 +57,10 @@ namespace DxMessaging.Tests
             {
                 bus = (IMessageBus)
                     typeof(MessageHandler)
-                        .GetMethod(
-                            "ResolveMessageBus",
-                            System.Reflection.BindingFlags.Instance
-                                | System.Reflection.BindingFlags.NonPublic
-                        )
+                        .GetMethod("ResolveMessageBus", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
                         .Invoke(handler, new object[] { null });
             }
-            if (
-                !handler._handlersByTypeByMessageBus.TryGetValue(
-                    bus.RegisteredGlobalSequentialIndex,
-                    out MessageCache<object> byType
-                )
-            )
+            if (!handler._handlersByTypeByMessageBus.TryGetValue(bus.RegisteredGlobalSequentialIndex, out MessageCache<object> byType))
             {
                 return;
             }
@@ -97,11 +76,8 @@ namespace DxMessaging.Tests
                     {
                         continue;
                     }
-                    priorityCaches += (
-                        (IDictionary)MessageBusInspection.ReadField(slot, "byPriority")
-                    ).Count;
-                    IDictionary byContext = (IDictionary)
-                        MessageBusInspection.ReadField(slot, "byContext");
+                    priorityCaches += ((IDictionary)MessageBusInspection.ReadField(slot, "byPriority")).Count;
+                    IDictionary byContext = (IDictionary)MessageBusInspection.ReadField(slot, "byContext");
                     if (byContext == null)
                     {
                         continue;

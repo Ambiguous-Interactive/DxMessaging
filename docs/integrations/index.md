@@ -1,6 +1,7 @@
 # DI Framework Integrations
 
-DxMessaging integrates with three Unity DI frameworks: VContainer, Zenject, and Reflex. This section shows how to bind `IMessageBus` in each container, use scoped lifetimes for per-scene buses, and inject `IMessageRegistrationBuilder` so handlers stay testable.
+DxMessaging integrates with three Unity DI frameworks: VContainer, Zenject, and Reflex. This section shows how to bind `IMessageBus` in each container, use scoped lifetimes for
+per-scene buses, and inject `IMessageRegistrationBuilder` so handlers stay testable.
 
 ## Why Combine DI + Messaging?
 
@@ -18,8 +19,7 @@ This combination provides:
 
 ## Supported Frameworks
 
-These are setup fragments for the callbacks named below. Each helper registers a new
-bus for its container. Follow the linked guides to register builders and services.
+These are setup fragments for the callbacks named below. Each helper registers a new bus for its container. Follow the linked guides to register builders and services.
 
 ### [VContainer](vcontainer.md)
 

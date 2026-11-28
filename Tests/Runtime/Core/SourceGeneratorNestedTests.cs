@@ -132,10 +132,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.That(nongeneric.MessageType, Is.EqualTo(typeof(HintCollisionMessage_T_)));
 
             MessageBus bus = new() { DiagnosticsMode = false };
-            using LeakWatcher watcher = new(
-                bus,
-                label: nameof(GenericAndNongenericMessagesKeepConstructorsAndDispatchSeparate)
-            );
+            using LeakWatcher watcher = new(bus, label: nameof(GenericAndNongenericMessagesKeepConstructorsAndDispatchSeparate));
             MessageHandler handler = new(new InstanceId(48901), bus) { active = true };
             using MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
             int genericValue = 0;
@@ -175,20 +172,11 @@ namespace DxMessaging.Tests.Runtime.Core
             HintCollisionContainer_T_.Message nongeneric = new(17);
             Assert.That(generic.value, Is.EqualTo(42));
             Assert.That(nongeneric.value, Is.EqualTo(17));
-            Assert.That(
-                generic.MessageType,
-                Is.EqualTo(typeof(HintCollisionContainer<int>.Message))
-            );
-            Assert.That(
-                nongeneric.MessageType,
-                Is.EqualTo(typeof(HintCollisionContainer_T_.Message))
-            );
+            Assert.That(generic.MessageType, Is.EqualTo(typeof(HintCollisionContainer<int>.Message)));
+            Assert.That(nongeneric.MessageType, Is.EqualTo(typeof(HintCollisionContainer_T_.Message)));
 
             MessageBus bus = new() { DiagnosticsMode = false };
-            using LeakWatcher watcher = new(
-                bus,
-                label: nameof(GenericAndNongenericContainersKeepNestedMessagesSeparate)
-            );
+            using LeakWatcher watcher = new(bus, label: nameof(GenericAndNongenericContainersKeepNestedMessagesSeparate));
             MessageHandler handler = new(new InstanceId(48902), bus) { active = true };
             using MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
             int genericValue = 0;
@@ -218,68 +206,32 @@ namespace DxMessaging.Tests.Runtime.Core
         public void EscapedNestedGenericIdentifiersGenerateConstructorAndMessageType()
         {
             @event<int>.@class<bool> message = new(true);
-            Assert.That(
-                message.@switch,
-                Is.True,
-                "The generated constructor must assign the escaped generic field."
-            );
-            Assert.That(
-                message.MessageType,
-                Is.EqualTo(typeof(@event<int>.@class<bool>)),
-                "The generated message type must retain its closed nested generic identity."
-            );
-            Assert.That(
-                message,
-                Is.InstanceOf<IUntargetedMessage>(),
-                "The generated nested type must implement its declared message interface."
-            );
+            Assert.That(message.@switch, Is.True, "The generated constructor must assign the escaped generic field.");
+            Assert.That(message.MessageType, Is.EqualTo(typeof(@event<int>.@class<bool>)), "The generated message type must retain its closed nested generic identity.");
+            Assert.That(message, Is.InstanceOf<IUntargetedMessage>(), "The generated nested type must implement its declared message interface.");
         }
 
         [Test]
         public void EscapedTypeAndFieldIdentifiersGenerateConstructorAndMessageType()
         {
             @namespace message = new(42);
-            Assert.That(
-                message.@event,
-                Is.EqualTo(42),
-                "The generated constructor must assign the escaped field."
-            );
-            Assert.That(
-                message.MessageType,
-                Is.EqualTo(typeof(@namespace)),
-                "The generated message type must retain its escaped type identity."
-            );
-            Assert.That(
-                message,
-                Is.InstanceOf<ITargetedMessage>(),
-                "The generated type must implement its declared message interface."
-            );
+            Assert.That(message.@event, Is.EqualTo(42), "The generated constructor must assign the escaped field.");
+            Assert.That(message.MessageType, Is.EqualTo(typeof(@namespace)), "The generated message type must retain its escaped type identity.");
+            Assert.That(message, Is.InstanceOf<ITargetedMessage>(), "The generated type must implement its declared message interface.");
         }
 
         [Test]
         public void EscapedNamespaceAndOptionalFieldGenerateConstructorAndMessageType()
         {
             global::DxMessaging.Tests.Runtime.@namespace.KeywordMessage message = new(42);
-            Assert.That(
-                message.@return,
-                Is.EqualTo(42),
-                "The generated constructor must assign the required escaped field."
-            );
-            Assert.That(
-                message.@event,
-                Is.EqualTo(7),
-                "The generated constructor must retain its escaped optional field default."
-            );
+            Assert.That(message.@return, Is.EqualTo(42), "The generated constructor must assign the required escaped field.");
+            Assert.That(message.@event, Is.EqualTo(7), "The generated constructor must retain its escaped optional field default.");
             Assert.That(
                 message.MessageType,
                 Is.EqualTo(typeof(global::DxMessaging.Tests.Runtime.@namespace.KeywordMessage)),
                 "The generated message type must retain its escaped namespace identity."
             );
-            Assert.That(
-                message,
-                Is.InstanceOf<IBroadcastMessage>(),
-                "The generated type must implement its declared message interface."
-            );
+            Assert.That(message, Is.InstanceOf<IBroadcastMessage>(), "The generated type must implement its declared message interface.");
         }
 
         [Test]
@@ -298,17 +250,8 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(0, m.optional, "Optional should default to 0");
 
             IMessage asIMessage = m;
-            Assert.AreEqual(
-                typeof(ContainerForNestedTypes.NestedMessage),
-                asIMessage.MessageType,
-                "MessageType should be the concrete nested type"
-            );
-            Assert.IsTrue(
-                typeof(ITargetedMessage).IsAssignableFrom(
-                    typeof(ContainerForNestedTypes.NestedMessage)
-                ),
-                "Nested message should implement ITargetedMessage"
-            );
+            Assert.AreEqual(typeof(ContainerForNestedTypes.NestedMessage), asIMessage.MessageType, "MessageType should be the concrete nested type");
+            Assert.IsTrue(typeof(ITargetedMessage).IsAssignableFrom(typeof(ContainerForNestedTypes.NestedMessage)), "Nested message should implement ITargetedMessage");
         }
 
         [Test]
@@ -319,15 +262,8 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(0, msg.tag, "Tag should default via optional parameter");
 
             IMessage asIMessage = msg;
-            Assert.AreEqual(
-                typeof(InternalUntargeted),
-                asIMessage.MessageType,
-                "MessageType should resolve for internal types"
-            );
-            Assert.IsTrue(
-                typeof(IUntargetedMessage).IsAssignableFrom(typeof(InternalUntargeted)),
-                "Internal type should implement IUntargetedMessage"
-            );
+            Assert.AreEqual(typeof(InternalUntargeted), asIMessage.MessageType, "MessageType should resolve for internal types");
+            Assert.IsTrue(typeof(IUntargetedMessage).IsAssignableFrom(typeof(InternalUntargeted)), "Internal type should implement IUntargetedMessage");
         }
 
         [Test]

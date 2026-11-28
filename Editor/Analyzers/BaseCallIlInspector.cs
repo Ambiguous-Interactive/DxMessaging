@@ -63,11 +63,7 @@ namespace DxMessaging.Editor.Analyzers
         private static OpCode[] BuildOpCodeTable(bool twoByte)
         {
             OpCode[] table = new OpCode[256];
-            foreach (
-                FieldInfo field in typeof(OpCodes).GetFields(
-                    BindingFlags.Public | BindingFlags.Static
-                )
-            )
+            foreach (FieldInfo field in typeof(OpCodes).GetFields(BindingFlags.Public | BindingFlags.Static))
             {
                 if (field.GetValue(null) is not OpCode op)
                 {
@@ -129,13 +125,8 @@ namespace DxMessaging.Editor.Analyzers
                 }
 
                 Module module = method.Module;
-                Type[]? genericTypeArgs =
-                    method.DeclaringType?.IsGenericType == true
-                        ? method.DeclaringType.GetGenericArguments()
-                        : null;
-                Type[]? genericMethodArgs = method.IsGenericMethod
-                    ? method.GetGenericArguments()
-                    : null;
+                Type[]? genericTypeArgs = method.DeclaringType?.IsGenericType == true ? method.DeclaringType.GetGenericArguments() : null;
+                Type[]? genericMethodArgs = method.IsGenericMethod ? method.GetGenericArguments() : null;
 
                 int i = 0;
                 while (i < il.Length)
@@ -180,13 +171,7 @@ namespace DxMessaging.Editor.Analyzers
                         }
                         int token = BitConverter.ToInt32(il, i);
                         if (
-                            TryResolveMethod(
-                                module,
-                                token,
-                                genericTypeArgs,
-                                genericMethodArgs,
-                                out MethodBase? target
-                            )
+                            TryResolveMethod(module, token, genericTypeArgs, genericMethodArgs, out MethodBase? target)
                             && target != null
                             && string.Equals(target.Name, methodName, StringComparison.Ordinal)
                         )
@@ -200,12 +185,7 @@ namespace DxMessaging.Editor.Analyzers
                                 checks "is `declaring` assignable TO `resolved`"; i.e. is
                                 `resolved` an ancestor of `declaring`.
                             */
-                            if (
-                                declaring != null
-                                && resolved != null
-                                && declaring != resolved
-                                && resolved.IsAssignableFrom(declaring)
-                            )
+                            if (declaring != null && resolved != null && declaring != resolved && resolved.IsAssignableFrom(declaring))
                             {
                                 return true;
                             }
@@ -245,13 +225,7 @@ namespace DxMessaging.Editor.Analyzers
             }
         }
 
-        private static bool TryResolveMethod(
-            Module module,
-            int token,
-            Type[]? genericTypeArgs,
-            Type[]? genericMethodArgs,
-            out MethodBase? target
-        )
+        private static bool TryResolveMethod(Module module, int token, Type[]? genericTypeArgs, Type[]? genericMethodArgs, out MethodBase? target)
         {
             try
             {

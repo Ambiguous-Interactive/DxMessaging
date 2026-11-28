@@ -1,12 +1,10 @@
 # GitHub Actions Workflow Consistency
 
-> **One-line summary**: Ensure all GitHub Actions workflows follow consistent structure,
-> security practices, and formatting to maintain reliability and reviewability.
+> **One-line summary**: Ensure all GitHub Actions workflows follow consistent structure, security practices, and formatting to maintain reliability and reviewability.
 
 ## Overview
 
-GitHub Actions workflows in this project must follow strict conventions for structure,
-security, and formatting. This skill documents the required patterns to ensure all workflows
+GitHub Actions workflows in this project must follow strict conventions for structure, security, and formatting. This skill documents the required patterns to ensure all workflows
 are consistent, secure, and maintainable.
 
 ## Solution
@@ -17,13 +15,10 @@ Apply these requirements to every workflow file:
 1. Always include a concurrency group with `cancel-in-progress: true`
 1. Declare explicit minimal permissions
 1. Set `timeout-minutes` on every job
-1. Declare checkout `persist-credentials` explicitly; use `false` and configure
-   push credentials only in a guarded push step or an adjacent guarded
-   `git-auto-commit-action` handoff
+1. Declare checkout `persist-credentials` explicitly; use `false` and configure push credentials only in a guarded push step or an adjacent guarded `git-auto-commit-action` handoff
 1. Include `.github/workflows/**` in path filters for self-referential workflows
 1. Use double quotes for strings (Prettier default)
-1. Put required static checks in `.github/workflows/ci.yml` and wire them into
-   the `CI Success` aggregate instead of creating another required workflow
+1. Put required static checks in `.github/workflows/ci.yml` and wire them into the `CI Success` aggregate instead of creating another required workflow
 
 ## Required Property Order
 
@@ -102,8 +97,7 @@ Recommended timeouts:
 
 ### 4. Secure Checkout
 
-Every `actions/checkout` step must declare `persist-credentials` explicitly.
-Use `false` by default:
+Every `actions/checkout` step must declare `persist-credentials` explicitly. Use `false` by default:
 
 ```yaml
 - name: Checkout
@@ -112,35 +106,22 @@ Use `false` by default:
     persist-credentials: false
 ```
 
-For actions such as `peter-evans/create-pull-request` or manual push steps, keep
-checkout credentials disabled and pass the push token to that specific action or
-command-scoped Git invocation. For local `stefanzweifel/git-auto-commit-action`
-paths, prefer a guarded `git remote set-url` step immediately before the
-auto-commit step, followed immediately by a guarded cleanup step that restores
-`origin` to a plain `https://github.com/...` URL. Keep explicit
-`persist-credentials: false` on every checkout, and never leave a tokenized
-Git remote outside a matching single-command `git-auto-commit-action`
-handoff with cleanup. Manual clone/fetch/push steps should use command-scoped
-`git -c http.https://github.com/.extraheader=...` credentials, never a tokenized
-remote URL or persistent `git config http.*.extraheader`.
+For actions such as `peter-evans/create-pull-request` or manual push steps, keep checkout credentials disabled and pass the push token to that specific action or command-scoped Git
+invocation. For local `stefanzweifel/git-auto-commit-action` paths, prefer a guarded `git remote set-url` step immediately before the auto-commit step, followed immediately by a
+guarded cleanup step that restores `origin` to a plain `https://github.com/...` URL. Keep explicit `persist-credentials: false` on every checkout, and never leave a tokenized Git
+remote outside a matching single-command `git-auto-commit-action` handoff with cleanup. Manual clone/fetch/push steps should use command-scoped
+`git -c http.https://github.com/.extraheader=...` credentials, never a tokenized remote URL or persistent `git config http.*.extraheader`.
 
-For default-branch auto-commits authenticated by `actions/create-github-app-token`,
-prefer explicit shell steps over `git-auto-commit-action`: fetch the target ref
-with command-scoped App-token credentials, verify the checked-out commit is still
-current before staging generated output, commit only the intended files, and push
-with a command-scoped `git -c http.https://github.com/.extraheader=... push`.
-If the branch advances, regenerate safe derived files on the new head or warn and
-skip stale artifacts; do not let a non-fast-forward race become an unexplained
-red workflow.
+For default-branch auto-commits authenticated by `actions/create-github-app-token`, prefer explicit shell steps over `git-auto-commit-action`: fetch the target ref with
+command-scoped App-token credentials, verify the checked-out commit is still current before staging generated output, commit only the intended files, and push with a command-scoped
+`git -c http.https://github.com/.extraheader=... push`. If the branch advances, regenerate safe derived files on the new head or warn and skip stale artifacts; do not let a
+non-fast-forward race become an unexplained red workflow.
 
 ## Required Static Gate
 
-Static correctness and style checks are consolidated in `.github/workflows/ci.yml`.
-When adding a new required static check, add a job there, keep the job-level
-condition at `if: ${{ always() }}`, skip expensive steps internally when the
-shared `changes` job says the files are irrelevant, and add the job id to
-`ci-success.needs`. The final job name `CI Success` is the branch-protection API.
-Do not require the individual static job names once the aggregate ruleset is live.
+Static correctness and style checks are consolidated in `.github/workflows/ci.yml`. When adding a new required static check, add a job there, keep the job-level condition at
+`if: ${{ always() }}`, skip expensive steps internally when the shared `changes` job says the files are irrelevant, and add the job id to `ci-success.needs`. The final job name
+`CI Success` is the branch-protection API. Do not require the individual static job names once the aggregate ruleset is live.
 
 ## See Also
 

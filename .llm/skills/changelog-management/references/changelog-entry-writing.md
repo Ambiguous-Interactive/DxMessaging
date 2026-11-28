@@ -4,7 +4,8 @@
 
 ## Overview
 
-A good changelog entry tells users what changed and why it matters. It is brief, specific, and written from the user's point of view. The goal is to help users decide whether to upgrade and understand how to adapt.
+A good changelog entry tells users what changed and why it matters. It is brief, specific, and written from the user's point of view. The goal is to help users decide whether to
+upgrade and understand how to adapt.
 
 ## Problem Statement
 
@@ -43,8 +44,8 @@ Write entries that are:
 
 ### Added
 
-- New `UntargetedInterceptableMessage` base class for broadcast messages that support
-  interception and cancellation ([#142](https://github.com/Ambiguous-Interactive/DxMessaging/pull/142))
+- New `UntargetedInterceptableMessage` base class for broadcast messages that support interception and cancellation
+  ([#142](https://github.com/Ambiguous-Interactive/DxMessaging/pull/142))
 ```
 
 ### Example 2: Fixing a Bug in Message Routing
@@ -54,8 +55,8 @@ Write entries that are:
 
 ### Fixed
 
-- Messages are now correctly delivered to components on inactive GameObjects when
-  using `IncludeInactive` delivery option ([#156](https://github.com/Ambiguous-Interactive/DxMessaging/issues/156))
+- Messages are now correctly delivered to components on inactive GameObjects when using `IncludeInactive` delivery option
+  ([#156](https://github.com/Ambiguous-Interactive/DxMessaging/issues/156))
 ```
 
 ### Example 3: Deprecating an Old API
@@ -65,8 +66,7 @@ Write entries that are:
 
 ### Deprecated
 
-- `MessageBus.GlobalBus` is deprecated and will be removed in v3.0.0.
-  Use `MessageBusProvider.Instance` instead for improved testability and lifecycle management
+- `MessageBus.GlobalBus` is deprecated and will be removed in v3.0.0. Use `MessageBusProvider.Instance` instead for improved testability and lifecycle management
 ```
 
 ### Example 4: Breaking Change With Migration Notes
@@ -76,9 +76,8 @@ Write entries that are:
 
 ### Changed
 
-- **BREAKING**: `IMessageHandler.Handle` now returns `MessageResult` instead of `void`
-  to support cancellation. Update handlers to return `MessageResult.Continue` for
-  existing behavior
+- **BREAKING**: `IMessageHandler.Handle` now returns `MessageResult` instead of `void` to support cancellation. Update handlers to return `MessageResult.Continue` for existing
+  behavior
 
 ### Removed
 
@@ -156,10 +155,8 @@ To upgrade from v2.x:
 
 **Why it's wrong**: This describes internal process/tooling, not user-facing product impact.
 
-**Correct**: No entry. `llms.txt`, README guidance, and agent routing help people and agents
-reading the repository. They are not library behavior, and a reworded entry does not make them
-eligible. The same holds for documentation-site layout and brand artwork: the changelog records
-what a package consumer experiences in Unity.
+**Correct**: No entry. `llms.txt`, README guidance, and agent routing help people and agents reading the repository. They are not library behavior, and a reworded entry does not
+make them eligible. The same holds for documentation-site layout and brand artwork: the changelog records what a package consumer experiences in Unity.
 
 ### Bad: Missing Breaking Change Warnings
 
@@ -176,8 +173,7 @@ what a package consumer experiences in Unity.
 ```markdown
 ### Changed
 
-- **BREAKING**: `IMessageHandler.Handle` now requires a return value.
-  See Migration section for upgrade instructions
+- **BREAKING**: `IMessageHandler.Handle` now requires a return value. See Migration section for upgrade instructions
 ```
 
 ### Bad: Not Linking Issues/PRs
@@ -195,8 +191,7 @@ what a package consumer experiences in Unity.
 ```markdown
 ### Fixed
 
-- Fixed message delivery order when using priority handlers
-  ([#178](https://github.com/Ambiguous-Interactive/DxMessaging/issues/178))
+- Fixed message delivery order when using priority handlers ([#178](https://github.com/Ambiguous-Interactive/DxMessaging/issues/178))
 ```
 
 ### Bad: Updating Changelog After Release
@@ -218,8 +213,7 @@ what a package consumer experiences in Unity.
 
 ### Fixed
 
-- Fixed message delivery order when using priority handlers
-  ([#178](https://github.com/Ambiguous-Interactive/DxMessaging/issues/178))
+- Fixed message delivery order when using priority handlers ([#178](https://github.com/Ambiguous-Interactive/DxMessaging/issues/178))
 ```
 
 ## See Also

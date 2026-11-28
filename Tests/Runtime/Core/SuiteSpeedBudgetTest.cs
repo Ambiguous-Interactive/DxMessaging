@@ -75,10 +75,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [TestCase(null, false)]
         public void CategoryObservationPreservesDefaultSuiteBudget(string category, bool gated)
         {
-            FieldInfo detected = typeof(SuiteWallClockBudgetTest).GetField(
-                "_gatedCategoryDetected",
-                BindingFlags.NonPublic | BindingFlags.Static
-            );
+            FieldInfo detected = typeof(SuiteWallClockBudgetTest).GetField("_gatedCategoryDetected", BindingFlags.NonPublic | BindingFlags.Static);
             Assert.That(detected, Is.Not.Null, "The suite gate observation field must exist.");
             bool original = (bool)detected.GetValue(null);
             try
@@ -118,17 +115,13 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void RepresentativeSubsetCompletesUnderBudget()
         {
-            GameObject host = new(
-                nameof(RepresentativeSubsetCompletesUnderBudget),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(RepresentativeSubsetCompletesUnderBudget), typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
 
             // Warm up so JIT and bus internals do not skew the measurement.
-            MessageRegistrationHandle warmupHandle =
-                token.RegisterUntargeted<SimpleUntargetedMessage>(_ => { });
+            MessageRegistrationHandle warmupHandle = token.RegisterUntargeted<SimpleUntargetedMessage>(_ => { });
             SimpleUntargetedMessage warmup = new();
             warmup.EmitUntargeted();
             token.RemoveRegistration(warmupHandle);
@@ -137,8 +130,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Stopwatch timer = Stopwatch.StartNew();
             for (int round = 0; round < RepresentativeCycles; ++round)
             {
-                MessageRegistrationHandle handle =
-                    token.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++total);
+                MessageRegistrationHandle handle = token.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++total);
                 SimpleUntargetedMessage message = new();
                 message.EmitUntargeted();
                 token.RemoveRegistration(handle);
@@ -158,8 +150,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(
                 RepresentativeCycles,
                 total,
-                "Representative cycle count drifted (expected {0}, got {1}); the speed budget proxy "
-                    + "is no longer representative. Seed={2}. {3}",
+                "Representative cycle count drifted (expected {0}, got {1}); the speed budget proxy " + "is no longer representative. Seed={2}. {3}",
                 RepresentativeCycles,
                 total,
                 TestSeed,

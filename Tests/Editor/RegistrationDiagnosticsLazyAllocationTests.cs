@@ -90,20 +90,12 @@ namespace DxMessaging.Tests.Editor
             -- it proves the null is a Create-time laziness property, not a side effect of Off.
         */
         [Test]
-        public void TokenCreateDoesNotEagerlyAllocateDiagnosticsCollections(
-            [Values(DiagnosticsTarget.Off, DiagnosticsTarget.All)] DiagnosticsTarget diagnostics
-        )
+        public void TokenCreateDoesNotEagerlyAllocateDiagnosticsCollections([Values(DiagnosticsTarget.Off, DiagnosticsTarget.All)] DiagnosticsTarget diagnostics)
         {
             IMessageBus.GlobalDiagnosticsTargets = diagnostics;
 
-            FieldInfo callCountsBacking = typeof(MessageRegistrationToken).GetField(
-                "_callCountsBacking",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
-            FieldInfo emissionBufferBacking = typeof(MessageRegistrationToken).GetField(
-                "_emissionBufferBacking",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
+            FieldInfo callCountsBacking = typeof(MessageRegistrationToken).GetField("_callCountsBacking", BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo emissionBufferBacking = typeof(MessageRegistrationToken).GetField("_emissionBufferBacking", BindingFlags.Instance | BindingFlags.NonPublic);
 
             Assert.That(
                 callCountsBacking,
@@ -150,82 +142,44 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
-        public void BusConstructionDoesNotEagerlyAllocateDiagnosticsStorage(
-            [Values(DiagnosticsTarget.Off, DiagnosticsTarget.All)] DiagnosticsTarget diagnostics
-        )
+        public void BusConstructionDoesNotEagerlyAllocateDiagnosticsStorage([Values(DiagnosticsTarget.Off, DiagnosticsTarget.All)] DiagnosticsTarget diagnostics)
         {
             IMessageBus.GlobalDiagnosticsTargets = diagnostics;
-            FieldInfo logBacking = typeof(MessageBus).GetField(
-                "_log",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
-            FieldInfo emissionBufferBacking = typeof(MessageBus).GetField(
-                "_emissionBufferBacking",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
-            FieldInfo finalizedRegistrations = typeof(RegistrationLog).GetField(
-                "_finalizedRegistrations",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
+            FieldInfo logBacking = typeof(MessageBus).GetField("_log", BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo emissionBufferBacking = typeof(MessageBus).GetField("_emissionBufferBacking", BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo finalizedRegistrations = typeof(RegistrationLog).GetField("_finalizedRegistrations", BindingFlags.Instance | BindingFlags.NonPublic);
 
             Assert.That(logBacking, Is.Not.Null);
             Assert.That(emissionBufferBacking, Is.Not.Null);
             Assert.That(finalizedRegistrations, Is.Not.Null);
 
             MessageBus bus = new MessageBus();
-            Assert.That(
-                logBacking.GetValue(bus),
-                Is.Null,
-                "MessageBus construction must not allocate its disabled registration log."
-            );
-            Assert.That(
-                emissionBufferBacking.GetValue(bus),
-                Is.Null,
-                "MessageBus construction must not allocate its diagnostics emission buffer."
-            );
+            Assert.That(logBacking.GetValue(bus), Is.Null, "MessageBus construction must not allocate its disabled registration log.");
+            Assert.That(emissionBufferBacking.GetValue(bus), Is.Null, "MessageBus construction must not allocate its diagnostics emission buffer.");
 
             RegistrationLog log = bus.Log;
             Assert.That(log, Is.SameAs(bus.Log), "The lazily-created Log must remain stable.");
-            Assert.That(
-                finalizedRegistrations.GetValue(log),
-                Is.Null,
-                "Accessing the log object alone must not allocate its registration list."
-            );
+            Assert.That(finalizedRegistrations.GetValue(log), Is.Null, "Accessing the log object alone must not allocate its registration list.");
 
             IReadOnlyList<MessagingRegistration> registrations = log.Registrations;
             Assert.That(registrations, Is.Empty);
-            Assert.That(
-                finalizedRegistrations.GetValue(log),
-                Is.Null,
-                "Reading empty history must not allocate registration storage."
-            );
+            Assert.That(finalizedRegistrations.GetValue(log), Is.Null, "Reading empty history must not allocate registration storage.");
         }
 
         [Test]
         public void BusEmissionBufferMaterializesOnlyWhenDiagnosticsRecordAnEmission()
         {
             IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.Off;
-            FieldInfo emissionBufferBacking = typeof(MessageBus).GetField(
-                "_emissionBufferBacking",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
+            FieldInfo emissionBufferBacking = typeof(MessageBus).GetField("_emissionBufferBacking", BindingFlags.Instance | BindingFlags.NonPublic);
             MessageBus bus = new MessageBus { DiagnosticsMode = false };
             LazyBusDiagnosticsMessage message = default;
 
             bus.UntargetedBroadcast(ref message);
-            Assert.That(
-                emissionBufferBacking.GetValue(bus),
-                Is.Null,
-                "Diagnostics-off dispatch must not materialize emission history."
-            );
+            Assert.That(emissionBufferBacking.GetValue(bus), Is.Null, "Diagnostics-off dispatch must not materialize emission history.");
 
             bus.DiagnosticsMode = true;
             bus.UntargetedBroadcast(ref message);
-            Assert.That(
-                emissionBufferBacking.GetValue(bus),
-                Is.Not.Null,
-                "The first diagnostics-enabled emission must materialize emission history."
-            );
+            Assert.That(emissionBufferBacking.GetValue(bus), Is.Not.Null, "The first diagnostics-enabled emission must materialize emission history.");
         }
 
         [Test]
@@ -233,24 +187,16 @@ namespace DxMessaging.Tests.Editor
         {
             IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.Off;
             IMessageBus.GlobalMessageBufferSize = 2;
-            FieldInfo emissionBufferBacking = typeof(MessageBus).GetField(
-                "_emissionBufferBacking",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
+            FieldInfo emissionBufferBacking = typeof(MessageBus).GetField("_emissionBufferBacking", BindingFlags.Instance | BindingFlags.NonPublic);
             MessageBus bus = new MessageBus { DiagnosticsMode = true };
 
             IMessageBus.GlobalMessageBufferSize = 7;
             LazyBusDiagnosticsMessage message = default;
             bus.UntargetedBroadcast(ref message);
 
-            CyclicBuffer<MessageEmissionData> buffer =
-                (CyclicBuffer<MessageEmissionData>)emissionBufferBacking.GetValue(bus);
+            CyclicBuffer<MessageEmissionData> buffer = (CyclicBuffer<MessageEmissionData>)emissionBufferBacking.GetValue(bus);
             Assert.That(buffer, Is.Not.Null);
-            Assert.That(
-                buffer.Capacity,
-                Is.EqualTo(2),
-                "Lazy materialization must preserve the capacity captured when this bus was constructed."
-            );
+            Assert.That(buffer.Capacity, Is.EqualTo(2), "Lazy materialization must preserve the capacity captured when this bus was constructed.");
         }
 
         private readonly struct LazyBusDiagnosticsMessage : IUntargetedMessage { }

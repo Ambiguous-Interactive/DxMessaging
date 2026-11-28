@@ -47,10 +47,7 @@ internal sealed class BaseCallIlInspectorTests
     [Test]
     public void IlInspectorOnEmptyMethodNameReturnsTrueAssumeClean()
     {
-        MethodInfo method = typeof(BaseCallTypeScannerTests).GetMethod(
-            nameof(IlInspectorOnEmptyMethodNameReturnsTrueAssumeClean),
-            BindingFlags.Public | BindingFlags.Instance
-        )!;
+        MethodInfo method = typeof(BaseCallTypeScannerTests).GetMethod(nameof(IlInspectorOnEmptyMethodNameReturnsTrueAssumeClean), BindingFlags.Public | BindingFlags.Instance)!;
         Assert.That(BaseCallIlInspector.MethodIlContainsBaseCall(method, string.Empty), Is.True);
     }
 
@@ -62,15 +59,9 @@ internal sealed class BaseCallIlInspectorTests
             treat this as assume-clean (cross-assembly third-party code paths exhibit the same
             shape and emitting an unactionable warning would be hostile).
         */
-        MethodInfo abstractMethod = typeof(AbstractFixture).GetMethod(
-            "OnEnable",
-            BindingFlags.NonPublic | BindingFlags.Instance
-        )!;
+        MethodInfo abstractMethod = typeof(AbstractFixture).GetMethod("OnEnable", BindingFlags.NonPublic | BindingFlags.Instance)!;
         Assert.That(abstractMethod.GetMethodBody(), Is.Null);
-        Assert.That(
-            BaseCallIlInspector.MethodIlContainsBaseCall(abstractMethod, "OnEnable"),
-            Is.True
-        );
+        Assert.That(BaseCallIlInspector.MethodIlContainsBaseCall(abstractMethod, "OnEnable"), Is.True);
     }
 
     // ---- End-to-end via Roslyn-compiled assemblies ----------------------------------------
@@ -93,13 +84,7 @@ internal sealed class BaseCallIlInspectorTests
         );
 
         Type cleanLeaf = fixture.GetType("CleanLeaf")!;
-        MethodInfo onEnable = cleanLeaf.GetMethod(
-            "OnEnable",
-            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-            null,
-            Type.EmptyTypes,
-            null
-        )!;
+        MethodInfo onEnable = cleanLeaf.GetMethod("OnEnable", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly, null, Type.EmptyTypes, null)!;
 
         Assert.That(BaseCallIlInspector.MethodIlContainsBaseCall(onEnable, "OnEnable"), Is.True);
     }
@@ -122,13 +107,7 @@ internal sealed class BaseCallIlInspectorTests
         );
 
         Type brokenLeaf = fixture.GetType("BrokenLeaf")!;
-        MethodInfo onEnable = brokenLeaf.GetMethod(
-            "OnEnable",
-            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-            null,
-            Type.EmptyTypes,
-            null
-        )!;
+        MethodInfo onEnable = brokenLeaf.GetMethod("OnEnable", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly, null, Type.EmptyTypes, null)!;
 
         Assert.That(BaseCallIlInspector.MethodIlContainsBaseCall(onEnable, "OnEnable"), Is.False);
     }
@@ -161,13 +140,7 @@ internal sealed class BaseCallIlInspectorTests
         );
 
         Type leaf = fixture.GetType("SiblingCallerLeaf")!;
-        MethodInfo onEnable = leaf.GetMethod(
-            "OnEnable",
-            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-            null,
-            Type.EmptyTypes,
-            null
-        )!;
+        MethodInfo onEnable = leaf.GetMethod("OnEnable", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly, null, Type.EmptyTypes, null)!;
 
         Assert.That(BaseCallIlInspector.MethodIlContainsBaseCall(onEnable, "OnEnable"), Is.False);
     }
@@ -195,13 +168,7 @@ internal sealed class BaseCallIlInspectorTests
         );
 
         Type leaf = fixture.GetType("AwakeLeaf")!;
-        MethodInfo awake = leaf.GetMethod(
-            "Awake",
-            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-            null,
-            Type.EmptyTypes,
-            null
-        )!;
+        MethodInfo awake = leaf.GetMethod("Awake", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly, null, Type.EmptyTypes, null)!;
 
         // Looking for the wrong method name: must not match base.Awake() against "OnEnable".
         Assert.That(BaseCallIlInspector.MethodIlContainsBaseCall(awake, "OnEnable"), Is.False);
@@ -228,29 +195,10 @@ internal sealed class BaseCallIlInspectorTests
         );
 
         Type leaf = fixture.GetType("FullCleanLeaf")!;
-        foreach (
-            string name in new[]
-            {
-                "Awake",
-                "OnEnable",
-                "OnDisable",
-                "OnDestroy",
-                "RegisterMessageHandlers",
-            }
-        )
+        foreach (string name in new[] { "Awake", "OnEnable", "OnDisable", "OnDestroy", "RegisterMessageHandlers" })
         {
-            MethodInfo m = leaf.GetMethod(
-                name,
-                BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-                null,
-                Type.EmptyTypes,
-                null
-            )!;
-            Assert.That(
-                BaseCallIlInspector.MethodIlContainsBaseCall(m, name),
-                Is.True,
-                $"Expected base call detected on FullCleanLeaf.{name}"
-            );
+            MethodInfo m = leaf.GetMethod(name, BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly, null, Type.EmptyTypes, null)!;
+            Assert.That(BaseCallIlInspector.MethodIlContainsBaseCall(m, name), Is.True, $"Expected base call detected on FullCleanLeaf.{name}");
         }
     }
 
@@ -288,31 +236,13 @@ internal sealed class BaseCallIlInspectorTests
         Type middle = fixture.GetType("BrokenMiddle")!;
         Type leaf = fixture.GetType("CleanLeafOverBrokenMiddle")!;
 
-        MethodInfo middleOnEnable = middle.GetMethod(
-            "OnEnable",
-            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-            null,
-            Type.EmptyTypes,
-            null
-        )!;
-        MethodInfo leafOnEnable = leaf.GetMethod(
-            "OnEnable",
-            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-            null,
-            Type.EmptyTypes,
-            null
-        )!;
+        MethodInfo middleOnEnable = middle.GetMethod("OnEnable", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly, null, Type.EmptyTypes, null)!;
+        MethodInfo leafOnEnable = leaf.GetMethod("OnEnable", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly, null, Type.EmptyTypes, null)!;
 
         // Middle is broken: no base call.
-        Assert.That(
-            BaseCallIlInspector.MethodIlContainsBaseCall(middleOnEnable, "OnEnable"),
-            Is.False
-        );
+        Assert.That(BaseCallIlInspector.MethodIlContainsBaseCall(middleOnEnable, "OnEnable"), Is.False);
         // Leaf calls middle.OnEnable() correctly via base; the inspector reports true.
-        Assert.That(
-            BaseCallIlInspector.MethodIlContainsBaseCall(leafOnEnable, "OnEnable"),
-            Is.True
-        );
+        Assert.That(BaseCallIlInspector.MethodIlContainsBaseCall(leafOnEnable, "OnEnable"), Is.True);
     }
 
     [Test]
@@ -338,13 +268,7 @@ internal sealed class BaseCallIlInspectorTests
         );
 
         Type leaf = fixture.GetType("CallvirtLeaf")!;
-        MethodInfo onDestroy = leaf.GetMethod(
-            "OnDestroy",
-            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-            null,
-            Type.EmptyTypes,
-            null
-        )!;
+        MethodInfo onDestroy = leaf.GetMethod("OnDestroy", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly, null, Type.EmptyTypes, null)!;
 
         Assert.That(BaseCallIlInspector.MethodIlContainsBaseCall(onDestroy, "OnDestroy"), Is.True);
     }
@@ -378,18 +302,8 @@ internal sealed class BaseCallIlInspectorTests
         foreach (string typeName in new[] { "A", "B", "C" })
         {
             Type t = fixture.GetType(typeName)!;
-            MethodInfo m = t.GetMethod(
-                "OnEnable",
-                BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-                null,
-                Type.EmptyTypes,
-                null
-            )!;
-            Assert.That(
-                BaseCallIlInspector.MethodIlContainsBaseCall(m, "OnEnable"),
-                Is.True,
-                $"Expected base call detected on {typeName}.OnEnable"
-            );
+            MethodInfo m = t.GetMethod("OnEnable", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly, null, Type.EmptyTypes, null)!;
+            Assert.That(BaseCallIlInspector.MethodIlContainsBaseCall(m, "OnEnable"), Is.True, $"Expected base call detected on {typeName}.OnEnable");
         }
     }
 
@@ -420,13 +334,7 @@ internal sealed class BaseCallIlInspectorTests
         );
 
         Type leaf = fixture.GetType("ConditionalCallLeaf")!;
-        MethodInfo onEnable = leaf.GetMethod(
-            "OnEnable",
-            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-            null,
-            Type.EmptyTypes,
-            null
-        )!;
+        MethodInfo onEnable = leaf.GetMethod("OnEnable", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly, null, Type.EmptyTypes, null)!;
 
         Assert.That(BaseCallIlInspector.MethodIlContainsBaseCall(onEnable, "OnEnable"), Is.True);
     }
@@ -454,13 +362,7 @@ internal sealed class BaseCallIlInspectorTests
         );
 
         Type leaf = fixture.GetType("DoubleCallLeaf")!;
-        MethodInfo onEnable = leaf.GetMethod(
-            "OnEnable",
-            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-            null,
-            Type.EmptyTypes,
-            null
-        )!;
+        MethodInfo onEnable = leaf.GetMethod("OnEnable", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly, null, Type.EmptyTypes, null)!;
 
         Assert.That(BaseCallIlInspector.MethodIlContainsBaseCall(onEnable, "OnEnable"), Is.True);
     }
@@ -502,13 +404,7 @@ internal sealed class BaseCallIlInspectorTests
         );
 
         Type leaf = fixture.GetType("SwitchBeforeBase")!;
-        MethodInfo onEnable = leaf.GetMethod(
-            "OnEnable",
-            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-            null,
-            Type.EmptyTypes,
-            null
-        )!;
+        MethodInfo onEnable = leaf.GetMethod("OnEnable", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly, null, Type.EmptyTypes, null)!;
 
         Assert.That(BaseCallIlInspector.MethodIlContainsBaseCall(onEnable, "OnEnable"), Is.True);
     }
@@ -545,10 +441,7 @@ namespace DxMessaging.Unity
         SyntaxTree stubs = CSharpSyntaxTree.ParseText(Stubs);
         SyntaxTree user = CSharpSyntaxTree.ParseText(userSource);
 
-        List<MetadataReference> references = new()
-        {
-            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-        };
+        List<MetadataReference> references = new() { MetadataReference.CreateFromFile(typeof(object).Assembly.Location) };
         // Ensure System.Runtime is loaded; required for MetadataReference resolution on net10.0.
         Assembly runtime = Assembly.Load("System.Runtime");
         if (!string.IsNullOrEmpty(runtime.Location))
@@ -565,15 +458,11 @@ namespace DxMessaging.Unity
 
         using MemoryStream stream = new();
         EmitResult emit = compilation.Emit(stream);
-        Diagnostic[] blockingDiagnostics = emit
-            .Diagnostics.Where(diagnostic => DiagnosticSeverity.Warning <= diagnostic.Severity)
-            .ToArray();
+        Diagnostic[] blockingDiagnostics = emit.Diagnostics.Where(diagnostic => DiagnosticSeverity.Warning <= diagnostic.Severity).ToArray();
         if (blockingDiagnostics.Length != 0)
         {
             string errors = string.Join("\n", blockingDiagnostics.Select(d => d.ToString()));
-            throw new InvalidOperationException(
-                $"Test fixture failed to compile:\n{errors}\n\nUser source:\n{userSource}"
-            );
+            throw new InvalidOperationException($"Test fixture failed to compile:\n{errors}\n\nUser source:\n{userSource}");
         }
 
         stream.Seek(0, SeekOrigin.Begin);
@@ -620,13 +509,7 @@ namespace DxMessaging.Unity
         );
 
         Type leaf = fixture.GetType("LdstrBeforeBase")!;
-        MethodInfo onEnable = leaf.GetMethod(
-            "OnEnable",
-            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-            null,
-            Type.EmptyTypes,
-            null
-        )!;
+        MethodInfo onEnable = leaf.GetMethod("OnEnable", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly, null, Type.EmptyTypes, null)!;
 
         Assert.That(BaseCallIlInspector.MethodIlContainsBaseCall(onEnable, "OnEnable"), Is.True);
     }
@@ -663,19 +546,9 @@ namespace DxMessaging.Unity
         );
 
         Type concrete = fixture.GetType("ConcreteOverGeneric")!;
-        MethodInfo onEnable = concrete.GetMethod(
-            "OnEnable",
-            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-            null,
-            Type.EmptyTypes,
-            null
-        )!;
+        MethodInfo onEnable = concrete.GetMethod("OnEnable", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly, null, Type.EmptyTypes, null)!;
 
-        Assert.That(
-            BaseCallIlInspector.MethodIlContainsBaseCall(onEnable, "OnEnable"),
-            Is.True,
-            "Base call into a generic ancestor must be detected via the generic-arg context."
-        );
+        Assert.That(BaseCallIlInspector.MethodIlContainsBaseCall(onEnable, "OnEnable"), Is.True, "Base call into a generic ancestor must be detected via the generic-arg context.");
     }
 
     [Test]
@@ -707,19 +580,9 @@ namespace DxMessaging.Unity
         );
 
         Type leaf = fixture.GetType("FakeBaseCallLeaf")!;
-        MethodInfo onEnable = leaf.GetMethod(
-            "OnEnable",
-            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-            null,
-            Type.EmptyTypes,
-            null
-        )!;
+        MethodInfo onEnable = leaf.GetMethod("OnEnable", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly, null, Type.EmptyTypes, null)!;
 
-        Assert.That(
-            BaseCallIlInspector.MethodIlContainsBaseCall(onEnable, "OnEnable"),
-            Is.False,
-            "Same-named method on an unrelated type must NOT be classified as a base call."
-        );
+        Assert.That(BaseCallIlInspector.MethodIlContainsBaseCall(onEnable, "OnEnable"), Is.False, "Same-named method on an unrelated type must NOT be classified as a base call.");
     }
 
     [Test]
@@ -751,13 +614,7 @@ namespace DxMessaging.Unity
         );
 
         Type leaf = fixture.GetType("CallsUnrelatedRefLeaf")!;
-        MethodInfo onEnable = leaf.GetMethod(
-            "OnEnable",
-            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-            null,
-            Type.EmptyTypes,
-            null
-        )!;
+        MethodInfo onEnable = leaf.GetMethod("OnEnable", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly, null, Type.EmptyTypes, null)!;
 
         Assert.That(
             BaseCallIlInspector.MethodIlContainsBaseCall(onEnable, "OnEnable"),
@@ -778,23 +635,11 @@ namespace DxMessaging.Unity
             We assert the method correctly does NOT report a base call (the synthesized method
             doesn't call any same-named method).
         */
-        AssemblyBuilder ab = AssemblyBuilder.DefineDynamicAssembly(
-            new AssemblyName("VolatilePrefixFixture"),
-            AssemblyBuilderAccess.RunAndCollect
-        );
+        AssemblyBuilder ab = AssemblyBuilder.DefineDynamicAssembly(new AssemblyName("VolatilePrefixFixture"), AssemblyBuilderAccess.RunAndCollect);
         ModuleBuilder mb = ab.DefineDynamicModule("Main");
         TypeBuilder tb = mb.DefineType("VolHost", TypeAttributes.Public);
-        FieldBuilder field = tb.DefineField(
-            "_x",
-            typeof(int),
-            FieldAttributes.Public | FieldAttributes.Static
-        );
-        MethodBuilder method = tb.DefineMethod(
-            "M",
-            MethodAttributes.Public | MethodAttributes.Static,
-            typeof(void),
-            Type.EmptyTypes
-        );
+        FieldBuilder field = tb.DefineField("_x", typeof(int), FieldAttributes.Public | FieldAttributes.Static);
+        MethodBuilder method = tb.DefineMethod("M", MethodAttributes.Public | MethodAttributes.Static, typeof(void), Type.EmptyTypes);
         ILGenerator il = method.GetILGenerator();
         // volatile. ldsfld _x; pop; ret
         il.Emit(OpCodes.Volatile);
@@ -820,11 +665,7 @@ namespace DxMessaging.Unity
             false. With an unreadable body, assume-clean → true. Both are valid; we pin the
             no-throw contract.
         */
-        Assert.That(
-            result,
-            Is.True.Or.False,
-            "Inspector must produce a deterministic boolean even on volatile-prefix IL."
-        );
+        Assert.That(result, Is.True.Or.False, "Inspector must produce a deterministic boolean even on volatile-prefix IL.");
     }
 
     [Test]
@@ -836,18 +677,10 @@ namespace DxMessaging.Unity
             0x00FFFFFF). ResolveMethod throws; the walker's try/catch swallows and continues. The
             inspector then correctly returns false (no base call detected) rather than crashing.
         */
-        AssemblyBuilder ab = AssemblyBuilder.DefineDynamicAssembly(
-            new AssemblyName("InvalidTokenFixture"),
-            AssemblyBuilderAccess.RunAndCollect
-        );
+        AssemblyBuilder ab = AssemblyBuilder.DefineDynamicAssembly(new AssemblyName("InvalidTokenFixture"), AssemblyBuilderAccess.RunAndCollect);
         ModuleBuilder mb = ab.DefineDynamicModule("Main");
         TypeBuilder tb = mb.DefineType("InvalidHost", TypeAttributes.Public);
-        MethodBuilder method = tb.DefineMethod(
-            "M",
-            MethodAttributes.Public | MethodAttributes.Static,
-            typeof(void),
-            Type.EmptyTypes
-        );
+        MethodBuilder method = tb.DefineMethod("M", MethodAttributes.Public | MethodAttributes.Static, typeof(void), Type.EmptyTypes);
         ILGenerator il = method.GetILGenerator();
         /*
             We cannot easily emit a `call` to a fabricated token via ILGenerator without referring

@@ -38,9 +38,7 @@ namespace DxMessaging.Tests.Runtime.Unity
         /// <summary>Moves a group-owned source handle through the GameObject overload.</summary>
         /// <remarks>2026-11-11: the null overload must select EmptyId before Unity identity conversion dereferences its input.</remarks>
         [Test]
-        public void RetargetGameObjectSourceKeepsTheGroupOwnedHandle(
-            [Values(false, true)] bool emptySource
-        )
+        public void RetargetGameObjectSourceKeepsTheGroupOwnedHandle([Values(false, true)] bool emptySource)
         {
             GameObject previous = CreateSourceIdentityProbe("previous-source");
             _spawned.Add(previous);
@@ -56,48 +54,24 @@ namespace DxMessaging.Tests.Runtime.Unity
             token.Enable();
             using MessageRegistrationGroup group = token.CreateGroup();
             int calls = 0;
-            MessageRegistrationHandle handle = group.Add(
-                token.RegisterGameObjectBroadcast<SimpleBroadcastMessage>(
-                    previous,
-                    (in SimpleBroadcastMessage _) => ++calls
-                )
-            );
-            Assert.That(
-                token.RetargetSource(handle, next),
-                Is.True,
-                $"emptySource={emptySource}: GameObject conversion preserves the registration handle."
-            );
+            MessageRegistrationHandle handle = group.Add(token.RegisterGameObjectBroadcast<SimpleBroadcastMessage>(previous, (in SimpleBroadcastMessage _) => ++calls));
+            Assert.That(token.RetargetSource(handle, next), Is.True, $"emptySource={emptySource}: GameObject conversion preserves the registration handle.");
             InstanceId previousId = previous;
             InstanceId nextId = emptySource ? InstanceId.EmptyId : (InstanceId)next;
             SimpleBroadcastMessage message = new SimpleBroadcastMessage();
             bus.SourcedBroadcast(ref previousId, ref message);
             bus.SourcedBroadcast(ref nextId, ref message);
-            Assert.That(
-                calls,
-                Is.EqualTo(1),
-                $"emptySource={emptySource}: only the selected source delivers."
-            );
+            Assert.That(calls, Is.EqualTo(1), $"emptySource={emptySource}: only the selected source delivers.");
             group.Dispose();
             bus.SourcedBroadcast(ref nextId, ref message);
-            Assert.That(
-                calls,
-                Is.EqualTo(1),
-                $"emptySource={emptySource}: group disposal still removes the moved handle."
-            );
-            Assert.That(
-                group.Count,
-                Is.Zero,
-                $"emptySource={emptySource}: cleanup completes through its original group."
-            );
+            Assert.That(calls, Is.EqualTo(1), $"emptySource={emptySource}: group disposal still removes the moved handle.");
+            Assert.That(group.Count, Is.Zero, $"emptySource={emptySource}: cleanup completes through its original group.");
         }
 
         private static GameObject CreateSourceIdentityProbe(string name)
         {
 #if UNITY_EDITOR
-            return global::UnityEditor.EditorUtility.CreateGameObjectWithHideFlags(
-                name,
-                HideFlags.HideAndDontSave
-            );
+            return global::UnityEditor.EditorUtility.CreateGameObjectWithHideFlags(name, HideFlags.HideAndDontSave);
 #else
             return new GameObject(name);
 #endif
@@ -106,26 +80,17 @@ namespace DxMessaging.Tests.Runtime.Unity
         /// <summary>Preserves each accepted configuration's mode and order across foreign cleanup.</summary>
         [Test]
         public void QueuedConfigurationsPreserveRequestOrderAndModes(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
             [Values(false, true)] bool beforeDeregistration,
             [Values(false, true)] bool interceptor,
             [Values("bus", "provider", "handle")] string overload,
-            [Values("active", "preserve", "active-preserve", "preserve-active", "active-active")]
-                string sequence
+            [Values("active", "preserve", "active-preserve", "preserve-active", "active-active")] string sequence
         )
         {
-            string context =
-                $"{scenario}, before={beforeDeregistration}, interceptor={interceptor}, {overload}, {sequence}";
+            string context = $"{scenario}, before={beforeDeregistration}, interceptor={interceptor}, {overload}, {sequence}";
             for (int cycle = 0; cycle < 10; ++cycle)
             {
-                using ConfigurationProbe probe = new(
-                    _spawned,
-                    scenario,
-                    beforeDeregistration,
-                    interceptor,
-                    context + $", cycle={cycle}"
-                );
+                using ConfigurationProbe probe = new(_spawned, scenario, beforeDeregistration, interceptor, context + $", cycle={cycle}");
                 probe.AssertLiveBus(0, "baseline");
                 List<ConfigurationProbeProvider> providers = new();
                 bool completed = false;
@@ -134,31 +99,17 @@ namespace DxMessaging.Tests.Runtime.Unity
                     ConfigureProbeTarget(
                         probe.Owner,
                         probe.Buses[2],
-                        sequence == "preserve" || sequence == "preserve-active"
-                            ? MessageBusRebindMode.PreserveRegistrations
-                            : MessageBusRebindMode.RebindActive,
+                        sequence == "preserve" || sequence == "preserve-active" ? MessageBusRebindMode.PreserveRegistrations : MessageBusRebindMode.RebindActive,
                         overload,
                         providers
                     );
                     if (sequence == "active-preserve")
                     {
-                        ConfigureProbeTarget(
-                            probe.Owner,
-                            probe.Buses[0],
-                            MessageBusRebindMode.PreserveRegistrations,
-                            overload,
-                            providers
-                        );
+                        ConfigureProbeTarget(probe.Owner, probe.Buses[0], MessageBusRebindMode.PreserveRegistrations, overload, providers);
                     }
                     else if (sequence == "preserve-active" || sequence == "active-active")
                     {
-                        ConfigureProbeTarget(
-                            probe.Owner,
-                            probe.Buses[0],
-                            MessageBusRebindMode.RebindActive,
-                            overload,
-                            providers
-                        );
+                        ConfigureProbeTarget(probe.Owner, probe.Buses[0], MessageBusRebindMode.RebindActive, overload, providers);
                     }
                     foreach (ConfigurationProbeProvider provider in providers)
                     {
@@ -171,12 +122,7 @@ namespace DxMessaging.Tests.Runtime.Unity
                     sequence == "preserve" ? 1
                     : sequence == "preserve-active" || sequence == "active-active" ? 0
                     : 2;
-                int defaultBus =
-                    sequence == "active-preserve"
-                    || sequence == "preserve-active"
-                    || sequence == "active-active"
-                        ? 0
-                        : 2;
+                int defaultBus = sequence == "active-preserve" || sequence == "preserve-active" || sequence == "active-active" ? 0 : 2;
                 probe.AssertLiveBus(activeBus, "accepted sequence");
                 probe.AssertOwned();
                 Assert.That(completed, Is.True, probe.Context);
@@ -192,72 +138,44 @@ namespace DxMessaging.Tests.Runtime.Unity
         /// <summary>Retains acceptance order when resolving a queued provider accepts another request.</summary>
         [Test]
         public void ProviderReentryPreservesAcceptedConfigurationOrder(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
             [Values(false, true)] bool beforeDeregistration,
             [Values(false, true)] bool interceptor,
             [Values("provider", "handle")] string overload,
             [Values(false, true)] bool queuedProvider
         )
         {
-            string context =
-                $"{scenario}, before={beforeDeregistration}, interceptor={interceptor}, {overload}, queued={queuedProvider}";
+            string context = $"{scenario}, before={beforeDeregistration}, interceptor={interceptor}, {overload}, queued={queuedProvider}";
             for (int cycle = 0; cycle < 10; ++cycle)
             {
-                using ConfigurationProbe probe = new(
-                    _spawned,
-                    scenario,
-                    beforeDeregistration,
-                    interceptor,
-                    context + $", cycle={cycle}"
-                );
+                using ConfigurationProbe probe = new(_spawned, scenario, beforeDeregistration, interceptor, context + $", cycle={cycle}");
                 probe.AssertLiveBus(0, "baseline");
                 ConfigurationProbeProvider provider = new(probe.Buses[queuedProvider ? 2 : 1]);
                 bool completed = false;
                 provider.OnResolve = () =>
                 {
-                    probe.Owner.Configure(
-                        probe.Buses[queuedProvider ? 0 : 2],
-                        MessageBusRebindMode.RebindActive
-                    );
+                    probe.Owner.Configure(probe.Buses[queuedProvider ? 0 : 2], MessageBusRebindMode.RebindActive);
                     completed = true;
                 };
                 if (queuedProvider)
                 {
                     probe.Original.OnDeregister = () =>
                     {
-                        ConfigureProbeProvider(
-                            probe.Owner,
-                            provider,
-                            MessageBusRebindMode.RebindActive,
-                            overload
-                        );
-                        probe.Owner.Configure(
-                            probe.Buses[1],
-                            MessageBusRebindMode.PreserveRegistrations
-                        );
+                        ConfigureProbeProvider(probe.Owner, provider, MessageBusRebindMode.RebindActive, overload);
+                        probe.Owner.Configure(probe.Buses[1], MessageBusRebindMode.PreserveRegistrations);
                         Assert.That(provider.Resolves, Is.Zero, probe.Context);
                     };
                     probe.Owner.Configure(probe.Buses[1], MessageBusRebindMode.RebindActive);
                 }
                 else
                 {
-                    ConfigureProbeProvider(
-                        probe.Owner,
-                        provider,
-                        MessageBusRebindMode.RebindActive,
-                        overload
-                    );
+                    ConfigureProbeProvider(probe.Owner, provider, MessageBusRebindMode.RebindActive, overload);
                 }
                 probe.AssertLiveBus(queuedProvider ? 0 : 2, "provider reentry");
                 probe.AssertOwned();
                 Assert.That(completed, Is.True, probe.Context);
                 Assert.That(provider.Resolves, Is.EqualTo(1), probe.Context);
-                Assert.That(
-                    probe.Original.Callbacks,
-                    Is.EqualTo(queuedProvider ? 1 : 0),
-                    probe.Context
-                );
+                Assert.That(probe.Original.Callbacks, Is.EqualTo(queuedProvider ? 1 : 0), probe.Context);
                 probe.AssertReplayBus(queuedProvider ? 0 : 2);
             }
         }
@@ -265,8 +183,7 @@ namespace DxMessaging.Tests.Runtime.Unity
         /// <summary>Keeps registrations made by a reentrant provider under the component's ownership.</summary>
         [Test]
         public void ProviderReentryPreservesListenerAndHandlerOwnership(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
             [Values(false, true)] bool usePeer
         )
         {
@@ -277,9 +194,7 @@ namespace DxMessaging.Tests.Runtime.Unity
             MessagingComponent component = host.AddComponent<MessagingComponent>();
             component.emitMessagesWhenDisabled = true;
             ManualListenerComponent listener = host.AddComponent<ManualListenerComponent>();
-            ManualListenerComponent nestedListener = usePeer
-                ? host.AddComponent<ManualListenerComponent>()
-                : listener;
+            ManualListenerComponent nestedListener = usePeer ? host.AddComponent<ManualListenerComponent>() : listener;
             InstanceId route = host;
             MessageBus bus = new();
             ConfigurationProbeProvider provider = new(bus);
@@ -293,18 +208,14 @@ namespace DxMessaging.Tests.Runtime.Unity
             provider.OnResolve = () =>
             {
                 nested = component.Create(nestedListener);
-                _ = ScenarioCallbacks.RegisterCountingHandler(scenario, nested, route, () =>
-                    ++nestedCalls
-                );
+                _ = ScenarioCallbacks.RegisterCountingHandler(scenario, nested, route, () => ++nestedCalls);
                 nested.Enable();
             };
             try
             {
                 outer = component.Create(listener);
                 Assert.That(nested, Is.Not.Null, $"{context} The first resolve must enter Create.");
-                _ = ScenarioCallbacks.RegisterCountingHandler(scenario, outer, route, () =>
-                    ++outerCalls
-                );
+                _ = ScenarioCallbacks.RegisterCountingHandler(scenario, outer, route, () => ++outerCalls);
                 outer.Enable();
 
                 ScenarioCallbacks.EmitForKind(scenario, bus, route);
@@ -327,42 +238,14 @@ namespace DxMessaging.Tests.Runtime.Unity
                         + $"off={nestedCallsWhileOff},{outerCallsWhileOff}; released={releasedOuter},{releasedNested}; "
                         + $"afterRelease={nestedCalls},{outerCalls}; retained={retained}."
                 );
-                Assert.That(
-                    nestedCallsWhileOn,
-                    Is.EqualTo(1),
-                    $"{context} Nested delivery control."
-                );
+                Assert.That(nestedCallsWhileOn, Is.EqualTo(1), $"{context} Nested delivery control.");
                 Assert.That(outerCallsWhileOn, Is.EqualTo(1), $"{context} Outer delivery control.");
-                Assert.That(
-                    sameToken,
-                    Is.EqualTo(!usePeer),
-                    $"{context} Same listener gets one token. Peers get distinct tokens."
-                );
-                Assert.That(
-                    nestedCallsWhileOff,
-                    Is.EqualTo(1),
-                    $"{context} Shared toggle must suspend the nested registration."
-                );
-                Assert.That(
-                    outerCallsWhileOff,
-                    Is.EqualTo(1),
-                    $"{context} Shared toggle must suspend the outer registration."
-                );
-                Assert.That(
-                    releasedOuter && releasedNested,
-                    Is.True,
-                    $"{context} Owner release must succeed."
-                );
-                Assert.That(
-                    nestedCalls,
-                    Is.EqualTo(nestedCallsWhileOff),
-                    $"{context} Release must stop further nested delivery."
-                );
-                Assert.That(
-                    outerCalls,
-                    Is.EqualTo(outerCallsWhileOff),
-                    $"{context} Release must stop further outer delivery."
-                );
+                Assert.That(sameToken, Is.EqualTo(!usePeer), $"{context} Same listener gets one token. Peers get distinct tokens.");
+                Assert.That(nestedCallsWhileOff, Is.EqualTo(1), $"{context} Shared toggle must suspend the nested registration.");
+                Assert.That(outerCallsWhileOff, Is.EqualTo(1), $"{context} Shared toggle must suspend the outer registration.");
+                Assert.That(releasedOuter && releasedNested, Is.True, $"{context} Owner release must succeed.");
+                Assert.That(nestedCalls, Is.EqualTo(nestedCallsWhileOff), $"{context} Release must stop further nested delivery.");
+                Assert.That(outerCalls, Is.EqualTo(outerCallsWhileOff), $"{context} Release must stop further outer delivery.");
                 Assert.That(retained, Is.Zero, $"{context} Release must drain both registrations.");
             }
             finally
@@ -395,8 +278,7 @@ namespace DxMessaging.Tests.Runtime.Unity
             MessageBus accepted = new();
             ConfigurationProbeProvider provider = new(stale);
             component.Configure(provider, MessageBusRebindMode.RebindActive);
-            provider.OnResolve = () =>
-                component.Configure(accepted, MessageBusRebindMode.RebindActive);
+            provider.OnResolve = () => component.Configure(accepted, MessageBusRebindMode.RebindActive);
 
             using LeakWatcher staleWatcher = new(stale, label: context);
             using LeakWatcher acceptedWatcher = new(accepted, label: context);
@@ -408,27 +290,15 @@ namespace DxMessaging.Tests.Runtime.Unity
                 }
                 MessageRegistrationToken token = component.Create(listener);
                 int calls = 0;
-                _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, route, () =>
-                    ++calls
-                );
+                _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, route, () => ++calls);
                 token.Enable();
 
                 ScenarioCallbacks.EmitForKind(scenario, stale, route);
                 int staleCalls = calls;
                 ScenarioCallbacks.EmitForKind(scenario, accepted, route);
-                TestContext.WriteLine(
-                    $"Provider reentry {context} superseded={staleCalls}; accepted={calls - staleCalls}."
-                );
-                Assert.That(
-                    staleCalls,
-                    Is.Zero,
-                    $"{context} The superseded provider must receive no registrations."
-                );
-                Assert.That(
-                    calls - staleCalls,
-                    Is.EqualTo(1),
-                    $"{context} The accepted bus must deliver."
-                );
+                TestContext.WriteLine($"Provider reentry {context} superseded={staleCalls}; accepted={calls - staleCalls}.");
+                Assert.That(staleCalls, Is.Zero, $"{context} The superseded provider must receive no registrations.");
+                Assert.That(calls - staleCalls, Is.EqualTo(1), $"{context} The accepted bus must deliver.");
             }
             finally
             {
@@ -453,23 +323,12 @@ namespace DxMessaging.Tests.Runtime.Unity
             provider.OnResolve = () => nested = component.CreateLifecycleBound(listener);
             try
             {
-                Assert.Throws<InvalidOperationException>(
-                    () => outer = component.CreateLifecycleBound(listener),
-                    "The nested owner already claimed the listener."
-                );
-                Assert.That(
-                    nested.Token,
-                    Is.SameAs(component.Create(listener)),
-                    "The nested owner must retain the cached token."
-                );
+                Assert.Throws<InvalidOperationException>(() => outer = component.CreateLifecycleBound(listener), "The nested owner already claimed the listener.");
+                Assert.That(nested.Token, Is.SameAs(component.Create(listener)), "The nested owner must retain the cached token.");
                 nested.Dispose();
                 Assert.That(nested.IsDisposed, Is.True, "The sole owner may release its token.");
                 using MessagingLifecycle replacement = component.CreateLifecycleBound(listener);
-                Assert.That(
-                    replacement.IsDisposed,
-                    Is.False,
-                    "An owner may claim the listener after release."
-                );
+                Assert.That(replacement.IsDisposed, Is.False, "An owner may claim the listener after release.");
             }
             finally
             {
@@ -497,26 +356,14 @@ namespace DxMessaging.Tests.Runtime.Unity
                 Is.SameAs(failure),
                 "Initial creation must report the original provider exception."
             );
-            Assert.That(
-                component.Release(listener),
-                Is.False,
-                "Failed creation must not cache a token."
-            );
+            Assert.That(component.Release(listener), Is.False, "Failed creation must not cache a token.");
 
             provider.Failure = null;
             try
             {
                 MessageRegistrationToken token = component.Create(listener);
-                Assert.That(
-                    component.Create(listener),
-                    Is.SameAs(token),
-                    "Retry must cache one reusable token."
-                );
-                Assert.That(
-                    provider.Resolves,
-                    Is.EqualTo(3),
-                    "Configuration, failed creation, and retry each resolve once."
-                );
+                Assert.That(component.Create(listener), Is.SameAs(token), "Retry must cache one reusable token.");
+                Assert.That(provider.Resolves, Is.EqualTo(3), "Configuration, failed creation, and retry each resolve once.");
             }
             finally
             {
@@ -539,20 +386,9 @@ namespace DxMessaging.Tests.Runtime.Unity
 
             try
             {
-                Assert.Throws<ArgumentNullException>(
-                    () => component.Create(listener),
-                    "Provider resolution must not cache a token for a destroyed listener."
-                );
-                Assert.That(
-                    listener == null,
-                    Is.True,
-                    "The provider destroyed the original listener."
-                );
-                Assert.That(
-                    component.Release(listener),
-                    Is.False,
-                    "There must be no token to release."
-                );
+                Assert.Throws<ArgumentNullException>(() => component.Create(listener), "Provider resolution must not cache a token for a destroyed listener.");
+                Assert.That(listener == null, Is.True, "The provider destroyed the original listener.");
+                Assert.That(component.Release(listener), Is.False, "There must be no token to release.");
             }
             finally
             {
@@ -598,13 +434,7 @@ namespace DxMessaging.Tests.Runtime.Unity
                 MessagingDebug.enabled = true;
                 MessagingDebug.LogFunction = (level, message) =>
                 {
-                    if (
-                        level == LogLevel.Warn
-                        && message.StartsWith(
-                            "Ignoring double RegistrationToken request",
-                            StringComparison.Ordinal
-                        )
-                    )
+                    if (level == LogLevel.Warn && message.StartsWith("Ignoring double RegistrationToken request", StringComparison.Ordinal))
                     {
                         ++warningCount;
                         warning = message;
@@ -635,31 +465,13 @@ namespace DxMessaging.Tests.Runtime.Unity
                         + $"released={released}, deliveries={callsBeforeRelease}/{calls}, retained={retained}."
                 );
                 Assert.That(returned, Is.SameAs(existing), $"{context} Preserve the cached token.");
-                Assert.That(
-                    callsBeforeRelease,
-                    Is.EqualTo(1),
-                    $"{context} Verify active delivery."
-                );
-                Assert.That(
-                    released,
-                    Is.True,
-                    $"{context} Release must still own the returned token."
-                );
+                Assert.That(callsBeforeRelease, Is.EqualTo(1), $"{context} Verify active delivery.");
+                Assert.That(released, Is.True, $"{context} Release must still own the returned token.");
                 Assert.That(calls, Is.EqualTo(1), $"{context} Release must stop delivery.");
                 Assert.That(retained, Is.Zero, $"{context} Release must remove the registration.");
-                Assert.That(
-                    warningCount,
-                    Is.EqualTo(cachedAtEntry ? 1 : 0),
-                    $"{context} Duplicate warning count."
-                );
-                string expectedWarning = cachedAtEntry
-                    ? $"Ignoring double RegistrationToken request for {listener}."
-                    : null;
-                Assert.That(
-                    warning,
-                    Is.EqualTo(expectedWarning),
-                    $"{context} Original warning text."
-                );
+                Assert.That(warningCount, Is.EqualTo(cachedAtEntry ? 1 : 0), $"{context} Duplicate warning count.");
+                string expectedWarning = cachedAtEntry ? $"Ignoring double RegistrationToken request for {listener}." : null;
+                Assert.That(warning, Is.EqualTo(expectedWarning), $"{context} Original warning text.");
             }
             finally
             {
@@ -734,31 +546,11 @@ namespace DxMessaging.Tests.Runtime.Unity
                 );
 
                 Assert.That(warnings, Is.EqualTo(1), $"{context} The repeat must warn once.");
-                Assert.That(
-                    releasedOriginal,
-                    Is.True,
-                    $"{context} The warning released the original token."
-                );
-                Assert.That(
-                    sameAsOriginal,
-                    Is.False,
-                    $"{context} Create must not return the detached token."
-                );
-                Assert.That(
-                    sameAsReplacement,
-                    Is.EqualTo(replaceDuringWarning),
-                    $"{context} Use the logger's replacement when present."
-                );
-                Assert.That(
-                    callsBeforeRelease,
-                    Is.EqualTo(1),
-                    $"{context} The returned token must receive."
-                );
-                Assert.That(
-                    released,
-                    Is.True,
-                    $"{context} The owner must release the returned token."
-                );
+                Assert.That(releasedOriginal, Is.True, $"{context} The warning released the original token.");
+                Assert.That(sameAsOriginal, Is.False, $"{context} Create must not return the detached token.");
+                Assert.That(sameAsReplacement, Is.EqualTo(replaceDuringWarning), $"{context} Use the logger's replacement when present.");
+                Assert.That(callsBeforeRelease, Is.EqualTo(1), $"{context} The returned token must receive.");
+                Assert.That(released, Is.True, $"{context} The owner must release the returned token.");
                 Assert.That(calls, Is.EqualTo(1), $"{context} Release must stop delivery.");
                 Assert.That(retained, Is.Zero, $"{context} Release must remove the registration.");
             }
@@ -797,11 +589,7 @@ namespace DxMessaging.Tests.Runtime.Unity
                     Is.SameAs(failure),
                     "Create must propagate the original warning exception."
                 );
-                Assert.That(
-                    component.TryGetToken(listener, out MessageRegistrationToken retained),
-                    Is.True,
-                    "The failing warning must leave the cache entry available."
-                );
+                Assert.That(component.TryGetToken(listener, out MessageRegistrationToken retained), Is.True, "The failing warning must leave the cache entry available.");
                 Assert.That(retained, Is.SameAs(original), "The original token must remain owned.");
             }
             finally
@@ -833,9 +621,7 @@ namespace DxMessaging.Tests.Runtime.Unity
 
             using LeakWatcher watcher = new(bus, label: context);
             int resolvesBefore = provider.Resolves;
-            InvalidOperationException sentinel = new(
-                "Provider recursion fixture reached its sentinel."
-            );
+            InvalidOperationException sentinel = new("Provider recursion fixture reached its sentinel.");
             Action recursiveResolve = null;
             recursiveResolve = () =>
             {
@@ -886,48 +672,16 @@ namespace DxMessaging.Tests.Runtime.Unity
                         + $"retryCalls={retryResolves}, released={released}, deliveries={callsBeforeRelease}/{calls}."
                 );
 
-                Assert.That(
-                    failure,
-                    Is.Not.SameAs(sentinel),
-                    $"{context} Stop before the fixture sentinel."
-                );
-                Assert.That(
-                    cycleResolves,
-                    Is.EqualTo(2),
-                    $"{context} The third invocation must never call the provider."
-                );
-                Assert.That(
-                    failure.Message,
-                    Does.Contain("Configure a concrete message bus"),
-                    $"{context} Explain how to avoid the recursive resolution."
-                );
-                Assert.That(
-                    cachedDuringFailure,
-                    Is.False,
-                    $"{context} Failed creation must not cache a token."
-                );
-                Assert.That(
-                    retainedDuringFailure,
-                    Is.Zero,
-                    $"{context} Failed creation must not leave a registration."
-                );
-                Assert.That(
-                    retryResolves,
-                    Is.EqualTo(1),
-                    $"{context} Retry must resolve the provider once."
-                );
+                Assert.That(failure, Is.Not.SameAs(sentinel), $"{context} Stop before the fixture sentinel.");
+                Assert.That(cycleResolves, Is.EqualTo(2), $"{context} The third invocation must never call the provider.");
+                Assert.That(failure.Message, Does.Contain("Configure a concrete message bus"), $"{context} Explain how to avoid the recursive resolution.");
+                Assert.That(cachedDuringFailure, Is.False, $"{context} Failed creation must not cache a token.");
+                Assert.That(retainedDuringFailure, Is.Zero, $"{context} Failed creation must not leave a registration.");
+                Assert.That(retryResolves, Is.EqualTo(1), $"{context} Retry must resolve the provider once.");
                 Assert.That(callsBeforeRelease, Is.EqualTo(1), $"{context} Retry must deliver.");
-                Assert.That(
-                    released,
-                    Is.True,
-                    $"{context} The owner must release the retried token."
-                );
+                Assert.That(released, Is.True, $"{context} The owner must release the retried token.");
                 Assert.That(calls, Is.EqualTo(1), $"{context} Release must stop delivery.");
-                Assert.That(
-                    watcher.LeakedRegistrations,
-                    Is.Zero,
-                    $"{context} Release must drain the bus."
-                );
+                Assert.That(watcher.LeakedRegistrations, Is.Zero, $"{context} Release must drain the bus.");
             }
             finally
             {
@@ -940,9 +694,7 @@ namespace DxMessaging.Tests.Runtime.Unity
         [Test]
         public void NestedProviderResolutionAllowsConfigurationAfterHandlerPublication()
         {
-            GameObject host = new(
-                nameof(NestedProviderResolutionAllowsConfigurationAfterHandlerPublication)
-            );
+            GameObject host = new(nameof(NestedProviderResolutionAllowsConfigurationAfterHandlerPublication));
             _spawned.Add(host);
             host.SetActive(false);
             MessagingComponent component = host.AddComponent<MessagingComponent>();
@@ -977,60 +729,24 @@ namespace DxMessaging.Tests.Runtime.Unity
             try
             {
                 MessageRegistrationToken outer = component.Create(listener);
-                Assert.That(
-                    initialProvider.Resolves - resolvesBefore,
-                    Is.EqualTo(2),
-                    "Two unresolved provider calls are supported."
-                );
-                Assert.That(
-                    laterProvider.Resolves,
-                    Is.EqualTo(1),
-                    "The later provider resolves after handler publication."
-                );
+                Assert.That(initialProvider.Resolves - resolvesBefore, Is.EqualTo(2), "Two unresolved provider calls are supported.");
+                Assert.That(laterProvider.Resolves, Is.EqualTo(1), "The later provider resolves after handler publication.");
                 Assert.That(outer, Is.SameAs(nested), "The nested request shares the outer token.");
-                Assert.That(
-                    outer,
-                    Is.SameAs(fromConcrete),
-                    "The concrete configuration supplies the owned token."
-                );
-                Assert.That(
-                    outer,
-                    Is.SameAs(fromLaterProvider),
-                    "The later provider sees the same token."
-                );
+                Assert.That(outer, Is.SameAs(fromConcrete), "The concrete configuration supplies the owned token.");
+                Assert.That(outer, Is.SameAs(fromLaterProvider), "The later provider sees the same token.");
                 int calls = 0;
                 _ = outer.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++calls);
                 outer.Enable();
                 SimpleUntargetedMessage payload = new();
                 superseded.UntargetedBroadcast(ref payload);
-                Assert.That(
-                    calls,
-                    Is.Zero,
-                    "The initial provider must not receive the registration."
-                );
+                Assert.That(calls, Is.Zero, "The initial provider must not receive the registration.");
                 concrete.UntargetedBroadcast(ref payload);
-                Assert.That(
-                    calls,
-                    Is.Zero,
-                    "The first published bus must not receive the registration."
-                );
+                Assert.That(calls, Is.Zero, "The first published bus must not receive the registration.");
                 later.UntargetedBroadcast(ref payload);
-                Assert.That(
-                    calls,
-                    Is.EqualTo(1),
-                    "The later provider's bus must receive the registration."
-                );
-                Assert.That(
-                    component.Release(listener),
-                    Is.True,
-                    "The owner must release the shared token."
-                );
+                Assert.That(calls, Is.EqualTo(1), "The later provider's bus must receive the registration.");
+                Assert.That(component.Release(listener), Is.True, "The owner must release the shared token.");
                 later.UntargetedBroadcast(ref payload);
-                Assert.That(
-                    calls,
-                    Is.EqualTo(1),
-                    "Release must stop delivery on the later provider's bus."
-                );
+                Assert.That(calls, Is.EqualTo(1), "Release must stop delivery on the later provider's bus.");
             }
             finally
             {
@@ -1045,15 +761,9 @@ namespace DxMessaging.Tests.Runtime.Unity
         [TestCase(true, false, true, false)]
         [TestCase(true, true, false, false)]
         [TestCase(false, true, null, true)]
-        public void FirstHandlerUsesFinalLifecycleStateOrExplicitToggle(
-            bool initialFlag,
-            bool finalFlag,
-            bool? explicitActive,
-            bool cycleHost
-        )
+        public void FirstHandlerUsesFinalLifecycleStateOrExplicitToggle(bool initialFlag, bool finalFlag, bool? explicitActive, bool cycleHost)
         {
-            string context =
-                $"initialFlag={initialFlag}, finalFlag={finalFlag}, explicit={explicitActive}, cycle={cycleHost}";
+            string context = $"initialFlag={initialFlag}, finalFlag={finalFlag}, explicit={explicitActive}, cycle={cycleHost}";
             GameObject host = new(nameof(FirstHandlerUsesFinalLifecycleStateOrExplicitToggle));
             _spawned.Add(host);
             host.SetActive(false);
@@ -1092,21 +802,11 @@ namespace DxMessaging.Tests.Runtime.Unity
                 bus.UntargetedBroadcast(ref payload);
                 int expected = (explicitActive ?? finalFlag) ? 1 : 0;
 
-                TestContext.WriteLine(
-                    $"{context} expected={expected}, delivered={delivered}, released={released}, afterRelease={calls}."
-                );
-                Assert.That(
-                    delivered,
-                    Is.EqualTo(expected),
-                    $"{context} Use the final lifecycle state or explicit toggle."
-                );
+                TestContext.WriteLine($"{context} expected={expected}, delivered={delivered}, released={released}, afterRelease={calls}.");
+                Assert.That(delivered, Is.EqualTo(expected), $"{context} Use the final lifecycle state or explicit toggle.");
                 Assert.That(released, Is.True, $"{context} Release the component-owned token.");
                 Assert.That(calls, Is.EqualTo(delivered), $"{context} Release must stop delivery.");
-                Assert.That(
-                    watcher.LeakedRegistrations,
-                    Is.Zero,
-                    $"{context} Release must drain the bus."
-                );
+                Assert.That(watcher.LeakedRegistrations, Is.Zero, $"{context} Release must drain the bus.");
             }
             finally
             {
@@ -1128,9 +828,7 @@ namespace DxMessaging.Tests.Runtime.Unity
             component.Configure(provider, MessageBusRebindMode.RebindActive);
 
             using LeakWatcher watcher = new(bus);
-            InvalidOperationException original = new(
-                "Outer provider failed after creating the listener token."
-            );
+            InvalidOperationException original = new("Outer provider failed after creating the listener token.");
             MessageRegistrationToken nested = null;
             int calls = 0;
             provider.OnResolve = () =>
@@ -1150,32 +848,18 @@ namespace DxMessaging.Tests.Runtime.Unity
                     Is.SameAs(original),
                     "The outer Create must rethrow the original provider exception."
                 );
-                Assert.That(
-                    component.TryGetToken(listener, out MessageRegistrationToken retained),
-                    Is.True,
-                    "The nested creation remains owned."
-                );
+                Assert.That(component.TryGetToken(listener, out MessageRegistrationToken retained), Is.True, "The nested creation remains owned.");
                 Assert.That(retained, Is.SameAs(nested), "The same nested token remains cached.");
                 SimpleUntargetedMessage payload = new();
                 bus.UntargetedBroadcast(ref payload);
                 int delivered = calls;
                 bool released = component.Release(listener);
                 bus.UntargetedBroadcast(ref payload);
-                TestContext.WriteLine(
-                    $"delivered={delivered}, released={released}, afterRelease={calls}, retained={watcher.LeakedRegistrations}."
-                );
-                Assert.That(
-                    delivered,
-                    Is.EqualTo(1),
-                    "The retained handler uses the final lifecycle state."
-                );
+                TestContext.WriteLine($"delivered={delivered}, released={released}, afterRelease={calls}, retained={watcher.LeakedRegistrations}.");
+                Assert.That(delivered, Is.EqualTo(1), "The retained handler uses the final lifecycle state.");
                 Assert.That(released, Is.True, "The component can release the nested owner.");
                 Assert.That(calls, Is.EqualTo(1), "Release must stop the retained registration.");
-                Assert.That(
-                    watcher.LeakedRegistrations,
-                    Is.Zero,
-                    "No accepted registration remains after release."
-                );
+                Assert.That(watcher.LeakedRegistrations, Is.Zero, "No accepted registration remains after release.");
             }
             finally
             {
@@ -1208,10 +892,7 @@ namespace DxMessaging.Tests.Runtime.Unity
                 {
                     if (useHandle)
                     {
-                        component.Configure(
-                            MessageBusProviderHandle.FromProvider(replacement),
-                            MessageBusRebindMode.RebindActive
-                        );
+                        component.Configure(MessageBusProviderHandle.FromProvider(replacement), MessageBusRebindMode.RebindActive);
                     }
                     else
                     {
@@ -1225,37 +906,14 @@ namespace DxMessaging.Tests.Runtime.Unity
             using LeakWatcher selectedWatcher = new(selected, label: context);
             try
             {
-                InvalidOperationException failure = Assert.Throws<InvalidOperationException>(
-                    () => component.Create(listener),
-                    $"{context} Refuse the third active provider call."
-                );
-                Assert.That(
-                    failure.Message,
-                    Does.Contain("Configure a concrete message bus"),
-                    context
-                );
-                Assert.That(
-                    initial.Resolves - initialResolves,
-                    Is.EqualTo(2),
-                    $"{context} Reach the initial limit."
-                );
-                Assert.That(
-                    replacement.Resolves,
-                    Is.Zero,
-                    $"{context} Refusal must precede the new provider callback."
-                );
-                Assert.That(
-                    component.TryGetToken(listener, out _),
-                    Is.False,
-                    $"{context} Refusal must leave no token."
-                );
+                InvalidOperationException failure = Assert.Throws<InvalidOperationException>(() => component.Create(listener), $"{context} Refuse the third active provider call.");
+                Assert.That(failure.Message, Does.Contain("Configure a concrete message bus"), context);
+                Assert.That(initial.Resolves - initialResolves, Is.EqualTo(2), $"{context} Reach the initial limit.");
+                Assert.That(replacement.Resolves, Is.Zero, $"{context} Refusal must precede the new provider callback.");
+                Assert.That(component.TryGetToken(listener, out _), Is.False, $"{context} Refusal must leave no token.");
 
                 MessageRegistrationToken token = component.Create(listener);
-                Assert.That(
-                    replacement.Resolves,
-                    Is.EqualTo(1),
-                    $"{context} Later resolution must use the selected provider."
-                );
+                Assert.That(replacement.Resolves, Is.EqualTo(1), $"{context} Later resolution must use the selected provider.");
                 int calls = 0;
                 _ = token.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++calls);
                 token.Enable();
@@ -1264,11 +922,7 @@ namespace DxMessaging.Tests.Runtime.Unity
                 Assert.That(calls, Is.Zero, $"{context} Superseded bus must have no registration.");
                 selected.UntargetedBroadcast(ref payload);
                 Assert.That(calls, Is.EqualTo(1), $"{context} Retained provider's bus delivers.");
-                Assert.That(
-                    component.Release(listener),
-                    Is.True,
-                    $"{context} Release the retried listener."
-                );
+                Assert.That(component.Release(listener), Is.True, $"{context} Release the retried listener.");
                 selected.UntargetedBroadcast(ref payload);
                 Assert.That(calls, Is.EqualTo(1), $"{context} Release stops delivery.");
             }
@@ -1282,13 +936,9 @@ namespace DxMessaging.Tests.Runtime.Unity
         [TestCase(false, false)]
         [TestCase(true, false)]
         [TestCase(true, true)]
-        public void InitialExplicitToggleWinsAfterInterveningLifecycleWrites(
-            bool requestedActive,
-            bool requestOppositeFirst
-        )
+        public void InitialExplicitToggleWinsAfterInterveningLifecycleWrites(bool requestedActive, bool requestOppositeFirst)
         {
-            string context =
-                $"requestedActive={requestedActive}, requestOppositeFirst={requestOppositeFirst}";
+            string context = $"requestedActive={requestedActive}, requestOppositeFirst={requestOppositeFirst}";
             GameObject host = new(nameof(InitialExplicitToggleWinsAfterInterveningLifecycleWrites));
             _spawned.Add(host);
             host.SetActive(false);
@@ -1355,37 +1005,13 @@ namespace DxMessaging.Tests.Runtime.Unity
                         + $"afterRelease={calls - beforeReleaseProbe}, retained={watcher.LeakedRegistrations}."
                 );
                 Assert.That(outer, Is.SameAs(nested), $"{context} Keep the nested token owned.");
-                Assert.That(
-                    duringLifecycle,
-                    Is.EqualTo(requestedActive ? 0 : 1),
-                    $"{context} Lifecycle writes take effect during resolution."
-                );
-                Assert.That(
-                    afterCompletion,
-                    Is.EqualTo(requestedActive ? 1 : 0),
-                    $"{context} Completion restores the last explicit request."
-                );
-                Assert.That(
-                    afterEnable,
-                    Is.EqualTo(1),
-                    $"{context} Later OnEnable may activate the handler."
-                );
-                Assert.That(
-                    afterDisable,
-                    Is.Zero,
-                    $"{context} Later OnDisable may deactivate the handler."
-                );
+                Assert.That(duringLifecycle, Is.EqualTo(requestedActive ? 0 : 1), $"{context} Lifecycle writes take effect during resolution.");
+                Assert.That(afterCompletion, Is.EqualTo(requestedActive ? 1 : 0), $"{context} Completion restores the last explicit request.");
+                Assert.That(afterEnable, Is.EqualTo(1), $"{context} Later OnEnable may activate the handler.");
+                Assert.That(afterDisable, Is.Zero, $"{context} Later OnDisable may deactivate the handler.");
                 Assert.That(released, Is.True, $"{context} Release the owned token.");
-                Assert.That(
-                    calls,
-                    Is.EqualTo(beforeReleaseProbe),
-                    $"{context} Release stops delivery when active."
-                );
-                Assert.That(
-                    watcher.LeakedRegistrations,
-                    Is.Zero,
-                    $"{context} Release drains the bus."
-                );
+                Assert.That(calls, Is.EqualTo(beforeReleaseProbe), $"{context} Release stops delivery when active.");
+                Assert.That(watcher.LeakedRegistrations, Is.Zero, $"{context} Release drains the bus.");
             }
             finally
             {
@@ -1397,26 +1023,17 @@ namespace DxMessaging.Tests.Runtime.Unity
         /// <summary>Drains accepted work after failures and reports every original error before recovery.</summary>
         [Test]
         public void QueuedConfigurationFailuresPreserveErrorsAndRecovery(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
             [Values(false, true)] bool interceptor,
             [Values("provider", "handle")] string overload,
             [Values("provider", "migration", "outer")] string failureSource,
             [Values(1, 2)] int errorCount
         )
         {
-            string context =
-                $"{scenario}, interceptor={interceptor}, {overload}, source={failureSource}, errors={errorCount}";
+            string context = $"{scenario}, interceptor={interceptor}, {overload}, source={failureSource}, errors={errorCount}";
             for (int cycle = 0; cycle < 10; ++cycle)
             {
-                using ConfigurationProbe probe = new(
-                    _spawned,
-                    scenario,
-                    true,
-                    interceptor,
-                    context + $", cycle={cycle}",
-                    failureSource == "migration"
-                );
+                using ConfigurationProbe probe = new(_spawned, scenario, true, interceptor, context + $", cycle={cycle}", failureSource == "migration");
                 probe.AssertLiveBus(0, "baseline");
                 List<Exception> expected = new();
                 List<ConfigurationProbeProvider> providers = new();
@@ -1436,21 +1053,11 @@ namespace DxMessaging.Tests.Runtime.Unity
                     }
                     while (expected.Count < errorCount)
                     {
-                        Exception marker = new InvalidOperationException(
-                            $"queued provider marker {expected.Count}"
-                        );
+                        Exception marker = new InvalidOperationException($"queued provider marker {expected.Count}");
                         expected.Add(marker);
-                        ConfigurationProbeProvider provider = new(probe.Buses[2])
-                        {
-                            Failure = marker,
-                        };
+                        ConfigurationProbeProvider provider = new(probe.Buses[2]) { Failure = marker };
                         providers.Add(provider);
-                        ConfigureProbeProvider(
-                            probe.Owner,
-                            provider,
-                            MessageBusRebindMode.RebindActive,
-                            overload
-                        );
+                        ConfigureProbeProvider(probe.Owner, provider, MessageBusRebindMode.RebindActive, overload);
                     }
                     probe.Owner.Configure(probe.Buses[0], MessageBusRebindMode.RebindActive);
                     completed = true;
@@ -1479,11 +1086,7 @@ namespace DxMessaging.Tests.Runtime.Unity
                 else
                 {
                     Assert.That(observed, Is.TypeOf<AggregateException>(), probe.Context);
-                    Assert.That(
-                        ((AggregateException)observed).InnerExceptions,
-                        Is.EqualTo(expected),
-                        probe.Context
-                    );
+                    Assert.That(((AggregateException)observed).InnerExceptions, Is.EqualTo(expected), probe.Context);
                 }
                 foreach (ConfigurationProbeProvider provider in providers)
                 {
@@ -1498,29 +1101,18 @@ namespace DxMessaging.Tests.Runtime.Unity
         /// <summary>Leaves detached work with its caller when later accepted migrations drain.</summary>
         [Test]
         public void QueuedConfigurationsSkipReleasedAndReplacedOwners(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
             [Values(false, true)] bool beforeDeregistration,
             [Values(false, true)] bool interceptor,
             [Values(false, true)] bool replaceOwner
         )
         {
-            string context =
-                $"{scenario}, before={beforeDeregistration}, interceptor={interceptor}, replace={replaceOwner}";
+            string context = $"{scenario}, before={beforeDeregistration}, interceptor={interceptor}, replace={replaceOwner}";
             for (int cycle = 0; cycle < 10; ++cycle)
             {
-                using ConfigurationProbe probe = new(
-                    _spawned,
-                    scenario,
-                    beforeDeregistration,
-                    interceptor,
-                    context + $", cycle={cycle}"
-                );
+                using ConfigurationProbe probe = new(_spawned, scenario, beforeDeregistration, interceptor, context + $", cycle={cycle}");
                 MessageBus independent = new();
-                using LeakWatcher independentWatcher = new(
-                    bus: independent,
-                    label: probe.Context + " independent"
-                );
+                using LeakWatcher independentWatcher = new(bus: independent, label: probe.Context + " independent");
                 probe.AssertLiveBus(0, "baseline");
                 MonoBehaviour survivor = null;
                 foreach (MonoBehaviour listener in probe.Owner._registeredListeners.Keys)
@@ -1530,9 +1122,7 @@ namespace DxMessaging.Tests.Runtime.Unity
                 }
                 bool firstSurvives = ReferenceEquals(survivor, probe.FirstListener);
                 MonoBehaviour peer = firstSurvives ? probe.SecondListener : probe.FirstListener;
-                MessageRegistrationToken peerToken = firstSurvives
-                    ? probe.SecondToken
-                    : probe.FirstToken;
+                MessageRegistrationToken peerToken = firstSurvives ? probe.SecondToken : probe.FirstToken;
                 MessageRegistrationToken replacement = null;
                 int independentCalls = 0;
                 int replacementCalls = 0;
@@ -1543,53 +1133,28 @@ namespace DxMessaging.Tests.Runtime.Unity
                     {
                         probe.Owner.Configure(probe.Buses[2], MessageBusRebindMode.RebindActive);
                         Assert.That(probe.Owner.Release(peer), Is.True, probe.Context);
-                        peerToken.RetargetMessageBus(
-                            independent,
-                            MessageBusRebindMode.PreserveRegistrations
-                        );
-                        RegisterReleaseProbe(scenario, peerToken, probe.Route, interceptor, () =>
-                            ++independentCalls
-                        );
+                        peerToken.RetargetMessageBus(independent, MessageBusRebindMode.PreserveRegistrations);
+                        RegisterReleaseProbe(scenario, peerToken, probe.Route, interceptor, () => ++independentCalls);
                         peerToken.Enable();
                         if (replaceOwner)
                         {
                             replacement = probe.Owner.Create(peer);
-                            RegisterReleaseProbe(
-                                scenario,
-                                replacement,
-                                probe.Route,
-                                interceptor,
-                                () => ++replacementCalls
-                            );
+                            RegisterReleaseProbe(scenario, replacement, probe.Route, interceptor, () => ++replacementCalls);
                             replacement.Enable();
                         }
                         completed = true;
                     };
                     probe.Owner.Configure(probe.Buses[1], MessageBusRebindMode.RebindActive);
-                    probe.AssertLiveBus(
-                        2,
-                        "retained owners",
-                        firstSurvives ? 1 : 0,
-                        firstSurvives ? 0 : 1,
-                        replaceOwner ? 2 : 1
-                    );
+                    probe.AssertLiveBus(2, "retained owners", firstSurvives ? 1 : 0, firstSurvives ? 0 : 1, replaceOwner ? 2 : 1);
                     Assert.That(completed, Is.True, probe.Context);
                     Assert.That(probe.Original.Callbacks, Is.EqualTo(1), probe.Context);
                     Assert.That(replacementCalls, Is.EqualTo(replaceOwner ? 1 : 0), probe.Context);
                     Assert.That(independentCalls, Is.Zero, probe.Context);
                     ScenarioCallbacks.EmitForKind(scenario, independent, probe.Route);
                     Assert.That(independentCalls, Is.EqualTo(1), probe.Context);
-                    Assert.That(
-                        probe.Owner.TryGetToken(peer, out MessageRegistrationToken cachedPeer),
-                        Is.EqualTo(replaceOwner),
-                        probe.Context
-                    );
+                    Assert.That(probe.Owner.TryGetToken(peer, out MessageRegistrationToken cachedPeer), Is.EqualTo(replaceOwner), probe.Context);
                     Assert.That(cachedPeer, Is.SameAs(replacement), probe.Context);
-                    Assert.That(
-                        probe.Owner._registeredListeners.Count,
-                        Is.EqualTo(replaceOwner ? 2 : 1),
-                        probe.Context
-                    );
+                    Assert.That(probe.Owner._registeredListeners.Count, Is.EqualTo(replaceOwner ? 2 : 1), probe.Context);
                     Assert.That(peerToken.Enabled, Is.True, probe.Context);
                     Assert.That(probe.Owner.Release(peer), Is.EqualTo(replaceOwner), probe.Context);
                     ScenarioCallbacks.EmitForKind(scenario, independent, probe.Route);
@@ -1605,13 +1170,7 @@ namespace DxMessaging.Tests.Runtime.Unity
             }
         }
 
-        private static void ConfigureProbeTarget(
-            MessagingComponent owner,
-            IMessageBus bus,
-            MessageBusRebindMode mode,
-            string overload,
-            List<ConfigurationProbeProvider> providers
-        )
+        private static void ConfigureProbeTarget(MessagingComponent owner, IMessageBus bus, MessageBusRebindMode mode, string overload, List<ConfigurationProbeProvider> providers)
         {
             if (overload == "bus")
             {
@@ -1623,12 +1182,7 @@ namespace DxMessaging.Tests.Runtime.Unity
             ConfigureProbeProvider(owner, provider, mode, overload);
         }
 
-        private static void ConfigureProbeProvider(
-            MessagingComponent owner,
-            ConfigurationProbeProvider provider,
-            MessageBusRebindMode mode,
-            string overload
-        )
+        private static void ConfigureProbeProvider(MessagingComponent owner, ConfigurationProbeProvider provider, MessageBusRebindMode mode, string overload)
         {
             if (overload == "provider")
             {
@@ -1693,67 +1247,39 @@ namespace DxMessaging.Tests.Runtime.Unity
             {
                 Context = context;
                 _scenario = scenario;
-                GameObject host = new(
-                    nameof(ConfigurationProbe),
-                    typeof(MessagingComponent),
-                    typeof(ManualListenerComponent)
-                );
+                GameObject host = new(nameof(ConfigurationProbe), typeof(MessagingComponent), typeof(ManualListenerComponent));
                 spawned.Add(host);
                 Owner = host.GetComponent<MessagingComponent>();
                 FirstListener = host.GetComponent<ManualListenerComponent>();
                 SecondListener = host.AddComponent<ManualListenerComponent>();
                 Route = host;
                 Original = new ReleaseCallbackBus(new MessageBus(), beforeDeregistration);
-                Buses = new IMessageBus[]
-                {
-                    Original,
-                    rejectMigration ? new RejectedReleaseBus(new MessageBus()) : new MessageBus(),
-                    new MessageBus(),
-                };
+                Buses = new IMessageBus[] { Original, rejectMigration ? new RejectedReleaseBus(new MessageBus()) : new MessageBus(), new MessageBus() };
                 _watchers = new LeakWatcher[Buses.Length];
                 for (int index = 0; index < Buses.Length; ++index)
                 {
-                    _watchers[index] = new LeakWatcher(
-                        bus: Buses[index],
-                        label: Context + $", bus={index}"
-                    );
+                    _watchers[index] = new LeakWatcher(bus: Buses[index], label: Context + $", bus={index}");
                 }
                 Owner.Configure(Original, MessageBusRebindMode.RebindActive);
                 FirstToken = Owner.Create(FirstListener);
                 SecondToken = Owner.Create(SecondListener);
                 RegisterReleaseProbe(scenario, FirstToken, Route, interceptor, () => ++_firstCalls);
-                RegisterReleaseProbe(scenario, SecondToken, Route, interceptor, () =>
-                    ++_secondCalls
-                );
+                RegisterReleaseProbe(scenario, SecondToken, Route, interceptor, () => ++_secondCalls);
                 FirstToken.Enable();
                 SecondToken.Enable();
             }
 
             internal void AssertOwned()
             {
-                Assert.That(
-                    Owner.TryGetToken(FirstListener, out MessageRegistrationToken first),
-                    Is.True,
-                    Context
-                );
+                Assert.That(Owner.TryGetToken(FirstListener, out MessageRegistrationToken first), Is.True, Context);
                 Assert.That(first, Is.SameAs(FirstToken), Context);
-                Assert.That(
-                    Owner.TryGetToken(SecondListener, out MessageRegistrationToken second),
-                    Is.True,
-                    Context
-                );
+                Assert.That(Owner.TryGetToken(SecondListener, out MessageRegistrationToken second), Is.True, Context);
                 Assert.That(second, Is.SameAs(SecondToken), Context);
                 Assert.That(Owner._registeredListeners.Count, Is.EqualTo(2), Context);
                 Assert.That(FirstToken.Enabled && SecondToken.Enabled, Is.True, Context);
             }
 
-            internal void AssertLiveBus(
-                int expectedBus,
-                string phase,
-                int expectedFirst = 1,
-                int expectedSecond = 1,
-                int registrations = 2
-            )
+            internal void AssertLiveBus(int expectedBus, string phase, int expectedFirst = 1, int expectedSecond = 1, int registrations = 2)
             {
                 int[] first = new int[Buses.Length];
                 int[] second = new int[Buses.Length];
@@ -1773,21 +1299,9 @@ namespace DxMessaging.Tests.Runtime.Unity
                 for (int index = 0; index < Buses.Length; ++index)
                 {
                     string label = Context + $", phase={phase}, bus={index}";
-                    Assert.That(
-                        first[index],
-                        Is.EqualTo(index == expectedBus ? expectedFirst : 0),
-                        label
-                    );
-                    Assert.That(
-                        second[index],
-                        Is.EqualTo(index == expectedBus ? expectedSecond : 0),
-                        label
-                    );
-                    Assert.That(
-                        counts[index],
-                        Is.EqualTo(index == expectedBus ? registrations : 0),
-                        label
-                    );
+                    Assert.That(first[index], Is.EqualTo(index == expectedBus ? expectedFirst : 0), label);
+                    Assert.That(second[index], Is.EqualTo(index == expectedBus ? expectedSecond : 0), label);
+                    Assert.That(counts[index], Is.EqualTo(index == expectedBus ? registrations : 0), label);
                 }
             }
 
@@ -1838,20 +1352,14 @@ namespace DxMessaging.Tests.Runtime.Unity
         /// </remarks>
         [Test]
         public void ConfigurePreservesNestedActiveConfiguration(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
             [Values(false, true)] bool beforeDeregistration,
             [Values(false, true)] bool interceptor,
             [Values("none", "original", "outer", "third")] string nestedTarget
         )
         {
-            string context =
-                $"[{scenario.Kind}, before={beforeDeregistration}, interceptor={interceptor}, nested={nestedTarget}]";
-            GameObject host = new(
-                nameof(ConfigurePreservesNestedActiveConfiguration),
-                typeof(MessagingComponent),
-                typeof(ManualListenerComponent)
-            );
+            string context = $"[{scenario.Kind}, before={beforeDeregistration}, interceptor={interceptor}, nested={nestedTarget}]";
+            GameObject host = new(nameof(ConfigurePreservesNestedActiveConfiguration), typeof(MessagingComponent), typeof(ManualListenerComponent));
             _spawned.Add(host);
             MessagingComponent messaging = host.GetComponent<MessagingComponent>();
             ManualListenerComponent first = host.GetComponent<ManualListenerComponent>();
@@ -1892,22 +1400,14 @@ namespace DxMessaging.Tests.Runtime.Unity
                     int[] registrationsByBus = new int[observedBuses.Length];
                     try
                     {
-                        RegisterReleaseProbe(scenario, firstToken, route, interceptor, () =>
-                            ++firstCalls
-                        );
-                        RegisterReleaseProbe(scenario, secondToken, route, interceptor, () =>
-                            ++secondCalls
-                        );
+                        RegisterReleaseProbe(scenario, firstToken, route, interceptor, () => ++firstCalls);
+                        RegisterReleaseProbe(scenario, secondToken, route, interceptor, () => ++secondCalls);
                         firstToken.Enable();
                         secondToken.Enable();
                         ScenarioCallbacks.EmitForKind(scenario, bus, route);
                         Assert.That(firstCalls, Is.EqualTo(1), cycleContext);
                         Assert.That(secondCalls, Is.EqualTo(1), cycleContext);
-                        Assert.That(
-                            originalWatcher.LeakedRegistrations,
-                            Is.EqualTo(2),
-                            cycleContext
-                        );
+                        Assert.That(originalWatcher.LeakedRegistrations, Is.EqualTo(2), cycleContext);
                         bus.OnDeregister = () =>
                         {
                             if (nestedBus != null)
@@ -1927,10 +1427,7 @@ namespace DxMessaging.Tests.Runtime.Unity
                         identitiesPreserved =
                             messaging.TryGetToken(first, out MessageRegistrationToken retainedFirst)
                             && ReferenceEquals(retainedFirst, firstToken)
-                            && messaging.TryGetToken(
-                                second,
-                                out MessageRegistrationToken retainedSecond
-                            )
+                            && messaging.TryGetToken(second, out MessageRegistrationToken retainedSecond)
                             && ReferenceEquals(retainedSecond, secondToken)
                             && messaging._registeredListeners.Count == 2;
                         bothEnabled = firstToken.Enabled && secondToken.Enabled;
@@ -1959,26 +1456,11 @@ namespace DxMessaging.Tests.Runtime.Unity
                         Assert.That(bothEnabled, Is.True, cycleContext);
                         for (int index = 0; index < observedBuses.Length; ++index)
                         {
-                            bool expectedTarget = ReferenceEquals(
-                                observedBuses[index],
-                                expectedBus
-                            );
+                            bool expectedTarget = ReferenceEquals(observedBuses[index], expectedBus);
                             string targetContext = cycleContext + $", observedBus={index}";
-                            Assert.That(
-                                firstByBus[index],
-                                Is.EqualTo(expectedTarget ? 1 : 0),
-                                targetContext
-                            );
-                            Assert.That(
-                                secondByBus[index],
-                                Is.EqualTo(expectedTarget ? 1 : 0),
-                                targetContext
-                            );
-                            Assert.That(
-                                registrationsByBus[index],
-                                Is.EqualTo(expectedTarget ? 2 : 0),
-                                targetContext
-                            );
+                            Assert.That(firstByBus[index], Is.EqualTo(expectedTarget ? 1 : 0), targetContext);
+                            Assert.That(secondByBus[index], Is.EqualTo(expectedTarget ? 1 : 0), targetContext);
+                            Assert.That(registrationsByBus[index], Is.EqualTo(expectedTarget ? 2 : 0), targetContext);
                         }
                     }
                     finally
@@ -2003,20 +1485,14 @@ namespace DxMessaging.Tests.Runtime.Unity
         /// </remarks>
         [Test]
         public void ReleaseRetainsWorkAcceptedDuringNestedRelease(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
             [Values(false, true)] bool beforeDeregistration,
             [Values(false, true)] bool interceptor,
             [Values(false, true)] bool replace
         )
         {
-            string context =
-                $"[{scenario.Kind}, before={beforeDeregistration}, interceptor={interceptor}, replace={replace}]";
-            GameObject host = new(
-                nameof(ReleaseRetainsWorkAcceptedDuringNestedRelease),
-                typeof(MessagingComponent),
-                typeof(ManualListenerComponent)
-            );
+            string context = $"[{scenario.Kind}, before={beforeDeregistration}, interceptor={interceptor}, replace={replace}]";
+            GameObject host = new(nameof(ReleaseRetainsWorkAcceptedDuringNestedRelease), typeof(MessagingComponent), typeof(ManualListenerComponent));
             _spawned.Add(host);
             MessagingComponent messaging = host.GetComponent<MessagingComponent>();
             ManualListenerComponent listener = host.GetComponent<ManualListenerComponent>();
@@ -2036,21 +1512,11 @@ namespace DxMessaging.Tests.Runtime.Unity
             {
                 try
                 {
-                    RegisterReleaseProbe(scenario, original, route, interceptor, () =>
-                        ++originalCalls
-                    );
+                    RegisterReleaseProbe(scenario, original, route, interceptor, () => ++originalCalls);
                     original.Enable();
                     ScenarioCallbacks.EmitForKind(scenario, bus, route);
-                    Assert.That(
-                        originalCalls,
-                        Is.EqualTo(1),
-                        $"{context} Initial work must deliver once."
-                    );
-                    Assert.That(
-                        watcher.LeakedRegistrations,
-                        Is.EqualTo(1),
-                        $"{context} Setup must own one registration."
-                    );
+                    Assert.That(originalCalls, Is.EqualTo(1), $"{context} Initial work must deliver once.");
+                    Assert.That(watcher.LeakedRegistrations, Is.EqualTo(1), $"{context} Setup must own one registration.");
 
                     bus.OnDeregister = () =>
                     {
@@ -2058,99 +1524,42 @@ namespace DxMessaging.Tests.Runtime.Unity
                         if (replace)
                         {
                             replacement = messaging.Create(listener);
-                            RegisterReleaseProbe(scenario, replacement, route, interceptor, () =>
-                                ++replacementCalls
-                            );
+                            RegisterReleaseProbe(scenario, replacement, route, interceptor, () => ++replacementCalls);
                             replacement.Enable();
                         }
                         callbackCompleted = true;
                     };
 
                     bool released = messaging.Release(listener);
-                    Assert.That(
-                        callbackCompleted,
-                        Is.True,
-                        $"{context} The nested public operation must complete."
-                    );
-                    Assert.That(
-                        bus.Callbacks,
-                        Is.EqualTo(1),
-                        $"{context} Deregistration callback must run exactly once."
-                    );
+                    Assert.That(callbackCompleted, Is.True, $"{context} The nested public operation must complete.");
+                    Assert.That(bus.Callbacks, Is.EqualTo(1), $"{context} Deregistration callback must run exactly once.");
                     ScenarioCallbacks.EmitForKind(scenario, bus, route);
-                    Assert.That(
-                        originalCalls,
-                        Is.EqualTo(1),
-                        $"{context} Released original callback must stay retired."
-                    );
-                    Assert.That(
-                        replacementCalls,
-                        Is.EqualTo(replace ? 1 : 0),
-                        $"{context} Only accepted replacement work may deliver."
-                    );
-                    Assert.That(
-                        released,
-                        Is.EqualTo(!original.Enabled),
-                        $"{context} Release may report completion only when its token is inactive."
-                    );
+                    Assert.That(originalCalls, Is.EqualTo(1), $"{context} Released original callback must stay retired.");
+                    Assert.That(replacementCalls, Is.EqualTo(replace ? 1 : 0), $"{context} Only accepted replacement work may deliver.");
+                    Assert.That(released, Is.EqualTo(!original.Enabled), $"{context} Release may report completion only when its token is inactive.");
 
                     if (replace)
                     {
+                        Assert.That(replacement.Enabled, Is.True, $"{context} Accepted replacement must remain active.");
                         Assert.That(
-                            replacement.Enabled,
-                            Is.True,
-                            $"{context} Accepted replacement must remain active."
-                        );
-                        Assert.That(
-                            messaging.TryGetToken(listener, out MessageRegistrationToken retained)
-                                && ReferenceEquals(retained, replacement),
+                            messaging.TryGetToken(listener, out MessageRegistrationToken retained) && ReferenceEquals(retained, replacement),
                             Is.True,
                             $"{context} Replacement ownership must remain in the component cache."
                         );
-                        Assert.That(
-                            messaging.Release(listener),
-                            Is.True,
-                            $"{context} Public release must reach accepted replacement work."
-                        );
+                        Assert.That(messaging.Release(listener), Is.True, $"{context} Public release must reach accepted replacement work.");
                     }
-                    Assert.That(
-                        messaging.Release(listener),
-                        Is.False,
-                        $"{context} Completed cleanup must be idempotent."
-                    );
+                    Assert.That(messaging.Release(listener), Is.False, $"{context} Completed cleanup must be idempotent.");
                     ScenarioCallbacks.EmitForKind(scenario, bus, route);
-                    Assert.That(
-                        replacementCalls,
-                        Is.EqualTo(replace ? 1 : 0),
-                        $"{context} Public cleanup must stop replacement delivery."
-                    );
-                    Assert.That(
-                        watcher.LeakedRegistrations,
-                        Is.Zero,
-                        $"{context} Public cleanup must release all registrations."
-                    );
+                    Assert.That(replacementCalls, Is.EqualTo(replace ? 1 : 0), $"{context} Public cleanup must stop replacement delivery.");
+                    Assert.That(watcher.LeakedRegistrations, Is.Zero, $"{context} Public cleanup must release all registrations.");
 
                     recovery = messaging.Create(listener);
-                    RegisterReleaseProbe(scenario, recovery, route, interceptor, () =>
-                        ++recoveryCalls
-                    );
+                    RegisterReleaseProbe(scenario, recovery, route, interceptor, () => ++recoveryCalls);
                     recovery.Enable();
                     ScenarioCallbacks.EmitForKind(scenario, bus, route);
-                    Assert.That(
-                        recoveryCalls,
-                        Is.EqualTo(1),
-                        $"{context} Independent recovery must deliver once."
-                    );
-                    Assert.That(
-                        messaging.Release(listener),
-                        Is.True,
-                        $"{context} Independent recovery must remain publicly releasable."
-                    );
-                    Assert.That(
-                        watcher.LeakedRegistrations,
-                        Is.Zero,
-                        $"{context} Independent recovery must finish empty."
-                    );
+                    Assert.That(recoveryCalls, Is.EqualTo(1), $"{context} Independent recovery must deliver once.");
+                    Assert.That(messaging.Release(listener), Is.True, $"{context} Independent recovery must remain publicly releasable.");
+                    Assert.That(watcher.LeakedRegistrations, Is.Zero, $"{context} Independent recovery must finish empty.");
                 }
                 finally
                 {
@@ -2163,22 +1572,11 @@ namespace DxMessaging.Tests.Runtime.Unity
             }
         }
 
-        private static void RegisterReleaseProbe(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            InstanceId route,
-            bool interceptor,
-            Action callback
-        )
+        private static void RegisterReleaseProbe(MessageScenario scenario, MessageRegistrationToken token, InstanceId route, bool interceptor, Action callback)
         {
             if (interceptor)
             {
-                _ = ScenarioCallbacks.RegisterCountingInterceptor(
-                    scenario,
-                    token,
-                    () => true,
-                    callback
-                );
+                _ = ScenarioCallbacks.RegisterCountingInterceptor(scenario, token, () => true, callback);
             }
             else
             {
@@ -2226,16 +1624,14 @@ namespace DxMessaging.Tests.Runtime.Unity
         /// </remarks>
         [Test]
         public void ConfigureDoesNotRetargetDetachedTokensOrReplacementOwners(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
             [Values(false, true)] bool beforeDeregistration,
             [Values(false, true)] bool interceptor,
             [Values(false, true)] bool replaceOwner,
             [Values(false, true)] bool throwAfterRelease
         )
         {
-            string context =
-                $"[{scenario.Kind}, before={beforeDeregistration}, interceptor={interceptor}, replace={replaceOwner}, throw={throwAfterRelease}]";
+            string context = $"[{scenario.Kind}, before={beforeDeregistration}, interceptor={interceptor}, replace={replaceOwner}, throw={throwAfterRelease}]";
             bool previousDebug = MessagingDebug.enabled;
             Action<LogLevel, string> previousLog = MessagingDebug.LogFunction;
             using CleanupScope logging = new(() =>
@@ -2256,11 +1652,7 @@ namespace DxMessaging.Tests.Runtime.Unity
                     previousLog?.Invoke(level, message);
                 }
             };
-            GameObject host = new(
-                nameof(ConfigureDoesNotRetargetDetachedTokensOrReplacementOwners),
-                typeof(MessagingComponent),
-                typeof(ManualListenerComponent)
-            );
+            GameObject host = new(nameof(ConfigureDoesNotRetargetDetachedTokensOrReplacementOwners), typeof(MessagingComponent), typeof(ManualListenerComponent));
             _spawned.Add(host);
             MessagingComponent messaging = host.GetComponent<MessagingComponent>();
             ManualListenerComponent first = host.GetComponent<ManualListenerComponent>();
@@ -2271,18 +1663,8 @@ namespace DxMessaging.Tests.Runtime.Unity
             MessageBus independent = new();
             ReleaseCallbackBus bus = new(original, beforeDeregistration);
             using (LeakWatcher originalWatcher = new(bus: bus, label: context + " original"))
-            using (
-                LeakWatcher replacementWatcher = new(
-                    bus: replacement,
-                    label: context + " replacement"
-                )
-            )
-            using (
-                LeakWatcher independentWatcher = new(
-                    bus: independent,
-                    label: context + " independent"
-                )
-            )
+            using (LeakWatcher replacementWatcher = new(bus: replacement, label: context + " replacement"))
+            using (LeakWatcher independentWatcher = new(bus: independent, label: context + " independent"))
             {
                 for (int cycle = 0; cycle < 10; ++cycle)
                 {
@@ -2305,53 +1687,32 @@ namespace DxMessaging.Tests.Runtime.Unity
                     Assert.That(survivor, Is.Not.Null, cycleContext);
                     bool firstSurvives = ReferenceEquals(survivor, first);
                     MonoBehaviour peer = firstSurvives ? second : first;
-                    MessageRegistrationToken survivorToken = firstSurvives
-                        ? firstToken
-                        : secondToken;
+                    MessageRegistrationToken survivorToken = firstSurvives ? firstToken : secondToken;
                     MessageRegistrationToken peerToken = firstSurvives ? secondToken : firstToken;
                     InvalidOperationException failure = new("configuration cleanup failure");
                     try
                     {
-                        RegisterReleaseProbe(scenario, firstToken, route, interceptor, () =>
-                            ++firstCalls
-                        );
-                        RegisterReleaseProbe(scenario, secondToken, route, interceptor, () =>
-                            ++secondCalls
-                        );
+                        RegisterReleaseProbe(scenario, firstToken, route, interceptor, () => ++firstCalls);
+                        RegisterReleaseProbe(scenario, secondToken, route, interceptor, () => ++secondCalls);
                         firstToken.Enable();
                         secondToken.Enable();
                         ScenarioCallbacks.EmitForKind(scenario, bus, route);
                         Assert.That(firstCalls, Is.EqualTo(1), cycleContext);
                         Assert.That(secondCalls, Is.EqualTo(1), cycleContext);
-                        Assert.That(
-                            originalWatcher.LeakedRegistrations,
-                            Is.EqualTo(2),
-                            cycleContext
-                        );
+                        Assert.That(originalWatcher.LeakedRegistrations, Is.EqualTo(2), cycleContext);
                         int callbacksBefore = bus.Callbacks;
                         bool callbackCompleted = false;
                         bus.OnDeregister = () =>
                         {
                             Assert.That(messaging.Release(peer), Is.True, cycleContext);
                             Assert.That(messaging.TryGetToken(peer, out _), Is.False, cycleContext);
-                            peerToken.RetargetMessageBus(
-                                independent,
-                                MessageBusRebindMode.PreserveRegistrations
-                            );
-                            RegisterReleaseProbe(scenario, peerToken, route, interceptor, () =>
-                                ++independentCalls
-                            );
+                            peerToken.RetargetMessageBus(independent, MessageBusRebindMode.PreserveRegistrations);
+                            RegisterReleaseProbe(scenario, peerToken, route, interceptor, () => ++independentCalls);
                             peerToken.Enable();
                             if (replaceOwner)
                             {
                                 replacementOwner = messaging.Create(peer);
-                                RegisterReleaseProbe(
-                                    scenario,
-                                    replacementOwner,
-                                    route,
-                                    interceptor,
-                                    () => ++replacementCalls
-                                );
+                                RegisterReleaseProbe(scenario, replacementOwner, route, interceptor, () => ++replacementCalls);
                                 replacementOwner.Enable();
                             }
                             callbackCompleted = true;
@@ -2380,24 +1741,12 @@ namespace DxMessaging.Tests.Runtime.Unity
                         {
                             Assert.That(configurationFailure, Is.Null, cycleContext);
                         }
-                        Assert.That(
-                            messaging.TryGetToken(survivor, out MessageRegistrationToken retained),
-                            Is.True,
-                            cycleContext
-                        );
+                        Assert.That(messaging.TryGetToken(survivor, out MessageRegistrationToken retained), Is.True, cycleContext);
                         Assert.That(retained, Is.SameAs(survivorToken), cycleContext);
-                        Assert.That(
-                            messaging.TryGetToken(peer, out MessageRegistrationToken cachedPeer),
-                            Is.EqualTo(replaceOwner),
-                            cycleContext
-                        );
+                        Assert.That(messaging.TryGetToken(peer, out MessageRegistrationToken cachedPeer), Is.EqualTo(replaceOwner), cycleContext);
                         Assert.That(cachedPeer, Is.SameAs(replacementOwner), cycleContext);
                         Assert.That(peerToken.Enabled, Is.True, cycleContext);
-                        Assert.That(
-                            messaging._registeredListeners.Count,
-                            Is.EqualTo(replaceOwner ? 2 : 1),
-                            cycleContext
-                        );
+                        Assert.That(messaging._registeredListeners.Count, Is.EqualTo(replaceOwner ? 2 : 1), cycleContext);
                         ScenarioCallbacks.EmitForKind(scenario, independent, route);
                         Assert.That(independentCalls, Is.EqualTo(1), cycleContext);
                         Assert.That(replacementCalls, Is.Zero, cycleContext);
@@ -2408,37 +1757,17 @@ namespace DxMessaging.Tests.Runtime.Unity
                             Assert.That(firstCalls, Is.EqualTo(1), cycleContext);
                             Assert.That(secondCalls, Is.EqualTo(1), cycleContext);
                             ScenarioCallbacks.EmitForKind(scenario, replacement, route);
-                            Assert.That(
-                                firstCalls,
-                                Is.EqualTo(firstSurvives ? 2 : 1),
-                                cycleContext
-                            );
-                            Assert.That(
-                                secondCalls,
-                                Is.EqualTo(firstSurvives ? 1 : 2),
-                                cycleContext
-                            );
-                            Assert.That(
-                                replacementCalls,
-                                Is.EqualTo(replaceOwner ? 1 : 0),
-                                cycleContext
-                            );
+                            Assert.That(firstCalls, Is.EqualTo(firstSurvives ? 2 : 1), cycleContext);
+                            Assert.That(secondCalls, Is.EqualTo(firstSurvives ? 1 : 2), cycleContext);
+                            Assert.That(replacementCalls, Is.EqualTo(replaceOwner ? 1 : 0), cycleContext);
                         }
                         Assert.That(messaging.Release(survivor), Is.True, cycleContext);
-                        Assert.That(
-                            messaging.Release(peer),
-                            Is.EqualTo(replaceOwner),
-                            cycleContext
-                        );
+                        Assert.That(messaging.Release(peer), Is.EqualTo(replaceOwner), cycleContext);
                         Assert.That(messaging._registeredListeners.Count, Is.Zero, cycleContext);
                         Assert.That(peerToken.Enabled, Is.True, cycleContext);
                         Assert.That(originalWatcher.LeakedRegistrations, Is.Zero, cycleContext);
                         Assert.That(replacementWatcher.LeakedRegistrations, Is.Zero, cycleContext);
-                        Assert.That(
-                            independentWatcher.LeakedRegistrations,
-                            Is.EqualTo(1),
-                            cycleContext
-                        );
+                        Assert.That(independentWatcher.LeakedRegistrations, Is.EqualTo(1), cycleContext);
                         ScenarioCallbacks.EmitForKind(scenario, independent, route);
                         Assert.That(independentCalls, Is.EqualTo(2), cycleContext);
                     }
@@ -2468,21 +1797,11 @@ namespace DxMessaging.Tests.Runtime.Unity
                         Assert.That(logs[0].Level, Is.EqualTo(LogLevel.Error), cycleContext);
                         Assert.That(
                             logs[0].Message,
-                            Does.StartWith(
-                                interceptor
-                                    ? "Received over-deregistration of Interceptor "
-                                    : "Received over-deregistration of "
-                            ),
+                            Does.StartWith(interceptor ? "Received over-deregistration of Interceptor " : "Received over-deregistration of "),
                             cycleContext
                         );
                         Assert.That(logs[0].Message, Does.Contain(messageType), cycleContext);
-                        Assert.That(
-                            logs[0].Message,
-                            Does.EndWith(
-                                "Check to make sure you're not calling (de)registration multiple times."
-                            ),
-                            cycleContext
-                        );
+                        Assert.That(logs[0].Message, Does.EndWith("Check to make sure you're not calling (de)registration multiple times."), cycleContext);
                     }
                 }
             }
@@ -2491,20 +1810,14 @@ namespace DxMessaging.Tests.Runtime.Unity
         /// <summary>Retains listener ownership when a bus callback releases a peer during configuration.</summary>
         [Test]
         public void ConfigureRetainsListenerOwnershipWhenBusCallbacksReleasePeers(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
             [Values(false, true)] bool beforeDeregistration,
             [Values(false, true)] bool interceptor,
             [Values(false, true)] bool releasePeer
         )
         {
-            string context =
-                $"[{scenario.Kind}, before={beforeDeregistration}, interceptor={interceptor}, releasePeer={releasePeer}]";
-            GameObject host = new(
-                nameof(ConfigureRetainsListenerOwnershipWhenBusCallbacksReleasePeers),
-                typeof(MessagingComponent),
-                typeof(ManualListenerComponent)
-            );
+            string context = $"[{scenario.Kind}, before={beforeDeregistration}, interceptor={interceptor}, releasePeer={releasePeer}]";
+            GameObject host = new(nameof(ConfigureRetainsListenerOwnershipWhenBusCallbacksReleasePeers), typeof(MessagingComponent), typeof(ManualListenerComponent));
             _spawned.Add(host);
             MessagingComponent messaging = host.GetComponent<MessagingComponent>();
             ManualListenerComponent first = host.GetComponent<ManualListenerComponent>();
@@ -2514,12 +1827,7 @@ namespace DxMessaging.Tests.Runtime.Unity
             MessageBus replacement = new();
             ReleaseCallbackBus bus = new(original, beforeDeregistration);
             using (LeakWatcher originalWatcher = new(bus: bus, label: context + " original"))
-            using (
-                LeakWatcher replacementWatcher = new(
-                    bus: replacement,
-                    label: context + " replacement"
-                )
-            )
+            using (LeakWatcher replacementWatcher = new(bus: replacement, label: context + " replacement"))
             {
                 for (int cycle = 0; cycle < 10; ++cycle)
                 {
@@ -2538,28 +1846,18 @@ namespace DxMessaging.Tests.Runtime.Unity
                     Assert.That(survivor, Is.Not.Null, cycleContext);
                     bool firstSurvives = ReferenceEquals(survivor, first);
                     MonoBehaviour peer = firstSurvives ? second : first;
-                    MessageRegistrationToken survivorToken = firstSurvives
-                        ? firstToken
-                        : secondToken;
+                    MessageRegistrationToken survivorToken = firstSurvives ? firstToken : secondToken;
                     MessageRegistrationToken peerToken = firstSurvives ? secondToken : firstToken;
                     try
                     {
-                        RegisterReleaseProbe(scenario, firstToken, route, interceptor, () =>
-                            ++firstCalls
-                        );
-                        RegisterReleaseProbe(scenario, secondToken, route, interceptor, () =>
-                            ++secondCalls
-                        );
+                        RegisterReleaseProbe(scenario, firstToken, route, interceptor, () => ++firstCalls);
+                        RegisterReleaseProbe(scenario, secondToken, route, interceptor, () => ++secondCalls);
                         firstToken.Enable();
                         secondToken.Enable();
                         ScenarioCallbacks.EmitForKind(scenario, bus, route);
                         Assert.That(firstCalls, Is.EqualTo(1), cycleContext);
                         Assert.That(secondCalls, Is.EqualTo(1), cycleContext);
-                        Assert.That(
-                            originalWatcher.LeakedRegistrations,
-                            Is.EqualTo(2),
-                            cycleContext
-                        );
+                        Assert.That(originalWatcher.LeakedRegistrations, Is.EqualTo(2), cycleContext);
                         int callbacksBefore = bus.Callbacks;
                         bool callbackCompleted = false;
                         bus.OnDeregister = () =>
@@ -2568,11 +1866,7 @@ namespace DxMessaging.Tests.Runtime.Unity
                             {
                                 Assert.That(messaging.Release(peer), Is.True, cycleContext);
                                 Assert.That(peerToken.Enabled, Is.False, cycleContext);
-                                Assert.That(
-                                    messaging.TryGetToken(peer, out _),
-                                    Is.False,
-                                    cycleContext
-                                );
+                                Assert.That(messaging.TryGetToken(peer, out _), Is.False, cycleContext);
                             }
                             callbackCompleted = true;
                         };
@@ -2588,45 +1882,20 @@ namespace DxMessaging.Tests.Runtime.Unity
                         }
                         Assert.That(callbackCompleted, Is.True, cycleContext);
                         Assert.That(bus.Callbacks, Is.EqualTo(callbacksBefore + 1), cycleContext);
-                        Assert.That(
-                            configurationFailure,
-                            Is.Null,
-                            cycleContext
-                                + " Configuration must survive a completed peer-release callback."
-                        );
-                        Assert.That(
-                            messaging.TryGetToken(survivor, out MessageRegistrationToken retained),
-                            Is.True,
-                            cycleContext
-                        );
+                        Assert.That(configurationFailure, Is.Null, cycleContext + " Configuration must survive a completed peer-release callback.");
+                        Assert.That(messaging.TryGetToken(survivor, out MessageRegistrationToken retained), Is.True, cycleContext);
                         Assert.That(retained, Is.SameAs(survivorToken), cycleContext);
                         Assert.That(survivorToken.Enabled, Is.True, cycleContext);
                         Assert.That(peerToken.Enabled, Is.EqualTo(!releasePeer), cycleContext);
-                        Assert.That(
-                            messaging._registeredListeners.Count,
-                            Is.EqualTo(releasePeer ? 1 : 2),
-                            cycleContext
-                        );
+                        Assert.That(messaging._registeredListeners.Count, Is.EqualTo(releasePeer ? 1 : 2), cycleContext);
                         Assert.That(originalWatcher.LeakedRegistrations, Is.Zero, cycleContext);
-                        Assert.That(
-                            replacementWatcher.LeakedRegistrations,
-                            Is.EqualTo(releasePeer ? 1 : 2),
-                            cycleContext
-                        );
+                        Assert.That(replacementWatcher.LeakedRegistrations, Is.EqualTo(releasePeer ? 1 : 2), cycleContext);
                         ScenarioCallbacks.EmitForKind(scenario, bus, route);
                         Assert.That(firstCalls, Is.EqualTo(1), cycleContext);
                         Assert.That(secondCalls, Is.EqualTo(1), cycleContext);
                         ScenarioCallbacks.EmitForKind(scenario, replacement, route);
-                        Assert.That(
-                            firstCalls,
-                            Is.EqualTo(!releasePeer || firstSurvives ? 2 : 1),
-                            cycleContext
-                        );
-                        Assert.That(
-                            secondCalls,
-                            Is.EqualTo(!releasePeer || !firstSurvives ? 2 : 1),
-                            cycleContext
-                        );
+                        Assert.That(firstCalls, Is.EqualTo(!releasePeer || firstSurvives ? 2 : 1), cycleContext);
+                        Assert.That(secondCalls, Is.EqualTo(!releasePeer || !firstSurvives ? 2 : 1), cycleContext);
                     }
                     finally
                     {
@@ -2644,19 +1913,13 @@ namespace DxMessaging.Tests.Runtime.Unity
 
         [Test]
         public void ReleasingAnotherListenerPreservesEachInFlightOwner(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
             [Values(false, true)] bool beforeDeregistration,
             [Values(false, true)] bool interceptor
         )
         {
-            string context =
-                $"[{scenario.Kind}, before={beforeDeregistration}, interceptor={interceptor}]";
-            GameObject host = new(
-                nameof(ReleasingAnotherListenerPreservesEachInFlightOwner),
-                typeof(MessagingComponent),
-                typeof(ManualListenerComponent)
-            );
+            string context = $"[{scenario.Kind}, before={beforeDeregistration}, interceptor={interceptor}]";
+            GameObject host = new(nameof(ReleasingAnotherListenerPreservesEachInFlightOwner), typeof(MessagingComponent), typeof(ManualListenerComponent));
             _spawned.Add(host);
             MessagingComponent messaging = host.GetComponent<MessagingComponent>();
             ManualListenerComponent first = host.GetComponent<ManualListenerComponent>();
@@ -2676,12 +1939,8 @@ namespace DxMessaging.Tests.Runtime.Unity
             {
                 try
                 {
-                    RegisterReleaseProbe(scenario, firstToken, route, interceptor, () =>
-                        ++firstCalls
-                    );
-                    RegisterReleaseProbe(scenario, secondToken, route, interceptor, () =>
-                        ++secondCalls
-                    );
+                    RegisterReleaseProbe(scenario, firstToken, route, interceptor, () => ++firstCalls);
+                    RegisterReleaseProbe(scenario, secondToken, route, interceptor, () => ++secondCalls);
                     firstToken.Enable();
                     secondToken.Enable();
                     ScenarioCallbacks.EmitForKind(scenario, bus, route);
@@ -2693,9 +1952,7 @@ namespace DxMessaging.Tests.Runtime.Unity
                         bus.OnDeregister = () =>
                         {
                             firstNestedReleased = messaging.Release(first);
-                            RegisterReleaseProbe(scenario, firstToken, route, interceptor, () =>
-                                ++replacementCalls
-                            );
+                            RegisterReleaseProbe(scenario, firstToken, route, interceptor, () => ++replacementCalls);
                             firstToken.Enable();
                         };
                         secondReleased = messaging.Release(second);
@@ -2705,11 +1962,7 @@ namespace DxMessaging.Tests.Runtime.Unity
                     Assert.That(secondReleased, Is.True, context);
                     Assert.That(firstNestedReleased, Is.False, context);
                     Assert.That(bus.Callbacks, Is.EqualTo(2), context);
-                    Assert.That(
-                        messaging.TryGetToken(first, out MessageRegistrationToken retained),
-                        Is.True,
-                        context
-                    );
+                    Assert.That(messaging.TryGetToken(first, out MessageRegistrationToken retained), Is.True, context);
                     Assert.That(retained, Is.SameAs(firstToken), context);
                     Assert.That(messaging.TryGetToken(second, out _), Is.False, context);
                     ScenarioCallbacks.EmitForKind(scenario, bus, route);
@@ -2736,20 +1989,14 @@ namespace DxMessaging.Tests.Runtime.Unity
 
         [Test]
         public void RejectedReleaseKeepsNestedWorkOwnedForPublicRetry(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
             [Values(false, true)] bool interceptor,
             [Values(false, true)] bool stageReplacement,
             [Values(false, true)] bool nestedRelease
         )
         {
-            string context =
-                $"[{scenario.Kind}, interceptor={interceptor}, replacement={stageReplacement}, nestedRelease={nestedRelease}]";
-            GameObject host = new(
-                nameof(RejectedReleaseKeepsNestedWorkOwnedForPublicRetry),
-                typeof(MessagingComponent),
-                typeof(ManualListenerComponent)
-            );
+            string context = $"[{scenario.Kind}, interceptor={interceptor}, replacement={stageReplacement}, nestedRelease={nestedRelease}]";
+            GameObject host = new(nameof(RejectedReleaseKeepsNestedWorkOwnedForPublicRetry), typeof(MessagingComponent), typeof(ManualListenerComponent));
             _spawned.Add(host);
             MessagingComponent messaging = host.GetComponent<MessagingComponent>();
             ManualListenerComponent listener = host.GetComponent<ManualListenerComponent>();
@@ -2757,15 +2004,8 @@ namespace DxMessaging.Tests.Runtime.Unity
             RejectedReleaseBus bus = new(inner);
             messaging.Configure(bus, MessageBusRebindMode.RebindActive);
             InstanceId route = host;
-            FieldInfo releaseOwners = typeof(MessagingComponent).GetField(
-                "_releasingTokens",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
-            Assert.That(
-                releaseOwners,
-                Is.Not.Null,
-                $"{context} Inspect actual transient ownership storage."
-            );
+            FieldInfo releaseOwners = typeof(MessagingComponent).GetField("_releasingTokens", BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.That(releaseOwners, Is.Not.Null, $"{context} Inspect actual transient ownership storage.");
 
             using (LeakWatcher watcher = new(bus: bus, label: context))
             {
@@ -2778,21 +2018,11 @@ namespace DxMessaging.Tests.Runtime.Unity
                     bool callbackCompleted = false;
                     try
                     {
-                        RegisterReleaseProbe(scenario, token, route, interceptor, () =>
-                            ++originalCalls
-                        );
+                        RegisterReleaseProbe(scenario, token, route, interceptor, () => ++originalCalls);
                         token.Enable();
                         ScenarioCallbacks.EmitForKind(scenario, bus, route);
-                        Assert.That(
-                            originalCalls,
-                            Is.EqualTo(1),
-                            $"{label} Initial callback must deliver once."
-                        );
-                        Assert.That(
-                            watcher.LeakedRegistrations,
-                            Is.EqualTo(1),
-                            $"{label} Setup must own one registration."
-                        );
+                        Assert.That(originalCalls, Is.EqualTo(1), $"{label} Initial callback must deliver once.");
+                        Assert.That(watcher.LeakedRegistrations, Is.EqualTo(1), $"{label} Setup must own one registration.");
                         bus.RejectNext = true;
                         bus.OnDeregister = () =>
                         {
@@ -2802,100 +2032,40 @@ namespace DxMessaging.Tests.Runtime.Unity
                             }
                             if (stageReplacement)
                             {
-                                RegisterReleaseProbe(scenario, token, route, interceptor, () =>
-                                    ++replacementCalls
-                                );
+                                RegisterReleaseProbe(scenario, token, route, interceptor, () => ++replacementCalls);
                                 token.Enable();
                             }
                             callbackCompleted = true;
                         };
 
-                        InvalidOperationException observed =
-                            Assert.Throws<InvalidOperationException>(
-                                () => messaging.Release(listener),
-                                $"{label} Rejected cleanup must propagate."
-                            );
-                        Assert.That(
-                            observed,
-                            Is.SameAs(bus.Failure),
-                            $"{label} Preserve exact cleanup exception identity."
+                        InvalidOperationException observed = Assert.Throws<InvalidOperationException>(
+                            () => messaging.Release(listener),
+                            $"{label} Rejected cleanup must propagate."
                         );
+                        Assert.That(observed, Is.SameAs(bus.Failure), $"{label} Preserve exact cleanup exception identity.");
+                        Assert.That(callbackCompleted, Is.True, $"{label} Complete the admitted one-shot callback.");
+                        Assert.That(bus.Callbacks, Is.EqualTo(iteration + 1), $"{label} Invoke each callback once.");
+                        Assert.That(token.Enabled, Is.True, $"{label} Failed cleanup must retain live ownership.");
+                        Assert.That(watcher.LeakedRegistrations, Is.GreaterThan(0), $"{label} Observe pending work before retry.");
                         Assert.That(
-                            callbackCompleted,
-                            Is.True,
-                            $"{label} Complete the admitted one-shot callback."
-                        );
-                        Assert.That(
-                            bus.Callbacks,
-                            Is.EqualTo(iteration + 1),
-                            $"{label} Invoke each callback once."
-                        );
-                        Assert.That(
-                            token.Enabled,
-                            Is.True,
-                            $"{label} Failed cleanup must retain live ownership."
-                        );
-                        Assert.That(
-                            watcher.LeakedRegistrations,
-                            Is.GreaterThan(0),
-                            $"{label} Observe pending work before retry."
-                        );
-                        Assert.That(
-                            messaging.TryGetToken(listener, out MessageRegistrationToken retained)
-                                && ReferenceEquals(retained, token),
+                            messaging.TryGetToken(listener, out MessageRegistrationToken retained) && ReferenceEquals(retained, token),
                             Is.True,
                             $"{label} The component must retain its retryable cleanup owner."
                         );
-                        Assert.That(
-                            releaseOwners.GetValue(messaging),
-                            Is.Null,
-                            $"{label} Failed frames must release transient owner storage."
-                        );
+                        Assert.That(releaseOwners.GetValue(messaging), Is.Null, $"{label} Failed frames must release transient owner storage.");
                         ScenarioCallbacks.EmitForKind(scenario, bus, route);
-                        Assert.That(
-                            replacementCalls,
-                            Is.EqualTo(stageReplacement ? 1 : 0),
-                            $"{label} Accepted new work must remain observable."
-                        );
+                        Assert.That(replacementCalls, Is.EqualTo(stageReplacement ? 1 : 0), $"{label} Accepted new work must remain observable.");
                         int oldCallsBeforeRetry = originalCalls;
                         int newCallsBeforeRetry = replacementCalls;
 
-                        Assert.That(
-                            messaging.Release(listener),
-                            Is.True,
-                            $"{label} Public retry must drain original and new work."
-                        );
-                        Assert.That(
-                            messaging.Release(listener),
-                            Is.False,
-                            $"{label} Completed retry must be idempotent."
-                        );
-                        Assert.That(
-                            token.Enabled,
-                            Is.False,
-                            $"{label} Complete the token cleanup."
-                        );
-                        Assert.That(
-                            watcher.LeakedRegistrations,
-                            Is.Zero,
-                            $"{label} Public retry must finish empty."
-                        );
-                        Assert.That(
-                            releaseOwners.GetValue(messaging),
-                            Is.Null,
-                            $"{label} Completed frames must release their capacity."
-                        );
+                        Assert.That(messaging.Release(listener), Is.True, $"{label} Public retry must drain original and new work.");
+                        Assert.That(messaging.Release(listener), Is.False, $"{label} Completed retry must be idempotent.");
+                        Assert.That(token.Enabled, Is.False, $"{label} Complete the token cleanup.");
+                        Assert.That(watcher.LeakedRegistrations, Is.Zero, $"{label} Public retry must finish empty.");
+                        Assert.That(releaseOwners.GetValue(messaging), Is.Null, $"{label} Completed frames must release their capacity.");
                         ScenarioCallbacks.EmitForKind(scenario, bus, route);
-                        Assert.That(
-                            originalCalls,
-                            Is.EqualTo(oldCallsBeforeRetry),
-                            $"{label} Retry must stop original delivery."
-                        );
-                        Assert.That(
-                            replacementCalls,
-                            Is.EqualTo(newCallsBeforeRetry),
-                            $"{label} Retry must stop replacement delivery."
-                        );
+                        Assert.That(originalCalls, Is.EqualTo(oldCallsBeforeRetry), $"{label} Retry must stop original delivery.");
+                        Assert.That(replacementCalls, Is.EqualTo(newCallsBeforeRetry), $"{label} Retry must stop replacement delivery.");
                     }
                     finally
                     {
@@ -2910,9 +2080,7 @@ namespace DxMessaging.Tests.Runtime.Unity
 
         private sealed class RejectedReleaseBus : DelegatingMessageBus
         {
-            internal readonly InvalidOperationException Failure = new(
-                "Component release rejected before acceptance."
-            );
+            internal readonly InvalidOperationException Failure = new("Component release rejected before acceptance.");
             internal Action OnDeregister;
             internal bool RejectNext;
             internal int Callbacks;
@@ -2940,19 +2108,13 @@ namespace DxMessaging.Tests.Runtime.Unity
 
         [Test]
         public void DestroyingMessagingOwnerDisposesManualTokens(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
             [Values(false, true)] bool emitWhenDisabled,
             [Values(false, true)] bool destroyWholeHost
         )
         {
-            string context =
-                $"[{scenario.Kind}, emitWhenDisabled={emitWhenDisabled}, destroyWholeHost={destroyWholeHost}]";
-            GameObject host = new(
-                nameof(DestroyingMessagingOwnerDisposesManualTokens),
-                typeof(MessagingComponent),
-                typeof(ManualListenerComponent)
-            );
+            string context = $"[{scenario.Kind}, emitWhenDisabled={emitWhenDisabled}, destroyWholeHost={destroyWholeHost}]";
+            GameObject host = new(nameof(DestroyingMessagingOwnerDisposesManualTokens), typeof(MessagingComponent), typeof(ManualListenerComponent));
             _spawned.Add(host);
             MessagingComponent messaging = host.GetComponent<MessagingComponent>();
             ManualListenerComponent listener = host.GetComponent<ManualListenerComponent>();
@@ -2967,9 +2129,7 @@ namespace DxMessaging.Tests.Runtime.Unity
                 try
                 {
                     int calls = 0;
-                    _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, route, () =>
-                        ++calls
-                    );
+                    _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, route, () => ++calls);
                     token.Enable();
                     ScenarioCallbacks.EmitForKind(scenario, bus, route);
                     Assert.That(calls, Is.EqualTo(1), $"{context} Control must deliver once.");
@@ -2984,32 +2144,12 @@ namespace DxMessaging.Tests.Runtime.Unity
                         UnityEngine.Object.DestroyImmediate(messaging);
                     }
 
-                    Assert.That(
-                        messaging == null,
-                        Is.True,
-                        $"{context} Messaging owner must be destroyed."
-                    );
+                    Assert.That(messaging == null, Is.True, $"{context} Messaging owner must be destroyed.");
                     ScenarioCallbacks.EmitForKind(scenario, bus, route);
-                    Assert.That(
-                        calls,
-                        Is.EqualTo(1),
-                        $"{context} Destroyed messaging owners must stop delivery."
-                    );
-                    Assert.That(
-                        token.Enabled,
-                        Is.False,
-                        $"{context} Destroying the owner must dispose its tokens."
-                    );
-                    Assert.That(
-                        watcher.LeakedRegistrations,
-                        Is.Zero,
-                        $"{context} Destruction must remove bus registrations."
-                    );
-                    Assert.That(
-                        messaging._registeredListeners.Count,
-                        Is.Zero,
-                        $"{context} Destruction must release retained listener references."
-                    );
+                    Assert.That(calls, Is.EqualTo(1), $"{context} Destroyed messaging owners must stop delivery.");
+                    Assert.That(token.Enabled, Is.False, $"{context} Destroying the owner must dispose its tokens.");
+                    Assert.That(watcher.LeakedRegistrations, Is.Zero, $"{context} Destruction must remove bus registrations.");
+                    Assert.That(messaging._registeredListeners.Count, Is.Zero, $"{context} Destruction must release retained listener references.");
                 }
                 finally
                 {
@@ -3019,36 +2159,23 @@ namespace DxMessaging.Tests.Runtime.Unity
         }
 
         [Test]
-        public void DestructionFailureRetainsRetryWithoutBlockingSiblingCleanup(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void DestructionFailureRetainsRetryWithoutBlockingSiblingCleanup([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             AssertCleanupFailureRetainsRetryableListener(scenario, destroyOwner: true);
         }
 
 #if UNITY_EDITOR
         [Test]
-        public void EditorResetFailureRetainsRetryWithoutBlockingSiblingCleanup(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void EditorResetFailureRetainsRetryWithoutBlockingSiblingCleanup([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             AssertCleanupFailureRetainsRetryableListener(scenario, destroyOwner: false);
         }
 #endif
 
-        private void AssertCleanupFailureRetainsRetryableListener(
-            MessageScenario scenario,
-            bool destroyOwner
-        )
+        private void AssertCleanupFailureRetainsRetryableListener(MessageScenario scenario, bool destroyOwner)
         {
             string context = $"[{scenario.Kind}, destroyOwner={destroyOwner}]";
-            GameObject host = new(
-                nameof(AssertCleanupFailureRetainsRetryableListener),
-                typeof(MessagingComponent),
-                typeof(ManualListenerComponent)
-            );
+            GameObject host = new(nameof(AssertCleanupFailureRetainsRetryableListener), typeof(MessagingComponent), typeof(ManualListenerComponent));
             _spawned.Add(host);
             MessagingComponent messaging = host.GetComponent<MessagingComponent>();
             ManualListenerComponent first = host.GetComponent<ManualListenerComponent>();
@@ -3068,137 +2195,54 @@ namespace DxMessaging.Tests.Runtime.Unity
                     int calls = 0;
                     firstToken.DiagnosticMode = true;
                     siblingToken.DiagnosticMode = true;
-                    _ = ScenarioCallbacks.RegisterCountingHandler(scenario, firstToken, route, () =>
-                        ++calls
-                    );
-                    _ = ScenarioCallbacks.RegisterCountingHandler(
-                        scenario,
-                        siblingToken,
-                        route,
-                        () => ++calls
-                    );
+                    _ = ScenarioCallbacks.RegisterCountingHandler(scenario, firstToken, route, () => ++calls);
+                    _ = ScenarioCallbacks.RegisterCountingHandler(scenario, siblingToken, route, () => ++calls);
                     firstToken.Enable();
                     siblingToken.Enable();
                     ScenarioCallbacks.EmitForKind(scenario, bus, route);
-                    Assert.That(
-                        calls,
-                        Is.EqualTo(2),
-                        $"{context} Both listeners must deliver before cleanup."
-                    );
+                    Assert.That(calls, Is.EqualTo(2), $"{context} Both listeners must deliver before cleanup.");
 
-                    LogAssert.Expect(
-                        LogType.Warning,
-                        new Regex(
-                            @"\[DxMessaging\] Disposing listener token failed\. System.InvalidOperationException: Deregistration failure\."
-                        )
-                    );
+                    LogAssert.Expect(LogType.Warning, new Regex(@"\[DxMessaging\] Disposing listener token failed\. System.InvalidOperationException: Deregistration failure\."));
                     if (destroyOwner)
                     {
                         UnityEngine.Object.DestroyImmediate(messaging);
                         messaging.ToggleMessageHandler(true);
                         messaging.OnEnable();
-                        Assert.Throws<ObjectDisposedException>(
-                            () => messaging.Create(first),
-                            $"{context} A destroyed owner must reject new tokens."
-                        );
+                        Assert.Throws<ObjectDisposedException>(() => messaging.Create(first), $"{context} A destroyed owner must reject new tokens.");
                     }
 #if UNITY_EDITOR
                     else
                     {
-                        Assert.That(
-                            messaging.EditorResetRuntimeState(),
-                            Is.False,
-                            $"{context} A failed reset must not report success."
-                        );
+                        Assert.That(messaging.EditorResetRuntimeState(), Is.False, $"{context} A failed reset must not report success.");
                     }
 #endif
 
                     ScenarioCallbacks.EmitForKind(scenario, bus, route);
-                    Assert.That(
-                        calls,
-                        Is.EqualTo(2),
-                        $"{context} Failed cleanup must leave the old handler inactive."
-                    );
-                    Assert.That(
-                        firstToken.Enabled,
-                        Is.True,
-                        $"{context} Failed token must remain retryable."
-                    );
-                    Assert.That(
-                        siblingToken.Enabled,
-                        Is.False,
-                        $"{context} Failure must not block sibling disposal."
-                    );
-                    Assert.That(
-                        messaging._registeredListeners.Count,
-                        Is.EqualTo(1),
-                        $"{context} Only failed cleanup may retain a listener."
-                    );
-                    Assert.That(
-                        siblingToken._metadata.Count,
-                        Is.Zero,
-                        $"{context} Successful disposal must clear metadata."
-                    );
-                    Assert.That(
-                        siblingToken._callCounts.Count,
-                        Is.Zero,
-                        $"{context} Successful disposal must clear call counts."
-                    );
-                    Assert.That(
-                        siblingToken._emissionBuffer.Count,
-                        Is.Zero,
-                        $"{context} Successful disposal must clear history."
-                    );
+                    Assert.That(calls, Is.EqualTo(2), $"{context} Failed cleanup must leave the old handler inactive.");
+                    Assert.That(firstToken.Enabled, Is.True, $"{context} Failed token must remain retryable.");
+                    Assert.That(siblingToken.Enabled, Is.False, $"{context} Failure must not block sibling disposal.");
+                    Assert.That(messaging._registeredListeners.Count, Is.EqualTo(1), $"{context} Only failed cleanup may retain a listener.");
+                    Assert.That(siblingToken._metadata.Count, Is.Zero, $"{context} Successful disposal must clear metadata.");
+                    Assert.That(siblingToken._callCounts.Count, Is.Zero, $"{context} Successful disposal must clear call counts.");
+                    Assert.That(siblingToken._emissionBuffer.Count, Is.Zero, $"{context} Successful disposal must clear history.");
 
                     if (destroyOwner)
                     {
-                        Assert.That(
-                            messaging.Release(first),
-                            Is.True,
-                            $"{context} Retained destroyed owner must support explicit cleanup retry."
-                        );
+                        Assert.That(messaging.Release(first), Is.True, $"{context} Retained destroyed owner must support explicit cleanup retry.");
                     }
 #if UNITY_EDITOR
                     else
                     {
-                        Assert.That(
-                            messaging.EditorResetRuntimeState(),
-                            Is.True,
-                            $"{context} Reset retry must complete cleanup."
-                        );
+                        Assert.That(messaging.EditorResetRuntimeState(), Is.True, $"{context} Reset retry must complete cleanup.");
                     }
 #endif
 
-                    Assert.That(
-                        firstToken.Enabled,
-                        Is.False,
-                        $"{context} Retry must dispose the retained token."
-                    );
-                    Assert.That(
-                        firstToken._metadata.Count,
-                        Is.Zero,
-                        $"{context} Retry must clear metadata."
-                    );
-                    Assert.That(
-                        firstToken._callCounts.Count,
-                        Is.Zero,
-                        $"{context} Retry must clear call counts."
-                    );
-                    Assert.That(
-                        firstToken._emissionBuffer.Count,
-                        Is.Zero,
-                        $"{context} Retry must clear history."
-                    );
-                    Assert.That(
-                        messaging._registeredListeners.Count,
-                        Is.Zero,
-                        $"{context} Retry must release listener references."
-                    );
-                    Assert.That(
-                        watcher.LeakedRegistrations,
-                        Is.Zero,
-                        $"{context} Retry must remove remaining registrations."
-                    );
+                    Assert.That(firstToken.Enabled, Is.False, $"{context} Retry must dispose the retained token.");
+                    Assert.That(firstToken._metadata.Count, Is.Zero, $"{context} Retry must clear metadata.");
+                    Assert.That(firstToken._callCounts.Count, Is.Zero, $"{context} Retry must clear call counts.");
+                    Assert.That(firstToken._emissionBuffer.Count, Is.Zero, $"{context} Retry must clear history.");
+                    Assert.That(messaging._registeredListeners.Count, Is.Zero, $"{context} Retry must release listener references.");
+                    Assert.That(watcher.LeakedRegistrations, Is.Zero, $"{context} Retry must remove remaining registrations.");
                 }
                 finally
                 {
@@ -3210,14 +2254,11 @@ namespace DxMessaging.Tests.Runtime.Unity
 
         [Test]
         public void ExplicitReleaseCleansTokenAfterNeverActivatedHostDestruction(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario
         )
         {
             string context = $"[{scenario.Kind}]";
-            GameObject host = new(
-                nameof(ExplicitReleaseCleansTokenAfterNeverActivatedHostDestruction)
-            );
+            GameObject host = new(nameof(ExplicitReleaseCleansTokenAfterNeverActivatedHostDestruction));
             _spawned.Add(host);
             host.SetActive(false);
             MessagingComponent messaging = host.AddComponent<MessagingComponent>();
@@ -3233,47 +2274,21 @@ namespace DxMessaging.Tests.Runtime.Unity
                 try
                 {
                     int calls = 0;
-                    _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, route, () =>
-                        ++calls
-                    );
+                    _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, route, () => ++calls);
                     token.Enable();
                     ScenarioCallbacks.EmitForKind(scenario, bus, route);
-                    Assert.That(
-                        calls,
-                        Is.EqualTo(1),
-                        $"{context} Explicit opt-in must deliver before host activation."
-                    );
+                    Assert.That(calls, Is.EqualTo(1), $"{context} Explicit opt-in must deliver before host activation.");
 
                     _spawned.Remove(host);
                     UnityEngine.Object.DestroyImmediate(host);
-                    Assert.That(
-                        host == null,
-                        Is.True,
-                        $"{context} Never-activated host must be destroyed."
-                    );
+                    Assert.That(host == null, Is.True, $"{context} Never-activated host must be destroyed.");
                     messaging.Release(listener);
 
                     ScenarioCallbacks.EmitForKind(scenario, bus, route);
-                    Assert.That(
-                        calls,
-                        Is.EqualTo(1),
-                        $"{context} Explicit release must stop delivery after destruction."
-                    );
-                    Assert.That(
-                        token.Enabled,
-                        Is.False,
-                        $"{context} Explicit release must dispose the token."
-                    );
-                    Assert.That(
-                        messaging._registeredListeners.Count,
-                        Is.Zero,
-                        $"{context} Explicit release must drop retained listeners."
-                    );
-                    Assert.That(
-                        watcher.LeakedRegistrations,
-                        Is.Zero,
-                        $"{context} Explicit release must remove bus registrations."
-                    );
+                    Assert.That(calls, Is.EqualTo(1), $"{context} Explicit release must stop delivery after destruction.");
+                    Assert.That(token.Enabled, Is.False, $"{context} Explicit release must dispose the token.");
+                    Assert.That(messaging._registeredListeners.Count, Is.Zero, $"{context} Explicit release must drop retained listeners.");
+                    Assert.That(watcher.LeakedRegistrations, Is.Zero, $"{context} Explicit release must remove bus registrations.");
                 }
                 finally
                 {
@@ -3284,14 +2299,12 @@ namespace DxMessaging.Tests.Runtime.Unity
 
         [Test]
         public void TokenCreatedBeforeHostActivationRespectsHandlerState(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
             [Values(false, true)] bool emitWhenDisabled,
             [Values(false, true)] bool componentEnabled
         )
         {
-            string context =
-                $"[{scenario.Kind}, emitWhenDisabled={emitWhenDisabled}, componentEnabled={componentEnabled}]";
+            string context = $"[{scenario.Kind}, emitWhenDisabled={emitWhenDisabled}, componentEnabled={componentEnabled}]";
             GameObject host = new(nameof(TokenCreatedBeforeHostActivationRespectsHandlerState));
             _spawned.Add(host);
             host.SetActive(false);
@@ -3309,34 +2322,20 @@ namespace DxMessaging.Tests.Runtime.Unity
                 try
                 {
                     int calls = 0;
-                    _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, route, () =>
-                        ++calls
-                    );
+                    _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, route, () => ++calls);
                     token.Enable();
                     ScenarioCallbacks.EmitForKind(scenario, bus, route);
                     int expectedCalls = emitWhenDisabled ? 1 : 0;
-                    Assert.That(
-                        calls,
-                        Is.EqualTo(expectedCalls),
-                        $"{context} A new handler must respect the inactive host."
-                    );
+                    Assert.That(calls, Is.EqualTo(expectedCalls), $"{context} A new handler must respect the inactive host.");
 
                     host.SetActive(true);
                     ScenarioCallbacks.EmitForKind(scenario, bus, route);
                     expectedCalls += emitWhenDisabled || componentEnabled ? 1 : 0;
-                    Assert.That(
-                        calls,
-                        Is.EqualTo(expectedCalls),
-                        $"{context} Host activation must respect the component state."
-                    );
+                    Assert.That(calls, Is.EqualTo(expectedCalls), $"{context} Host activation must respect the component state.");
 
                     messaging.enabled = true;
                     ScenarioCallbacks.EmitForKind(scenario, bus, route);
-                    Assert.That(
-                        calls,
-                        Is.EqualTo(expectedCalls + 1),
-                        $"{context} Enabling the host and component must resume delivery."
-                    );
+                    Assert.That(calls, Is.EqualTo(expectedCalls + 1), $"{context} Enabling the host and component must resume delivery.");
                 }
                 finally
                 {
@@ -3348,11 +2347,7 @@ namespace DxMessaging.Tests.Runtime.Unity
         [Test]
         public void ToggleMessageHandlerFalseSuspendsDeliveryUntilToggledTrue()
         {
-            GameObject host = new(
-                nameof(ToggleMessageHandlerFalseSuspendsDeliveryUntilToggledTrue),
-                typeof(MessagingComponent),
-                typeof(SimpleMessageAwareComponent)
-            );
+            GameObject host = new(nameof(ToggleMessageHandlerFalseSuspendsDeliveryUntilToggledTrue), typeof(MessagingComponent), typeof(SimpleMessageAwareComponent));
             _spawned.Add(host);
             MessagingComponent messaging = host.GetComponent<MessagingComponent>();
             SimpleMessageAwareComponent listener = host.GetComponent<SimpleMessageAwareComponent>();
@@ -3372,11 +2367,7 @@ namespace DxMessaging.Tests.Runtime.Unity
             Assert.IsTrue(messaging.enabled, "Toggling the handler must not touch enabled state.");
 
             message.EmitUntargeted();
-            Assert.AreEqual(
-                1,
-                count,
-                "ToggleMessageHandler(false) should suspend delivery for the shared handler."
-            );
+            Assert.AreEqual(1, count, "ToggleMessageHandler(false) should suspend delivery for the shared handler.");
 
             messaging.ToggleMessageHandler(true);
             message.EmitUntargeted();
@@ -3386,11 +2377,7 @@ namespace DxMessaging.Tests.Runtime.Unity
         [Test]
         public void ToggleMessageHandlerFalseWinsOverEmitMessagesWhenDisabled()
         {
-            GameObject host = new(
-                nameof(ToggleMessageHandlerFalseWinsOverEmitMessagesWhenDisabled),
-                typeof(MessagingComponent),
-                typeof(SimpleMessageAwareComponent)
-            );
+            GameObject host = new(nameof(ToggleMessageHandlerFalseWinsOverEmitMessagesWhenDisabled), typeof(MessagingComponent), typeof(SimpleMessageAwareComponent));
             _spawned.Add(host);
             MessagingComponent messaging = host.GetComponent<MessagingComponent>();
             messaging.emitMessagesWhenDisabled = true;
@@ -3410,12 +2397,7 @@ namespace DxMessaging.Tests.Runtime.Unity
             */
             messaging.ToggleMessageHandler(false);
             message.EmitUntargeted();
-            Assert.AreEqual(
-                1,
-                count,
-                "An explicit ToggleMessageHandler(false) must suspend delivery even while "
-                    + "emitMessagesWhenDisabled is true."
-            );
+            Assert.AreEqual(1, count, "An explicit ToggleMessageHandler(false) must suspend delivery even while " + "emitMessagesWhenDisabled is true.");
 
             messaging.ToggleMessageHandler(true);
             message.EmitUntargeted();
@@ -3454,28 +2436,19 @@ namespace DxMessaging.Tests.Runtime.Unity
             */
             messaging.enabled = false;
             message.EmitUntargeted();
-            Assert.AreEqual(
-                1,
-                count,
-                "Disabling the MessagingComponent must not disturb the explicitly suspended handler."
-            );
+            Assert.AreEqual(1, count, "Disabling the MessagingComponent must not disturb the explicitly suspended handler.");
 
             messaging.enabled = true;
             message.EmitUntargeted();
             Assert.AreEqual(
                 1,
                 count,
-                "Re-enabling the MessagingComponent must not silently reactivate a handler the "
-                    + "user explicitly toggled off while emitMessagesWhenDisabled is true."
+                "Re-enabling the MessagingComponent must not silently reactivate a handler the " + "user explicitly toggled off while emitMessagesWhenDisabled is true."
             );
 
             messaging.ToggleMessageHandler(true);
             message.EmitUntargeted();
-            Assert.AreEqual(
-                2,
-                count,
-                "An explicit ToggleMessageHandler(true) remains the way to resume delivery."
-            );
+            Assert.AreEqual(2, count, "An explicit ToggleMessageHandler(true) remains the way to resume delivery.");
         }
 
         [Test]
@@ -3509,21 +2482,13 @@ namespace DxMessaging.Tests.Runtime.Unity
             messaging.emitMessagesWhenDisabled = true;
             messaging.ToggleMessageHandler(true);
             message.EmitUntargeted();
-            Assert.AreEqual(
-                2,
-                count,
-                "ToggleMessageHandler(true) must reactivate regardless of emitMessagesWhenDisabled."
-            );
+            Assert.AreEqual(2, count, "ToggleMessageHandler(true) must reactivate regardless of emitMessagesWhenDisabled.");
         }
 
         [Test]
         public void FlagEnabledWhileLifecycleSuspendedRequiresExplicitReactivation()
         {
-            GameObject host = new(
-                nameof(FlagEnabledWhileLifecycleSuspendedRequiresExplicitReactivation),
-                typeof(MessagingComponent),
-                typeof(SimpleMessageAwareComponent)
-            );
+            GameObject host = new(nameof(FlagEnabledWhileLifecycleSuspendedRequiresExplicitReactivation), typeof(MessagingComponent), typeof(SimpleMessageAwareComponent));
             _spawned.Add(host);
             MessagingComponent messaging = host.GetComponent<MessagingComponent>();
             SimpleMessageAwareComponent listener = host.GetComponent<SimpleMessageAwareComponent>();
@@ -3546,12 +2511,7 @@ namespace DxMessaging.Tests.Runtime.Unity
             listener.enabled = true;
             SimpleUntargetedMessage message = new();
             message.EmitUntargeted();
-            Assert.AreEqual(
-                0,
-                count,
-                "Enabling with the flag newly set must not silently reactivate a handler "
-                    + "the lifecycle previously deactivated."
-            );
+            Assert.AreEqual(0, count, "Enabling with the flag newly set must not silently reactivate a handler " + "the lifecycle previously deactivated.");
 
             messaging.ToggleMessageHandler(true);
             message.EmitUntargeted();
@@ -3585,27 +2545,16 @@ namespace DxMessaging.Tests.Runtime.Unity
 
                 SimpleUntargetedMessage message = new();
                 message.EmitUntargeted();
-                Assert.AreEqual(
-                    1,
-                    count,
-                    "Handler created on activation should deliver normally after pre-Awake toggles."
-                );
+                Assert.AreEqual(1, count, "Handler created on activation should deliver normally after pre-Awake toggles.");
 
-                Assert.IsTrue(
-                    messaging.Release(listener),
-                    "Releasing the registered listener should succeed."
-                );
+                Assert.IsTrue(messaging.Release(listener), "Releasing the registered listener should succeed.");
             }
         }
 
         [Test]
         public void DisablingOneListenerOnSharedHostLeavesSiblingActive()
         {
-            GameObject host = new(
-                nameof(DisablingOneListenerOnSharedHostLeavesSiblingActive),
-                typeof(MessagingComponent),
-                typeof(SimpleMessageAwareComponent)
-            );
+            GameObject host = new(nameof(DisablingOneListenerOnSharedHostLeavesSiblingActive), typeof(MessagingComponent), typeof(SimpleMessageAwareComponent));
             _spawned.Add(host);
             SimpleMessageAwareComponent first = host.GetComponent<SimpleMessageAwareComponent>();
             SimpleMessageAwareComponent second = host.AddComponent<SimpleMessageAwareComponent>();
@@ -3617,44 +2566,24 @@ namespace DxMessaging.Tests.Runtime.Unity
 
             SimpleUntargetedMessage message = new();
             message.EmitUntargeted();
-            Assert.AreEqual(
-                1,
-                firstCount,
-                "Positive control: first listener multiplexed over the shared handler should receive."
-            );
-            Assert.AreEqual(
-                1,
-                secondCount,
-                "Positive control: second listener multiplexed over the shared handler should receive."
-            );
+            Assert.AreEqual(1, firstCount, "Positive control: first listener multiplexed over the shared handler should receive.");
+            Assert.AreEqual(1, secondCount, "Positive control: second listener multiplexed over the shared handler should receive.");
 
             first.enabled = false;
             message.EmitUntargeted();
             Assert.AreEqual(1, firstCount, "Disabled listener must stop receiving.");
-            Assert.AreEqual(
-                2,
-                secondCount,
-                "Sibling on the same host must keep receiving while the other listener is disabled."
-            );
+            Assert.AreEqual(2, secondCount, "Sibling on the same host must keep receiving while the other listener is disabled.");
 
             first.enabled = true;
             message.EmitUntargeted();
-            Assert.AreEqual(
-                2,
-                firstCount,
-                "Re-enabled listener must resume receiving exactly once per emit."
-            );
+            Assert.AreEqual(2, firstCount, "Re-enabled listener must resume receiving exactly once per emit.");
             Assert.AreEqual(3, secondCount, "Sibling must be unaffected by the re-enable.");
         }
 
         [Test]
         public void ReleasingOneListenerOnSharedHostLeavesSiblingActive()
         {
-            GameObject host = new(
-                nameof(ReleasingOneListenerOnSharedHostLeavesSiblingActive),
-                typeof(MessagingComponent),
-                typeof(SimpleMessageAwareComponent)
-            );
+            GameObject host = new(nameof(ReleasingOneListenerOnSharedHostLeavesSiblingActive), typeof(MessagingComponent), typeof(SimpleMessageAwareComponent));
             _spawned.Add(host);
             MessagingComponent messaging = host.GetComponent<MessagingComponent>();
             SimpleMessageAwareComponent first = host.GetComponent<SimpleMessageAwareComponent>();
@@ -3670,24 +2599,14 @@ namespace DxMessaging.Tests.Runtime.Unity
             Assert.AreEqual(1, firstCount, "Positive control: first listener should receive.");
             Assert.AreEqual(1, secondCount, "Positive control: second listener should receive.");
 
-            Assert.IsTrue(
-                messaging.Release(first),
-                "Releasing a registered listener should report success."
-            );
+            Assert.IsTrue(messaging.Release(first), "Releasing a registered listener should report success.");
             Assert.IsFalse(first.Token.Enabled, "Released listener's token must be disabled.");
 
             message.EmitUntargeted();
             Assert.AreEqual(1, firstCount, "Released listener must stop receiving.");
-            Assert.AreEqual(
-                2,
-                secondCount,
-                "Sibling on the same host must keep receiving after the other listener is released."
-            );
+            Assert.AreEqual(2, secondCount, "Sibling on the same host must keep receiving after the other listener is released.");
 
-            Assert.IsFalse(
-                messaging.Release(first),
-                "Releasing the same listener twice should report failure on the second call."
-            );
+            Assert.IsFalse(messaging.Release(first), "Releasing the same listener twice should report failure on the second call.");
             message.EmitUntargeted();
             Assert.AreEqual(1, firstCount, "Double release must not resurrect the listener.");
             Assert.AreEqual(3, secondCount, "Sibling must be unaffected by the double release.");
@@ -3704,8 +2623,7 @@ namespace DxMessaging.Tests.Runtime.Unity
             );
             _spawned.Add(host);
             MessagingComponent messaging = host.GetComponent<MessagingComponent>();
-            SimpleMessageAwareComponent registered =
-                host.GetComponent<SimpleMessageAwareComponent>();
+            SimpleMessageAwareComponent registered = host.GetComponent<SimpleMessageAwareComponent>();
             ManualListenerComponent neverRegistered = host.GetComponent<ManualListenerComponent>();
 
             int count = 0;
@@ -3715,97 +2633,43 @@ namespace DxMessaging.Tests.Runtime.Unity
             message.EmitUntargeted();
             Assert.AreEqual(1, count, "Positive control: registered listener should receive.");
 
-            Assert.IsFalse(
-                messaging.Release(neverRegistered),
-                "Releasing a listener that never requested a token should report failure."
-            );
-            Assert.IsFalse(
-                messaging.Release(null),
-                "Releasing a null listener should report failure."
-            );
+            Assert.IsFalse(messaging.Release(neverRegistered), "Releasing a listener that never requested a token should report failure.");
+            Assert.IsFalse(messaging.Release(null), "Releasing a null listener should report failure.");
             UnityEngine.Object.DestroyImmediate(neverRegistered);
-            Assert.That(
-                neverRegistered == null,
-                Is.True,
-                "Test setup must retain a Unity fake-null listener reference."
-            );
-            Assert.IsFalse(
-                messaging.Release(neverRegistered),
-                "Releasing a destroyed listener that never requested a token should report failure."
-            );
+            Assert.That(neverRegistered == null, Is.True, "Test setup must retain a Unity fake-null listener reference.");
+            Assert.IsFalse(messaging.Release(neverRegistered), "Releasing a destroyed listener that never requested a token should report failure.");
 
             message.EmitUntargeted();
-            Assert.AreEqual(
-                2,
-                count,
-                "Failed release calls must have no side effects on registered listeners."
-            );
+            Assert.AreEqual(2, count, "Failed release calls must have no side effects on registered listeners.");
         }
 
         [Test]
         public void ReleaseDisposesRegisteredDestroyedListener()
         {
-            GameObject host = new(
-                nameof(ReleaseDisposesRegisteredDestroyedListener),
-                typeof(MessagingComponent),
-                typeof(ManualListenerComponent)
-            );
+            GameObject host = new(nameof(ReleaseDisposesRegisteredDestroyedListener), typeof(MessagingComponent), typeof(ManualListenerComponent));
             _spawned.Add(host);
             MessagingComponent messaging = host.GetComponent<MessagingComponent>();
             ManualListenerComponent listener = host.GetComponent<ManualListenerComponent>();
             MessageBus bus = new();
             messaging.Configure(bus, MessageBusRebindMode.RebindActive);
 
-            using (
-                LeakWatcher watcher = new(
-                    bus,
-                    label: nameof(ReleaseDisposesRegisteredDestroyedListener)
-                )
-            )
+            using (LeakWatcher watcher = new(bus, label: nameof(ReleaseDisposesRegisteredDestroyedListener)))
             {
                 MessageRegistrationToken token = listener.RequestToken(messaging);
                 _ = token.RegisterUntargeted<SimpleUntargetedMessage>(_ => { });
                 token.Enable();
-                Assert.That(
-                    bus.RegisteredUntargeted,
-                    Is.EqualTo(1),
-                    "Positive control: the manual listener must own one live registration."
-                );
+                Assert.That(bus.RegisteredUntargeted, Is.EqualTo(1), "Positive control: the manual listener must own one live registration.");
 
                 UnityEngine.Object.DestroyImmediate(listener);
-                Assert.That(
-                    listener == null,
-                    Is.True,
-                    "Test setup must produce a Unity fake-null listener."
-                );
-                Assert.That(
-                    ReferenceEquals(listener, null),
-                    Is.False,
-                    "Test setup must retain the destroyed managed listener reference."
-                );
+                Assert.That(listener == null, Is.True, "Test setup must produce a Unity fake-null listener.");
+                Assert.That(ReferenceEquals(listener, null), Is.False, "Test setup must retain the destroyed managed listener reference.");
 
                 try
                 {
-                    Assert.That(
-                        messaging.Release(listener),
-                        Is.True,
-                        "Release must find and dispose the token retained under a destroyed listener key."
-                    );
-                    Assert.That(
-                        messaging._registeredListeners.Count,
-                        Is.Zero,
-                        "Successful release must remove the destroyed listener key."
-                    );
-                    Assert.That(
-                        token.Enabled,
-                        Is.False,
-                        "Successful release must disable the token."
-                    );
-                    Assert.That(
-                        bus.RegisteredUntargeted,
-                        Is.Zero,
-                        "Successful release must deregister the destroyed listener's handler."
-                    );
+                    Assert.That(messaging.Release(listener), Is.True, "Release must find and dispose the token retained under a destroyed listener key.");
+                    Assert.That(messaging._registeredListeners.Count, Is.Zero, "Successful release must remove the destroyed listener key.");
+                    Assert.That(token.Enabled, Is.False, "Successful release must disable the token.");
+                    Assert.That(bus.RegisteredUntargeted, Is.Zero, "Successful release must deregister the destroyed listener's handler.");
                 }
                 finally
                 {
@@ -3817,11 +2681,7 @@ namespace DxMessaging.Tests.Runtime.Unity
         [Test]
         public void DoubleReleaseReturnsFalseAndLeavesMessagingUsable()
         {
-            GameObject host = new(
-                nameof(DoubleReleaseReturnsFalseAndLeavesMessagingUsable),
-                typeof(MessagingComponent),
-                typeof(ManualListenerComponent)
-            );
+            GameObject host = new(nameof(DoubleReleaseReturnsFalseAndLeavesMessagingUsable), typeof(MessagingComponent), typeof(ManualListenerComponent));
             _spawned.Add(host);
             MessagingComponent messaging = host.GetComponent<MessagingComponent>();
             ManualListenerComponent listener = host.GetComponent<ManualListenerComponent>();
@@ -3839,52 +2699,25 @@ namespace DxMessaging.Tests.Runtime.Unity
                 message.EmitUntargeted();
                 Assert.AreEqual(1, originalCount, "Positive control: listener should receive.");
                 Assert.AreEqual(1, token._metadata.Count, "Control failed: metadata must exist.");
-                Assert.AreEqual(
-                    1,
-                    token._callCounts.Count,
-                    "Control failed: call count must exist."
-                );
-                Assert.AreEqual(
-                    1,
-                    token._emissionBuffer.Count,
-                    "Control failed: emission history must exist."
-                );
+                Assert.AreEqual(1, token._callCounts.Count, "Control failed: call count must exist.");
+                Assert.AreEqual(1, token._emissionBuffer.Count, "Control failed: emission history must exist.");
 
                 Assert.IsTrue(messaging.Release(listener), "First release should succeed.");
                 Assert.IsFalse(token.Enabled, "First release must disable the token.");
                 Assert.AreEqual(0, token._metadata.Count, "Release must clear token metadata.");
-                Assert.AreEqual(
-                    0,
-                    token._callCounts.Count,
-                    "Release must clear token call counts."
-                );
-                Assert.AreEqual(
-                    0,
-                    token._emissionBuffer.Count,
-                    "Release must clear token emission history."
-                );
+                Assert.AreEqual(0, token._callCounts.Count, "Release must clear token call counts.");
+                Assert.AreEqual(0, token._emissionBuffer.Count, "Release must clear token emission history.");
 
                 message.EmitUntargeted();
                 Assert.AreEqual(1, originalCount, "Released listener must stop receiving.");
 
                 token.Enable();
                 message.EmitUntargeted();
-                Assert.AreEqual(
-                    1,
-                    originalCount,
-                    "A released token reference must not resurrect old registrations."
-                );
+                Assert.AreEqual(1, originalCount, "A released token reference must not resurrect old registrations.");
 
-                Assert.IsFalse(
-                    messaging.Release(listener),
-                    "Second release of the same listener should report failure."
-                );
+                Assert.IsFalse(messaging.Release(listener), "Second release of the same listener should report failure.");
                 message.EmitUntargeted();
-                Assert.AreEqual(
-                    1,
-                    originalCount,
-                    "Second release must not corrupt or resurrect the registration."
-                );
+                Assert.AreEqual(1, originalCount, "Second release must not corrupt or resurrect the registration.");
             }
 
             /*
@@ -3902,21 +2735,14 @@ namespace DxMessaging.Tests.Runtime.Unity
             Assert.AreEqual(1, recreatedCount, "Recreated token must deliver messages.");
             Assert.AreEqual(1, originalCount, "Old released token must remain dead.");
 
-            Assert.IsTrue(
-                messaging.Release(listener),
-                "Release should succeed again after re-creating the token."
-            );
+            Assert.IsTrue(messaging.Release(listener), "Release should succeed again after re-creating the token.");
         }
 
         [TestCase(false, TestName = "ReleaseFailureKeepsLiveListenerRegisteredForRetry")]
         [TestCase(true, TestName = "ReleaseFailureKeepsDestroyedListenerRegisteredForRetry")]
         public void ReleaseFailureKeepsListenerRegisteredForRetry(bool destroyBeforeRelease)
         {
-            GameObject host = new(
-                nameof(ReleaseFailureKeepsListenerRegisteredForRetry),
-                typeof(MessagingComponent),
-                typeof(ManualListenerComponent)
-            );
+            GameObject host = new(nameof(ReleaseFailureKeepsListenerRegisteredForRetry), typeof(MessagingComponent), typeof(ManualListenerComponent));
             _spawned.Add(host);
             MessagingComponent messaging = host.GetComponent<MessagingComponent>();
             ManualListenerComponent listener = host.GetComponent<ManualListenerComponent>();
@@ -3928,13 +2754,7 @@ namespace DxMessaging.Tests.Runtime.Unity
             string caseContext = $"[destroyBeforeRelease={destroyBeforeRelease}]";
             SimpleUntargetedMessage message = new();
 
-            using (
-                LeakWatcher watcher = new(
-                    bus: failingBus,
-                    throwOnLeak: true,
-                    label: nameof(ReleaseFailureKeepsListenerRegisteredForRetry) + caseContext
-                )
-            )
+            using (LeakWatcher watcher = new(bus: failingBus, throwOnLeak: true, label: nameof(ReleaseFailureKeepsListenerRegisteredForRetry) + caseContext))
             {
                 MessageRegistrationToken token = listener.RequestToken(messaging);
                 try
@@ -3943,59 +2763,24 @@ namespace DxMessaging.Tests.Runtime.Unity
                     token.Enable();
 
                     message.EmitUntargeted(failingBus);
-                    Assert.AreEqual(
-                        1,
-                        count,
-                        $"{caseContext} Control failed: listener should receive."
-                    );
+                    Assert.AreEqual(1, count, $"{caseContext} Control failed: listener should receive.");
 
                     if (destroyBeforeRelease)
                     {
                         UnityEngine.Object.DestroyImmediate(listener);
-                        Assert.That(
-                            listener == null,
-                            Is.True,
-                            $"{caseContext} Test setup must retain a Unity fake-null listener reference."
-                        );
+                        Assert.That(listener == null, Is.True, $"{caseContext} Test setup must retain a Unity fake-null listener reference.");
                     }
 
-                    Assert.Throws<InvalidOperationException>(
-                        () => messaging.Release(listener),
-                        $"{caseContext} The failing bus must surface the token disposal failure."
-                    );
-                    Assert.IsTrue(
-                        token.Enabled,
-                        $"{caseContext} Failed release must leave the token active for cleanup retry."
-                    );
-                    Assert.AreEqual(
-                        1,
-                        failingBus.RegisteredUntargeted,
-                        $"{caseContext} Failed release must not forget the live registration."
-                    );
-                    Assert.That(
-                        messaging._registeredListeners.Count,
-                        Is.EqualTo(1),
-                        $"{caseContext} Failed release must retain the listener key for retry."
-                    );
+                    Assert.Throws<InvalidOperationException>(() => messaging.Release(listener), $"{caseContext} The failing bus must surface the token disposal failure.");
+                    Assert.IsTrue(token.Enabled, $"{caseContext} Failed release must leave the token active for cleanup retry.");
+                    Assert.AreEqual(1, failingBus.RegisteredUntargeted, $"{caseContext} Failed release must not forget the live registration.");
+                    Assert.That(messaging._registeredListeners.Count, Is.EqualTo(1), $"{caseContext} Failed release must retain the listener key for retry.");
 
                     failingBus.AllowDeregistrations();
-                    Assert.IsTrue(
-                        messaging.Release(listener),
-                        $"{caseContext} Release retry must succeed."
-                    );
-                    Assert.IsFalse(
-                        token.Enabled,
-                        $"{caseContext} Release retry must disable the token."
-                    );
-                    Assert.AreEqual(
-                        0,
-                        failingBus.RegisteredUntargeted,
-                        $"{caseContext} Retry must deregister."
-                    );
-                    Assert.IsFalse(
-                        messaging.Release(listener),
-                        $"{caseContext} A second release after successful retry must report failure."
-                    );
+                    Assert.IsTrue(messaging.Release(listener), $"{caseContext} Release retry must succeed.");
+                    Assert.IsFalse(token.Enabled, $"{caseContext} Release retry must disable the token.");
+                    Assert.AreEqual(0, failingBus.RegisteredUntargeted, $"{caseContext} Retry must deregister.");
+                    Assert.IsFalse(messaging.Release(listener), $"{caseContext} A second release after successful retry must report failure.");
                 }
                 finally
                 {

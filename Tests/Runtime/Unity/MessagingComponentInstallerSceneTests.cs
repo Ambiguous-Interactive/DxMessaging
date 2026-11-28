@@ -42,14 +42,11 @@ namespace DxMessaging.Tests.Runtime.Unity
         public IEnumerator InstallerAppliesSerializedProviderToChildren()
         {
             MessageBus messageBus = new();
-            TestScriptableMessageBusProvider provider = Track(
-                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>()
-            );
+            TestScriptableMessageBusProvider provider = Track(ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>());
             provider.Configure(messageBus);
 
             GameObject root = Track(new GameObject("InstallerRoot"));
-            MessagingComponentInstaller installer =
-                root.AddComponent<MessagingComponentInstaller>();
+            MessagingComponentInstaller installer = root.AddComponent<MessagingComponentInstaller>();
             installer.SetProvider(new MessageBusProviderHandle(provider));
 
             GameObject child = Track(new GameObject("InstallerChild"));
@@ -57,9 +54,7 @@ namespace DxMessaging.Tests.Runtime.Unity
             MessagingComponent component = child.AddComponent<MessagingComponent>();
 
             SerializedObject serializedComponent = new(component);
-            SerializedProperty autoConfigureProperty = serializedComponent.FindProperty(
-                "autoConfigureSerializedProviderOnAwake"
-            );
+            SerializedProperty autoConfigureProperty = serializedComponent.FindProperty("autoConfigureSerializedProviderOnAwake");
             Assert.That(autoConfigureProperty, Is.Not.Null, "Expected auto configure property.");
             autoConfigureProperty.boolValue = true;
             serializedComponent.ApplyModifiedPropertiesWithoutUndo();
@@ -68,27 +63,15 @@ namespace DxMessaging.Tests.Runtime.Unity
 
             yield return null;
 
-            Assert.That(
-                component.SerializedProviderHandle.SerializedProvider,
-                Is.EqualTo(provider),
-                "Serialized provider handle should reference the installer provider."
-            );
-            Assert.That(
-                component.SerializedProviderHandle.ResolveBus(),
-                Is.EqualTo(messageBus),
-                "Serialized provider should resolve to the configured bus."
-            );
+            Assert.That(component.SerializedProviderHandle.SerializedProvider, Is.EqualTo(provider), "Serialized provider handle should reference the installer provider.");
+            Assert.That(component.SerializedProviderHandle.ResolveBus(), Is.EqualTo(messageBus), "Serialized provider should resolve to the configured bus.");
 
             component.enabled = false;
             yield return null;
             component.enabled = true;
             yield return null;
 
-            Assert.That(
-                component.SerializedProviderHandle.ResolveBus(),
-                Is.EqualTo(messageBus),
-                "Provider resolution should persist after enable/disable cycles."
-            );
+            Assert.That(component.SerializedProviderHandle.ResolveBus(), Is.EqualTo(messageBus), "Provider resolution should persist after enable/disable cycles.");
         }
 
         private T Track<T>(T unityObject)

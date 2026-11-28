@@ -16,16 +16,9 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Tests;
 internal sealed class NullableOptionalDefaultTests
 {
     [TestCaseSource(nameof(NullDefaultCases))]
-    public void OptionalNullDefaultsMatchHandwrittenConstructors(
-        string fieldType,
-        string explicitValue,
-        int attributeForm,
-        bool nullable,
-        bool valueTarget
-    )
+    public void OptionalNullDefaultsMatchHandwrittenConstructors(string fieldType, string explicitValue, int attributeForm, bool nullable, bool valueTarget)
     {
-        string context =
-            $"type={fieldType},value={explicitValue},attribute={attributeForm},nullable={nullable},struct={valueTarget}";
+        string context = $"type={fieldType},value={explicitValue},attribute={attributeForm},nullable={nullable},struct={valueTarget}";
         string kind = valueTarget ? "readonly partial struct" : "partial class";
         string defaultExpression = attributeForm == 2 ? $"default({fieldType})" : "null";
         string attribute = attributeForm switch
@@ -62,11 +55,7 @@ public static class Consumer
         Diagnostic[] manualDiagnostics = manual.GetDiagnostics().ToArray();
         if (nullable)
         {
-            Assert.That(
-                manualDiagnostics,
-                Is.Empty,
-                "Compile handwritten nullable default: " + context
-            );
+            Assert.That(manualDiagnostics, Is.Empty, "Compile handwritten nullable default: " + context);
             VerifyConsumer(manual, "handwritten", context);
         }
         else
@@ -84,69 +73,25 @@ public static class Consumer
             generators: new ISourceGenerator[] { new DxAutoConstructorGenerator() },
             parseOptions: new CSharpParseOptions(LanguageVersion.CSharp9)
         );
-        driver = driver.RunGeneratorsAndUpdateCompilation(
-            input,
-            out Compilation output,
-            out ImmutableArray<Diagnostic> generatorDiagnostics
-        );
-        Assert.That(
-            driver.GetRunResult().Results.Single().Exception,
-            Is.Null,
-            "Complete real nullable-default generation: " + context
-        );
-        Assert.That(
-            driver.GetRunResult().GeneratedTrees,
-            Has.Length.EqualTo(1),
-            "Generate one constructor: " + context
-        );
+        driver = driver.RunGeneratorsAndUpdateCompilation(input, out Compilation output, out ImmutableArray<Diagnostic> generatorDiagnostics);
+        Assert.That(driver.GetRunResult().Results.Single().Exception, Is.Null, "Complete real nullable-default generation: " + context);
+        Assert.That(driver.GetRunResult().GeneratedTrees, Has.Length.EqualTo(1), "Generate one constructor: " + context);
         if (!nullable)
         {
-            Assert.That(
-                generatorDiagnostics,
-                Has.Length.EqualTo(1),
-                "Report one invalid null default: " + context
-            );
-            Assert.That(
-                generatorDiagnostics[0].Id,
-                Is.EqualTo("DXMSG005"),
-                "Use the default diagnostic: " + context
-            );
-            Assert.That(
-                generatorDiagnostics[0].Location.SourceTree,
-                Is.EqualTo(input.SyntaxTrees.Last()),
-                "Report the caller's attribute: " + context
-            );
-            Assert.That(
-                output.GetDiagnostics().Any(diagnostic => diagnostic.Id == "CS1750"),
-                Is.True,
-                "Keep compiler rejection of the invalid generated default: " + context
-            );
+            Assert.That(generatorDiagnostics, Has.Length.EqualTo(1), "Report one invalid null default: " + context);
+            Assert.That(generatorDiagnostics[0].Id, Is.EqualTo("DXMSG005"), "Use the default diagnostic: " + context);
+            Assert.That(generatorDiagnostics[0].Location.SourceTree, Is.EqualTo(input.SyntaxTrees.Last()), "Report the caller's attribute: " + context);
+            Assert.That(output.GetDiagnostics().Any(diagnostic => diagnostic.Id == "CS1750"), Is.True, "Keep compiler rejection of the invalid generated default: " + context);
             return;
         }
 
         Assert.That(generatorDiagnostics, Is.Empty, "Accept the nullable null default: " + context);
-        Assert.That(
-            output.GetDiagnostics(),
-            Is.Empty,
-            "Compile generated nullable consumer: " + context
-        );
+        Assert.That(output.GetDiagnostics(), Is.Empty, "Compile generated nullable consumer: " + context);
         IParameterSymbol expected = Parameter(manual);
         IParameterSymbol actual = Parameter(output);
-        Assert.That(
-            actual.IsOptional,
-            Is.EqualTo(expected.IsOptional),
-            "Preserve optional parameter metadata: " + context
-        );
-        Assert.That(
-            actual.HasExplicitDefaultValue,
-            Is.True,
-            "Expose a compiled default: " + context
-        );
-        Assert.That(
-            actual.ExplicitDefaultValue,
-            Is.EqualTo(expected.ExplicitDefaultValue),
-            "Preserve the handwritten null metadata: " + context
-        );
+        Assert.That(actual.IsOptional, Is.EqualTo(expected.IsOptional), "Preserve optional parameter metadata: " + context);
+        Assert.That(actual.HasExplicitDefaultValue, Is.True, "Expose a compiled default: " + context);
+        Assert.That(actual.ExplicitDefaultValue, Is.EqualTo(expected.ExplicitDefaultValue), "Preserve the handwritten null metadata: " + context);
         Assert.That(
             actual.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
             Is.EqualTo(expected.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)),
@@ -156,10 +101,7 @@ public static class Consumer
     }
 
     private static IParameterSymbol Parameter(Compilation compilation) =>
-        compilation
-            .GetTypeByMetadataName("Packet")!
-            .InstanceConstructors.Single(constructor => constructor.Parameters.Length == 2)
-            .Parameters[1];
+        compilation.GetTypeByMetadataName("Packet")!.InstanceConstructors.Single(constructor => constructor.Parameters.Length == 2).Parameters[1];
 
     private static void VerifyConsumer(Compilation compilation, string arm, string context)
     {
@@ -172,31 +114,11 @@ public static class Consumer
         {
             Assembly assembly = loadContext.LoadFromStream(stream);
             object? result = assembly.GetType("Consumer")!.GetMethod("Verify")!.Invoke(null, null);
-            Assert.That(
-                result,
-                Is.EqualTo(true),
-                $"Preserve omitted, explicit null and supplied values in {arm}: {context}"
-            );
-            ParameterInfo parameter = assembly
-                .GetType("Packet")!
-                .GetConstructors()
-                .Single(constructor => constructor.GetParameters().Length == 2)
-                .GetParameters()[1];
-            Assert.That(
-                parameter.IsOptional,
-                Is.True,
-                $"Retain optional metadata in {arm}: {context}"
-            );
-            Assert.That(
-                parameter.HasDefaultValue,
-                Is.True,
-                $"Retain default metadata in {arm}: {context}"
-            );
-            Assert.That(
-                parameter.DefaultValue,
-                Is.Null,
-                $"Retain null as the nullable default in {arm}: {context}"
-            );
+            Assert.That(result, Is.EqualTo(true), $"Preserve omitted, explicit null and supplied values in {arm}: {context}");
+            ParameterInfo parameter = assembly.GetType("Packet")!.GetConstructors().Single(constructor => constructor.GetParameters().Length == 2).GetParameters()[1];
+            Assert.That(parameter.IsOptional, Is.True, $"Retain optional metadata in {arm}: {context}");
+            Assert.That(parameter.HasDefaultValue, Is.True, $"Retain default metadata in {arm}: {context}");
+            Assert.That(parameter.DefaultValue, Is.Null, $"Retain null as the nullable default in {arm}: {context}");
         }
         finally
         {
@@ -204,16 +126,9 @@ public static class Consumer
         }
     }
 
-    private static CSharpCompilation Compile(string source) =>
-        GeneratorTestUtilities.CreateAutoConstructorCompilationFromShippedAttributes(source);
+    private static CSharpCompilation Compile(string source) => GeneratorTestUtilities.CreateAutoConstructorCompilationFromShippedAttributes(source);
 
-    private static string Source(
-        string kind,
-        string fieldType,
-        string fieldAttribute,
-        string constructor,
-        string consumer
-    ) => $$"""
+    private static string Source(string kind, string fieldType, string fieldAttribute, string constructor, string consumer) => $$"""
 {{(constructor.Length == 0 ? "using DxMessaging.Core.Attributes;" : "")}}
 public enum Choice { None, Other }
 public readonly struct Payload
@@ -250,13 +165,7 @@ public {{kind}} Packet
                     for (int form = 0; form < (nullable ? 3 : 2); ++form)
                     {
                         string fieldType = type + (nullable ? "?" : "");
-                        yield return new TestCaseData(
-                            fieldType,
-                            value,
-                            form,
-                            nullable,
-                            valueTarget
-                        ).SetName(
+                        yield return new TestCaseData(fieldType, value, form, nullable, valueTarget).SetName(
                             $"OptionalNullDefaultsMatchHandwrittenConstructors({fieldType},{form},{nullable},{valueTarget})"
                         );
                     }

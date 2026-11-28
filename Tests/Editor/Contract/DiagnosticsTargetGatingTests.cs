@@ -18,27 +18,15 @@ namespace DxMessaging.Tests.Editor.Contract
         [Test]
         public void OffDisablesDiagnosticsEverywhere()
         {
-            Assert.IsFalse(
-                IMessageBus.ShouldEnableDiagnostics(DiagnosticsTarget.Off, isEditor: true),
-                "Off must disable diagnostics in the editor."
-            );
-            Assert.IsFalse(
-                IMessageBus.ShouldEnableDiagnostics(DiagnosticsTarget.Off, isEditor: false),
-                "Off must disable diagnostics in player builds."
-            );
+            Assert.IsFalse(IMessageBus.ShouldEnableDiagnostics(DiagnosticsTarget.Off, isEditor: true), "Off must disable diagnostics in the editor.");
+            Assert.IsFalse(IMessageBus.ShouldEnableDiagnostics(DiagnosticsTarget.Off, isEditor: false), "Off must disable diagnostics in player builds.");
         }
 
         [Test]
         public void EditorFlagEnablesOnlyInEditor()
         {
-            Assert.IsTrue(
-                IMessageBus.ShouldEnableDiagnostics(DiagnosticsTarget.Editor, isEditor: true),
-                "Editor flag must enable diagnostics while in the Unity editor."
-            );
-            Assert.IsFalse(
-                IMessageBus.ShouldEnableDiagnostics(DiagnosticsTarget.Editor, isEditor: false),
-                "Editor flag must not enable diagnostics in player builds."
-            );
+            Assert.IsTrue(IMessageBus.ShouldEnableDiagnostics(DiagnosticsTarget.Editor, isEditor: true), "Editor flag must enable diagnostics while in the Unity editor.");
+            Assert.IsFalse(IMessageBus.ShouldEnableDiagnostics(DiagnosticsTarget.Editor, isEditor: false), "Editor flag must not enable diagnostics in player builds.");
         }
 
         [Test]
@@ -48,23 +36,14 @@ namespace DxMessaging.Tests.Editor.Contract
                 IMessageBus.ShouldEnableDiagnostics(DiagnosticsTarget.Runtime, isEditor: true),
                 "Runtime flag targets player/runtime builds; the editor requires the Editor flag."
             );
-            Assert.IsTrue(
-                IMessageBus.ShouldEnableDiagnostics(DiagnosticsTarget.Runtime, isEditor: false),
-                "Runtime flag must enable diagnostics in player builds."
-            );
+            Assert.IsTrue(IMessageBus.ShouldEnableDiagnostics(DiagnosticsTarget.Runtime, isEditor: false), "Runtime flag must enable diagnostics in player builds.");
         }
 
         [Test]
         public void AllEnablesDiagnosticsEverywhere()
         {
-            Assert.IsTrue(
-                IMessageBus.ShouldEnableDiagnostics(DiagnosticsTarget.All, isEditor: true),
-                "All must enable diagnostics in the editor."
-            );
-            Assert.IsTrue(
-                IMessageBus.ShouldEnableDiagnostics(DiagnosticsTarget.All, isEditor: false),
-                "All must enable diagnostics in player builds."
-            );
+            Assert.IsTrue(IMessageBus.ShouldEnableDiagnostics(DiagnosticsTarget.All, isEditor: true), "All must enable diagnostics in the editor.");
+            Assert.IsTrue(IMessageBus.ShouldEnableDiagnostics(DiagnosticsTarget.All, isEditor: false), "All must enable diagnostics in player builds.");
         }
 
         [Test]
@@ -74,15 +53,9 @@ namespace DxMessaging.Tests.Editor.Contract
             try
             {
                 IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.Editor;
-                Assert.IsTrue(
-                    IMessageBus.ShouldEnableDiagnostics(),
-                    "Editor flag must enable diagnostics when running inside the Unity editor."
-                );
+                Assert.IsTrue(IMessageBus.ShouldEnableDiagnostics(), "Editor flag must enable diagnostics when running inside the Unity editor.");
                 IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.Off;
-                Assert.IsFalse(
-                    IMessageBus.ShouldEnableDiagnostics(),
-                    "Off must disable diagnostics when running inside the Unity editor."
-                );
+                Assert.IsFalse(IMessageBus.ShouldEnableDiagnostics(), "Off must disable diagnostics when running inside the Unity editor.");
             }
             finally
             {

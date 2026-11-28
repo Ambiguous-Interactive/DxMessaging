@@ -29,15 +29,7 @@ namespace DxMessaging.Tests.Runtime.Core
             foreach (int capacity in new[] { 0, 4 })
             foreach (bool peer in new[] { false, true })
             {
-                yield return new TestCaseData(
-                    scenario,
-                    carrier,
-                    diagnostics,
-                    churn,
-                    emissions,
-                    capacity,
-                    peer
-                ).SetName(
+                yield return new TestCaseData(scenario, carrier, diagnostics, churn, emissions, capacity, peer).SetName(
                     $"StagedDiagnosticCounts_{scenario}_carrier{carrier}_diagnostics{diagnostics}_churn{churn}_emissions{emissions}_capacity{capacity}_peer{peer}"
                 );
             }
@@ -45,18 +37,9 @@ namespace DxMessaging.Tests.Runtime.Core
 
         /// <summary>Retains only staged counter identities across repeated callback replacement.</summary>
         [TestCaseSource(nameof(ChurnCases))]
-        public void RestagedCallbacksDoNotRetainRetiredCounterKeys(
-            MessageScenario scenario,
-            int carrier,
-            bool diagnostics,
-            bool churn,
-            int emissions,
-            int capacity,
-            bool peer
-        )
+        public void RestagedCallbacksDoNotRetainRetiredCounterKeys(MessageScenario scenario, int carrier, bool diagnostics, bool churn, int emissions, int capacity, bool peer)
         {
-            string label =
-                $"{scenario},carrier={carrier},diagnostics={diagnostics},churn={churn},emissions={emissions},capacity={capacity},peer={peer}";
+            string label = $"{scenario},carrier={carrier},diagnostics={diagnostics},churn={churn},emissions={emissions},capacity={capacity},peer={peer}";
             using Scope scope = new Scope(capacity, diagnostics, label);
             int calls = 0;
             int peerCalls = 0;
@@ -66,9 +49,7 @@ namespace DxMessaging.Tests.Runtime.Core
             List<long> traces = new List<long>();
             if (peer)
             {
-                peerHandle = scope.Token.RegisterUntargeted<PeerMessage>(
-                    (in PeerMessage _) => ++peerCalls
-                );
+                peerHandle = scope.Token.RegisterUntargeted<PeerMessage>((in PeerMessage _) => ++peerCalls);
             }
             Action callback = null;
             callback = () =>
@@ -81,108 +62,48 @@ namespace DxMessaging.Tests.Runtime.Core
                     scope.Token.RemoveRegistration(previous);
                     retired.Add(previous);
                     current = Register(scope.Token, scenario, carrier, callback);
-                    Assert.That(
-                        current.Slot,
-                        Is.EqualTo(previous.Slot),
-                        label + ": actual slot reuse"
-                    );
-                    Assert.That(
-                        current,
-                        Is.Not.EqualTo(previous),
-                        label + ": replacement has a new identity"
-                    );
+                    Assert.That(current.Slot, Is.EqualTo(previous.Slot), label + ": actual slot reuse");
+                    Assert.That(current, Is.Not.EqualTo(previous), label + ": replacement has a new identity");
                     scope.Token.RemoveRegistration(previous);
-                    Assert.That(
-                        scope.Token._metadata.ContainsKey(current),
-                        Is.True,
-                        label + ": stale removal preserves replacement"
-                    );
+                    Assert.That(scope.Token._metadata.ContainsKey(current), Is.True, label + ": stale removal preserves replacement");
                 }
             };
             current = Register(scope.Token, scenario, carrier, callback);
-            Assert.That(
-                Counters(scope.Bus),
-                Is.All.EqualTo(0),
-                label + ": staging is initially inactive"
-            );
+            Assert.That(Counters(scope.Bus), Is.All.EqualTo(0), label + ": staging is initially inactive");
             scope.Token.Enable();
             for (int i = 0; i < emissions; ++i)
             {
                 Emit(scope.Bus, scenario);
             }
-            Assert.That(
-                calls,
-                Is.EqualTo(emissions),
-                label + ": each emission invokes exactly once"
-            );
+            Assert.That(calls, Is.EqualTo(emissions), label + ": each emission invokes exactly once");
             Assert.That(peerCalls, Is.Zero, label + ": unused peer never runs");
             Assert.That(scope.Token.Enabled, Is.True, label + ": replacement stays active");
-            Assert.That(
-                scope.Token._metadata.Count,
-                Is.EqualTo(peer ? 2 : 1),
-                label + ": exact staged count"
-            );
-            Assert.That(
-                scope.Token._metadata.ContainsKey(current),
-                Is.True,
-                label + ": current identity remains staged"
-            );
-            Assert.That(
-                Sum(Counters(scope.Bus)),
-                Is.EqualTo(peer ? 2 : 1),
-                label + ": exact live registrations"
-            );
+            Assert.That(scope.Token._metadata.Count, Is.EqualTo(peer ? 2 : 1), label + ": exact staged count");
+            Assert.That(scope.Token._metadata.ContainsKey(current), Is.True, label + ": current identity remains staged");
+            Assert.That(Sum(Counters(scope.Bus)), Is.EqualTo(peer ? 2 : 1), label + ": exact live registrations");
 
             bool recording = diagnostics && carrier != 2;
-            Assert.That(
-                scope.Token._callCounts.Count,
-                Is.EqualTo(recording && !churn ? 1 : 0),
-                label + ": only current staging can have a count"
-            );
+            Assert.That(scope.Token._callCounts.Count, Is.EqualTo(recording && !churn ? 1 : 0), label + ": only current staging can have a count");
             if (recording && !churn)
             {
-                Assert.That(
-                    scope.Token._callCounts[current],
-                    Is.EqualTo(emissions),
-                    label + ": stable handle counts every completed callback"
-                );
+                Assert.That(scope.Token._callCounts[current], Is.EqualTo(emissions), label + ": stable handle counts every completed callback");
             }
             foreach (MessageRegistrationHandle handle in retired)
             {
-                Assert.That(
-                    scope.Token._callCounts.ContainsKey(handle),
-                    Is.False,
-                    label + ": retired identity has no counter"
-                );
+                Assert.That(scope.Token._callCounts.ContainsKey(handle), Is.False, label + ": retired identity has no counter");
             }
             if (peer)
             {
-                Assert.That(
-                    scope.Token._callCounts.ContainsKey(peerHandle),
-                    Is.False,
-                    label + ": unused peer has no count"
-                );
+                Assert.That(scope.Token._callCounts.ContainsKey(peerHandle), Is.False, label + ": unused peer has no count");
             }
 
             int history = recording ? Math.Min(capacity, churn && !peer ? 1 : emissions) : 0;
-            Assert.That(
-                scope.Token._emissionBuffer.Count,
-                Is.EqualTo(history),
-                label + ": bounded successful-delivery history"
-            );
+            Assert.That(scope.Token._emissionBuffer.Count, Is.EqualTo(history), label + ": bounded successful-delivery history");
             for (int i = 0; i < history; ++i)
             {
                 int index = emissions - history + i;
-                Assert.That(
-                    scope.Token._emissionBuffer[i].registrationHandle,
-                    Is.EqualTo(churn ? retired[index] : current),
-                    label + ": history preserves delivered identity"
-                );
-                Assert.That(
-                    scope.Token._emissionBuffer[i].traceId,
-                    Is.EqualTo(traces[index]),
-                    label + ": history preserves originating dispatch"
-                );
+                Assert.That(scope.Token._emissionBuffer[i].registrationHandle, Is.EqualTo(churn ? retired[index] : current), label + ": history preserves delivered identity");
+                Assert.That(scope.Token._emissionBuffer[i].traceId, Is.EqualTo(traces[index]), label + ": history preserves originating dispatch");
             }
             AssertClean(scope, label);
         }
@@ -198,16 +119,7 @@ namespace DxMessaging.Tests.Runtime.Core
             foreach (int toggle in new[] { -1, 0, 1 })
             foreach (int capacity in new[] { 0, 4 })
             {
-                yield return new TestCaseData(
-                    scenario,
-                    carrier,
-                    remove,
-                    nested,
-                    throws,
-                    diagnostics,
-                    toggle,
-                    capacity
-                ).SetName(
+                yield return new TestCaseData(scenario, carrier, remove, nested, throws, diagnostics, toggle, capacity).SetName(
                     $"FrozenStagedDiagnosticCounts_{scenario}_carrier{carrier}_remove{remove}_nested{nested}_throws{throws}_diagnostics{diagnostics}_toggle{toggle}_capacity{capacity}"
                 );
             }
@@ -226,8 +138,7 @@ namespace DxMessaging.Tests.Runtime.Core
             int capacity
         )
         {
-            string label =
-                $"{scenario},carrier={carrier},remove={remove},nested={nested},throws={throws},diagnostics={diagnostics},toggle={toggle},capacity={capacity}";
+            string label = $"{scenario},carrier={carrier},remove={remove},nested={nested},throws={throws},diagnostics={diagnostics},toggle={toggle},capacity={capacity}";
             using Scope scope = new Scope(capacity, diagnostics, label);
             MessageRegistrationHandle first = default;
             MessageRegistrationHandle peer = default;
@@ -237,9 +148,7 @@ namespace DxMessaging.Tests.Runtime.Core
             long outerTrace = 0;
             long nestedTrace = 0;
             List<string> delivery = new List<string>();
-            InvalidOperationException sentinel = new InvalidOperationException(
-                "Expected outer callback failure."
-            );
+            InvalidOperationException sentinel = new InvalidOperationException("Expected outer callback failure.");
             first = Register(scope.Token, scenario, carrier, () =>
             {
                 delivery.Add(inNested ? "nested:A" : "outer:A");
@@ -253,19 +162,9 @@ namespace DxMessaging.Tests.Runtime.Core
                 if (remove)
                 {
                     scope.Token.RemoveRegistration(peer);
-                    replacement = Register(scope.Token, scenario, carrier, () =>
-                        delivery.Add(inNested ? "nested:C" : "outer:C")
-                    );
-                    Assert.That(
-                        replacement.Slot,
-                        Is.EqualTo(peer.Slot),
-                        label + ": peer slot is reused"
-                    );
-                    Assert.That(
-                        replacement,
-                        Is.Not.EqualTo(peer),
-                        label + ": replacement identity is distinct"
-                    );
+                    replacement = Register(scope.Token, scenario, carrier, () => delivery.Add(inNested ? "nested:C" : "outer:C"));
+                    Assert.That(replacement.Slot, Is.EqualTo(peer.Slot), label + ": peer slot is reused");
+                    Assert.That(replacement, Is.Not.EqualTo(peer), label + ": replacement identity is distinct");
                 }
                 if (0 <= toggle)
                 {
@@ -288,9 +187,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     throw sentinel;
                 }
             });
-            peer = Register(scope.Token, scenario, carrier, () =>
-                delivery.Add(inNested ? "nested:B" : "outer:B")
-            );
+            peer = Register(scope.Token, scenario, carrier, () => delivery.Add(inNested ? "nested:B" : "outer:B"));
             scope.Token.Enable();
             Exception caught = null;
             try
@@ -301,77 +198,35 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 caught = exception;
             }
-            Assert.That(
-                caught,
-                Is.SameAs(throws ? sentinel : null),
-                label + ": original user exception propagates"
-            );
+            Assert.That(caught, Is.SameAs(throws ? sentinel : null), label + ": original user exception propagates");
             List<string> expectedDelivery = new List<string> { "outer:A" };
             if (nested)
             {
                 expectedDelivery.Add("nested:A");
                 expectedDelivery.Add(remove ? "nested:C" : "nested:B");
-                Assert.That(
-                    nestedTrace,
-                    Is.Not.EqualTo(outerTrace),
-                    label + ": nested dispatch has its own trace"
-                );
+                Assert.That(nestedTrace, Is.Not.EqualTo(outerTrace), label + ": nested dispatch has its own trace");
             }
             if (!throws)
             {
                 expectedDelivery.Add("outer:B");
             }
-            Assert.That(
-                delivery,
-                Is.EqualTo(expectedDelivery),
-                label + ": outer snapshot and nested visibility"
-            );
+            Assert.That(delivery, Is.EqualTo(expectedDelivery), label + ": outer snapshot and nested visibility");
             Assert.That(outerTrace, Is.GreaterThan(0L), label + ": actual outer dispatch");
-            Assert.That(
-                scope.Token._metadata.Count,
-                Is.EqualTo(2),
-                label + ": exact staging survives callback mutation"
-            );
-            Assert.That(
-                scope.Token._metadata.ContainsKey(first),
-                Is.True,
-                label + ": first remains staged"
-            );
-            Assert.That(
-                scope.Token._metadata.ContainsKey(peer),
-                Is.EqualTo(!remove),
-                label + ": exact peer staging"
-            );
-            Assert.That(
-                Sum(Counters(scope.Bus)),
-                Is.EqualTo(1),
-                label + ": one shared public route container remains"
-            );
-            Assert.That(
-                MessageBusInspection.CountLiveRegistrations(scope.Bus),
-                Is.EqualTo(2),
-                label + ": two live callback registrations remain"
-            );
+            Assert.That(scope.Token._metadata.Count, Is.EqualTo(2), label + ": exact staging survives callback mutation");
+            Assert.That(scope.Token._metadata.ContainsKey(first), Is.True, label + ": first remains staged");
+            Assert.That(scope.Token._metadata.ContainsKey(peer), Is.EqualTo(!remove), label + ": exact peer staging");
+            Assert.That(Sum(Counters(scope.Bus)), Is.EqualTo(1), label + ": one shared public route container remains");
+            Assert.That(MessageBusInspection.CountLiveRegistrations(scope.Bus), Is.EqualTo(2), label + ": two live callback registrations remain");
             bool effectiveDiagnostics = toggle < 0 ? diagnostics : toggle == 1;
             int firstCount = effectiveDiagnostics ? (nested ? 1 : 0) + (throws ? 0 : 1) : 0;
-            int secondCount = effectiveDiagnostics
-                ? (nested ? 1 : 0) + (!remove && !throws ? 1 : 0)
-                : 0;
+            int secondCount = effectiveDiagnostics ? (nested ? 1 : 0) + (!remove && !throws ? 1 : 0) : 0;
             int expectedKeys = (0 < firstCount ? 1 : 0) + (0 < secondCount ? 1 : 0);
-            Assert.That(
-                scope.Token._callCounts.Count,
-                Is.EqualTo(expectedKeys),
-                label + ": exact staged diagnostic key set"
-            );
+            Assert.That(scope.Token._callCounts.Count, Is.EqualTo(expectedKeys), label + ": exact staged diagnostic key set");
             AssertCount(scope.Token, first, firstCount, label);
             AssertCount(scope.Token, remove ? replacement : peer, secondCount, label);
             if (remove)
             {
-                Assert.That(
-                    scope.Token._callCounts.ContainsKey(peer),
-                    Is.False,
-                    label + ": frozen removed callback has no counter"
-                );
+                Assert.That(scope.Token._callCounts.ContainsKey(peer), Is.False, label + ": frozen removed callback has no counter");
             }
             List<MessageRegistrationHandle> expectedHandles = new List<MessageRegistrationHandle>();
             List<long> expectedTraces = new List<long>();
@@ -392,23 +247,11 @@ namespace DxMessaging.Tests.Runtime.Core
                     expectedTraces.Add(outerTrace);
                 }
             }
-            Assert.That(
-                scope.Token._emissionBuffer.Count,
-                Is.EqualTo(expectedHandles.Count),
-                label + ": exact completed callback history"
-            );
+            Assert.That(scope.Token._emissionBuffer.Count, Is.EqualTo(expectedHandles.Count), label + ": exact completed callback history");
             for (int i = 0; i < expectedHandles.Count; ++i)
             {
-                Assert.That(
-                    scope.Token._emissionBuffer[i].registrationHandle,
-                    Is.EqualTo(expectedHandles[i]),
-                    label + ": completed identity order"
-                );
-                Assert.That(
-                    scope.Token._emissionBuffer[i].traceId,
-                    Is.EqualTo(expectedTraces[i]),
-                    label + ": scoped origin order"
-                );
+                Assert.That(scope.Token._emissionBuffer[i].registrationHandle, Is.EqualTo(expectedHandles[i]), label + ": completed identity order");
+                Assert.That(scope.Token._emissionBuffer[i].traceId, Is.EqualTo(expectedTraces[i]), label + ": scoped origin order");
             }
             AssertClean(scope, label);
         }
@@ -423,19 +266,13 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     continue;
                 }
-                yield return new TestCaseData(scenario, cleanup, reuse).SetName(
-                    $"DiagnosticHistoryAfterCleanup_{scenario}_{cleanup}_reuse{reuse}"
-                );
+                yield return new TestCaseData(scenario, cleanup, reuse).SetName($"DiagnosticHistoryAfterCleanup_{scenario}_{cleanup}_reuse{reuse}");
             }
         }
 
         /// <summary>Keeps discarded deliveries out of history after complete token cleanup.</summary>
         [TestCaseSource(nameof(CleanupHistoryCases))]
-        public void CompletedCleanupBoundariesKeepDiagnosticHistoryCurrent(
-            MessageScenario scenario,
-            string cleanup,
-            bool reuse
-        )
+        public void CompletedCleanupBoundariesKeepDiagnosticHistoryCurrent(MessageScenario scenario, string cleanup, bool reuse)
         {
             string label = $"{scenario}, cleanup={cleanup}, reuse={reuse}";
             using Scope scope = new Scope(8, diagnostics: true, label);
@@ -483,17 +320,9 @@ namespace DxMessaging.Tests.Runtime.Core
 
                 Assert.That(token._metadata, Is.Empty, label + ": cleanup clears staging");
                 Assert.That(token._callCounts, Is.Empty, label + ": cleanup clears counts");
-                Assert.That(
-                    token._emissionBuffer.Count,
-                    Is.Zero,
-                    label + ": cleanup leaves empty history before the callback returns"
-                );
+                Assert.That(token._emissionBuffer.Count, Is.Zero, label + ": cleanup leaves empty history before the callback returns");
                 Assert.That(Counters(scope.Bus), Is.All.EqualTo(0), label + ": cleanup drains bus");
-                Assert.That(
-                    token.Enabled,
-                    Is.EqualTo(!explicitCleanup),
-                    label + ": only explicit cleanup disables the token"
-                );
+                Assert.That(token.Enabled, Is.EqualTo(!explicitCleanup), label + ": only explicit cleanup disables the token");
                 if (reuse)
                 {
                     StageReplacement();
@@ -514,46 +343,24 @@ namespace DxMessaging.Tests.Runtime.Core
             token.Enable();
             Emit(scope.Bus, scenario);
 
-            string[] expectedDelivery = frozenPeer
-                ? new[] { "original", "replacement", "frozen peer" }
-                : new[] { "original" };
+            string[] expectedDelivery = frozenPeer ? new[] { "original", "replacement", "frozen peer" } : new[] { "original" };
             Assert.That(delivery, Is.EqualTo(expectedDelivery), label + ": frozen delivery order");
             Assert.That(originalTrace, Is.GreaterThan(0), label + ": original dispatch trace");
             if (frozenPeer)
             {
-                Assert.That(
-                    peerTrace,
-                    Is.EqualTo(originalTrace),
-                    label + ": peer stays on old trace"
-                );
+                Assert.That(peerTrace, Is.EqualTo(originalTrace), label + ": peer stays on old trace");
                 Assert.That(replacement, Is.Not.EqualTo(original), label + ": new handle identity");
             }
-            Assert.That(
-                token._callCounts.ContainsKey(original),
-                Is.EqualTo(cleanup == "None"),
-                label + ": only a still-staged original has a counter"
-            );
-            Assert.That(
-                token._callCounts.ContainsKey(peer),
-                Is.False,
-                label + ": peer has no count"
-            );
+            Assert.That(token._callCounts.ContainsKey(original), Is.EqualTo(cleanup == "None"), label + ": only a still-staged original has a counter");
+            Assert.That(token._callCounts.ContainsKey(peer), Is.False, label + ": peer has no count");
             if (reuse)
             {
-                Assert.That(
-                    token._metadata.ContainsKey(replacement),
-                    Is.True,
-                    label + ": new staging"
-                );
+                Assert.That(token._metadata.ContainsKey(replacement), Is.True, label + ": new staging");
                 AssertCount(token, replacement, explicitCleanup ? 1 : 0, label);
             }
             else
             {
-                Assert.That(
-                    token._metadata.Count,
-                    Is.EqualTo(cleanup == "None" ? 1 : 0),
-                    label + ": exact staging after the original delivery"
-                );
+                Assert.That(token._metadata.Count, Is.EqualTo(cleanup == "None" ? 1 : 0), label + ": exact staging after the original delivery");
             }
 
             List<(MessageRegistrationHandle Handle, long Trace)> expectedHistory = new();
@@ -569,8 +376,7 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 MessageEmissionData record = token._emissionBuffer[i];
                 TestContext.WriteLine(
-                    $"{label}: history[{i}]={record.registrationHandle.Id}, trace={record.traceId}; "
-                        + $"original={original.Id}, peer={peer.Id}, replacement={replacement.Id}"
+                    $"{label}: history[{i}]={record.registrationHandle.Id}, trace={record.traceId}; " + $"original={original.Id}, peer={peer.Id}, replacement={replacement.Id}"
                 );
             }
             AssertHistory(expectedHistory);
@@ -586,18 +392,10 @@ namespace DxMessaging.Tests.Runtime.Core
             }
             Emit(scope.Bus, scenario);
             long latestTrace = replacementTraces[replacementTraces.Count - 1];
-            Assert.That(
-                latestTrace,
-                Is.GreaterThan(originalTrace),
-                label + ": later trace advances"
-            );
+            Assert.That(latestTrace, Is.GreaterThan(originalTrace), label + ": later trace advances");
             if (0 < expectedHistory.Count)
             {
-                Assert.That(
-                    latestTrace,
-                    Is.GreaterThan(expectedHistory[expectedHistory.Count - 1].Trace),
-                    label + ": history retains ascending trace order"
-                );
+                Assert.That(latestTrace, Is.GreaterThan(expectedHistory[expectedHistory.Count - 1].Trace), label + ": history retains ascending trace order");
             }
             expectedHistory.Add((replacement, latestTrace));
             AssertHistory(expectedHistory);
@@ -606,68 +404,34 @@ namespace DxMessaging.Tests.Runtime.Core
 
             void AssertHistory(List<(MessageRegistrationHandle Handle, long Trace)> expected)
             {
-                Assert.That(
-                    token._emissionBuffer.Count,
-                    Is.EqualTo(expected.Count),
-                    label + ": history belongs to the current token lifecycle"
-                );
+                Assert.That(token._emissionBuffer.Count, Is.EqualTo(expected.Count), label + ": history belongs to the current token lifecycle");
                 for (int i = 0; i < expected.Count; ++i)
                 {
                     MessageEmissionData record = token._emissionBuffer[i];
-                    Assert.That(
-                        record.registrationHandle,
-                        Is.EqualTo(expected[i].Handle),
-                        label + ": recorded callback identity"
-                    );
+                    Assert.That(record.registrationHandle, Is.EqualTo(expected[i].Handle), label + ": recorded callback identity");
                     Assert.That(record.traceId, Is.EqualTo(expected[i].Trace), label + ": trace");
                     Assert.That(record.message, Is.TypeOf<ProbeMessage>(), label + ": payload");
                 }
             }
         }
 
-        private static void AssertCount(
-            MessageRegistrationToken token,
-            MessageRegistrationHandle handle,
-            int expected,
-            string label
-        )
+        private static void AssertCount(MessageRegistrationToken token, MessageRegistrationHandle handle, int expected, string label)
         {
-            Assert.That(
-                token._callCounts.TryGetValue(handle, out int actual),
-                Is.EqualTo(0 < expected),
-                label + ": count exists only after successful staged delivery"
-            );
-            Assert.That(
-                actual,
-                Is.EqualTo(expected),
-                label + ": exact successful staged callback count"
-            );
+            Assert.That(token._callCounts.TryGetValue(handle, out int actual), Is.EqualTo(0 < expected), label + ": count exists only after successful staged delivery");
+            Assert.That(actual, Is.EqualTo(expected), label + ": exact successful staged callback count");
         }
 
         private static void AssertClean(Scope scope, string label)
         {
             scope.Token.UnregisterAll();
-            Assert.That(
-                Counters(scope.Bus),
-                Is.All.EqualTo(0),
-                label + ": token-only cleanup clears live registrations"
-            );
+            Assert.That(Counters(scope.Bus), Is.All.EqualTo(0), label + ": token-only cleanup clears live registrations");
             Assert.That(scope.Token.Enabled, Is.False, label + ": cleanup disables token");
             Assert.That(scope.Token._metadata.Count, Is.Zero, label + ": cleanup clears staging");
             Assert.That(scope.Token._callCounts, Is.Empty, label + ": cleanup clears counts");
-            Assert.That(
-                scope.Token._emissionBuffer.Count,
-                Is.Zero,
-                label + ": cleanup clears history"
-            );
+            Assert.That(scope.Token._emissionBuffer.Count, Is.Zero, label + ": cleanup clears history");
         }
 
-        private static MessageRegistrationHandle Register(
-            MessageRegistrationToken token,
-            MessageScenario scenario,
-            int carrier,
-            Action callback
-        )
+        private static MessageRegistrationHandle Register(MessageRegistrationToken token, MessageScenario scenario, int carrier, Action callback)
         {
             Action<ProbeMessage> action = _ => callback();
             MessageHandler.FastHandler<ProbeMessage> fast = (in ProbeMessage _) => callback();
@@ -675,15 +439,9 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 return scenario.Kind switch
                 {
-                    MessageKind.Untargeted => carrier == 0
-                        ? token.RegisterUntargeted(action)
-                        : ScenarioHarness.RegisterUntargeted(scenario, token, fast),
-                    MessageKind.Targeted => carrier == 0
-                        ? token.RegisterTargeted(Context, action)
-                        : ScenarioHarness.RegisterTargeted(scenario, token, Context, fast),
-                    MessageKind.Broadcast => carrier == 0
-                        ? token.RegisterBroadcast(Context, action)
-                        : ScenarioHarness.RegisterBroadcast(scenario, token, Context, fast),
+                    MessageKind.Untargeted => carrier == 0 ? token.RegisterUntargeted(action) : ScenarioHarness.RegisterUntargeted(scenario, token, fast),
+                    MessageKind.Targeted => carrier == 0 ? token.RegisterTargeted(Context, action) : ScenarioHarness.RegisterTargeted(scenario, token, Context, fast),
+                    MessageKind.Broadcast => carrier == 0 ? token.RegisterBroadcast(Context, action) : ScenarioHarness.RegisterBroadcast(scenario, token, Context, fast),
                     _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
                 };
             }
@@ -701,15 +459,9 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 return scenario.Kind switch
                 {
-                    MessageKind.Untargeted => token.RegisterUntargetedInterceptor<ProbeMessage>(
-                        Scalar
-                    ),
-                    MessageKind.Targeted => token.RegisterTargetedInterceptor<ProbeMessage>(
-                        Contextual
-                    ),
-                    MessageKind.Broadcast => token.RegisterBroadcastInterceptor<ProbeMessage>(
-                        Contextual
-                    ),
+                    MessageKind.Untargeted => token.RegisterUntargetedInterceptor<ProbeMessage>(Scalar),
+                    MessageKind.Targeted => token.RegisterTargetedInterceptor<ProbeMessage>(Contextual),
+                    MessageKind.Broadcast => token.RegisterBroadcastInterceptor<ProbeMessage>(Contextual),
                     _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
                 };
             }
@@ -821,10 +573,7 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private readonly struct ProbeMessage
-            : IUntargetedMessage,
-                ITargetedMessage,
-                IBroadcastMessage
+        private readonly struct ProbeMessage : IUntargetedMessage, ITargetedMessage, IBroadcastMessage
         {
             public Type MessageType => typeof(ProbeMessage);
         }

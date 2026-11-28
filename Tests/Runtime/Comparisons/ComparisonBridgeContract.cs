@@ -18,9 +18,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         /// One identity case per roster bridge, named <c>Bridge_&lt;key&gt;</c>; feeds a test
         /// taking <c>(string rosterKey, Func&lt;IMessagingTechBridge&gt; factory)</c>.
         /// </summary>
-        public static IEnumerable<TestCaseData> IdentityCases(
-            IEnumerable<(string key, Func<IMessagingTechBridge> factory)> roster
-        )
+        public static IEnumerable<TestCaseData> IdentityCases(IEnumerable<(string key, Func<IMessagingTechBridge> factory)> roster)
         {
             foreach ((string key, Func<IMessagingTechBridge> factory) in roster)
             {
@@ -33,17 +31,13 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         /// feeds a test taking <c>(string rosterKey, Func&lt;IMessagingTechBridge&gt; factory,
         /// ComparisonScenario scenario)</c>.
         /// </summary>
-        public static IEnumerable<TestCaseData> EmitOnceAccountingCases(
-            IEnumerable<(string key, Func<IMessagingTechBridge> factory)> roster
-        )
+        public static IEnumerable<TestCaseData> EmitOnceAccountingCases(IEnumerable<(string key, Func<IMessagingTechBridge> factory)> roster)
         {
             foreach ((string key, Func<IMessagingTechBridge> factory) in roster)
             {
                 foreach (ComparisonScenario scenario in ComparisonScenarios.All)
                 {
-                    yield return new TestCaseData(key, factory, scenario).SetName(
-                        $"Bridge_{key}_{ComparisonScenarios.Key(scenario)}"
-                    );
+                    yield return new TestCaseData(key, factory, scenario).SetName($"Bridge_{key}_{ComparisonScenarios.Key(scenario)}");
                 }
             }
         }
@@ -60,19 +54,9 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             }
 
             using IMessagingTechBridge bridge = factory();
-            Assert.IsNotEmpty(
-                bridge.TechKey,
-                $"Bridge '{rosterKey}' must declare a non-empty TechKey."
-            );
-            Assert.IsNotEmpty(
-                bridge.TechName,
-                $"Bridge '{rosterKey}' must declare a non-empty TechName."
-            );
-            Assert.AreEqual(
-                rosterKey,
-                bridge.TechKey,
-                $"Roster key '{rosterKey}' must match the bridge's own TechKey '{bridge.TechKey}'."
-            );
+            Assert.IsNotEmpty(bridge.TechKey, $"Bridge '{rosterKey}' must declare a non-empty TechKey.");
+            Assert.IsNotEmpty(bridge.TechName, $"Bridge '{rosterKey}' must declare a non-empty TechName.");
+            Assert.AreEqual(rosterKey, bridge.TechKey, $"Roster key '{rosterKey}' must match the bridge's own TechKey '{bridge.TechKey}'.");
         }
 
         /// <summary>
@@ -87,11 +71,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         /// subscribers advances by 1 whether or not a bus deduped across keys, so keyed dispatch is
         /// out of this check's reach -- by design, since no bridge here dedupes across distinct keys.
         /// </summary>
-        public static void AssertEmitOnceAccounting(
-            string rosterKey,
-            Func<IMessagingTechBridge> factory,
-            ComparisonScenario scenario
-        )
+        public static void AssertEmitOnceAccounting(string rosterKey, Func<IMessagingTechBridge> factory, ComparisonScenario scenario)
         {
             if (factory == null)
             {
@@ -106,25 +86,17 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             }
             if (!bridge.Supports(scenario))
             {
-                Assert.Ignore(
-                    $"{bridge.TechName} does not support '{ComparisonScenarios.DisplayName(scenario)}'."
-                );
+                Assert.Ignore($"{bridge.TechName} does not support '{ComparisonScenarios.DisplayName(scenario)}'.");
                 return;
             }
 
             long fanOut = bridge.InvocationsPerOperation(scenario);
             long expectedFanOut = ComparisonScenarios.ExpectedInvocationsPerOperation(scenario);
-            Assert.Greater(
-                fanOut,
-                0,
-                $"Bridge '{rosterKey}' supports '{scenario}' so it must declare a positive fan-out "
-                    + "(InvocationsPerOperation > 0)."
-            );
+            Assert.Greater(fanOut, 0, $"Bridge '{rosterKey}' supports '{scenario}' so it must declare a positive fan-out " + "(InvocationsPerOperation > 0).");
             Assert.AreEqual(
                 expectedFanOut,
                 fanOut,
-                $"Bridge '{rosterKey}' scenario '{scenario}' declares {fanOut} invocations per operation; "
-                    + $"the canonical workload requires {expectedFanOut}."
+                $"Bridge '{rosterKey}' scenario '{scenario}' declares {fanOut} invocations per operation; " + $"the canonical workload requires {expectedFanOut}."
             );
 
             bridge.Prepare(scenario);
@@ -154,11 +126,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         /// bridge must declare exactly <see cref="ComparisonStructPayload"/>.
         /// This is pure metadata, so it opens no benchmark window.
         /// </summary>
-        public static void AssertStructScenarioPayloadFidelity(
-            string rosterKey,
-            Func<IMessagingTechBridge> factory,
-            ComparisonScenario scenario
-        )
+        public static void AssertStructScenarioPayloadFidelity(string rosterKey, Func<IMessagingTechBridge> factory, ComparisonScenario scenario)
         {
             if (factory == null)
             {
@@ -172,18 +140,12 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             using IMessagingTechBridge bridge = factory();
             if (!bridge.Supports(scenario))
             {
-                Assert.IsNull(
-                    bridge.DispatchedPayloadType(scenario),
-                    $"Bridge '{rosterKey}' does not support the struct scenario, so DispatchedPayloadType must be null."
-                );
+                Assert.IsNull(bridge.DispatchedPayloadType(scenario), $"Bridge '{rosterKey}' does not support the struct scenario, so DispatchedPayloadType must be null.");
                 return;
             }
 
             Type payload = bridge.DispatchedPayloadType(scenario);
-            Assert.IsNotNull(
-                payload,
-                $"Bridge '{rosterKey}' supports the struct scenario; DispatchedPayloadType must be non-null."
-            );
+            Assert.IsNotNull(payload, $"Bridge '{rosterKey}' supports the struct scenario; DispatchedPayloadType must be non-null.");
             Assert.IsTrue(
                 payload.IsValueType && !payload.IsPrimitive && !payload.IsEnum,
                 $"Bridge '{rosterKey}' marks the struct scenario Supported but dispatches '{payload.Name}', "
@@ -193,8 +155,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             Assert.AreEqual(
                 typeof(ComparisonStructPayload),
                 payload,
-                $"Bridge '{rosterKey}' must dispatch the canonical ComparisonStructPayload for the struct scenario; "
-                    + $"it declared '{payload.FullName}'."
+                $"Bridge '{rosterKey}' must dispatch the canonical ComparisonStructPayload for the struct scenario; " + $"it declared '{payload.FullName}'."
             );
         }
     }

@@ -14,11 +14,9 @@ namespace DxMessaging.Tests
 
         internal static IDisposable IsolateIdleSweepRegistryForBenchmark() => new RegistryScope();
 
-        internal static object IdleSweepRegistryIdentityForBenchmark =>
-            ReadField(typeof(MessageBus), "IdleSweepBuses");
+        internal static object IdleSweepRegistryIdentityForBenchmark => ReadField(typeof(MessageBus), "IdleSweepBuses");
 
-        internal static int IdleSweepRegistryCountForBenchmark =>
-            ((ICollection)IdleSweepRegistryIdentityForBenchmark).Count;
+        internal static int IdleSweepRegistryCountForBenchmark => ((ICollection)IdleSweepRegistryIdentityForBenchmark).Count;
 
         internal static IDisposable IsolateContextMapPoolForBenchmark() => new PoolStorageScope();
 
@@ -27,12 +25,7 @@ namespace DxMessaging.Tests
         internal static ContextMapPoolBenchmarkObservation ObserveContextMapPoolForBenchmark()
         {
             object pool = ReadProperty(typeof(MessageBus), "ContextHandlerByTargetDicts");
-            return new ContextMapPoolBenchmarkObservation(
-                pool,
-                ReadField(pool, "_lruQueue"),
-                (bool)ReadProperty(pool, "UseLru"),
-                (int)ReadProperty(pool, "MaxRetained")
-            );
+            return new ContextMapPoolBenchmarkObservation(pool, ReadField(pool, "_lruQueue"), (bool)ReadProperty(pool, "UseLru"), (int)ReadProperty(pool, "MaxRetained"));
         }
 
         internal static void ConfigureContextMapPoolForBenchmark(bool useLru, int maxRetained)
@@ -73,13 +66,10 @@ namespace DxMessaging.Tests
                 {
                     if (_activeRegistryScope != null && _activeRegistryScope._threadId != _threadId)
                     {
-                        throw new InvalidOperationException(
-                            "Nested idle-sweep benchmark scopes must share one owning thread."
-                        );
+                        throw new InvalidOperationException("Nested idle-sweep benchmark scopes must share one owning thread.");
                     }
                     _parent = _activeRegistryScope;
-                    _registry =
-                        (List<WeakReference<MessageBus>>)IdleSweepRegistryIdentityForBenchmark;
+                    _registry = (List<WeakReference<MessageBus>>)IdleSweepRegistryIdentityForBenchmark;
                     _saved = _registry.ToArray();
                     _savedCapacity = _registry.Capacity;
                     _registry.Clear();
@@ -98,9 +88,7 @@ namespace DxMessaging.Tests
                     }
                     if (Environment.CurrentManagedThreadId != _threadId)
                     {
-                        throw new InvalidOperationException(
-                            "Idle-sweep benchmark scopes must be disposed on their owning thread."
-                        );
+                        throw new InvalidOperationException("Idle-sweep benchmark scopes must be disposed on their owning thread.");
                     }
                     _disposed = true;
                     while (_activeRegistryScope != null && _activeRegistryScope._disposed)
@@ -121,21 +109,8 @@ namespace DxMessaging.Tests
         /// </summary>
         private sealed class PoolStorageScope : IDisposable
         {
-            private static readonly string[] StorageFields =
-            {
-                "_lruQueue",
-                "_lruMembership",
-                "_stack",
-                "_stackMembership",
-            };
-            private static readonly string[] CounterFields =
-            {
-                "_hits",
-                "_misses",
-                "_evictions",
-                "_useLru",
-                "_maxRetained",
-            };
+            private static readonly string[] StorageFields = { "_lruQueue", "_lruMembership", "_stack", "_stackMembership" };
+            private static readonly string[] CounterFields = { "_hits", "_misses", "_evictions", "_useLru", "_maxRetained" };
             private readonly int _threadId = Environment.CurrentManagedThreadId;
             private readonly PoolStorageScope _parent;
             private readonly object _pool;
@@ -148,9 +123,7 @@ namespace DxMessaging.Tests
                 {
                     if (_activePoolScope != null && _activePoolScope._threadId != _threadId)
                     {
-                        throw new InvalidOperationException(
-                            "Nested context-map benchmark scopes must share one owning thread."
-                        );
+                        throw new InvalidOperationException("Nested context-map benchmark scopes must share one owning thread.");
                     }
                     _parent = _activePoolScope;
                     _pool = ReadProperty(typeof(MessageBus), "ContextHandlerByTargetDicts");
@@ -166,11 +139,7 @@ namespace DxMessaging.Tests
                     {
                         foreach (string name in StorageFields)
                         {
-                            WriteField(
-                                _pool,
-                                name,
-                                Activator.CreateInstance(_saved[name].GetType())
-                            );
+                            WriteField(_pool, name, Activator.CreateInstance(_saved[name].GetType()));
                         }
                         WriteField(_pool, "_hits", 0L);
                         WriteField(_pool, "_misses", 0L);
@@ -203,15 +172,11 @@ namespace DxMessaging.Tests
                     }
                     if (Environment.CurrentManagedThreadId != _threadId)
                     {
-                        throw new InvalidOperationException(
-                            "Context-map benchmark scopes must be disposed on their owning thread."
-                        );
+                        throw new InvalidOperationException("Context-map benchmark scopes must be disposed on their owning thread.");
                     }
                     if (!ReferenceEquals(_activePoolScope, this))
                     {
-                        throw new InvalidOperationException(
-                            "Context-map benchmark scopes must be disposed in strict LIFO order."
-                        );
+                        throw new InvalidOperationException("Context-map benchmark scopes must be disposed in strict LIFO order.");
                     }
                     bool useLru = (bool)ReadProperty(_pool, "UseLru");
                     int maxRetained = (int)ReadProperty(_pool, "MaxRetained");

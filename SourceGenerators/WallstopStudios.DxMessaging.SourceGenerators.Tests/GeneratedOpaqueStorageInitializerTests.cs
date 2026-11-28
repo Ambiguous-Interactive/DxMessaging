@@ -14,44 +14,21 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Tests;
 [TestFixture]
 internal sealed class GeneratedOpaqueStorageInitializerTests
 {
-    private sealed record Shape(
-        string Members,
-        string First,
-        string DefaultAssignments,
-        string ManualAssignments,
-        bool Event
-    );
+    private sealed record Shape(string Members, string First, string DefaultAssignments, string ManualAssignments, bool Event);
 
     [TestCaseSource(nameof(Cases))]
-    public void GeneratedConstructorsPreserveOpaqueStateAndEvents(
-        string target,
-        string shape,
-        int language,
-        bool userConstructor
-    )
+    public void GeneratedConstructorsPreserveOpaqueStateAndEvents(string target, string shape, int language, bool userConstructor)
     {
         Shape item = GetShape(shape);
-        string context =
-            $"target={target}, shape={shape}, language={language}, userConstructor={userConstructor}";
-        AssertCallerExecutes(
-            CreateCompilation(CreateSource(target, item, userConstructor, manual: true), language),
-            item,
-            "Handwritten oracle: " + context
-        );
-        GeneratorDriver driver = CSharpGeneratorDriver.Create(
-            new ISourceGenerator[] { new DxAutoConstructorGenerator() },
-            parseOptions: ParseOptions(language)
-        );
+        string context = $"target={target}, shape={shape}, language={language}, userConstructor={userConstructor}";
+        AssertCallerExecutes(CreateCompilation(CreateSource(target, item, userConstructor, manual: true), language), item, "Handwritten oracle: " + context);
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(new ISourceGenerator[] { new DxAutoConstructorGenerator() }, parseOptions: ParseOptions(language));
         driver = driver.RunGeneratorsAndUpdateCompilation(
             CreateCompilation(CreateSource(target, item, userConstructor, manual: false), language),
             out Compilation generated,
             out ImmutableArray<Diagnostic> diagnostics
         );
-        Assert.That(
-            driver.GetRunResult().Results.Select(result => result.Exception),
-            Has.All.Null,
-            context
-        );
+        Assert.That(driver.GetRunResult().Results.Select(result => result.Exception), Has.All.Null, context);
         Assert.That(driver.GetRunResult().GeneratedTrees, Has.Length.EqualTo(1), context);
         Assert.That(diagnostics, Is.Empty, context + "\n" + string.Join("\n", diagnostics));
         AssertCallerExecutes(generated, item, "Generated caller: " + context);
@@ -60,9 +37,7 @@ internal sealed class GeneratedOpaqueStorageInitializerTests
     private static IEnumerable<TestCaseData> Cases()
     {
         foreach (string target in new[] { "struct", "readonly struct", "class" })
-        foreach (
-            string shape in new[] { "FieldOpaque", "PropertyOpaque", "OpaqueField", "EventField" }
-        )
+        foreach (string shape in new[] { "FieldOpaque", "PropertyOpaque", "OpaqueField", "EventField" })
         foreach (int language in new[] { 10, 11 })
         foreach (bool userConstructor in new[] { false, true })
         {
@@ -105,31 +80,17 @@ internal sealed class GeneratedOpaqueStorageInitializerTests
                 "_second = 0;",
                 true
             ),
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(shape),
-                shape,
-                "Unknown storage shape"
-            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(shape), shape, "Unknown storage shape"),
         };
 
-    private static string CreateSource(
-        string target,
-        Shape shape,
-        bool userConstructor,
-        bool manual
-    )
+    private static string CreateSource(string target, Shape shape, bool userConstructor, bool manual)
     {
         bool isClass = target == "class";
         string clear = !isClass && shape.First.Length != 0 ? "this = default;" : "";
-        string declaration =
-            target == "readonly struct" ? "readonly partial struct" : "partial " + target;
-        string defaultConstructor = userConstructor
-            ? $"public Packet() {{ {clear} Value = -2; {shape.DefaultAssignments} Probe.DefaultCalls++; }}"
-            : "";
+        string declaration = target == "readonly struct" ? "readonly partial struct" : "partial " + target;
+        string defaultConstructor = userConstructor ? $"public Packet() {{ {clear} Value = -2; {shape.DefaultAssignments} Probe.DefaultCalls++; }}" : "";
         string manualAssignments = isClass ? "" : shape.ManualAssignments;
-        string constructor = manual
-            ? $"public Packet(int Value) {{ {manualAssignments} this.Value = Value; }}"
-            : "";
+        string constructor = manual ? $"public Packet(int Value) {{ {manualAssignments} this.Value = Value; }}" : "";
         string contract = shape.Event ? "" : ": IState";
         return $$"""
             #nullable enable
@@ -164,8 +125,7 @@ internal sealed class GeneratedOpaqueStorageInitializerTests
             """;
     }
 
-    private static CSharpParseOptions ParseOptions(int language) =>
-        new(language == 10 ? LanguageVersion.CSharp10 : LanguageVersion.CSharp11);
+    private static CSharpParseOptions ParseOptions(int language) => new(language == 10 ? LanguageVersion.CSharp10 : LanguageVersion.CSharp11);
 
     private static CSharpCompilation CreateCompilation(string source, int language)
     {
@@ -177,13 +137,7 @@ internal sealed class GeneratedOpaqueStorageInitializerTests
         Assert.That(root, Is.Not.Null, "Find the repository containing the shipped attributes.");
         CSharpParseOptions options = ParseOptions(language);
         List<SyntaxTree> trees = new();
-        foreach (
-            string name in new[]
-            {
-                "DxAutoConstructorAttribute.cs",
-                "DxOptionalParameterAttribute.cs",
-            }
-        )
+        foreach (string name in new[] { "DxAutoConstructorAttribute.cs", "DxOptionalParameterAttribute.cs" })
         {
             string path = Path.Combine(root!.FullName, "Runtime", "Attributes", name);
             trees.Add(CSharpSyntaxTree.ParseText(File.ReadAllText(path), options, path));
@@ -193,10 +147,7 @@ internal sealed class GeneratedOpaqueStorageInitializerTests
             "OpaqueStorageInitializer",
             trees,
             GeneratorTestUtilities.CompilationReferences,
-            new CSharpCompilationOptions(
-                OutputKind.DynamicallyLinkedLibrary,
-                generalDiagnosticOption: ReportDiagnostic.Error
-            )
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, generalDiagnosticOption: ReportDiagnostic.Error)
         );
     }
 
@@ -204,11 +155,7 @@ internal sealed class GeneratedOpaqueStorageInitializerTests
     {
         using MemoryStream image = new();
         Microsoft.CodeAnalysis.Emit.EmitResult emitted = compilation.Emit(image);
-        Assert.That(
-            emitted.Success,
-            Is.True,
-            context + "\n" + string.Join("\n", emitted.Diagnostics)
-        );
+        Assert.That(emitted.Success, Is.True, context + "\n" + string.Join("\n", emitted.Diagnostics));
         image.Position = 0;
         AssemblyLoadContext load = new("OpaqueStorageInitializer", isCollectible: true);
         try
@@ -219,8 +166,7 @@ internal sealed class GeneratedOpaqueStorageInitializerTests
             Assert.That(
                 read!.Invoke(null, null),
                 Is.EqualTo(new[] { 42, shape.Event ? 0 : 17, 0, 1, 0, shape.Event ? 1 : 0 }),
-                context
-                    + ": retain initialized/default values, initializer counts and zero unintended constructor calls"
+                context + ": retain initialized/default values, initializer counts and zero unintended constructor calls"
             );
         }
         finally

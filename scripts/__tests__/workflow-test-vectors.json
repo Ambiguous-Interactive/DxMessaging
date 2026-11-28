@@ -4,20 +4,8 @@
     ["unity-benchmarks.yml", "benchmarks", "Run Unity Test Runner", true],
     ["release.yml", "unity-checks", "Run Unity Test Runner", true],
     ["perf-numbers.yml", "perf-benchmarks", "Run Unity Test Runner", true],
-    [
-      "runner-bootstrap.yml",
-      "shipping-editor-verification",
-      "Run shipping Editor and sample tests",
-      false,
-      600
-    ],
-    [
-      "runner-bootstrap.yml",
-      "pilot-contract-smoke",
-      "Build and run pilot comparison contracts or calibration",
-      false,
-      600
-    ],
+    ["runner-bootstrap.yml", "shipping-editor-verification", "Run shipping Editor and sample tests", false, 600],
+    ["runner-bootstrap.yml", "pilot-contract-smoke", "Build and run pilot comparison contracts or calibration", false, 600],
     ["runner-bootstrap.yml", "native-sdk-floor", "Run Unity native SDK floor contracts", false, 600]
   ],
   "UNITY_EDITOR_PROFILES": {
@@ -28,11 +16,7 @@
     "runner-bootstrap.yml": "StandaloneWindowsIl2Cpp"
   },
   "UNITY_EDITOR_CONSUMERS": [
-    [
-      "unity-tests.yml",
-      "unity-tests",
-      ["run_editmode", "run_playmode", "run_standalone", "run_shipping"]
-    ],
+    ["unity-tests.yml", "unity-tests", ["run_editmode", "run_playmode", "run_standalone", "run_shipping"]],
     ["unity-benchmarks.yml", "benchmarks", ["run_tests"]],
     ["release.yml", "unity-checks", ["run_tests"]],
     ["perf-numbers.yml", "perf-benchmarks", ["run_allocation_contracts", "run_tests"]],
@@ -83,9 +67,7 @@
     ["lint-doc-links", "docs_links"]
   ],
   "CORRECTNESS_CATEGORY_FILTERS": {
-    "editmode": [
-      "!(Stress|Performance|Allocation|MemoryReclaim|UnityRuntime|PerfBench|PerfGate|PerfBaseline)"
-    ],
+    "editmode": ["!(Stress|Performance|Allocation|MemoryReclaim|UnityRuntime|PerfBench|PerfGate|PerfBaseline)"],
     "playmode": ["!(Stress|Performance|Allocation|MemoryReclaim|PerfBench|PerfGate|PerfBaseline)"],
     "standalone": ["!(Stress|Performance|Allocation|MemoryReclaim|PerfBench|PerfGate|PerfBaseline)"]
   },

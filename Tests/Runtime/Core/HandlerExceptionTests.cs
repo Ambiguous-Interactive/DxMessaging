@@ -25,10 +25,8 @@ namespace DxMessaging.Tests.Runtime.Core
         private const string ThrowingHandlerMessage = "DxMessaging-test-handler-throw";
         private const string ThrowingInterceptorMessage = "DxMessaging-test-interceptor-throw";
         private const string ThrowingPostProcessorMessage = "DxMessaging-test-post-processor-throw";
-        private const string ThrowingGlobalAcceptAllMessage =
-            "DxMessaging-test-global-accept-all-throw";
-        private const string ThrowingWithoutContextMessage =
-            "DxMessaging-test-without-context-throw";
+        private const string ThrowingGlobalAcceptAllMessage = "DxMessaging-test-global-accept-all-throw";
+        private const string ThrowingWithoutContextMessage = "DxMessaging-test-without-context-throw";
 
         /// <summary>
         /// Pins that a throwing handler aborts the rest of the current dispatch:
@@ -36,15 +34,9 @@ namespace DxMessaging.Tests.Runtime.Core
         /// subsequent handler scheduled after it is skipped for that emission.
         /// </summary>
         [Test]
-        public void HandlerThrowPreventsSubsequentHandlers(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void HandlerThrowPreventsSubsequentHandlers([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(HandlerThrowPreventsSubsequentHandlers) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(HandlerThrowPreventsSubsequentHandlers) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -54,35 +46,15 @@ namespace DxMessaging.Tests.Runtime.Core
             int secondCount = 0;
             int thirdCount = 0;
 
-            ScenarioCallbacks.RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                priority: 0,
-                onInvoked: () => ++firstCount
-            );
-            ScenarioCallbacks.RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                priority: 0,
-                onInvoked: () =>
-                {
-                    ++secondCount;
-                    throw new InvalidOperationException(ThrowingHandlerMessage);
-                }
-            );
-            ScenarioCallbacks.RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                priority: 0,
-                onInvoked: () => ++thirdCount
-            );
+            ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, priority: 0, onInvoked: () => ++firstCount);
+            ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, priority: 0, onInvoked: () =>
+            {
+                ++secondCount;
+                throw new InvalidOperationException(ThrowingHandlerMessage);
+            });
+            ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, priority: 0, onInvoked: () => ++thirdCount);
 
-            InvalidOperationException captured = Assert.Throws<InvalidOperationException>(() =>
-                ScenarioCallbacks.EmitForKind(scenario, hostId)
-            );
+            InvalidOperationException captured = Assert.Throws<InvalidOperationException>(() => ScenarioCallbacks.EmitForKind(scenario, hostId));
 
             Assert.AreEqual(ThrowingHandlerMessage, captured.Message);
             Assert.AreEqual(1, firstCount, "First handler must run before the throwing handler.");
@@ -92,23 +64,13 @@ namespace DxMessaging.Tests.Runtime.Core
                 siblings scheduled after the throwing one are skipped during this dispatch.
                 If that ever changes (e.g. the bus starts swallow-and-log) update this assertion.
             */
-            Assert.AreEqual(
-                0,
-                thirdCount,
-                "Subsequent handler must not run once propagation begins."
-            );
+            Assert.AreEqual(0, thirdCount, "Subsequent handler must not run once propagation begins.");
         }
 
         [Test]
-        public void HandlerThrowDoesNotCorruptDispatchPool(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void HandlerThrowDoesNotCorruptDispatchPool([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(HandlerThrowDoesNotCorruptDispatchPool) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(HandlerThrowDoesNotCorruptDispatchPool) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -117,44 +79,22 @@ namespace DxMessaging.Tests.Runtime.Core
             int safeCount = 0;
             int throwingCount = 0;
 
-            ScenarioCallbacks.RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                priority: 0,
-                onInvoked: () => ++safeCount
-            );
-            ScenarioCallbacks.RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                priority: 1,
-                onInvoked: () =>
-                {
-                    ++throwingCount;
-                    throw new InvalidOperationException(ThrowingHandlerMessage);
-                }
-            );
+            ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, priority: 0, onInvoked: () => ++safeCount);
+            ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, priority: 1, onInvoked: () =>
+            {
+                ++throwingCount;
+                throw new InvalidOperationException(ThrowingHandlerMessage);
+            });
 
             const int Iterations = 10;
             for (int i = 0; i < Iterations; ++i)
             {
-                InvalidOperationException captured = Assert.Throws<InvalidOperationException>(() =>
-                    ScenarioCallbacks.EmitForKind(scenario, hostId)
-                );
+                InvalidOperationException captured = Assert.Throws<InvalidOperationException>(() => ScenarioCallbacks.EmitForKind(scenario, hostId));
                 Assert.AreEqual(ThrowingHandlerMessage, captured.Message);
             }
 
-            Assert.AreEqual(
-                Iterations,
-                safeCount,
-                "Safe handler must run on every emission even when later handler throws."
-            );
-            Assert.AreEqual(
-                Iterations,
-                throwingCount,
-                "Throwing handler must execute on every emission with no double-fire or skip."
-            );
+            Assert.AreEqual(Iterations, safeCount, "Safe handler must run on every emission even when later handler throws.");
+            Assert.AreEqual(Iterations, throwingCount, "Throwing handler must execute on every emission with no double-fire or skip.");
         }
 
         /// <summary>
@@ -164,15 +104,9 @@ namespace DxMessaging.Tests.Runtime.Core
         /// are later moved into a finally block this contract must be revisited.
         /// </summary>
         [Test]
-        public void HandlerThrowPreventsPostProcessorsFromRunning(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void HandlerThrowPreventsPostProcessorsFromRunning([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(HandlerThrowPreventsPostProcessorsFromRunning) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(HandlerThrowPreventsPostProcessorsFromRunning) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -181,28 +115,14 @@ namespace DxMessaging.Tests.Runtime.Core
             int handlerCount = 0;
             int postProcessorCount = 0;
 
-            ScenarioCallbacks.RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                priority: 0,
-                onInvoked: () =>
-                {
-                    ++handlerCount;
-                    throw new InvalidOperationException(ThrowingHandlerMessage);
-                }
-            );
-            ScenarioCallbacks.RegisterCountingPostProcessor(
-                scenario,
-                token,
-                hostId,
-                priority: 0,
-                onInvoked: () => ++postProcessorCount
-            );
+            ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, priority: 0, onInvoked: () =>
+            {
+                ++handlerCount;
+                throw new InvalidOperationException(ThrowingHandlerMessage);
+            });
+            ScenarioCallbacks.RegisterCountingPostProcessor(scenario, token, hostId, priority: 0, onInvoked: () => ++postProcessorCount);
 
-            InvalidOperationException captured = Assert.Throws<InvalidOperationException>(() =>
-                ScenarioCallbacks.EmitForKind(scenario, hostId)
-            );
+            InvalidOperationException captured = Assert.Throws<InvalidOperationException>(() => ScenarioCallbacks.EmitForKind(scenario, hostId));
 
             Assert.AreEqual(ThrowingHandlerMessage, captured.Message);
             Assert.AreEqual(1, handlerCount, "Throwing handler must execute exactly once.");
@@ -211,55 +131,33 @@ namespace DxMessaging.Tests.Runtime.Core
                 post-processors run. If post-processors are later moved into a finally
                 block the assertion below will need to be inverted.
             */
-            Assert.AreEqual(
-                0,
-                postProcessorCount,
-                "Post-processor must not run when an earlier handler throws."
-            );
+            Assert.AreEqual(0, postProcessorCount, "Post-processor must not run when an earlier handler throws.");
         }
 
         [Test]
-        public void HandlerThrowDoesNotPreventDeregistration(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void HandlerThrowDoesNotPreventDeregistration([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(HandlerThrowDoesNotPreventDeregistration) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(HandlerThrowDoesNotPreventDeregistration) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
             InstanceId hostId = host;
 
             int throwingCount = 0;
-            MessageRegistrationHandle handle = ScenarioCallbacks.RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                priority: 0,
-                onInvoked: () =>
-                {
-                    ++throwingCount;
-                    throw new InvalidOperationException(ThrowingHandlerMessage);
-                }
-            );
+            MessageRegistrationHandle handle = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, priority: 0, onInvoked: () =>
+            {
+                ++throwingCount;
+                throw new InvalidOperationException(ThrowingHandlerMessage);
+            });
 
-            InvalidOperationException firstCaptured = Assert.Throws<InvalidOperationException>(() =>
-                ScenarioCallbacks.EmitForKind(scenario, hostId)
-            );
+            InvalidOperationException firstCaptured = Assert.Throws<InvalidOperationException>(() => ScenarioCallbacks.EmitForKind(scenario, hostId));
             Assert.AreEqual(ThrowingHandlerMessage, firstCaptured.Message);
             Assert.AreEqual(1, throwingCount);
 
             token.RemoveRegistration(handle);
 
             ScenarioCallbacks.EmitForKind(scenario, hostId);
-            Assert.AreEqual(
-                1,
-                throwingCount,
-                "Handler must not fire after RemoveRegistration even if a previous emit threw."
-            );
+            Assert.AreEqual(1, throwingCount, "Handler must not fire after RemoveRegistration even if a previous emit threw.");
 
             /*
                 After deregistering the throwing handler, registering a fresh
@@ -267,39 +165,19 @@ namespace DxMessaging.Tests.Runtime.Core
                 from the previous failure.
             */
             int replacementCount = 0;
-            MessageRegistrationHandle replacementHandle = ScenarioCallbacks.RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                priority: 0,
-                onInvoked: () => ++replacementCount
-            );
+            MessageRegistrationHandle replacementHandle = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, priority: 0, onInvoked: () => ++replacementCount);
 
             ScenarioCallbacks.EmitForKind(scenario, hostId);
-            Assert.AreEqual(
-                1,
-                replacementCount,
-                "Replacement handler registered after the throw must run on the next emission."
-            );
-            Assert.AreEqual(
-                1,
-                throwingCount,
-                "Removed throwing handler must remain inert after replacement is registered."
-            );
+            Assert.AreEqual(1, replacementCount, "Replacement handler registered after the throw must run on the next emission.");
+            Assert.AreEqual(1, throwingCount, "Removed throwing handler must remain inert after replacement is registered.");
 
             token.RemoveRegistration(replacementHandle);
         }
 
         [Test]
-        public void InterceptorThrowFallsBackGracefully(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void InterceptorThrowFallsBackGracefully([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(InterceptorThrowFallsBackGracefully) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(InterceptorThrowFallsBackGracefully) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -308,58 +186,33 @@ namespace DxMessaging.Tests.Runtime.Core
             int handlerCount = 0;
             int interceptorCount = 0;
 
-            ScenarioCallbacks.RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                priority: 0,
-                onInvoked: () => ++handlerCount
-            );
+            ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, priority: 0, onInvoked: () => ++handlerCount);
             RegisterThrowingInterceptor(scenario, token, onInvoked: () => ++interceptorCount);
 
-            InvalidOperationException captured = Assert.Throws<InvalidOperationException>(() =>
-                ScenarioCallbacks.EmitForKind(scenario, hostId)
-            );
+            InvalidOperationException captured = Assert.Throws<InvalidOperationException>(() => ScenarioCallbacks.EmitForKind(scenario, hostId));
 
             Assert.AreEqual(ThrowingInterceptorMessage, captured.Message);
-            Assert.AreEqual(
-                1,
-                interceptorCount,
-                "Interceptor must execute and throw exactly once."
-            );
+            Assert.AreEqual(1, interceptorCount, "Interceptor must execute and throw exactly once.");
             /*
                 Behavior pinned to current implementation: interceptor exceptions
                 propagate before handlers run, so handlers do not see the message.
             */
-            Assert.AreEqual(
-                0,
-                handlerCount,
-                "Handler must not run when an interceptor throws during the same emission."
-            );
+            Assert.AreEqual(0, handlerCount, "Handler must not run when an interceptor throws during the same emission.");
 
             /*
                 Sanity: a follow-up emission after the throwing interceptor still raises again,
                 proving no infinite loop or NullReferenceException is masked behind the throw.
             */
-            InvalidOperationException secondCaptured = Assert.Throws<InvalidOperationException>(
-                () =>
-                    ScenarioCallbacks.EmitForKind(scenario, hostId)
-            );
+            InvalidOperationException secondCaptured = Assert.Throws<InvalidOperationException>(() => ScenarioCallbacks.EmitForKind(scenario, hostId));
             Assert.AreEqual(ThrowingInterceptorMessage, secondCaptured.Message);
             Assert.AreEqual(2, interceptorCount);
             Assert.AreEqual(0, handlerCount);
         }
 
         [Test]
-        public void PostProcessorThrowDoesNotAffectNextEmission(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void PostProcessorThrowDoesNotAffectNextEmission([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(PostProcessorThrowDoesNotAffectNextEmission) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(PostProcessorThrowDoesNotAffectNextEmission) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -369,13 +222,7 @@ namespace DxMessaging.Tests.Runtime.Core
             int throwingPostProcessorCount = 0;
             int trailingPostProcessorCount = 0;
 
-            ScenarioCallbacks.RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                priority: 0,
-                onInvoked: () => ++handlerCount
-            );
+            ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, priority: 0, onInvoked: () => ++handlerCount);
             /*
                 Throwing post-processor at priority 1 (runs after the trailing one
                 at priority 2 if priority is purely lower-first, OR before depending
@@ -383,53 +230,24 @@ namespace DxMessaging.Tests.Runtime.Core
                 first and skips the trailing one, register the throwing PP at the
                 earlier priority and the trailing PP at a later priority.
             */
-            ScenarioCallbacks.RegisterCountingPostProcessor(
-                scenario,
-                token,
-                hostId,
-                priority: 0,
-                onInvoked: () =>
-                {
-                    ++throwingPostProcessorCount;
-                    throw new InvalidOperationException(ThrowingPostProcessorMessage);
-                }
-            );
-            ScenarioCallbacks.RegisterCountingPostProcessor(
-                scenario,
-                token,
-                hostId,
-                priority: 1,
-                onInvoked: () => ++trailingPostProcessorCount
-            );
+            ScenarioCallbacks.RegisterCountingPostProcessor(scenario, token, hostId, priority: 0, onInvoked: () =>
+            {
+                ++throwingPostProcessorCount;
+                throw new InvalidOperationException(ThrowingPostProcessorMessage);
+            });
+            ScenarioCallbacks.RegisterCountingPostProcessor(scenario, token, hostId, priority: 1, onInvoked: () => ++trailingPostProcessorCount);
 
-            InvalidOperationException firstCaptured = Assert.Throws<InvalidOperationException>(() =>
-                ScenarioCallbacks.EmitForKind(scenario, hostId)
-            );
+            InvalidOperationException firstCaptured = Assert.Throws<InvalidOperationException>(() => ScenarioCallbacks.EmitForKind(scenario, hostId));
             Assert.AreEqual(ThrowingPostProcessorMessage, firstCaptured.Message);
             Assert.AreEqual(1, handlerCount, "Handler must run before throwing post-processor.");
             Assert.AreEqual(1, throwingPostProcessorCount);
-            Assert.AreEqual(
-                0,
-                trailingPostProcessorCount,
-                "Trailing post-processor must not run when an earlier post-processor throws."
-            );
+            Assert.AreEqual(0, trailingPostProcessorCount, "Trailing post-processor must not run when an earlier post-processor throws.");
 
-            InvalidOperationException secondCaptured = Assert.Throws<InvalidOperationException>(
-                () =>
-                    ScenarioCallbacks.EmitForKind(scenario, hostId)
-            );
+            InvalidOperationException secondCaptured = Assert.Throws<InvalidOperationException>(() => ScenarioCallbacks.EmitForKind(scenario, hostId));
             Assert.AreEqual(ThrowingPostProcessorMessage, secondCaptured.Message);
-            Assert.AreEqual(
-                2,
-                handlerCount,
-                "Handler must continue to run on subsequent emissions."
-            );
+            Assert.AreEqual(2, handlerCount, "Handler must continue to run on subsequent emissions.");
             Assert.AreEqual(2, throwingPostProcessorCount);
-            Assert.AreEqual(
-                0,
-                trailingPostProcessorCount,
-                "Trailing post-processor must remain skipped on every emission while the earlier one throws."
-            );
+            Assert.AreEqual(0, trailingPostProcessorCount, "Trailing post-processor must remain skipped on every emission while the earlier one throws.");
         }
 
         /// <summary>
@@ -444,15 +262,9 @@ namespace DxMessaging.Tests.Runtime.Core
         /// functional dispatch, which the second half of this test proves.
         /// </summary>
         [Test]
-        public void GlobalAcceptAllThrowAbortsTypedHandlersAndPostProcessors(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void GlobalAcceptAllThrowAbortsTypedHandlersAndPostProcessors([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(GlobalAcceptAllThrowAbortsTypedHandlersAndPostProcessors) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(GlobalAcceptAllThrowAbortsTypedHandlersAndPostProcessors) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -462,50 +274,21 @@ namespace DxMessaging.Tests.Runtime.Core
             int handlerCount = 0;
             int postProcessorCount = 0;
 
-            MessageRegistrationHandle globalHandle = RegisterThrowingGlobalAcceptAll(
-                token,
-                onInvoked: () => ++globalCount
-            );
-            ScenarioCallbacks.RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                priority: 0,
-                onInvoked: () => ++handlerCount
-            );
-            ScenarioCallbacks.RegisterCountingPostProcessor(
-                scenario,
-                token,
-                hostId,
-                priority: 0,
-                onInvoked: () => ++postProcessorCount
-            );
+            MessageRegistrationHandle globalHandle = RegisterThrowingGlobalAcceptAll(token, onInvoked: () => ++globalCount);
+            ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, priority: 0, onInvoked: () => ++handlerCount);
+            ScenarioCallbacks.RegisterCountingPostProcessor(scenario, token, hostId, priority: 0, onInvoked: () => ++postProcessorCount);
 
-            InvalidOperationException captured = Assert.Throws<InvalidOperationException>(() =>
-                ScenarioCallbacks.EmitForKind(scenario, hostId)
-            );
+            InvalidOperationException captured = Assert.Throws<InvalidOperationException>(() => ScenarioCallbacks.EmitForKind(scenario, hostId));
 
             Assert.AreEqual(ThrowingGlobalAcceptAllMessage, captured.Message);
-            Assert.AreEqual(
-                1,
-                globalCount,
-                "Throwing GlobalAcceptAll sink must execute exactly once before propagating."
-            );
+            Assert.AreEqual(1, globalCount, "Throwing GlobalAcceptAll sink must execute exactly once before propagating.");
             /*
                 Pinning current behavior: GlobalAcceptAll sinks dispatch before typed
                 handlers and the bus does not wrap them in try/catch, so a throwing
                 global aborts the typed-handler and post-processor phases entirely.
             */
-            Assert.AreEqual(
-                0,
-                handlerCount,
-                "Typed handler must not run when a GlobalAcceptAll sink throws earlier in the dispatch."
-            );
-            Assert.AreEqual(
-                0,
-                postProcessorCount,
-                "Post-processor must not run when a GlobalAcceptAll sink throws earlier in the dispatch."
-            );
+            Assert.AreEqual(0, handlerCount, "Typed handler must not run when a GlobalAcceptAll sink throws earlier in the dispatch.");
+            Assert.AreEqual(0, postProcessorCount, "Post-processor must not run when a GlobalAcceptAll sink throws earlier in the dispatch.");
 
             /*
                 The throw must not leave the bus corrupted (the dispatch-depth lease is
@@ -515,21 +298,9 @@ namespace DxMessaging.Tests.Runtime.Core
             token.RemoveRegistration(globalHandle);
 
             ScenarioCallbacks.EmitForKind(scenario, hostId);
-            Assert.AreEqual(
-                1,
-                globalCount,
-                "Removed GlobalAcceptAll sink must not run after RemoveRegistration."
-            );
-            Assert.AreEqual(
-                1,
-                handlerCount,
-                "Typed handler must run normally once the throwing GlobalAcceptAll sink is removed."
-            );
-            Assert.AreEqual(
-                1,
-                postProcessorCount,
-                "Post-processor must run normally once the throwing GlobalAcceptAll sink is removed."
-            );
+            Assert.AreEqual(1, globalCount, "Removed GlobalAcceptAll sink must not run after RemoveRegistration.");
+            Assert.AreEqual(1, handlerCount, "Typed handler must run normally once the throwing GlobalAcceptAll sink is removed.");
+            Assert.AreEqual(1, postProcessorCount, "Post-processor must run normally once the throwing GlobalAcceptAll sink is removed.");
         }
 
         /// <summary>
@@ -543,18 +314,10 @@ namespace DxMessaging.Tests.Runtime.Core
         /// </summary>
         [Test]
         public void SpecificHandlerThrowSkipsWithoutContextHandlersForSameEmission(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.KindsWithComponentTarget)
-            )]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.KindsWithComponentTarget))] MessageScenario scenario
         )
         {
-            GameObject host = new(
-                nameof(SpecificHandlerThrowSkipsWithoutContextHandlersForSameEmission)
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(SpecificHandlerThrowSkipsWithoutContextHandlersForSameEmission) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -563,42 +326,23 @@ namespace DxMessaging.Tests.Runtime.Core
             int specificCount = 0;
             int withoutContextCount = 0;
 
-            ScenarioCallbacks.RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                priority: 0,
-                onInvoked: () =>
-                {
-                    ++specificCount;
-                    throw new InvalidOperationException(ThrowingHandlerMessage);
-                }
-            );
-            RegisterWithoutContextCountingHandler(scenario, token, onInvoked: () =>
-                ++withoutContextCount
-            );
+            ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, priority: 0, onInvoked: () =>
+            {
+                ++specificCount;
+                throw new InvalidOperationException(ThrowingHandlerMessage);
+            });
+            RegisterWithoutContextCountingHandler(scenario, token, onInvoked: () => ++withoutContextCount);
 
-            InvalidOperationException captured = Assert.Throws<InvalidOperationException>(() =>
-                ScenarioCallbacks.EmitForKind(scenario, hostId)
-            );
+            InvalidOperationException captured = Assert.Throws<InvalidOperationException>(() => ScenarioCallbacks.EmitForKind(scenario, hostId));
 
             Assert.AreEqual(ThrowingHandlerMessage, captured.Message);
-            Assert.AreEqual(
-                1,
-                specificCount,
-                "Throwing specific handler must execute exactly once before propagating."
-            );
+            Assert.AreEqual(1, specificCount, "Throwing specific handler must execute exactly once before propagating.");
             /*
                 Pinning current behavior: without-context handlers dispatch after the
                 target/source-specific handlers, so the specific handler's exception
                 aborts the without-context phase for this emission.
             */
-            Assert.AreEqual(
-                0,
-                withoutContextCount,
-                "WithoutTargeting/WithoutSource handler must not run when a specific handler "
-                    + "throws earlier in the same emission."
-            );
+            Assert.AreEqual(0, withoutContextCount, "WithoutTargeting/WithoutSource handler must not run when a specific handler " + "throws earlier in the same emission.");
         }
 
         /// <summary>
@@ -611,18 +355,10 @@ namespace DxMessaging.Tests.Runtime.Core
         /// </summary>
         [Test]
         public void WithoutContextHandlerThrowStillRunsSpecificHandlersButSkipsPostProcessors(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.KindsWithComponentTarget)
-            )]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.KindsWithComponentTarget))] MessageScenario scenario
         )
         {
-            GameObject host = new(
-                nameof(WithoutContextHandlerThrowStillRunsSpecificHandlersButSkipsPostProcessors)
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(WithoutContextHandlerThrowStillRunsSpecificHandlersButSkipsPostProcessors) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -633,93 +369,41 @@ namespace DxMessaging.Tests.Runtime.Core
             int specificPostProcessorCount = 0;
             int withoutContextPostProcessorCount = 0;
 
-            ScenarioCallbacks.RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                priority: 0,
-                onInvoked: () => ++specificCount
-            );
+            ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, priority: 0, onInvoked: () => ++specificCount);
             RegisterWithoutContextCountingHandler(scenario, token, onInvoked: () =>
             {
                 ++withoutContextCount;
                 throw new InvalidOperationException(ThrowingWithoutContextMessage);
             });
-            ScenarioCallbacks.RegisterCountingPostProcessor(
-                scenario,
-                token,
-                hostId,
-                priority: 0,
-                onInvoked: () => ++specificPostProcessorCount
-            );
-            RegisterWithoutContextCountingPostProcessor(scenario, token, onInvoked: () =>
-                ++withoutContextPostProcessorCount
-            );
+            ScenarioCallbacks.RegisterCountingPostProcessor(scenario, token, hostId, priority: 0, onInvoked: () => ++specificPostProcessorCount);
+            RegisterWithoutContextCountingPostProcessor(scenario, token, onInvoked: () => ++withoutContextPostProcessorCount);
 
-            InvalidOperationException captured = Assert.Throws<InvalidOperationException>(() =>
-                ScenarioCallbacks.EmitForKind(scenario, hostId)
-            );
+            InvalidOperationException captured = Assert.Throws<InvalidOperationException>(() => ScenarioCallbacks.EmitForKind(scenario, hostId));
 
             Assert.AreEqual(ThrowingWithoutContextMessage, captured.Message);
             Assert.AreEqual(
                 1,
                 specificCount,
-                "Specific handler dispatches before the without-context handler, so it must "
-                    + "already have run when the without-context handler throws."
+                "Specific handler dispatches before the without-context handler, so it must " + "already have run when the without-context handler throws."
             );
-            Assert.AreEqual(
-                1,
-                withoutContextCount,
-                "Throwing without-context handler must execute exactly once before propagating."
-            );
+            Assert.AreEqual(1, withoutContextCount, "Throwing without-context handler must execute exactly once before propagating.");
             /*
                 Pinning current behavior: post-processors (specific and without-context)
                 dispatch after every handler phase, so the without-context throw skips
                 both post-processor sinks for this emission.
             */
-            Assert.AreEqual(
-                0,
-                specificPostProcessorCount,
-                "Specific post-processor must not run when a without-context handler throws."
-            );
-            Assert.AreEqual(
-                0,
-                withoutContextPostProcessorCount,
-                "Without-context post-processor must not run when a without-context handler throws."
-            );
+            Assert.AreEqual(0, specificPostProcessorCount, "Specific post-processor must not run when a without-context handler throws.");
+            Assert.AreEqual(0, withoutContextPostProcessorCount, "Without-context post-processor must not run when a without-context handler throws.");
 
-            InvalidOperationException secondCaptured = Assert.Throws<InvalidOperationException>(
-                () =>
-                    ScenarioCallbacks.EmitForKind(scenario, hostId)
-            );
+            InvalidOperationException secondCaptured = Assert.Throws<InvalidOperationException>(() => ScenarioCallbacks.EmitForKind(scenario, hostId));
             Assert.AreEqual(ThrowingWithoutContextMessage, secondCaptured.Message);
-            Assert.AreEqual(
-                2,
-                specificCount,
-                "Specific handler must continue to run on subsequent emissions."
-            );
-            Assert.AreEqual(
-                2,
-                withoutContextCount,
-                "Throwing without-context handler must execute on every emission with no "
-                    + "double-fire or skip."
-            );
-            Assert.AreEqual(
-                0,
-                specificPostProcessorCount,
-                "Specific post-processor must remain skipped while the without-context handler throws."
-            );
-            Assert.AreEqual(
-                0,
-                withoutContextPostProcessorCount,
-                "Without-context post-processor must remain skipped while the without-context handler throws."
-            );
+            Assert.AreEqual(2, specificCount, "Specific handler must continue to run on subsequent emissions.");
+            Assert.AreEqual(2, withoutContextCount, "Throwing without-context handler must execute on every emission with no " + "double-fire or skip.");
+            Assert.AreEqual(0, specificPostProcessorCount, "Specific post-processor must remain skipped while the without-context handler throws.");
+            Assert.AreEqual(0, withoutContextPostProcessorCount, "Without-context post-processor must remain skipped while the without-context handler throws.");
         }
 
-        private static MessageRegistrationHandle RegisterThrowingGlobalAcceptAll(
-            MessageRegistrationToken token,
-            Action onInvoked
-        )
+        private static MessageRegistrationHandle RegisterThrowingGlobalAcceptAll(MessageRegistrationToken token, Action onInvoked)
         {
             return token.RegisterGlobalAcceptAll(
                 (IUntargetedMessage _) =>
@@ -740,64 +424,40 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
-        private static MessageRegistrationHandle RegisterWithoutContextCountingHandler(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            Action onInvoked
-        )
+        private static MessageRegistrationHandle RegisterWithoutContextCountingHandler(MessageScenario scenario, MessageRegistrationToken token, Action onInvoked)
         {
             switch (scenario.Kind)
             {
                 case MessageKind.Targeted:
                 {
-                    return token.RegisterTargetedWithoutTargeting(
-                        (in InstanceId _, in SimpleTargetedMessage _) => onInvoked()
-                    );
+                    return token.RegisterTargetedWithoutTargeting((in InstanceId _, in SimpleTargetedMessage _) => onInvoked());
                 }
                 case MessageKind.Broadcast:
                 {
-                    return token.RegisterBroadcastWithoutSource(
-                        (in InstanceId _, in SimpleBroadcastMessage _) => onInvoked()
-                    );
+                    return token.RegisterBroadcastWithoutSource((in InstanceId _, in SimpleBroadcastMessage _) => onInvoked());
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Without-context registration requires Targeted or Broadcast."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Without-context registration requires Targeted or Broadcast.");
                 }
             }
         }
 
-        private static MessageRegistrationHandle RegisterWithoutContextCountingPostProcessor(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            Action onInvoked
-        )
+        private static MessageRegistrationHandle RegisterWithoutContextCountingPostProcessor(MessageScenario scenario, MessageRegistrationToken token, Action onInvoked)
         {
             switch (scenario.Kind)
             {
                 case MessageKind.Targeted:
                 {
-                    return token.RegisterTargetedWithoutTargetingPostProcessor(
-                        (in InstanceId _, in SimpleTargetedMessage _) => onInvoked()
-                    );
+                    return token.RegisterTargetedWithoutTargetingPostProcessor((in InstanceId _, in SimpleTargetedMessage _) => onInvoked());
                 }
                 case MessageKind.Broadcast:
                 {
-                    return token.RegisterBroadcastWithoutSourcePostProcessor(
-                        (in InstanceId _, in SimpleBroadcastMessage _) => onInvoked()
-                    );
+                    return token.RegisterBroadcastWithoutSourcePostProcessor((in InstanceId _, in SimpleBroadcastMessage _) => onInvoked());
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Without-context registration requires Targeted or Broadcast."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Without-context registration requires Targeted or Broadcast.");
                 }
             }
         }
@@ -807,11 +467,7 @@ namespace DxMessaging.Tests.Runtime.Core
         /// throws <see cref="InvalidOperationException"/> with
         /// <see cref="ThrowingInterceptorMessage"/>.
         /// </summary>
-        private static MessageRegistrationHandle RegisterThrowingInterceptor(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            Action onInvoked
-        )
+        private static MessageRegistrationHandle RegisterThrowingInterceptor(MessageScenario scenario, MessageRegistrationToken token, Action onInvoked)
         {
             return ScenarioCallbacks.RegisterCountingInterceptor(
                 scenario,

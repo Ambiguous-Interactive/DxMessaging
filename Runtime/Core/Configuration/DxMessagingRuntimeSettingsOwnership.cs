@@ -5,8 +5,7 @@ namespace DxMessaging.Core.Configuration
     using UnityEngine;
 
     /// <summary>Keeps exact Editor fallback ownership across managed assembly reloads.</summary>
-    internal sealed class DxMessagingRuntimeSettingsOwnership
-        : ScriptableSingleton<DxMessagingRuntimeSettingsOwnership>
+    internal sealed class DxMessagingRuntimeSettingsOwnership : ScriptableSingleton<DxMessagingRuntimeSettingsOwnership>
     {
         [SerializeField]
         private DxMessagingRuntimeSettings _fallback;

@@ -12,10 +12,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void EmitAndEmitAtTargeting()
         {
-            GameObject go = new(
-                nameof(EmitAndEmitAtTargeting),
-                typeof(StringMessageAwareComponent)
-            );
+            GameObject go = new(nameof(EmitAndEmitAtTargeting), typeof(StringMessageAwareComponent));
             _spawned.Add(go);
             StringMessageAwareComponent comp = go.GetComponent<StringMessageAwareComponent>();
 
@@ -45,10 +42,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void EmitFromBroadcastSource()
         {
-            GameObject go = new(
-                nameof(EmitFromBroadcastSource),
-                typeof(StringMessageAwareComponent)
-            );
+            GameObject go = new(nameof(EmitFromBroadcastSource), typeof(StringMessageAwareComponent));
             _spawned.Add(go);
             StringMessageAwareComponent comp = go.GetComponent<StringMessageAwareComponent>();
 
@@ -73,10 +67,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void EmitUntargetedGlobalString()
         {
-            GameObject go = new(
-                nameof(EmitUntargetedGlobalString),
-                typeof(StringMessageAwareComponent)
-            );
+            GameObject go = new(nameof(EmitUntargetedGlobalString), typeof(StringMessageAwareComponent));
             _spawned.Add(go);
             StringMessageAwareComponent comp = go.GetComponent<StringMessageAwareComponent>();
 

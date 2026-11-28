@@ -17,11 +17,7 @@ namespace DxMessaging.Tests.Editor
         public void ReferenceRecordConstructorAssignsItsField()
         {
             ConstructorRecord message = new(7);
-            Assert.That(
-                message.Value,
-                Is.EqualTo(7),
-                "Generated record constructor lost its value."
-            );
+            Assert.That(message.Value, Is.EqualTo(7), "Generated record constructor lost its value.");
         }
 
         [TestCase(0)]
@@ -36,27 +32,15 @@ namespace DxMessaging.Tests.Editor
                 2 => new BroadcastRecord(),
                 _ => throw new ArgumentOutOfRangeException(nameof(kind)),
             };
-            Assert.That(
-                message.MessageType,
-                Is.EqualTo(message.GetType()),
-                $"kind={kind}: generated record message identity differs from its concrete type."
-            );
+            Assert.That(message.MessageType, Is.EqualTo(message.GetType()), $"kind={kind}: generated record message identity differs from its concrete type.");
         }
 
         [Test]
         public void StructInsideRecordHasItsConstructorAndMessageIdentity()
         {
             RecordContainer.NestedMessage message = new(11);
-            Assert.That(
-                message.Value,
-                Is.EqualTo(11),
-                "Nested generated constructor lost its value."
-            );
-            Assert.That(
-                ((IMessage)message).MessageType,
-                Is.EqualTo(typeof(RecordContainer.NestedMessage)),
-                "Nested generated message identity differs from its concrete type."
-            );
+            Assert.That(message.Value, Is.EqualTo(11), "Nested generated constructor lost its value.");
+            Assert.That(((IMessage)message).MessageType, Is.EqualTo(typeof(RecordContainer.NestedMessage)), "Nested generated message identity differs from its concrete type.");
         }
 
         [DxAutoConstructor]

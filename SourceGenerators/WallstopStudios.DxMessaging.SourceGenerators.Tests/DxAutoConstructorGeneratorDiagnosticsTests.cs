@@ -100,92 +100,56 @@ public readonly partial struct InvalidOptional
     [Test]
     public void OptionalParameterIntDefaultEmitsConstructorWithLiteral()
     {
-        AssertOptionalProducesDefault(
-            fieldType: "int",
-            attributeArg: "42",
-            expectedDefaultLiteral: "42"
-        );
+        AssertOptionalProducesDefault(fieldType: "int", attributeArg: "42", expectedDefaultLiteral: "42");
     }
 
     [Test]
     public void OptionalParameterLongDefaultEmitsConstructorWithLiteral()
     {
         // Long literals must be suffixed with 'L' to disambiguate from int.
-        AssertOptionalProducesDefault(
-            fieldType: "long",
-            attributeArg: "9000000000L",
-            expectedDefaultLiteral: "9000000000L"
-        );
+        AssertOptionalProducesDefault(fieldType: "long", attributeArg: "9000000000L", expectedDefaultLiteral: "9000000000L");
     }
 
     [Test]
     public void OptionalParameterFloatDefaultEmitsConstructorWithLiteral()
     {
-        AssertOptionalProducesDefault(
-            fieldType: "float",
-            attributeArg: "3.14f",
-            expectedDefaultLiteral: "3.14f"
-        );
+        AssertOptionalProducesDefault(fieldType: "float", attributeArg: "3.14f", expectedDefaultLiteral: "3.14f");
     }
 
     [Test]
     public void OptionalParameterDoubleDefaultEmitsConstructorWithLiteral()
     {
-        AssertOptionalProducesDefault(
-            fieldType: "double",
-            attributeArg: "2.718",
-            expectedDefaultLiteral: "2.718"
-        );
+        AssertOptionalProducesDefault(fieldType: "double", attributeArg: "2.718", expectedDefaultLiteral: "2.718");
     }
 
     [Test]
     public void OptionalParameterBoolDefaultEmitsConstructorWithLiteral()
     {
-        AssertOptionalProducesDefault(
-            fieldType: "bool",
-            attributeArg: "true",
-            expectedDefaultLiteral: "true"
-        );
+        AssertOptionalProducesDefault(fieldType: "bool", attributeArg: "true", expectedDefaultLiteral: "true");
     }
 
     [Test]
     public void OptionalParameterStringDefaultEmitsConstructorWithLiteral()
     {
-        AssertOptionalProducesDefault(
-            fieldType: "string",
-            attributeArg: "\"hello\"",
-            expectedDefaultLiteral: "\"hello\""
-        );
+        AssertOptionalProducesDefault(fieldType: "string", attributeArg: "\"hello\"", expectedDefaultLiteral: "\"hello\"");
     }
 
     [Test]
     public void OptionalParameterCharDefaultEmitsConstructorWithLiteral()
     {
-        AssertOptionalProducesDefault(
-            fieldType: "char",
-            attributeArg: "'x'",
-            expectedDefaultLiteral: "'x'"
-        );
+        AssertOptionalProducesDefault(fieldType: "char", attributeArg: "'x'", expectedDefaultLiteral: "'x'");
     }
 
     [Test]
     public void OptionalParameterByteDefaultEmitsConstructorWithLiteral()
     {
-        AssertOptionalProducesDefault(
-            fieldType: "byte",
-            attributeArg: "(byte)7",
-            expectedDefaultLiteral: "7"
-        );
+        AssertOptionalProducesDefault(fieldType: "byte", attributeArg: "(byte)7", expectedDefaultLiteral: "7");
     }
 
     [Test]
     public void OptionalParameterShortDefaultEmitsConstructorWithLiteral()
     {
-        AssertOptionalProducesDefault(
-            fieldType: "short",
-            attributeArg: "(short)11",
-            expectedDefaultLiteral: "11"
-        );
+        AssertOptionalProducesDefault(fieldType: "short", attributeArg: "(short)11", expectedDefaultLiteral: "11");
     }
 
     /*
@@ -218,16 +182,8 @@ public readonly partial struct M
         GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxAutoConstructor(source);
         Diagnostic[] diagnostics = result.Results[0].Diagnostics.ToArray();
 
-        Assert.That(
-            diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error),
-            Is.Empty,
-            "string? with Expression=\"null\" must not emit DXMSG005."
-        );
-        AssertGeneratedSourceContains(
-            result,
-            "= null",
-            "Generated constructor should default the parameter to `null`."
-        );
+        Assert.That(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error), Is.Empty, "string? with Expression=\"null\" must not emit DXMSG005.");
+        AssertGeneratedSourceContains(result, "= null", "Generated constructor should default the parameter to `null`.");
     }
 
     [Test]
@@ -260,16 +216,8 @@ public readonly partial struct M
         GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxAutoConstructor(source);
         Diagnostic[] diagnostics = result.Results[0].Diagnostics.ToArray();
 
-        Assert.That(
-            diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error),
-            Is.Empty,
-            "Enum literal via Expression must not emit DXMSG005."
-        );
-        AssertGeneratedSourceContains(
-            result,
-            "= global::Sample.MyEnum.Other",
-            "Generated constructor should qualify the bound enum default."
-        );
+        Assert.That(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error), Is.Empty, "Enum literal via Expression must not emit DXMSG005.");
+        AssertGeneratedSourceContains(result, "= global::Sample.MyEnum.Other", "Generated constructor should qualify the bound enum default.");
     }
 
     [Test]
@@ -301,16 +249,8 @@ public readonly partial struct M
         GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxAutoConstructor(source);
         Diagnostic[] diagnostics = result.Results[0].Diagnostics.ToArray();
 
-        Assert.That(
-            diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error),
-            Is.Empty,
-            "default(MyStruct) via Expression must not emit DXMSG005."
-        );
-        AssertGeneratedSourceContains(
-            result,
-            "= default(global::Sample.MyStruct)",
-            "Generated constructor should qualify the bound default type."
-        );
+        Assert.That(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error), Is.Empty, "default(MyStruct) via Expression must not emit DXMSG005.");
+        AssertGeneratedSourceContains(result, "= default(global::Sample.MyStruct)", "Generated constructor should qualify the bound default type.");
     }
 
     [Test]
@@ -336,16 +276,8 @@ public readonly partial struct M
         GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxAutoConstructor(source);
         Diagnostic[] diagnostics = result.Results[0].Diagnostics.ToArray();
 
-        Assert.That(
-            diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error),
-            Is.Empty,
-            "Bare `default` Expression must not emit DXMSG005."
-        );
-        AssertGeneratedSourceContains(
-            result,
-            "= default",
-            "Generated constructor should default the parameter to `default`."
-        );
+        Assert.That(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error), Is.Empty, "Bare `default` Expression must not emit DXMSG005.");
+        AssertGeneratedSourceContains(result, "= default", "Generated constructor should default the parameter to `default`.");
     }
 
     /*
@@ -386,8 +318,7 @@ public readonly partial struct M
         Assert.That(
             diagnostics.Where(d => d.Id == "DXMSG005"),
             Is.Empty,
-            "Pin: DXMSG005 currently does not fire for non-constant expressions whose bound type "
-                + "matches the field type. Constant-ness is enforced downstream by CS1736."
+            "Pin: DXMSG005 currently does not fire for non-constant expressions whose bound type " + "matches the field type. Constant-ness is enforced downstream by CS1736."
         );
     }
 
@@ -414,11 +345,7 @@ public readonly partial struct M
         GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxAutoConstructor(source);
         Diagnostic[] diagnostics = result.Results[0].Diagnostics.ToArray();
 
-        Assert.That(
-            diagnostics,
-            Has.Some.Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG005"),
-            "DXMSG005 should fire for unparseable Expression strings."
-        );
+        Assert.That(diagnostics, Has.Some.Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG005"), "DXMSG005 should fire for unparseable Expression strings.");
     }
 
     [Test]
@@ -501,16 +428,8 @@ public readonly partial struct M
         GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxAutoConstructor(source);
         Diagnostic[] diagnostics = result.Results[0].Diagnostics.ToArray();
 
-        Assert.That(
-            diagnostics.Where(d => d.Id == "DXMSG005"),
-            Is.Empty,
-            "DXMSG005 should not fire for compatible primitive constants."
-        );
-        AssertGeneratedSourceContains(
-            result,
-            "= 7",
-            "Generated constructor should default the parameter to `7`."
-        );
+        Assert.That(diagnostics.Where(d => d.Id == "DXMSG005"), Is.Empty, "DXMSG005 should not fire for compatible primitive constants.");
+        AssertGeneratedSourceContains(result, "= 7", "Generated constructor should default the parameter to `7`.");
     }
 
     /// <summary>
@@ -529,18 +448,10 @@ public readonly partial struct M
     [TestCase("Sample", "@class", "@event<@for>", "@while", "@switch")]
     [TestCase("@namespace", "Message", "", "", "value")]
     [TestCase("Sample", "\u03a9", "\u0394", "\u03a3", "\u03c6")]
-    public void GeneratedDeclarationsPreserveEscapedIdentifiers(
-        string namespaceName,
-        string typeName,
-        string containerName,
-        string typeParameter,
-        string fieldName
-    )
+    public void GeneratedDeclarationsPreserveEscapedIdentifiers(string namespaceName, string typeName, string containerName, string typeParameter, string fieldName)
     {
         string typeParameters = string.IsNullOrEmpty(typeParameter) ? "" : $"<{typeParameter}>";
-        string containerOpen = string.IsNullOrEmpty(containerName)
-            ? ""
-            : $"public partial class {containerName} {{";
+        string containerOpen = string.IsNullOrEmpty(containerName) ? "" : $"public partial class {containerName} {{";
         string containerClose = string.IsNullOrEmpty(containerName) ? "" : "}";
         string source = $$"""
 using DxMessaging.Core.Attributes;
@@ -562,16 +473,10 @@ public readonly partial struct {{typeName}}{{typeParameters}}
             result.Results.SelectMany(static run => run.GeneratedSources),
             Is.Not.Empty,
             "A valid attributed declaration must produce source. Diagnostics:\n"
-                + string.Join(
-                    "\n",
-                    result.Diagnostics.Select(static diagnostic => diagnostic.ToString())
-                )
+                + string.Join("\n", result.Diagnostics.Select(static diagnostic => diagnostic.ToString()))
                 + string.Join("\n", result.Results.Select(static run => run.Exception?.ToString()))
         );
-        Diagnostic[] errors = GeneratorTestUtilities
-            .CompileGeneratedOutput(source, result)
-            .Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
-            .ToArray();
+        Diagnostic[] errors = GeneratorTestUtilities.CompileGeneratedOutput(source, result).Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error).ToArray();
         Assert.That(
             errors,
             Is.Empty,
@@ -595,12 +500,7 @@ public readonly partial struct {{typeName}}{{typeParameters}}
     [TestCase("T", "Outer_T_", true, true)]
     [TestCase("T", "DifferentPacket", false, false)]
     [TestCase("T", "DifferentOuter", true, true)]
-    public void DistinctTypeNamesKeepGeneratedFilesSeparate(
-        string typeParameter,
-        string nongenericName,
-        bool nested,
-        bool reversed
-    )
+    public void DistinctTypeNamesKeepGeneratedFilesSeparate(string typeParameter, string nongenericName, bool nested, bool reversed)
     {
         string parameters = nested ? "" : $"<{typeParameter}>";
         string first = $$"""
@@ -631,16 +531,9 @@ public readonly partial struct {{secondType}}
         Assert.That(
             result.Results.Select(static run => run.Exception),
             Has.All.Null,
-            "Distinct attributed types must not abort generation. Diagnostics:\n"
-                + string.Join(
-                    "\n",
-                    result.Diagnostics.Select(static diagnostic => diagnostic.ToString())
-                )
+            "Distinct attributed types must not abort generation. Diagnostics:\n" + string.Join("\n", result.Diagnostics.Select(static diagnostic => diagnostic.ToString()))
         );
-        Diagnostic[] errors = GeneratorTestUtilities
-            .CompileGeneratedOutput(source, result)
-            .Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
-            .ToArray();
+        Diagnostic[] errors = GeneratorTestUtilities.CompileGeneratedOutput(source, result).Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error).ToArray();
         Assert.That(
             errors,
             Is.Empty,
@@ -660,11 +553,7 @@ public readonly partial struct {{secondType}}
     /// default attribute argument, then asserts no DXMSG005 fires AND the expected literal lands
     /// in the generated constructor signature.
     /// </summary>
-    private static void AssertOptionalProducesDefault(
-        string fieldType,
-        string attributeArg,
-        string expectedDefaultLiteral
-    )
+    private static void AssertOptionalProducesDefault(string fieldType, string attributeArg, string expectedDefaultLiteral)
     {
         string source = $$"""
 using DxMessaging.Core.Attributes;
@@ -682,28 +571,13 @@ public readonly partial struct M
         GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxAutoConstructor(source);
         Diagnostic[] diagnostics = result.Results[0].Diagnostics.ToArray();
 
-        Assert.That(
-            diagnostics.Where(d => d.Id == "DXMSG005"),
-            Is.Empty,
-            $"DXMSG005 must not fire for {fieldType} with attribute arg {attributeArg}."
-        );
-        AssertGeneratedSourceContains(
-            result,
-            $"= {expectedDefaultLiteral}",
-            $"Generated constructor should default the {fieldType} parameter to {expectedDefaultLiteral}."
-        );
+        Assert.That(diagnostics.Where(d => d.Id == "DXMSG005"), Is.Empty, $"DXMSG005 must not fire for {fieldType} with attribute arg {attributeArg}.");
+        AssertGeneratedSourceContains(result, $"= {expectedDefaultLiteral}", $"Generated constructor should default the {fieldType} parameter to {expectedDefaultLiteral}.");
     }
 
-    private static void AssertGeneratedSourceContains(
-        GeneratorDriverRunResult result,
-        string fragment,
-        string failureMessage
-    )
+    private static void AssertGeneratedSourceContains(GeneratorDriverRunResult result, string fragment, string failureMessage)
     {
-        string joined = string.Join(
-            "\n",
-            result.Results.SelectMany(r => r.GeneratedSources).Select(g => g.SourceText.ToString())
-        );
+        string joined = string.Join("\n", result.Results.SelectMany(r => r.GeneratedSources).Select(g => g.SourceText.ToString()));
         Assert.That(joined, Does.Contain(fragment), failureMessage);
     }
 }

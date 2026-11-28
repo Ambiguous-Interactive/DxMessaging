@@ -35,8 +35,7 @@ namespace DxMessaging.Editor
             + "managed stack on every diagnostic record, which is why it is opt-in. Turning it on "
             + "applies to emissions from here on; rows already recorded stay empty.";
 
-        internal const string SettingsPathHint =
-            "Project Settings > Wallstop Studios > DxMessaging > Capture Emission Stack Traces";
+        internal const string SettingsPathHint = "Project Settings > Wallstop Studios > DxMessaging > Capture Emission Stack Traces";
 
         /// <summary>
         /// Whether emission-site capture is currently recording call sites.
@@ -74,10 +73,7 @@ namespace DxMessaging.Editor
                 }
                 catch (Exception ex)
                 {
-                    DxMessagingEditorLog.LogWarning(
-                        "Failed to persist the emission stack-trace capture setting.",
-                        ex
-                    );
+                    DxMessagingEditorLog.LogWarning("Failed to persist the emission stack-trace capture setting.", ex);
                 }
             });
         }
@@ -95,9 +91,7 @@ namespace DxMessaging.Editor
                 return stackTrace;
             }
 
-            return CaptureEnabled
-                ? string.Empty
-                : $"{DisabledExplanation} Turn it on at {SettingsPathHint}.";
+            return CaptureEnabled ? string.Empty : $"{DisabledExplanation} Turn it on at {SettingsPathHint}.";
         }
 
         /// <summary>

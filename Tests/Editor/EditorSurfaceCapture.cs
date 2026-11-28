@@ -43,16 +43,14 @@ namespace DxMessaging.Tests.Editor
         /// </summary>
         private const int PngColorTypeOffset = 25;
 
-        private const BindingFlags InheritedInstanceMembers =
-            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+        private const BindingFlags InheritedInstanceMembers = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
 
         /// <summary>
         /// Offscreen rendering needs a real graphics device. CI runs Unity with
         /// <c>-nographics</c>, so capture tests skip there rather than assert against a device
         /// that cannot rasterize anything.
         /// </summary>
-        internal static bool IsSupported =>
-            SystemInfo.graphicsDeviceType != GraphicsDeviceType.Null;
+        internal static bool IsSupported => SystemInfo.graphicsDeviceType != GraphicsDeviceType.Null;
 
         /// <summary>
         /// Renders <paramref name="content"/> onto a <paramref name="canvasWidth"/> x
@@ -64,12 +62,7 @@ namespace DxMessaging.Tests.Editor
         /// Every global the render touches -- the active render target and <c>GL.sRGBWrite</c> --
         /// is restored, and every object it creates is destroyed, including on the failure path.
         /// </summary>
-        internal static EditorSurfaceCaptureResult Capture(
-            VisualElement content,
-            int canvasWidth,
-            int canvasHeight,
-            string outputPath
-        )
+        internal static EditorSurfaceCaptureResult Capture(VisualElement content, int canvasWidth, int canvasHeight, string outputPath)
         {
             return CaptureOnHost(content, canvasWidth, canvasHeight, outputPath, null);
         }
@@ -123,12 +116,7 @@ namespace DxMessaging.Tests.Editor
             }
         }
 
-        private static void ValidateCaptureArguments(
-            VisualElement content,
-            int canvasWidth,
-            int canvasHeight,
-            string outputPath
-        )
+        private static void ValidateCaptureArguments(VisualElement content, int canvasWidth, int canvasHeight, string outputPath)
         {
             if (content == null)
             {
@@ -137,10 +125,7 @@ namespace DxMessaging.Tests.Editor
 
             if (canvasWidth <= 0 || canvasHeight <= 0)
             {
-                throw new ArgumentOutOfRangeException(
-                    nameof(canvasWidth),
-                    $"Capture canvas must be positive, got {canvasWidth}x{canvasHeight}."
-                );
+                throw new ArgumentOutOfRangeException(nameof(canvasWidth), $"Capture canvas must be positive, got {canvasWidth}x{canvasHeight}.");
             }
 
             if (string.IsNullOrWhiteSpace(outputPath))
@@ -150,17 +135,11 @@ namespace DxMessaging.Tests.Editor
 
             if (!IsSupported)
             {
-                throw new InvalidOperationException(
-                    "EditorSurfaceCapture needs a graphics device; this editor is running with -nographics."
-                );
+                throw new InvalidOperationException("EditorSurfaceCapture needs a graphics device; this editor is running with -nographics.");
             }
         }
 
-        private static EditorWindow CreateCaptureHost(
-            VisualElement content,
-            int canvasWidth,
-            int canvasHeight
-        )
+        private static EditorWindow CreateCaptureHost(VisualElement content, int canvasWidth, int canvasHeight)
         {
             EditorWindow host = EditorWindowTestUtility.CreateWindow();
             try
@@ -184,9 +163,7 @@ namespace DxMessaging.Tests.Editor
                 IPanel panel = root.panel;
                 if (panel == null)
                 {
-                    throw new InvalidOperationException(
-                        "The capture host window produced no panel to render."
-                    );
+                    throw new InvalidOperationException("The capture host window produced no panel to render.");
                 }
 
                 return host;
@@ -198,13 +175,7 @@ namespace DxMessaging.Tests.Editor
             }
         }
 
-        private static EditorSurfaceCaptureResult CaptureOnHost(
-            VisualElement content,
-            int canvasWidth,
-            int canvasHeight,
-            string outputPath,
-            EditorWindow preparedHost
-        )
+        private static EditorSurfaceCaptureResult CaptureOnHost(VisualElement content, int canvasWidth, int canvasHeight, string outputPath, EditorWindow preparedHost)
         {
             ValidateCaptureArguments(content, canvasWidth, canvasHeight, outputPath);
 
@@ -221,18 +192,10 @@ namespace DxMessaging.Tests.Editor
                 }
                 IPanel panel = host.rootVisualElement.panel;
 
-                target = new RenderTexture(
-                    canvasWidth,
-                    canvasHeight,
-                    24,
-                    RenderTextureFormat.ARGB32,
-                    RenderTextureReadWrite.Linear
-                );
+                target = new RenderTexture(canvasWidth, canvasHeight, 24, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Linear);
                 if (!target.Create())
                 {
-                    throw new InvalidOperationException(
-                        $"Could not create a {canvasWidth}x{canvasHeight} capture canvas."
-                    );
+                    throw new InvalidOperationException($"Could not create a {canvasWidth}x{canvasHeight} capture canvas.");
                 }
 
                 GL.sRGBWrite = false;
@@ -252,11 +215,7 @@ namespace DxMessaging.Tests.Editor
                 EditorWindowTestUtility.SettleLayout(host);
                 for (int repaintPass = 0; repaintPass < 3; repaintPass++)
                 {
-                    InvokeInheritedPanelMethod(
-                        panel,
-                        "Repaint",
-                        new object[] { new Event { type = EventType.Repaint } }
-                    );
+                    InvokeInheritedPanelMethod(panel, "Repaint", new object[] { new Event { type = EventType.Repaint } });
                     InvokeInheritedPanelMethod(panel, "Render", Array.Empty<object>());
                 }
 
@@ -280,8 +239,7 @@ namespace DxMessaging.Tests.Editor
                 if (colorType != PngTruecolorWithoutAlpha)
                 {
                     throw new InvalidOperationException(
-                        $"Capture produced PNG color type {colorType}; the manifest requires "
-                            + $"{PngTruecolorWithoutAlpha} (truecolor without alpha)."
+                        $"Capture produced PNG color type {colorType}; the manifest requires " + $"{PngTruecolorWithoutAlpha} (truecolor without alpha)."
                     );
                 }
 
@@ -331,11 +289,7 @@ namespace DxMessaging.Tests.Editor
         /// measures from the top-left; a render target's rows start at the bottom, so the
         /// vertical origin is the distance from the canvas bottom to the surface's bottom edge.
         /// </summary>
-        private static RectInt ResolveCropRect(
-            VisualElement content,
-            int canvasWidth,
-            int canvasHeight
-        )
+        private static RectInt ResolveCropRect(VisualElement content, int canvasWidth, int canvasHeight)
         {
             /*
                 Round the EDGES, then derive the size from them. Rounding the origin and the size
@@ -351,8 +305,7 @@ namespace DxMessaging.Tests.Editor
             if (cropWidth <= 0 || cropHeight <= 0)
             {
                 throw new InvalidOperationException(
-                    $"The surface laid out to {bounds.width}x{bounds.height}, so there is nothing "
-                        + "to capture. Give it an explicit size or content before capturing."
+                    $"The surface laid out to {bounds.width}x{bounds.height}, so there is nothing " + "to capture. Give it an explicit size or content before capturing."
                 );
             }
 
@@ -361,12 +314,7 @@ namespace DxMessaging.Tests.Editor
                 would return a silently clipped image, which is exactly the defect the manifest
                 tells reviewers to look for, produced by the tool that exists to avoid it.
             */
-            if (
-                cropX < 0
-                || cropY < 0
-                || canvasWidth < cropX + cropWidth
-                || canvasHeight < cropY + cropHeight
-            )
+            if (cropX < 0 || cropY < 0 || canvasWidth < cropX + cropWidth || canvasHeight < cropY + cropHeight)
             {
                 throw new InvalidOperationException(
                     $"The surface laid out to {bounds}, which does not fit inside the "
@@ -378,11 +326,7 @@ namespace DxMessaging.Tests.Editor
             return new RectInt(cropX, cropY, cropWidth, cropHeight);
         }
 
-        internal static void InvokeInheritedPanelMethod(
-            IPanel panel,
-            string methodName,
-            object[] arguments
-        )
+        internal static void InvokeInheritedPanelMethod(IPanel panel, string methodName, object[] arguments)
         {
             Type panelType = panel.GetType();
             Type[] argumentTypes = new Type[arguments.Length];
@@ -391,18 +335,11 @@ namespace DxMessaging.Tests.Editor
                 argumentTypes[index] = arguments[index].GetType();
             }
 
-            MethodInfo method = panelType.GetMethod(
-                methodName,
-                InheritedInstanceMembers,
-                binder: null,
-                types: argumentTypes,
-                modifiers: null
-            );
+            MethodInfo method = panelType.GetMethod(methodName, InheritedInstanceMembers, binder: null, types: argumentTypes, modifiers: null);
             if (method == null)
             {
                 throw new InvalidOperationException(
-                    $"Panel type {panelType.FullName} exposes no '{methodName}' method taking "
-                        + $"{argumentTypes.Length} argument(s) to drive the capture."
+                    $"Panel type {panelType.FullName} exposes no '{methodName}' method taking " + $"{argumentTypes.Length} argument(s) to drive the capture."
                 );
             }
 
@@ -429,16 +366,7 @@ namespace DxMessaging.Tests.Editor
 
     internal readonly struct EditorSurfaceCaptureResult
     {
-        internal EditorSurfaceCaptureResult(
-            string outputPath,
-            int width,
-            int height,
-            int byteCount,
-            byte pngColorType,
-            int distinctColorCount,
-            bool isProSkin,
-            string unityVersion
-        )
+        internal EditorSurfaceCaptureResult(string outputPath, int width, int height, int byteCount, byte pngColorType, int distinctColorCount, bool isProSkin, string unityVersion)
         {
             OutputPath = outputPath;
             Width = width;

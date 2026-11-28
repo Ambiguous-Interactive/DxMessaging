@@ -4,7 +4,8 @@
 
 ## Overview
 
-This project maintains a **zero-flaky test policy**. A flaky test is one that sometimes passes and sometimes fails without code changes. We do not tolerate flaky tests because they hide real bugs and erode trust in the test suite.
+This project maintains a **zero-flaky test policy**. A flaky test is one that sometimes passes and sometimes fails without code changes. We do not tolerate flaky tests because they
+hide real bugs and erode trust in the test suite.
 
 ### Every test failure must be treated as a production bug until proven otherwise
 

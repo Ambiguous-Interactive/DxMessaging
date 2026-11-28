@@ -2,7 +2,8 @@
 
 # CI/CD Devcontainer Workflows
 
-> **One-line summary**: For same-job GHCR verification, build with `devcontainers/ci@v0.3` and `push: never`, then run `docker push` explicitly before `docker pull`; for workflows that let `devcontainers/ci` publish from its post action, set `eventFilterForPush: ""` explicitly.
+> **One-line summary**: For same-job GHCR verification, build with `devcontainers/ci@v0.3` and `push: never`, then run `docker push` explicitly before `docker pull`; for workflows
+> that let `devcontainers/ci` publish from its post action, set `eventFilterForPush: ""` explicitly.
 
 ## When to Use
 
@@ -36,7 +37,8 @@ This is fragile:
   run: docker pull "ghcr.io/${{ steps.repo.outputs.repository_lowercase }}/devcontainer:latest"
 ```
 
-The `docker pull` step runs before the action-managed push. If the image is not already present in GHCR, the verification step fails with `manifest unknown`. Because `devcontainers/ci` declares `post-if: success()`, that failure also prevents the post action from publishing the image.
+The `docker pull` step runs before the action-managed push. If the image is not already present in GHCR, the verification step fails with `manifest unknown`. Because
+`devcontainers/ci` declares `post-if: success()`, that failure also prevents the post action from publishing the image.
 
 ### The Fix
 
@@ -98,7 +100,8 @@ Always set `eventFilterForPush: ""` to disable the event gate:
 The DxMessaging workflows that need this:
 
 - `.github/workflows/devcontainer-prebuild.yml` does **not** use this now because it uses `push: never` plus an explicit `docker push`.
-- `.github/workflows/devcontainer-test.yml` (uses `push: filter` plus `refFilterForPush: refs/heads/master`; the empty `eventFilterForPush` makes the ref filter the single source of truth).
+- `.github/workflows/devcontainer-test.yml` (uses `push: filter` plus `refFilterForPush: refs/heads/master`; the empty `eventFilterForPush` makes the ref filter the single source
+  of truth).
 
 ### Why This Is Dangerous
 
@@ -136,7 +139,8 @@ Include a debug step early in the workflow:
     echo "Actor: ${{ github.actor }}"
 ```
 
-The repo's `Ambiguous-Interactive/DxMessaging` slug forces a lowercase conversion every time, so the debug step also surfaces a wrong-actor or wrong-ref problem before it consumes 15 minutes of runner time.
+The repo's `Ambiguous-Interactive/DxMessaging` slug forces a lowercase conversion every time, so the debug step also surfaces a wrong-actor or wrong-ref problem before it consumes
+15 minutes of runner time.
 
 ### Diagnostic Verification
 
@@ -158,7 +162,8 @@ When verifying a pushed image, include diagnostics:
     fi
 ```
 
-`devcontainer-prebuild.yml` includes an explicit push before this step. The pull-back check verifies the registry state after the known push, rather than relying on the action's post step.
+`devcontainer-prebuild.yml` includes an explicit push before this step. The pull-back check verifies the registry state after the known push, rather than relying on the action's
+post step.
 
 ## Common Pitfalls
 

@@ -72,8 +72,7 @@ _ = token.RegisterTargetedInterceptor<ApplyDamage>((ref InstanceId target, ref A
 
 ### Post-Processor
 
-Code that runs **after** all handlers. Use it to record completed dispatch for logging,
-analytics, metrics, or replay without changing gameplay state.
+Code that runs **after** all handlers. Use it to record completed dispatch for logging, analytics, metrics, or replay without changing gameplay state.
 
 Example: "Count every processed damage message for telemetry"
 
@@ -86,8 +85,7 @@ _ = token.RegisterTargetedWithoutTargetingPostProcessor<ApplyDamage>((in Instanc
 });
 ```
 
-The message payload describes the request that completed dispatch. It does not prove how a
-handler changed health or another gameplay value.
+The message payload describes the request that completed dispatch. It does not prove how a handler changed health or another gameplay value.
 
 ### Priority
 
@@ -167,13 +165,9 @@ _ = Token.RegisterGlobalAcceptAll(
 
 ### Diagnostics Mode
 
-A **debug feature** that tracks emission history, registrations, routes, and
-handler statistics. Enable it in the Editor, inspect emissions in
-[Message Monitor](../guides/diagnostics.md#message-monitor), and inspect
-loaded-scene `MessagingComponent` topology in
-[Flow Graph](../guides/diagnostics.md#flow-graph). Direct bus/token registrations
-outside those components require logs or counters. Disable diagnostics in
-release builds when runtime diagnostics are not required.
+A **debug feature** that tracks emission history, registrations, routes, and handler statistics. Enable it in the Editor, inspect emissions in
+[Message Monitor](../guides/diagnostics.md#message-monitor), and inspect loaded-scene `MessagingComponent` topology in [Flow Graph](../guides/diagnostics.md#flow-graph). Direct
+bus/token registrations outside those components require logs or counters. Disable diagnostics in release builds when runtime diagnostics are not required.
 
 ```csharp
 // DiagnosticsTarget.Editor turns diagnostics on in the Editor only, off in builds.
@@ -184,36 +178,28 @@ IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.Editor;
 
 ### Idle Eviction
 
-Background reclamation that resets empty per-message-type and per-context
-slots after they have stayed empty for `IdleEvictionSeconds` worth of bus
-activity ticks. Active registrations are never touched. Gated by
-`EvictionEnabled` and `EvictionTickIntervalSeconds`.
+Background reclamation that resets empty per-message-type and per-context slots after they have stayed empty for `IdleEvictionSeconds` worth of bus activity ticks. Active
+registrations are never touched. Gated by `EvictionEnabled` and `EvictionTickIntervalSeconds`.
 
 ### Sweep
 
-A single pass of the reclamation algorithm. A sweep walks dirty-tracked slots
-and pool entries, resets the eligible empty ones, and updates the live
-occupancy counters. Triggered by emit-time sampling, the Unity PlayerLoop
-hook, or an explicit `Trim` call.
+A single pass of the reclamation algorithm. A sweep walks dirty-tracked slots and pool entries, resets the eligible empty ones, and updates the live occupancy counters. Triggered
+by emit-time sampling, the Unity PlayerLoop hook, or an explicit `Trim` call.
 
 ### Trim
 
-The public API (`IMessageBus.Trim` / `MessageHandler.TrimAll`) that runs a
-sweep synchronously. With `force: true` it ignores the idle threshold and
-drains shared pools to zero; with `force: false` it uses the same idle
-threshold as scheduled sweeps. Gated by `EnableTrimApi`.
+The public API (`IMessageBus.Trim` / `MessageHandler.TrimAll`) that runs a sweep synchronously. With `force: true` it ignores the idle threshold and drains shared pools to zero;
+with `force: false` it uses the same idle threshold as scheduled sweeps. Gated by `EnableTrimApi`.
 
 ### TrimResult
 
-The struct returned by `Trim`. Its fields (`TypeSlotsEvicted`,
-`TargetSlotsEvicted`, `PooledCollectionsEvicted`, `LiveTypeSlotsRemaining`)
-report how much state the sweep reclaimed and how much remains live.
+The struct returned by `Trim`. Its fields (`TypeSlotsEvicted`, `TargetSlotsEvicted`, `PooledCollectionsEvicted`, `LiveTypeSlotsRemaining`) report how much state the sweep reclaimed
+and how much remains live.
 
 ### Empty Slot
 
-A typed-handler, interceptor, or context slot whose registrations have all
-been deregistered. Empty slots stay around until reclamation runs because a
-freshly empty slot is often about to be reused on the next dispatch.
+A typed-handler, interceptor, or context slot whose registrations have all been deregistered. Empty slots stay around until reclamation runs because a freshly empty slot is often
+about to be reused on the next dispatch.
 
 ## Attributes (Source Generation)
 

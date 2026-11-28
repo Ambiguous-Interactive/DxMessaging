@@ -12,10 +12,7 @@
         "latest": "2.2.3"
       },
       "status": 0,
-      "stdout": [
-        "installing {package}@2\\.2\\.3 \\(current: missing\\)",
-        "{package}@2\\.2\\.3 is ready\\."
-      ],
+      "stdout": ["installing {package}@2\\.2\\.3 \\(current: missing\\)", "{package}@2\\.2\\.3 is ready\\."],
       "stderr": [],
       "installsPerPackage": 1,
       "commandsPresent": true
@@ -51,10 +48,7 @@
       },
       "status": 1,
       "stdout": [],
-      "stderr": [
-        "registry unavailable and {package} is not installed\\.",
-        "4 agent CLI refresh\\(es\\) failed; see messages above\\."
-      ],
+      "stderr": ["registry unavailable and {package} is not installed\\.", "4 agent CLI refresh\\(es\\) failed; see messages above\\."],
       "installsPerPackage": 0,
       "commandsPresent": false
     },
@@ -66,10 +60,7 @@
       },
       "status": 1,
       "stdout": [],
-      "stderr": [
-        "{package} install attempt 3/3 failed\\.",
-        "4 agent CLI refresh\\(es\\) failed; see messages above\\."
-      ],
+      "stderr": ["{package} install attempt 3/3 failed\\.", "4 agent CLI refresh\\(es\\) failed; see messages above\\."],
       "installsPerPackage": 3,
       "commandsPresent": false
     },
@@ -82,10 +73,7 @@
       },
       "status": 1,
       "stdout": [],
-      "stderr": [
-        "{package} install attempt 3/3 failed\\.",
-        "4 agent CLI refresh\\(es\\) failed; see messages above\\."
-      ],
+      "stderr": ["{package} install attempt 3/3 failed\\.", "4 agent CLI refresh\\(es\\) failed; see messages above\\."],
       "installsPerPackage": 3,
       "commandsPresent": true
     },
@@ -115,17 +103,11 @@
     ["post-create.sh", "bash \"${installer}\""],
     ["post-create.sh", "unity-mcp.mjs\" configure --offline"],
     ["devcontainer.json", "\"waitFor\": \"updateContentCommand\""],
-    [
-      "devcontainer.json",
-      "\"updateContentCommand\": \"bash .devcontainer/post-start.sh --prepare\""
-    ],
+    ["devcontainer.json", "\"updateContentCommand\": \"bash .devcontainer/post-start.sh --prepare\""],
     ["devcontainer.json", "\"postAttachCommand\": \"bash .devcontainer/post-start.sh\""],
     ["devcontainer.json", "\"userEnvProbe\": \"none\""],
     ["devcontainer.json", "\"COPILOT_HOME\": \"${containerWorkspaceFolder}/.copilot\""],
     ["devcontainer.json", "host.docker.internal:host-gateway"],
-    [
-      "devcontainer.json",
-      "\"NANOCODER_MCPSERVERS_FILE\": \"${containerWorkspaceFolder}/.nanocoder/mcp.json\""
-    ]
+    ["devcontainer.json", "\"NANOCODER_MCPSERVERS_FILE\": \"${containerWorkspaceFolder}/.nanocoder/mcp.json\""]
   ]
 }

@@ -3,12 +3,9 @@
 ## Start here
 
 - Read [the skill index](./index.md), then load only the skills relevant to this task.
-- For task selection, local validation, handoffs or coordination, read
-  [agent task workflow](./skills/agent-task-workflow/SKILL.md).
-- Before editing C#, scripts, tests or documentation, read the relevant section of
-  [repository conventions](./skills/agent-task-workflow/references/repository-conventions.md).
-- Runtime code lives in `Runtime/`, Unity tooling in `Editor/`, tests in `Tests/`, compiler tools
-  in `SourceGenerators/`, and package documentation in `docs/`.
+- For task selection, local validation, handoffs or coordination, read [agent task workflow](./skills/agent-task-workflow/SKILL.md).
+- Before editing C#, scripts, tests or documentation, read the relevant section of [repository conventions](./skills/agent-task-workflow/references/repository-conventions.md).
+- Runtime code lives in `Runtime/`, Unity tooling in `Editor/`, tests in `Tests/`, compiler tools in `SourceGenerators/`, and package documentation in `docs/`.
 
 <!-- BEGIN GENERATED SKILL REGISTRY -->
 
@@ -22,94 +19,68 @@
 
 ## Delivery
 
-- Follow the user's task scope. Preserve public APIs and supported Unity versions unless the task
-  explicitly changes them. No runtime dependency or speculative architecture is needed for tooling.
+- Follow the user's task scope. Preserve public APIs and supported Unity versions unless the task explicitly changes them. No runtime dependency or speculative architecture is
+  needed for tooling.
 - Use a task-based RED/GREEN loop with retained adverse results. Treat unexplained failures as defects.
 - Keep ignored `progress/` and `.artifacts/` local; never force-add them or their metadata.
-- Keep `PLAN.md` below 100 lines as a routing page. Follow
-  [plan maintenance](./skills/plan-maintenance/SKILL.md); issues own durable decisions.
-- Work toward zero open issues. Agents may select issues, push, repair and merge ordinary PRs
-  through the protected branch using the available GitHub connection. Agents may also close issues
-  with verified acceptance evidence. Keep one active agent PR at a time. A session may merge any
-  number of reviewed PRs in sequence. Target three hours elapsed, including CI and review.
-  Follow the agent task workflow for merge gates.
-- Use the GitHub connector/extension first, local git second, and `gh` last. Follow
-  [GitHub access](./skills/github-access/SKILL.md). Never print credentials.
-- Maintainers review ordinary merges asynchronously. Obtain advance human approval for changes
-  that weaken merge or release controls or grant publishing authority. Reserve 4.0.0 launch
-  for explicit human wallstop approval of the candidate and destinations in
-  [readiness issue #575](https://github.com/Ambiguous-Interactive/DxMessaging/issues/575).
-  Close it last. Local `GOAL.md` adds release criteria when present.
-- **4.0.0 release hold:** do not merge the release PR, tag, dispatch, publish or submit the
-  4.0.0 release while any open issue in the 4.0.0 milestone remains, or while #575's technical
-  or human gates are incomplete. Close #575 last, after wallstop records the exact-candidate
-  approval marker on #575 and before the release PR merges. `release-prepare.yml`,
-  `release-tag.yml` and `release.yml` fail closed; preparation may run while #575 stays open,
-  but tagging and publishing require a completed closure, a marker matching the exact
-  version, tree and package bytes, and wallstop's protected environment review
-  (`release-tag` before tagging, `release` before publishing). Manual tag creation is not an
-  approved 4.0.0 path. The release PR also carries the required `Release Merge Guard` check,
-  which packs the exact head and applies the same hold before merge. Never bypass, disable or
-  weaken those checks.
+- Keep `PLAN.md` below 100 lines as a routing page. Follow [plan maintenance](./skills/plan-maintenance/SKILL.md); issues own durable decisions.
+- Work toward zero open issues. Agents may select issues, push, repair and merge ordinary PRs through the protected branch using the available GitHub connection. Agents may also
+  close issues with verified acceptance evidence. Keep one active agent PR at a time. A session may merge any number of reviewed PRs in sequence. Target three hours elapsed,
+  including CI and review. Follow the agent task workflow for merge gates.
+- Use the GitHub connector/extension first, local git second, and `gh` last. Follow [GitHub access](./skills/github-access/SKILL.md). Never print credentials.
+- Maintainers review ordinary merges asynchronously. Obtain advance human approval for changes that weaken merge or release controls or grant publishing authority. Reserve 4.0.0
+  launch for explicit human wallstop approval of the candidate and destinations in [readiness issue #575](https://github.com/Ambiguous-Interactive/DxMessaging/issues/575). Close it
+  last. Local `GOAL.md` adds release criteria when present.
+- **4.0.0 release hold:** do not merge the release PR, tag, dispatch, publish or submit the 4.0.0 release while any open issue in the 4.0.0 milestone remains, or while #575's
+  technical or human gates are incomplete. Close #575 last, after wallstop records the exact-candidate approval marker on #575 and before the release PR merges.
+  `release-prepare.yml`, `release-tag.yml` and `release.yml` fail closed; preparation may run while #575 stays open, but tagging and publishing require a completed closure, a
+  marker matching the exact version, tree and package bytes, and wallstop's protected environment review (`release-tag` before tagging, `release` before publishing). Manual tag
+  creation is not an approved 4.0.0 path. The release PR also carries the required `Release Merge Guard` check, which packs the exact head and applies the same hold before merge.
+  Never bypass, disable or weaken those checks.
 
 ## Tooling
 
-- Prefer standard tools and existing helpers. Do not add custom validators, runner wrappers,
-  doctor machinery or git-hook plumbing. `validate:js-loc-budget` owns the script line ceiling.
-- Hooks use standard pre-commit only. Run changed-file tools directly during development.
-  Whole-repository hook audits are for hook changes and releases.
-- Script tests use native `node --test` file isolation. `npm run test:unit` is the fast subset;
-  `npm run test:integration` is its complement; `npm test` runs all Node and Python tests.
-  Run the complete suite before delivery when scripts or composite-action code changes.
-- Run managed behavior and representative retention in separate processes using the
-  [two local lanes](../docs/runbooks/iteration-speed.md#local-commands). Combining them recreates
+- Prefer standard tools and existing helpers. Do not add custom validators, runner wrappers, doctor machinery or git-hook plumbing. `validate:js-loc-budget` owns the script line
+  ceiling.
+- Hooks use standard pre-commit only. Run changed-file tools directly during development. Whole-repository hook audits are for hook changes and releases.
+- Script tests use native `node --test` file isolation. `npm run test:unit` is the fast subset; `npm run test:integration` is its complement; `npm test` runs all Node and Python
+  tests. Run the complete suite before delivery when scripts or composite-action code changes.
+- Run managed behavior and representative retention in separate processes using the [two local lanes](../docs/runbooks/iteration-speed.md#local-commands). Combining them recreates
   costly GC scans of accumulated result graphs. The unfiltered command runs all cases.
-- Source-generator tests require `/p:CopyAnalyzerPayload=false`, preserving the tracked analyzer DLLs.
-  Documentation compiler tests live in `.docs-tests/`.
-- Restore tools with `dotnet tool restore`. Format changed C# with
-  `dotnet tool run csharpier format <paths>`; a path is required.
-- Use Prettier, markdownlint-cli2, cspell, actionlint and yamllint directly. Run relevant checks before
-  committing; hooks are a backstop. New or changed Markdown must pass Prettier and markdownlint.
-- Generator/fixer modes must converge with their own check modes. Never report a no-op fix as success
-  while its check fails. Keep package-script aliases synchronized with callers.
-- Use `npm run llm:index` after skill changes, `npm run update:llms-txt` after its inputs change,
-  and `npm run validate:all` for the complete repository invariant checks.
+- Source-generator tests require `/p:CopyAnalyzerPayload=false`, preserving the tracked analyzer DLLs. Documentation compiler tests live in `.docs-tests/`.
+- Restore tools with `dotnet tool restore`. Format changed C# with `dotnet tool run csharpier format <paths>`; a path is required.
+- Use Prettier, markdownlint-cli2, cspell, actionlint and yamllint directly. Run relevant checks before committing; hooks are a backstop. New or changed Markdown must pass Prettier
+  and markdownlint.
+- Generator/fixer modes must converge with their own check modes. Never report a no-op fix as success while its check fails. Keep package-script aliases synchronized with callers.
+- Use `npm run llm:index` after skill changes, `npm run update:llms-txt` after its inputs change, and `npm run validate:all` for the complete repository invariant checks.
 - Changelog entries describe shipped package behavior, not CI, tooling, site prose or agent process.
 
 ## Unity and CI
 
-- The container has no Unity installation. Local Unity tests use a host editor over MCP; follow
-  [the MCP test-loop skill](./skills/unity-mcp-test-loop/SKILL.md).
-- Prefer a dedicated generated package test host. Keep its connection separate from the game
-  project. Only the integration owner changes the shared host or launches tests.
-- Preserve clean scenes, current loaded assemblies, run GUID and raw-result/framework-cleanup gates.
-  During active tests poll result sidecars only. Never restart solely because observation times out.
-- Result paths resolve against the host project. Prepare the shared-checkout package link in
-  [the host runbook](../docs/runbooks/iteration-speed.md#dedicated-unity-package-host) before using
-  `Packages/com.wallstop-studios.dxmessaging/.artifacts/unity-mcp/<run>.json`.
-- Ordinary PR validation uses the newest supported Unity editor in EditMode, PlayMode and IL2CPP.
-  Full compatibility, exhaustive managed matrices and performance use nightly/manual lanes;
-  release qualification requires exact-source full evidence. See
-  [the iteration runbook](../docs/runbooks/iteration-speed.md).
-- Preserve literal required status names: `CI Success`, `Unity CI Success`, `Devcontainer CI Success`.
-  Every PR shape must report them. Change detection and unexpected missing results fail closed.
-- Unity versions and dependency pins are single-sourced in `.github/unity-versions.json` and
-  `.github/comparison-packages.json`. Follow their skills and validators when changing consumers.
-- CI uses manually installed Windows editors under `RUNNER_TOOL_CACHE/u6-v3`; validate before
-  licensing. Never install, repair or remove editors from a workflow.
-- Preserve the central organization lock, physical-runner identity, two-seat admission and complete
-  return/classify/release/confirmed-cleanup chain. Do not replace the org lock with native concurrency.
-- Reuse runner-local project Libraries and per-version caches outside checkout. Do not transfer
-  Unity Libraries over the network. Inspect every result log, including preserved retry logs.
-- Read [Unity CI](./skills/unity-editor-ci/SKILL.md) and
-  [licensing](./skills/unity-licensing/SKILL.md) before editing licensed workflows.
-- Domain and scene reload stay disabled; tests reset statics. Use one batched cleanup frame,
-  `[UnityTest]` only when yielding, and no real-time waits.
+- The container has no Unity installation. Local Unity tests use a host editor over MCP; follow [the MCP test-loop skill](./skills/unity-mcp-test-loop/SKILL.md).
+- Prefer a dedicated generated package test host. Keep its connection separate from the game project. Only the integration owner changes the shared host or launches tests.
+- Preserve clean scenes, current loaded assemblies, run GUID and raw-result/framework-cleanup gates. During active tests poll result sidecars only. Never restart solely because
+  observation times out.
+- Result paths resolve against the host project. Prepare the shared-checkout package link in [the host runbook](../docs/runbooks/iteration-speed.md#dedicated-unity-package-host)
+  before using `Packages/com.wallstop-studios.dxmessaging/.artifacts/unity-mcp/<run>.json`.
+- Ordinary PR validation uses the newest supported Unity editor in EditMode, PlayMode and IL2CPP. Full compatibility, exhaustive managed matrices and performance use nightly/manual
+  lanes; release qualification requires exact-source full evidence. See [the iteration runbook](../docs/runbooks/iteration-speed.md).
+- Preserve literal required status names: `CI Success`, `Unity CI Success`, `Devcontainer CI Success`. Every PR shape must report them. Change detection and unexpected missing
+  results fail closed.
+- Unity versions and dependency pins are single-sourced in `.github/unity-versions.json` and `.github/comparison-packages.json`. Follow their skills and validators when changing
+  consumers.
+- CI uses manually installed Windows editors under `RUNNER_TOOL_CACHE/u6-v3`; validate before licensing. Never install, repair or remove editors from a workflow.
+- Preserve the central organization lock, physical-runner identity, two-seat admission and complete return/classify/release/confirmed-cleanup chain. Do not replace the org lock
+  with native concurrency.
+- Reuse runner-local project Libraries and per-version caches outside checkout. Do not transfer Unity Libraries over the network. Inspect every result log, including preserved
+  retry logs.
+- Read [Unity CI](./skills/unity-editor-ci/SKILL.md) and [licensing](./skills/unity-licensing/SKILL.md) before editing licensed workflows.
+- Domain and scene reload stay disabled; tests reset statics. Use one batched cleanup frame, `[UnityTest]` only when yielding, and no real-time waits.
 
 ## Environment and skill maintenance
 
 - `global.json` pins the SDK. Container startup must resolve that exact SDK before reporting ready.
 - Cache roots come from `.devcontainer/cache-contract.sh`; never hardcode a workspace fallback.
 - `.gitattributes` owns mixed line endings: CRLF for C#, project and solution files; LF for other text.
-- Keep this entry point a short map. Skills live only under `.llm/skills/<name>/SKILL.md`; generated
-  indexes are not hand-edited. Keep skill bodies below 200 lines and references below 500 lines.
+- Keep this entry point a short map. Skills live only under `.llm/skills/<name>/SKILL.md`; generated indexes are not hand-edited. Keep skill bodies below 200 lines and references
+  below 500 lines.

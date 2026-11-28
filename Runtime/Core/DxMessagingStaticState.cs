@@ -67,10 +67,7 @@ namespace DxMessaging.Core
                 MessageHandler.ResetStatics();
                 MessageBus.MessageBus.ResetStaticPools();
 
-                if (
-                    !ReferenceEquals(activeBus, defaultBus)
-                    && activeBus is MessageBus.MessageBus customConcrete
-                )
+                if (!ReferenceEquals(activeBus, defaultBus) && activeBus is MessageBus.MessageBus customConcrete)
                 {
                     customConcrete.BumpResetGeneration();
                 }
@@ -85,13 +82,7 @@ namespace DxMessaging.Core
             bool globalDiagnosticsStackTraces = IMessageBus.GlobalDiagnosticsStackTraces;
             int globalMessageBufferSize = IMessageBus.GlobalMessageBufferSize;
 
-            return new BaselineState(
-                messagingDebugEnabled,
-                messagingDebugLogFunction,
-                globalDiagnosticsTargets,
-                globalDiagnosticsStackTraces,
-                globalMessageBufferSize
-            );
+            return new BaselineState(messagingDebugEnabled, messagingDebugLogFunction, globalDiagnosticsTargets, globalDiagnosticsStackTraces, globalMessageBufferSize);
         }
 
         private sealed class BaselineState

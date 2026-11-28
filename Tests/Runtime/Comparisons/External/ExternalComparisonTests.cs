@@ -19,23 +19,12 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
     {
         private static IEnumerable<TestCaseData> Cases()
         {
-            for (
-                int scenarioIndex = 0;
-                scenarioIndex < ComparisonScenarios.All.Length;
-                scenarioIndex++
-            )
+            for (int scenarioIndex = 0; scenarioIndex < ComparisonScenarios.All.Length; scenarioIndex++)
             {
                 ComparisonScenario scenario = ComparisonScenarios.All[scenarioIndex];
-                foreach (
-                    (
-                        string key,
-                        Func<IMessagingTechBridge> factory
-                    ) in ExternalComparisonRoster.Bridges
-                )
+                foreach ((string key, Func<IMessagingTechBridge> factory) in ExternalComparisonRoster.Bridges)
                 {
-                    yield return new TestCaseData(factory, scenario).SetName(
-                        ComparisonScenarios.PerformanceCaseName(scenarioIndex, key, scenario)
-                    );
+                    yield return new TestCaseData(factory, scenario).SetName(ComparisonScenarios.PerformanceCaseName(scenarioIndex, key, scenario));
                 }
             }
         }

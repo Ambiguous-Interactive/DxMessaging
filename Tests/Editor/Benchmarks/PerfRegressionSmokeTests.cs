@@ -57,12 +57,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             IReadOnlyList<BaselineRow> baselines = LoadBaselines();
             string scenarioName = DispatchThroughputBenchmarks.GetScenarioName(scenario);
             string baselineCommit = GetBaselineCommit();
-            BaselineRow baseline = FindBaseline(
-                baselines,
-                scenarioName,
-                current.Platform,
-                baselineCommit
-            );
+            BaselineRow baseline = FindBaseline(baselines, scenarioName, current.Platform, baselineCommit);
 
             if (current.IsRegistrationScenario)
             {
@@ -75,11 +70,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             }
 
             double minimumAllowedEmitsPerSecond = baseline.EmitsPerSecond / RegressionMultiplier;
-            Assert.GreaterOrEqual(
-                current.EmitsPerSecond,
-                minimumAllowedEmitsPerSecond,
-                $"{scenarioName} throughput regressed more than {RegressionMultiplier:0.0}x."
-            );
+            Assert.GreaterOrEqual(current.EmitsPerSecond, minimumAllowedEmitsPerSecond, $"{scenarioName} throughput regressed more than {RegressionMultiplier:0.0}x.");
 
             /*
                 Allocation budget is a CALL-COUNT budget now (see AllocationProbe). Enforce it
@@ -87,10 +78,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
                 the Unmeasured sentinel (-1) means the probe was non-functional on that run's
                 backend, so a comparison would be meaningless rather than honest.
             */
-            if (
-                baseline.GcAllocations != AllocationProbe.Unmeasured
-                && current.GcAllocations != AllocationProbe.Unmeasured
-            )
+            if (baseline.GcAllocations != AllocationProbe.Unmeasured && current.GcAllocations != AllocationProbe.Unmeasured)
             {
                 long allocationBudget = Math.Max(0, baseline.GcAllocations);
                 Assert.LessOrEqual(
@@ -126,26 +114,19 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             string configuredPath = Environment.GetEnvironmentVariable(BaselinePathEnvVar);
             if (string.IsNullOrWhiteSpace(configuredPath))
             {
-                Assert.Ignore(
-                    $"{BaselinePathEnvVar}=<baseline.csv> is required to run the perf smoke gate."
-                );
+                Assert.Ignore($"{BaselinePathEnvVar}=<baseline.csv> is required to run the perf smoke gate.");
             }
 
             string path = ResolvePath(configuredPath);
             if (!File.Exists(path))
             {
-                Assert.Ignore(
-                    $"Performance baseline file not found: {configuredPath}. Capture a dispatch throughput baseline before enforcing PerfGate."
-                );
+                Assert.Ignore($"Performance baseline file not found: {configuredPath}. Capture a dispatch throughput baseline before enforcing PerfGate.");
             }
 
             List<BaselineRow> rows = new();
             foreach (string line in File.ReadAllLines(path))
             {
-                if (
-                    string.IsNullOrWhiteSpace(line)
-                    || line.StartsWith("scenario,", StringComparison.OrdinalIgnoreCase)
-                )
+                if (string.IsNullOrWhiteSpace(line) || line.StartsWith("scenario,", StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }
@@ -157,12 +138,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             return rows;
         }
 
-        internal static BaselineRow FindBaseline(
-            IReadOnlyList<BaselineRow> rows,
-            string scenario,
-            string platform,
-            string baselineCommit
-        )
+        internal static BaselineRow FindBaseline(IReadOnlyList<BaselineRow> rows, string scenario, string platform, string baselineCommit)
         {
             /*
                 A null/empty baselineCommit means DX_PERF_BASELINE_COMMIT was unset, so the
@@ -176,14 +152,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
                 if (
                     string.Equals(row.Scenario, scenario, StringComparison.Ordinal)
                     && string.Equals(row.Platform, platform, StringComparison.Ordinal)
-                    && (
-                        !matchCommit
-                        || string.Equals(
-                            row.Commit,
-                            baselineCommit,
-                            StringComparison.OrdinalIgnoreCase
-                        )
-                    )
+                    && (!matchCommit || string.Equals(row.Commit, baselineCommit, StringComparison.OrdinalIgnoreCase))
                 )
                 {
                     return row;
@@ -243,14 +212,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
 
         internal readonly struct BaselineRow
         {
-            private BaselineRow(
-                string scenario,
-                string platform,
-                string commit,
-                double emitsPerSecond,
-                long gcAllocations,
-                double wallClockMs
-            )
+            private BaselineRow(string scenario, string platform, string commit, double emitsPerSecond, long gcAllocations, double wallClockMs)
             {
                 Scenario = scenario;
                 Platform = platform;
@@ -277,23 +239,9 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             /// gate's matching logic can be exercised in EditMode without going through
             /// CSV text or running a measurement window.
             /// </summary>
-            internal static BaselineRow ForTest(
-                string scenario,
-                string platform,
-                string commit,
-                double emitsPerSecond,
-                long gcAllocations,
-                double wallClockMs
-            )
+            internal static BaselineRow ForTest(string scenario, string platform, string commit, double emitsPerSecond, long gcAllocations, double wallClockMs)
             {
-                return new BaselineRow(
-                    scenario,
-                    platform,
-                    commit,
-                    emitsPerSecond,
-                    gcAllocations,
-                    wallClockMs
-                );
+                return new BaselineRow(scenario, platform, commit, emitsPerSecond, gcAllocations, wallClockMs);
             }
 
             public static BaselineRow Parse(string line)

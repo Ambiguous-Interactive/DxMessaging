@@ -2,11 +2,7 @@ namespace DxMessaging.Tests
 {
     internal readonly struct FlatSnapshotStorageObservation
     {
-        internal FlatSnapshotStorageObservation(
-            int entryCount,
-            int arrayCapacity,
-            int emptyHolderPoolCount
-        )
+        internal FlatSnapshotStorageObservation(int entryCount, int arrayCapacity, int emptyHolderPoolCount)
         {
             EntryCount = entryCount;
             ArrayCapacity = arrayCapacity;
@@ -43,12 +39,7 @@ namespace DxMessaging.Tests
 
     internal readonly struct ContextMapPoolBenchmarkObservation
     {
-        internal ContextMapPoolBenchmarkObservation(
-            object poolIdentity,
-            object storageIdentity,
-            bool useLru,
-            int maxRetained
-        )
+        internal ContextMapPoolBenchmarkObservation(object poolIdentity, object storageIdentity, bool useLru, int maxRetained)
         {
             PoolIdentity = poolIdentity;
             StorageIdentity = storageIdentity;
@@ -115,13 +106,7 @@ namespace DxMessaging.Tests
 
     internal readonly struct IntKeyMapTopologyObservation
     {
-        internal IntKeyMapTopologyObservation(
-            bool found,
-            int slotIndex,
-            int lookupProbes,
-            int deletionScans,
-            int deletionMoves
-        )
+        internal IntKeyMapTopologyObservation(bool found, int slotIndex, int lookupProbes, int deletionScans, int deletionMoves)
         {
             Found = found;
             SlotIndex = slotIndex;

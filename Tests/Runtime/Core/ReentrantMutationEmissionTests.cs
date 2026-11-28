@@ -40,24 +40,16 @@ namespace DxMessaging.Tests.Runtime.Core
 
         [Test]
         public void SamePrioritySpillRemoveRegisterThenReentrantEmitPreservesSnapshots(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario
         )
         {
-            GameObject host = new(
-                nameof(SamePrioritySpillRemoveRegisterThenReentrantEmitPreservesSnapshots)
-                    + scenario.Kind
-            );
+            GameObject host = new(nameof(SamePrioritySpillRemoveRegisterThenReentrantEmitPreservesSnapshots) + scenario.Kind);
             _spawned.Add(host);
             MessageHandler handler = new(host) { active = true };
             MessageBus bus = new();
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
             token.Enable();
-            using LeakWatcher watcher = new(
-                bus: bus,
-                throwOnLeak: true,
-                label: scenario.DisplayName
-            );
+            using LeakWatcher watcher = new(bus: bus, throwOnLeak: true, label: scenario.DisplayName);
             InstanceId hostId = host;
             List<string> trace = new(12);
             int depth = 0;
@@ -78,13 +70,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
                     mutated = true;
                     token.RemoveRegistration(removedHandle);
-                    _ = ScenarioCallbacks.RegisterCountingHandler(
-                        scenario,
-                        token,
-                        hostId,
-                        () => trace.Add($"d{depth}:E"),
-                        priority: 0
-                    );
+                    _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () => trace.Add($"d{depth}:E"), priority: 0);
                     ++depth;
                     try
                     {
@@ -97,27 +83,9 @@ namespace DxMessaging.Tests.Runtime.Core
                 },
                 priority: 0
             );
-            _ = ScenarioCallbacks.RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                () => trace.Add($"d{depth}:B"),
-                priority: 0
-            );
-            removedHandle = ScenarioCallbacks.RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                () => trace.Add($"d{depth}:C"),
-                priority: 0
-            );
-            _ = ScenarioCallbacks.RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                () => trace.Add($"d{depth}:D"),
-                priority: 0
-            );
+            _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () => trace.Add($"d{depth}:B"), priority: 0);
+            removedHandle = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () => trace.Add($"d{depth}:C"), priority: 0);
+            _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () => trace.Add($"d{depth}:D"), priority: 0);
 
             Assert.DoesNotThrow(
                 () => ScenarioCallbacks.EmitForKind(scenario, bus, hostId),
@@ -127,8 +95,7 @@ namespace DxMessaging.Tests.Runtime.Core
             CollectionAssert.AreEqual(
                 new[] { "d0:A", "d1:A", "d1:B", "d1:D", "d1:E", "d0:B", "d0:C", "d0:D" },
                 trace,
-                "[{0}] spill-backed same-priority mutation must preserve the outer frozen "
-                    + "snapshot and rebuild the nested snapshot in live registration order.",
+                "[{0}] spill-backed same-priority mutation must preserve the outer frozen " + "snapshot and rebuild the nested snapshot in live registration order.",
                 scenario.Kind
             );
             token.UnregisterAll();
@@ -137,23 +104,16 @@ namespace DxMessaging.Tests.Runtime.Core
 
         [Test]
         public void SoleHandlerRemoveRegisterThenReentrantEmitPreservesSnapshots(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario
         )
         {
-            GameObject host = new(
-                nameof(SoleHandlerRemoveRegisterThenReentrantEmitPreservesSnapshots) + scenario.Kind
-            );
+            GameObject host = new(nameof(SoleHandlerRemoveRegisterThenReentrantEmitPreservesSnapshots) + scenario.Kind);
             _spawned.Add(host);
             MessageHandler handler = new(host) { active = true };
             MessageBus bus = new();
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
             token.Enable();
-            using LeakWatcher watcher = new(
-                bus: bus,
-                throwOnLeak: true,
-                label: scenario.DisplayName
-            );
+            using LeakWatcher watcher = new(bus: bus, throwOnLeak: true, label: scenario.DisplayName);
             InstanceId hostId = host;
             List<string> trace = new(2);
             int depth = 0;
@@ -171,13 +131,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     }
 
                     token.RemoveRegistration(soleHandle);
-                    _ = ScenarioCallbacks.RegisterCountingHandler(
-                        scenario,
-                        token,
-                        hostId,
-                        () => trace.Add($"d{depth}:B"),
-                        priority: 0
-                    );
+                    _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () => trace.Add($"d{depth}:B"), priority: 0);
                     ++depth;
                     try
                     {
@@ -199,8 +153,7 @@ namespace DxMessaging.Tests.Runtime.Core
             CollectionAssert.AreEqual(
                 new[] { "d0:A", "d1:B" },
                 trace,
-                "[{0}] the outer frozen snapshot must finish on the removed handler while the nested "
-                    + "snapshot dispatches only the replacement from the recycled leaf.",
+                "[{0}] the outer frozen snapshot must finish on the removed handler while the nested " + "snapshot dispatches only the replacement from the recycled leaf.",
                 scenario.Kind
             );
             token.UnregisterAll();
@@ -219,15 +172,9 @@ namespace DxMessaging.Tests.Runtime.Core
         /// snapshot includes it).
         /// </summary>
         [Test]
-        public void MutateThenReentrantEmitSameTypeDoesNotThrow(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void MutateThenReentrantEmitSameTypeDoesNotThrow([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(MutateThenReentrantEmitSameTypeDoesNotThrow) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(MutateThenReentrantEmitSameTypeDoesNotThrow) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -303,13 +250,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 string.Join(",", trace)
             );
 
-            Assert.AreEqual(
-                2,
-                mutatorCount,
-                "[{0}] Mutator must run once per emission (outer + nested). trace=[{1}]",
-                scenario.Kind,
-                string.Join(",", trace)
-            );
+            Assert.AreEqual(2, mutatorCount, "[{0}] Mutator must run once per emission (outer + nested). trace=[{1}]", scenario.Kind, string.Join(",", trace));
             Assert.AreEqual(
                 1,
                 newcomerCount,
@@ -325,14 +266,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 string.Join(",", trace)
             );
 
-            string[] expectedTrace =
-            {
-                "d0:mutator",
-                "d1:mutator",
-                "d1:newcomer",
-                "d1:peer",
-                "d0:peer",
-            };
+            string[] expectedTrace = { "d0:mutator", "d1:mutator", "d1:newcomer", "d1:peer", "d0:peer" };
             CollectionAssert.AreEqual(
                 expectedTrace,
                 trace,
@@ -348,27 +282,9 @@ namespace DxMessaging.Tests.Runtime.Core
             */
             trace.Clear();
             ScenarioCallbacks.EmitForKind(scenario, hostId);
-            Assert.AreEqual(
-                3,
-                mutatorCount,
-                "[{0}] Mutator must fire once on the follow-up emission. trace=[{1}]",
-                scenario.Kind,
-                string.Join(",", trace)
-            );
-            Assert.AreEqual(
-                2,
-                newcomerCount,
-                "[{0}] Newcomer must fire once on the follow-up emission. trace=[{1}]",
-                scenario.Kind,
-                string.Join(",", trace)
-            );
-            Assert.AreEqual(
-                3,
-                peerCount,
-                "[{0}] Peer must fire once on the follow-up emission. trace=[{1}]",
-                scenario.Kind,
-                string.Join(",", trace)
-            );
+            Assert.AreEqual(3, mutatorCount, "[{0}] Mutator must fire once on the follow-up emission. trace=[{1}]", scenario.Kind, string.Join(",", trace));
+            Assert.AreEqual(2, newcomerCount, "[{0}] Newcomer must fire once on the follow-up emission. trace=[{1}]", scenario.Kind, string.Join(",", trace));
+            Assert.AreEqual(3, peerCount, "[{0}] Peer must fire once on the follow-up emission. trace=[{1}]", scenario.Kind, string.Join(",", trace));
 
             token.RemoveRegistration(mutatorHandle);
             token.RemoveRegistration(peerHandle);
@@ -383,15 +299,9 @@ namespace DxMessaging.Tests.Runtime.Core
         /// must not include it.
         /// </summary>
         [Test]
-        public void DeregisterThenReentrantEmitSameTypeDoesNotThrow(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void DeregisterThenReentrantEmitSameTypeDoesNotThrow([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(DeregisterThenReentrantEmitSameTypeDoesNotThrow) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(DeregisterThenReentrantEmitSameTypeDoesNotThrow) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -455,13 +365,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 string.Join(",", trace)
             );
 
-            Assert.AreEqual(
-                2,
-                mutatorCount,
-                "[{0}] Mutator must run once per emission (outer + nested). trace=[{1}]",
-                scenario.Kind,
-                string.Join(",", trace)
-            );
+            Assert.AreEqual(2, mutatorCount, "[{0}] Mutator must run once per emission (outer + nested). trace=[{1}]", scenario.Kind, string.Join(",", trace));
             Assert.AreEqual(
                 1,
                 peerCount,
@@ -485,20 +389,8 @@ namespace DxMessaging.Tests.Runtime.Core
             */
             trace.Clear();
             ScenarioCallbacks.EmitForKind(scenario, hostId);
-            Assert.AreEqual(
-                3,
-                mutatorCount,
-                "[{0}] Mutator must fire once on the follow-up emission. trace=[{1}]",
-                scenario.Kind,
-                string.Join(",", trace)
-            );
-            Assert.AreEqual(
-                1,
-                peerCount,
-                "[{0}] Deregistered peer must stay silent on the follow-up emission. trace=[{1}]",
-                scenario.Kind,
-                string.Join(",", trace)
-            );
+            Assert.AreEqual(3, mutatorCount, "[{0}] Mutator must fire once on the follow-up emission. trace=[{1}]", scenario.Kind, string.Join(",", trace));
+            Assert.AreEqual(1, peerCount, "[{0}] Deregistered peer must stay silent on the follow-up emission. trace=[{1}]", scenario.Kind, string.Join(",", trace));
 
             token.RemoveRegistration(mutatorHandle);
         }
@@ -521,15 +413,9 @@ namespace DxMessaging.Tests.Runtime.Core
         /// Totals: driver 4, N1 3, N2 2, N3 1.
         /// </summary>
         [Test]
-        public void DeepNestedMutateEmitDoesNotCorrupt(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void DeepNestedMutateEmitDoesNotCorrupt([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(DeepNestedMutateEmitDoesNotCorrupt) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(DeepNestedMutateEmitDoesNotCorrupt) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -595,41 +481,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 scenario.Kind,
                 string.Join(",", trace)
             );
-            Assert.AreEqual(
-                3,
-                newcomerCounts[0],
-                "[{0}] N1 (registered during E0) must fire in E1, E2 and E3 only. trace=[{1}]",
-                scenario.Kind,
-                string.Join(",", trace)
-            );
-            Assert.AreEqual(
-                2,
-                newcomerCounts[1],
-                "[{0}] N2 (registered during E1) must fire in E2 and E3 only. trace=[{1}]",
-                scenario.Kind,
-                string.Join(",", trace)
-            );
-            Assert.AreEqual(
-                1,
-                newcomerCounts[2],
-                "[{0}] N3 (registered during E2) must fire in E3 only. trace=[{1}]",
-                scenario.Kind,
-                string.Join(",", trace)
-            );
+            Assert.AreEqual(3, newcomerCounts[0], "[{0}] N1 (registered during E0) must fire in E1, E2 and E3 only. trace=[{1}]", scenario.Kind, string.Join(",", trace));
+            Assert.AreEqual(2, newcomerCounts[1], "[{0}] N2 (registered during E1) must fire in E2 and E3 only. trace=[{1}]", scenario.Kind, string.Join(",", trace));
+            Assert.AreEqual(1, newcomerCounts[2], "[{0}] N3 (registered during E2) must fire in E3 only. trace=[{1}]", scenario.Kind, string.Join(",", trace));
 
-            string[] expectedTrace =
-            {
-                "d0:driver",
-                "d1:driver",
-                "d2:driver",
-                "d3:driver",
-                "d3:n1",
-                "d3:n2",
-                "d3:n3",
-                "d2:n1",
-                "d2:n2",
-                "d1:n1",
-            };
+            string[] expectedTrace = { "d0:driver", "d1:driver", "d2:driver", "d3:driver", "d3:n1", "d3:n2", "d3:n3", "d2:n1", "d2:n2", "d1:n1" };
             CollectionAssert.AreEqual(
                 expectedTrace,
                 trace,
@@ -644,34 +500,10 @@ namespace DxMessaging.Tests.Runtime.Core
             */
             trace.Clear();
             ScenarioCallbacks.EmitForKind(scenario, hostId);
-            Assert.AreEqual(
-                DeepNestingLevels + 2,
-                driverCount,
-                "[{0}] Driver must fire once on the follow-up emission. trace=[{1}]",
-                scenario.Kind,
-                string.Join(",", trace)
-            );
-            Assert.AreEqual(
-                4,
-                newcomerCounts[0],
-                "[{0}] N1 must fire once on the follow-up emission. trace=[{1}]",
-                scenario.Kind,
-                string.Join(",", trace)
-            );
-            Assert.AreEqual(
-                3,
-                newcomerCounts[1],
-                "[{0}] N2 must fire once on the follow-up emission. trace=[{1}]",
-                scenario.Kind,
-                string.Join(",", trace)
-            );
-            Assert.AreEqual(
-                2,
-                newcomerCounts[2],
-                "[{0}] N3 must fire once on the follow-up emission. trace=[{1}]",
-                scenario.Kind,
-                string.Join(",", trace)
-            );
+            Assert.AreEqual(DeepNestingLevels + 2, driverCount, "[{0}] Driver must fire once on the follow-up emission. trace=[{1}]", scenario.Kind, string.Join(",", trace));
+            Assert.AreEqual(4, newcomerCounts[0], "[{0}] N1 must fire once on the follow-up emission. trace=[{1}]", scenario.Kind, string.Join(",", trace));
+            Assert.AreEqual(3, newcomerCounts[1], "[{0}] N2 must fire once on the follow-up emission. trace=[{1}]", scenario.Kind, string.Join(",", trace));
+            Assert.AreEqual(2, newcomerCounts[2], "[{0}] N3 must fire once on the follow-up emission. trace=[{1}]", scenario.Kind, string.Join(",", trace));
 
             token.RemoveRegistration(driverHandle);
         }

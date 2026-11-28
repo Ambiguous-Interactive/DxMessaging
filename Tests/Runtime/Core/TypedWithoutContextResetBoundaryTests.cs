@@ -40,17 +40,7 @@ namespace DxMessaging.Tests.Runtime.Core
                                     {
                                         foreach (bool warm in new[] { false, true })
                                         {
-                                            yield return Case(
-                                                scenario,
-                                                featured,
-                                                reset,
-                                                initial,
-                                                replacement,
-                                                fast,
-                                                throwing,
-                                                warm,
-                                                false
-                                            );
+                                            yield return Case(scenario, featured, reset, initial, replacement, fast, throwing, warm, false);
                                         }
                                     }
                                 }
@@ -68,17 +58,7 @@ namespace DxMessaging.Tests.Runtime.Core
                             {
                                 foreach (bool throwing in new[] { false, true })
                                 {
-                                    yield return Case(
-                                        scenario,
-                                        featured,
-                                        reset,
-                                        initial,
-                                        true,
-                                        fast,
-                                        throwing,
-                                        true,
-                                        true
-                                    );
+                                    yield return Case(scenario, featured, reset, initial, true, fast, throwing, true, true);
                                 }
                             }
                         }
@@ -87,28 +67,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private static TestCaseData Case(
-            MessageScenario scenario,
-            bool featured,
-            int reset,
-            bool initial,
-            bool replacement,
-            bool fast,
-            bool throwing,
-            bool warm,
-            bool nested
-        ) =>
-            new TestCaseData(
-                scenario,
-                featured,
-                reset,
-                initial,
-                replacement,
-                fast,
-                throwing,
-                warm,
-                nested
-            ).SetName(
+        private static TestCaseData Case(MessageScenario scenario, bool featured, int reset, bool initial, bool replacement, bool fast, bool throwing, bool warm, bool nested) =>
+            new TestCaseData(scenario, featured, reset, initial, replacement, fast, throwing, warm, nested).SetName(
                 $"TypedWithoutContextReset_{scenario.Kind}_Featured{featured}_Reset{reset}_Initial{initial}_Replace{replacement}_Fast{fast}_Throw{throwing}_Warm{warm}_Nested{nested}"
             );
 
@@ -178,13 +138,9 @@ namespace DxMessaging.Tests.Runtime.Core
                     fresh.Enable();
                     if (reset == 2)
                     {
-                        RegisterPrimary(fresh, kind, fast, context, () =>
-                            calls.Add(phase + ":fresh-primary")
-                        );
+                        RegisterPrimary(fresh, kind, fast, context, () => calls.Add(phase + ":fresh-primary"));
                     }
-                    RegisterWithout(fresh, kind, fast, () =>
-                        calls.Add(phase + ":replacement-variant")
-                    );
+                    RegisterWithout(fresh, kind, fast, () => calls.Add(phase + ":replacement-variant"));
                 }
                 if (nested)
                 {
@@ -305,35 +261,13 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.That(afterFirstScoped, Is.Zero, label + ": idle scoped emission");
             Assert.That(afterFirstDeferred, Is.False, label + ": deferred teardown drained");
             Assert.That(beforeCleanup, Is.EqualTo(expectedLive), label + ": live registrations");
-            Assert.That(
-                afterTokenCleanup,
-                Is.EqualTo(expectedAfterCleanup),
-                label + ": valid replacement and stale original cleanup"
-            );
-            Assert.That(
-                cleanup,
-                Is.EqualTo(expectedCleanup),
-                label + ": cleanup callback identities"
-            );
-            Assert.That(
-                afterCleanupEmit,
-                Is.EqualTo(expectedAfterCleanup),
-                label + ": cleanup emission preserves live registrations"
-            );
-            Assert.That(
-                MessageBusInspection.CountLiveRegistrations(bus),
-                Is.Zero,
-                label + ": explicit owned reset cleanup"
-            );
+            Assert.That(afterTokenCleanup, Is.EqualTo(expectedAfterCleanup), label + ": valid replacement and stale original cleanup");
+            Assert.That(cleanup, Is.EqualTo(expectedCleanup), label + ": cleanup callback identities");
+            Assert.That(afterCleanupEmit, Is.EqualTo(expectedAfterCleanup), label + ": cleanup emission preserves live registrations");
+            Assert.That(MessageBusInspection.CountLiveRegistrations(bus), Is.Zero, label + ": explicit owned reset cleanup");
         }
 
-        private static void AppendCurrent(
-            List<string> expected,
-            string phase,
-            int reset,
-            bool initial,
-            bool replacement
-        )
+        private static void AppendCurrent(List<string> expected, string phase, int reset, bool initial, bool replacement)
         {
             if (reset == 2)
             {
@@ -356,58 +290,32 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private static object Field(MessageBus bus, string name) =>
-            typeof(MessageBus)
-                .GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)
-                .GetValue(bus);
+        private static object Field(MessageBus bus, string name) => typeof(MessageBus).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic).GetValue(bus);
 
-        private static void RegisterPrimary(
-            MessageRegistrationToken token,
-            MessageKind kind,
-            bool fast,
-            InstanceId context,
-            Action callback
-        )
+        private static void RegisterPrimary(MessageRegistrationToken token, MessageKind kind, bool fast, InstanceId context, Action callback)
         {
             if (kind == MessageKind.Targeted)
             {
-                _ = fast
-                    ? token.RegisterTargeted<ProbeMessage>(context, (in ProbeMessage _) =>
-                        callback()
-                    )
-                    : token.RegisterTargeted<ProbeMessage>(context, _ => callback());
+                _ = fast ? token.RegisterTargeted<ProbeMessage>(context, (in ProbeMessage _) => callback()) : token.RegisterTargeted<ProbeMessage>(context, _ => callback());
             }
             else
             {
-                _ = fast
-                    ? token.RegisterBroadcast<ProbeMessage>(context, (in ProbeMessage _) =>
-                        callback()
-                    )
-                    : token.RegisterBroadcast<ProbeMessage>(context, _ => callback());
+                _ = fast ? token.RegisterBroadcast<ProbeMessage>(context, (in ProbeMessage _) => callback()) : token.RegisterBroadcast<ProbeMessage>(context, _ => callback());
             }
         }
 
-        private static void RegisterWithout(
-            MessageRegistrationToken token,
-            MessageKind kind,
-            bool fast,
-            Action callback
-        )
+        private static void RegisterWithout(MessageRegistrationToken token, MessageKind kind, bool fast, Action callback)
         {
             if (kind == MessageKind.Targeted)
             {
                 _ = fast
-                    ? token.RegisterTargetedWithoutTargeting<ProbeMessage>(
-                        (in InstanceId _, in ProbeMessage __) => callback()
-                    )
+                    ? token.RegisterTargetedWithoutTargeting<ProbeMessage>((in InstanceId _, in ProbeMessage __) => callback())
                     : token.RegisterTargetedWithoutTargeting<ProbeMessage>((_, __) => callback());
             }
             else
             {
                 _ = fast
-                    ? token.RegisterBroadcastWithoutSource<ProbeMessage>(
-                        (in InstanceId _, in ProbeMessage __) => callback()
-                    )
+                    ? token.RegisterBroadcastWithoutSource<ProbeMessage>((in InstanceId _, in ProbeMessage __) => callback())
                     : token.RegisterBroadcastWithoutSource<ProbeMessage>((_, __) => callback());
             }
         }
@@ -416,15 +324,11 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             if (kind == MessageKind.Targeted)
             {
-                _ = token.RegisterTargetedInterceptor<ProbeMessage>(
-                    static (ref InstanceId _, ref ProbeMessage __) => true
-                );
+                _ = token.RegisterTargetedInterceptor<ProbeMessage>(static (ref InstanceId _, ref ProbeMessage __) => true);
             }
             else
             {
-                _ = token.RegisterBroadcastInterceptor<ProbeMessage>(
-                    static (ref InstanceId _, ref ProbeMessage __) => true
-                );
+                _ = token.RegisterBroadcastInterceptor<ProbeMessage>(static (ref InstanceId _, ref ProbeMessage __) => true);
             }
         }
 

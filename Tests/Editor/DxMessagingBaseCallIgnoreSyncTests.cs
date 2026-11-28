@@ -51,8 +51,7 @@ namespace DxMessaging.Tests.Editor
             Assert.That(
                 settings._legacyEnableDiagnosticsInEditor,
                 Is.True,
-                "Reading the effective diagnostics target must remain mutation-free; durable "
-                    + "migration is performed only by GetOrCreateSettings on an idle editor tick."
+                "Reading the effective diagnostics target must remain mutation-free; durable " + "migration is performed only by GetOrCreateSettings on an idle editor tick."
             );
         }
 
@@ -152,8 +151,7 @@ namespace DxMessaging.Tests.Editor
             Assert.That(
                 DxMessagingEditorIdle.CanMutateAssetDatabase(),
                 Is.True,
-                "The initializer fixture requires an idle Editor before capturing state. "
-                    + $"Compiling={EditorApplication.isCompiling}, updating={EditorApplication.isUpdating}."
+                "The initializer fixture requires an idle Editor before capturing state. " + $"Compiling={EditorApplication.isCompiling}, updating={EditorApplication.isUpdating}."
             );
             _previousTargets = IMessageBus.GlobalDiagnosticsTargets;
             _previousStacks = IMessageBus.GlobalDiagnosticsStackTraces;
@@ -164,23 +162,12 @@ namespace DxMessaging.Tests.Editor
             _previousOptionsEnabled = EditorSettings.enterPlayModeOptionsEnabled;
             _previousOptions = EditorSettings.enterPlayModeOptions;
             _fixtureStateCaptured = true;
-            _initializerState = new(
-                typeof(DxMessagingEditorInitializer),
-                "s_playModeWarningIssued",
-                "s_ensureSettingsAssetScheduled"
-            );
+            _initializerState = new(typeof(DxMessagingEditorInitializer), "s_playModeWarningIssued", "s_ensureSettingsAssetScheduled");
             _initializerState.Set("s_playModeWarningIssued", false);
             _initializerState.Set("s_ensureSettingsAssetScheduled", false);
             _settingsCache = new();
-            _runtimeSettings = new(
-                typeof(DxMessaging.Core.Configuration.DxMessagingRuntimeSettingsProvider),
-                "_cached"
-            );
-            _previousRuntimeSettings =
-                MessageBusInspection.ReadField(
-                    typeof(DxMessaging.Core.Configuration.DxMessagingRuntimeSettingsProvider),
-                    "_cached"
-                ) as UnityEngine.Object;
+            _runtimeSettings = new(typeof(DxMessaging.Core.Configuration.DxMessagingRuntimeSettingsProvider), "_cached");
+            _previousRuntimeSettings = MessageBusInspection.ReadField(typeof(DxMessaging.Core.Configuration.DxMessagingRuntimeSettingsProvider), "_cached") as UnityEngine.Object;
             _runtimeSettings.Set("_cached", null);
             _sidecarCallbacks = new(typeof(DxMessagingBaseCallIgnoreSync));
             _scheduled = new(typeof(DxMessagingEditorInitializer));
@@ -218,13 +205,9 @@ namespace DxMessaging.Tests.Editor
                 EditorTestCleanup.Run(
                     () =>
                     {
-                        object currentRuntimeSettings = MessageBusInspection.ReadField(
-                            typeof(DxMessaging.Core.Configuration.DxMessagingRuntimeSettingsProvider),
-                            "_cached"
-                        );
+                        object currentRuntimeSettings = MessageBusInspection.ReadField(typeof(DxMessaging.Core.Configuration.DxMessagingRuntimeSettingsProvider), "_cached");
                         if (
-                            currentRuntimeSettings
-                                is DxMessaging.Core.Configuration.DxMessagingRuntimeSettings created
+                            currentRuntimeSettings is DxMessaging.Core.Configuration.DxMessagingRuntimeSettings created
                             && created.IsFallbackInstance
                             && !ReferenceEquals(created, _previousRuntimeSettings)
                         )
@@ -251,10 +234,7 @@ namespace DxMessaging.Tests.Editor
 
         private void ObserveWarning(string message, string stack, LogType type)
         {
-            if (
-                type == LogType.Warning
-                && message == DxMessagingEditorInitializer.DomainReloadWarningMessage
-            )
+            if (type == LogType.Warning && message == DxMessagingEditorInitializer.DomainReloadWarningMessage)
             {
                 _warnings.Add(message);
             }
@@ -279,11 +259,7 @@ namespace DxMessaging.Tests.Editor
             Assert.That(IMessageBus.GlobalDiagnosticsTargets, Is.EqualTo(DiagnosticsTarget.Editor));
             Assert.That(IMessageBus.GlobalDiagnosticsStackTraces, Is.True);
             Assert.That(IMessageBus.GlobalMessageBufferSize, Is.EqualTo(37));
-            Assert.That(
-                settings._legacyEnableDiagnosticsInEditor,
-                Is.True,
-                "The passive path must preserve the original asset."
-            );
+            Assert.That(settings._legacyEnableDiagnosticsInEditor, Is.True, "The passive path must preserve the original asset.");
             Assert.That(_scheduled.Count, Is.EqualTo(1));
         }
 
@@ -296,17 +272,10 @@ namespace DxMessaging.Tests.Editor
             IMessageBus.GlobalMessageBufferSize = 3;
             DxMessagingEditorInitializer.ApplyEditorSettings();
             Assert.That(_scheduled.Count, Is.EqualTo(1));
-            Assert.That(
-                DxMessagingSettings.LoadSettingsPassive(),
-                Is.Null,
-                "Applying globals must not replace a cached miss by creating settings synchronously."
-            );
+            Assert.That(DxMessagingSettings.LoadSettingsPassive(), Is.Null, "Applying globals must not replace a cached miss by creating settings synchronously.");
             Assert.That(IMessageBus.GlobalDiagnosticsTargets, Is.EqualTo(DiagnosticsTarget.Off));
             Assert.That(IMessageBus.GlobalDiagnosticsStackTraces, Is.False);
-            Assert.That(
-                IMessageBus.GlobalMessageBufferSize,
-                Is.EqualTo(IMessageBus.DefaultMessageBufferSize)
-            );
+            Assert.That(IMessageBus.GlobalMessageBufferSize, Is.EqualTo(IMessageBus.DefaultMessageBufferSize));
             Assert.That(_warnings, Is.Empty);
         }
 
@@ -318,17 +287,10 @@ namespace DxMessaging.Tests.Editor
             _settingsCache.SetCurrent(settings);
             DisableDomainReload();
             DxMessagingEditorInitializer.ApplyEditorSettings();
-            Assert.That(
-                _warnings,
-                Is.EqualTo(new[] { DxMessagingEditorInitializer.DomainReloadWarningMessage })
-            );
+            Assert.That(_warnings, Is.EqualTo(new[] { DxMessagingEditorInitializer.DomainReloadWarningMessage }));
             Assert.That(_scheduled.Count, Is.EqualTo(1));
             _scheduled[0].Invoke();
-            Assert.That(
-                _warnings,
-                Is.EqualTo(new[] { DxMessagingEditorInitializer.DomainReloadWarningMessage }),
-                "The real deferred ensure must not repeat an issued warning."
-            );
+            Assert.That(_warnings, Is.EqualTo(new[] { DxMessagingEditorInitializer.DomainReloadWarningMessage }), "The real deferred ensure must not repeat an issued warning.");
         }
 
         [Test]
@@ -337,41 +299,24 @@ namespace DxMessaging.Tests.Editor
             _settingsCache.SetCurrent(null);
             DxMessagingEditorInitializer.ApplyEditorSettings();
             DxMessagingEditorInitializer.ApplyEditorSettings();
-            Assert.That(
-                _scheduled.Count,
-                Is.EqualTo(1),
-                "Repeated requests must share one real queued ensure."
-            );
+            Assert.That(_scheduled.Count, Is.EqualTo(1), "Repeated requests must share one real queued ensure.");
             DxMessagingSettings settings = NewSettings();
             settings._diagnosticsTargets = DiagnosticsTarget.Runtime;
             settings._messageBufferSize = 19;
             _settingsCache.SetCurrent(settings);
             string beforeEnsure = CaptureDeferredEnsureState(settings);
             _scheduled[0].Invoke();
-            string ensureTrace =
-                $"Before: {beforeEnsure}; after: {CaptureDeferredEnsureState(settings)}";
+            string ensureTrace = $"Before: {beforeEnsure}; after: {CaptureDeferredEnsureState(settings)}";
             TestContext.Out.WriteLine(ensureTrace);
-            Assert.That(
-                IMessageBus.GlobalDiagnosticsTargets,
-                Is.EqualTo(DiagnosticsTarget.Runtime),
-                ensureTrace
-            );
+            Assert.That(IMessageBus.GlobalDiagnosticsTargets, Is.EqualTo(DiagnosticsTarget.Runtime), ensureTrace);
             Assert.That(IMessageBus.GlobalMessageBufferSize, Is.EqualTo(19));
             DxMessagingEditorInitializer.ApplyEditorSettings();
             Assert.That(_scheduled.Count, Is.EqualTo(2));
             _scheduled[1].Invoke();
             Assert.That(IMessageBus.GlobalMessageBufferSize, Is.EqualTo(19));
-            MethodInfo scheduler = typeof(DxMessagingEditorInitializer).GetMethod(
-                "ScheduleEnsureSettingsAsset",
-                BindingFlags.Static | BindingFlags.NonPublic
-            );
+            MethodInfo scheduler = typeof(DxMessagingEditorInitializer).GetMethod("ScheduleEnsureSettingsAsset", BindingFlags.Static | BindingFlags.NonPublic);
             Assert.That(
-                EditorProductionCalls
-                    .From(scheduler)
-                    .Any(call =>
-                        call.DeclaringType == typeof(DxMessagingEditorIdle)
-                        && call.Name == "ScheduleAssetDatabaseMutation"
-                    ),
+                EditorProductionCalls.From(scheduler).Any(call => call.DeclaringType == typeof(DxMessagingEditorIdle) && call.Name == "ScheduleAssetDatabaseMutation"),
                 Is.True
             );
         }
@@ -391,26 +336,15 @@ namespace DxMessaging.Tests.Editor
             _settingsCache.SetCurrent(settings);
             string beforeEnsure = CaptureDeferredEnsureState(settings);
             _scheduled[0].Invoke();
-            string ensureTrace =
-                $"Before: {beforeEnsure}; after: {CaptureDeferredEnsureState(settings)}";
+            string ensureTrace = $"Before: {beforeEnsure}; after: {CaptureDeferredEnsureState(settings)}";
             TestContext.Out.WriteLine(ensureTrace);
-            Assert.That(
-                IMessageBus.GlobalDiagnosticsTargets,
-                Is.EqualTo(DiagnosticsTarget.Runtime),
-                ensureTrace
-            );
+            Assert.That(IMessageBus.GlobalDiagnosticsTargets, Is.EqualTo(DiagnosticsTarget.Runtime), ensureTrace);
             Assert.That(IMessageBus.GlobalMessageBufferSize, Is.EqualTo(23));
-            Assert.That(
-                _warnings,
-                Is.EqualTo(new[] { DxMessagingEditorInitializer.DomainReloadWarningMessage })
-            );
+            Assert.That(_warnings, Is.EqualTo(new[] { DxMessagingEditorInitializer.DomainReloadWarningMessage }));
             DxMessagingEditorInitializer.ApplyEditorSettings();
             Assert.That(_scheduled.Count, Is.EqualTo(2));
             _scheduled[1].Invoke();
-            Assert.That(
-                _warnings,
-                Is.EqualTo(new[] { DxMessagingEditorInitializer.DomainReloadWarningMessage })
-            );
+            Assert.That(_warnings, Is.EqualTo(new[] { DxMessagingEditorInitializer.DomainReloadWarningMessage }));
         }
 
         [Test]
@@ -427,18 +361,9 @@ namespace DxMessaging.Tests.Editor
 
         private string CaptureDeferredEnsureState(DxMessagingSettings expected)
         {
-            object cached = MessageBusInspection.ReadField(
-                typeof(DxMessagingSettings),
-                "_cachedSettings"
-            );
-            object cachedRevision = MessageBusInspection.ReadField(
-                typeof(DxMessagingSettings),
-                "_cachedSettingsRevision"
-            );
-            object scheduled = MessageBusInspection.ReadField(
-                typeof(DxMessagingEditorInitializer),
-                "s_ensureSettingsAssetScheduled"
-            );
+            object cached = MessageBusInspection.ReadField(typeof(DxMessagingSettings), "_cachedSettings");
+            object cachedRevision = MessageBusInspection.ReadField(typeof(DxMessagingSettings), "_cachedSettingsRevision");
+            object scheduled = MessageBusInspection.ReadField(typeof(DxMessagingEditorInitializer), "s_ensureSettingsAssetScheduled");
             return $"compiling={EditorApplication.isCompiling}, updating={EditorApplication.isUpdating}, "
                 + $"queued={_scheduled.Count}, scheduled={scheduled}, "
                 + $"revision={DxMessagingSettings.SettingsRevision}, cachedRevision={cachedRevision}, "
@@ -461,8 +386,7 @@ namespace DxMessaging.Tests.Editor
         private EditorDelayCallScope _responseCallbacks;
         private EditorCompilerInputScope _inputs;
         private EditorSettingsCacheScope _settingsCache;
-        private static string SidecarPath =>
-            Path.GetFullPath(DxMessagingBaseCallIgnoreSync.SidecarAssetPath);
+        private static string SidecarPath => Path.GetFullPath(DxMessagingBaseCallIgnoreSync.SidecarAssetPath);
 
         [UnitySetUp]
         public IEnumerator SetUp()
@@ -533,22 +457,14 @@ namespace DxMessaging.Tests.Editor
                     QueueWriter();
                     Delegate[] baseline = CurrentDelayCallbacks().Except(before).ToArray();
                     owned.AddRange(baseline.Cast<EditorApplication.CallbackFunction>());
-                    Assert.That(
-                        baseline.Length,
-                        Is.EqualTo(1),
-                        $"{context} Queue one actual package writer."
-                    );
+                    Assert.That(baseline.Length, Is.EqualTo(1), $"{context} Queue one actual package writer.");
                     EditorApplication.delayCall += unrelated;
 
                     scope = new();
                     Assert.That(CurrentDelayCallbacks(), Does.Contain(unrelated), context);
                     foreach (Delegate callback in baseline)
                     {
-                        Assert.That(
-                            CurrentDelayCallbacks().Contains(callback),
-                            Is.False,
-                            $"{context} A pre-existing package writer must not mutate protected compiler inputs."
-                        );
+                        Assert.That(CurrentDelayCallbacks().Contains(callback), Is.False, $"{context} A pre-existing package writer must not mutate protected compiler inputs.");
                     }
                     Assert.That(CurrentDelayCallbacks(), Does.Contain(unrelated), context);
 
@@ -570,11 +486,7 @@ namespace DxMessaging.Tests.Editor
                     }
                     foreach (Delegate callback in temporary)
                     {
-                        Assert.That(
-                            CurrentDelayCallbacks().Contains(callback),
-                            Is.False,
-                            $"{context} Do not leave test-created compiler writers queued after restoration."
-                        );
+                        Assert.That(CurrentDelayCallbacks().Contains(callback), Is.False, $"{context} Do not leave test-created compiler writers queued after restoration.");
                     }
                     Assert.That(CurrentDelayCallbacks(), Does.Contain(unrelated), context);
                 }
@@ -608,8 +520,7 @@ namespace DxMessaging.Tests.Editor
             }
         }
 
-        private static Delegate[] CurrentDelayCallbacks() =>
-            EditorApplication.delayCall?.GetInvocationList() ?? Array.Empty<Delegate>();
+        private static Delegate[] CurrentDelayCallbacks() => EditorApplication.delayCall?.GetInvocationList() ?? Array.Empty<Delegate>();
 
         [Test]
         public void PreparedCompilerInputWritersRemainIdempotent()
@@ -625,24 +536,9 @@ namespace DxMessaging.Tests.Editor
                 bool sidecarPending = false;
                 bool rspPending = false;
                 List<string> imports = new();
-                Action writeSidecar = () =>
-                    DxMessagingBaseCallIgnoreSync.WriteSidecarOrThrow(
-                        sidecar,
-                        settings._baseCallIgnoredTypes,
-                        imports.Add,
-                        ref sidecarPending
-                    );
-                Action writeResponse = () =>
-                    SetupCscRsp.SynchronizeResponseFiles(assets, imports.Add, ref rspPending);
-                SetupCscRsp.PrepareCompilerInputs(
-                    true,
-                    writeSidecar,
-                    writeResponse,
-                    () => { },
-                    () => { },
-                    ref sidecarPending,
-                    ref rspPending
-                );
+                Action writeSidecar = () => DxMessagingBaseCallIgnoreSync.WriteSidecarOrThrow(sidecar, settings._baseCallIgnoredTypes, imports.Add, ref sidecarPending);
+                Action writeResponse = () => SetupCscRsp.SynchronizeResponseFiles(assets, imports.Add, ref rspPending);
+                SetupCscRsp.PrepareCompilerInputs(true, writeSidecar, writeResponse, () => { }, () => { }, ref sidecarPending, ref rspPending);
                 DateTime unchangedTime = new(2001, 2, 3, 4, 5, 6, DateTimeKind.Utc);
                 File.SetLastWriteTimeUtc(sidecar, unchangedTime);
                 File.SetLastWriteTimeUtc(Path.Combine(assets, "csc.rsp"), unchangedTime);
@@ -654,10 +550,7 @@ namespace DxMessaging.Tests.Editor
                     "Reapplying the actual prepared writers must not import unchanged inputs."
                 );
                 Assert.AreEqual(unchangedTime, File.GetLastWriteTimeUtc(sidecar));
-                Assert.AreEqual(
-                    unchangedTime,
-                    File.GetLastWriteTimeUtc(Path.Combine(assets, "csc.rsp"))
-                );
+                Assert.AreEqual(unchangedTime, File.GetLastWriteTimeUtc(Path.Combine(assets, "csc.rsp")));
             }
             finally
             {
@@ -682,28 +575,19 @@ namespace DxMessaging.Tests.Editor
             Assert.That(
                 DxMessagingEditorIdle.CanMutateAssetDatabase(),
                 Is.True,
-                "Temporary compiler inputs must remain batched until fixture restoration. "
-                    + $"Compiling={EditorApplication.isCompiling}, updating={EditorApplication.isUpdating}."
+                "Temporary compiler inputs must remain batched until fixture restoration. " + $"Compiling={EditorApplication.isCompiling}, updating={EditorApplication.isUpdating}."
             );
             byte[] sidecar = File.ReadAllBytes(SidecarPath);
             byte[] response = File.ReadAllBytes(Path.Combine(Application.dataPath, "csc.rsp"));
             DateTime sidecarTime = File.GetLastWriteTimeUtc(SidecarPath);
-            DateTime responseTime = File.GetLastWriteTimeUtc(
-                Path.Combine(Application.dataPath, "csc.rsp")
-            );
+            DateTime responseTime = File.GetLastWriteTimeUtc(Path.Combine(Application.dataPath, "csc.rsp"));
             _scheduled[0].Invoke();
             Assert.That(_responseCallbacks.Count, Is.EqualTo(1));
             _responseCallbacks[0].Invoke();
             CollectionAssert.AreEqual(sidecar, File.ReadAllBytes(SidecarPath));
-            CollectionAssert.AreEqual(
-                response,
-                File.ReadAllBytes(Path.Combine(Application.dataPath, "csc.rsp"))
-            );
+            CollectionAssert.AreEqual(response, File.ReadAllBytes(Path.Combine(Application.dataPath, "csc.rsp")));
             Assert.That(File.GetLastWriteTimeUtc(SidecarPath), Is.EqualTo(sidecarTime));
-            Assert.That(
-                File.GetLastWriteTimeUtc(Path.Combine(Application.dataPath, "csc.rsp")),
-                Is.EqualTo(responseTime)
-            );
+            Assert.That(File.GetLastWriteTimeUtc(Path.Combine(Application.dataPath, "csc.rsp")), Is.EqualTo(responseTime));
         }
 
         [Test]
@@ -712,11 +596,7 @@ namespace DxMessaging.Tests.Editor
             DxMessagingSettings settings = NewSettings();
             byte[] before = CurrentSidecar();
             InvokePrivate(settings, "OnValidate");
-            CollectionAssert.AreEqual(
-                before,
-                CurrentSidecar(),
-                "OnValidate must not synchronously write or import compiler inputs."
-            );
+            CollectionAssert.AreEqual(before, CurrentSidecar(), "OnValidate must not synchronously write or import compiler inputs.");
             Assert.That(_scheduled.Count, Is.EqualTo(1));
             _scheduled[0].Invoke();
             AssertContent(settings);
@@ -756,9 +636,7 @@ namespace DxMessaging.Tests.Editor
             Assert.That(_scheduled.Count, Is.EqualTo(1));
             bool idle = false;
             List<Action> ticks = new();
-            DxMessagingEditorIdle.ScheduleAssetDatabaseMutation(_scheduled[0], ticks.Add, () =>
-                idle
-            );
+            DxMessagingEditorIdle.ScheduleAssetDatabaseMutation(_scheduled[0], ticks.Add, () => idle);
             ticks[0]();
             CollectionAssert.AreEqual(before, CurrentSidecar());
             Assert.That(ticks.Count, Is.EqualTo(2));
@@ -783,31 +661,11 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void SynchronousSidecarEntryRetainsItsRealBusyAndDeferredGuards()
         {
-            MethodInfo entry = typeof(DxMessagingBaseCallIgnoreSync).GetMethod(
-                nameof(DxMessagingBaseCallIgnoreSync.RegenerateSidecar)
-            );
+            MethodInfo entry = typeof(DxMessagingBaseCallIgnoreSync).GetMethod(nameof(DxMessagingBaseCallIgnoreSync.RegenerateSidecar));
             MethodBase[] calls = EditorProductionCalls.From(entry).ToArray();
-            Assert.That(
-                calls.Any(call =>
-                    call.DeclaringType == typeof(DxMessagingEditorIdle)
-                    && call.Name == "CanMutateAssetDatabase"
-                ),
-                Is.True
-            );
-            Assert.That(
-                calls.Any(call =>
-                    call.DeclaringType == typeof(DxMessagingBaseCallIgnoreSync)
-                    && call.Name == "RegenerateSidecarDeferred"
-                ),
-                Is.True
-            );
-            Assert.That(
-                calls.Any(call =>
-                    call.DeclaringType == typeof(DxMessagingBaseCallIgnoreSync)
-                    && call.Name == "ApplySidecarAndScheduleCscRspSync"
-                ),
-                Is.True
-            );
+            Assert.That(calls.Any(call => call.DeclaringType == typeof(DxMessagingEditorIdle) && call.Name == "CanMutateAssetDatabase"), Is.True);
+            Assert.That(calls.Any(call => call.DeclaringType == typeof(DxMessagingBaseCallIgnoreSync) && call.Name == "RegenerateSidecarDeferred"), Is.True);
+            Assert.That(calls.Any(call => call.DeclaringType == typeof(DxMessagingBaseCallIgnoreSync) && call.Name == "ApplySidecarAndScheduleCscRspSync"), Is.True);
         }
 
         [Test]
@@ -830,30 +688,18 @@ namespace DxMessaging.Tests.Editor
             _createdSettings.Add(settings);
             _scheduled.Clear();
             _responseCallbacks.Clear();
-            settings._baseCallIgnoredTypes = new List<string>
-            {
-                "Owned.SidecarProbe" + Guid.NewGuid().ToString("N"),
-            };
+            settings._baseCallIgnoredTypes = new List<string> { "Owned.SidecarProbe" + Guid.NewGuid().ToString("N") };
             return settings;
         }
 
-        private static byte[] CurrentSidecar() =>
-            File.Exists(SidecarPath) ? File.ReadAllBytes(SidecarPath) : null;
+        private static byte[] CurrentSidecar() => File.Exists(SidecarPath) ? File.ReadAllBytes(SidecarPath) : null;
 
         private static void AssertContent(DxMessagingSettings settings) =>
-            Assert.That(
-                File.ReadAllText(SidecarPath),
-                Is.EqualTo(
-                    DxMessagingBaseCallIgnoreSync.BuildContent(settings._baseCallIgnoredTypes)
-                )
-            );
+            Assert.That(File.ReadAllText(SidecarPath), Is.EqualTo(DxMessagingBaseCallIgnoreSync.BuildContent(settings._baseCallIgnoredTypes)));
 
         private static void InvokePrivate(DxMessagingSettings settings, string methodName)
         {
-            MethodInfo method = typeof(DxMessagingSettings).GetMethod(
-                methodName,
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
+            MethodInfo method = typeof(DxMessagingSettings).GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic);
             Assert.That(method, Is.Not.Null);
             method.Invoke(settings, null);
         }
@@ -869,25 +715,13 @@ namespace DxMessaging.Tests.Editor
             bool editorIdle = false;
             int runCount = 0;
 
-            DxMessagingEditorIdle.ScheduleAssetDatabaseMutation(
-                () => runCount++,
-                work => scheduled.Add(work),
-                () => editorIdle
-            );
+            DxMessagingEditorIdle.ScheduleAssetDatabaseMutation(() => runCount++, work => scheduled.Add(work), () => editorIdle);
 
             Assert.That(scheduled.Count, Is.EqualTo(1));
             scheduled[0].Invoke();
 
-            Assert.That(
-                runCount,
-                Is.EqualTo(0),
-                "AssetDatabase work must not run while the editor reports a compile/update window."
-            );
-            Assert.That(
-                scheduled.Count,
-                Is.EqualTo(2),
-                "Busy callbacks must requeue the asset mutation for a later editor tick."
-            );
+            Assert.That(runCount, Is.EqualTo(0), "AssetDatabase work must not run while the editor reports a compile/update window.");
+            Assert.That(scheduled.Count, Is.EqualTo(2), "Busy callbacks must requeue the asset mutation for a later editor tick.");
 
             editorIdle = true;
             scheduled[1].Invoke();
@@ -905,17 +739,13 @@ namespace DxMessaging.Tests.Editor
     [TestFixture]
     public sealed class DxMessagingBaseCallIgnoreSyncContentTests
     {
-        private const string HeaderLine =
-            "# Auto-generated from Assets/Editor/DxMessagingSettings.asset; edit there instead.";
-        private const string FormatLine =
-            "# One fully-qualified type name per line. Lines starting with # are comments.";
+        private const string HeaderLine = "# Auto-generated from Assets/Editor/DxMessagingSettings.asset; edit there instead.";
+        private const string FormatLine = "# One fully-qualified type name per line. Lines starting with # are comments.";
 
         [Test]
         public void BuildContentWritesBothCommentHeadersFirst()
         {
-            string[] lines = SplitLines(
-                DxMessagingBaseCallIgnoreSync.BuildContent(new List<string>())
-            );
+            string[] lines = SplitLines(DxMessagingBaseCallIgnoreSync.BuildContent(new List<string>()));
 
             Assert.That(lines.Length, Is.EqualTo(2), "Empty list must emit only the two headers.");
             Assert.That(lines[0], Is.EqualTo(HeaderLine));
@@ -933,15 +763,11 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void BuildContentSortsOrdinalAndDeduplicatesPreservingHeaders()
         {
-            string content = DxMessagingBaseCallIgnoreSync.BuildContent(
-                new List<string> { "Zebra.Type", "Alpha.Type", "Zebra.Type", "Mid.Type" }
-            );
+            string content = DxMessagingBaseCallIgnoreSync.BuildContent(new List<string> { "Zebra.Type", "Alpha.Type", "Zebra.Type", "Mid.Type" });
 
             Assert.That(
                 SplitLines(content),
-                Is.EqualTo(
-                    new[] { HeaderLine, FormatLine, "Alpha.Type", "Mid.Type", "Zebra.Type" }
-                ),
+                Is.EqualTo(new[] { HeaderLine, FormatLine, "Alpha.Type", "Mid.Type", "Zebra.Type" }),
                 "Entries must be Ordinal-sorted and de-duplicated after the two headers."
             );
 
@@ -951,15 +777,7 @@ namespace DxMessaging.Tests.Editor
             */
             Assert.That(
                 content,
-                Is.EqualTo(
-                    HeaderLine
-                        + "\n"
-                        + FormatLine
-                        + "\n"
-                        + "Alpha.Type\n"
-                        + "Mid.Type\n"
-                        + "Zebra.Type\n"
-                ),
+                Is.EqualTo(HeaderLine + "\n" + FormatLine + "\n" + "Alpha.Type\n" + "Mid.Type\n" + "Zebra.Type\n"),
                 "BuildContent must emit LF-terminated lines with a single trailing LF and no blank lines."
             );
         }
@@ -967,17 +785,9 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void BuildContentSkipsNullAndWhitespaceEntriesAndTrimsRetained()
         {
-            string[] lines = SplitLines(
-                DxMessagingBaseCallIgnoreSync.BuildContent(
-                    new List<string> { "  Keep.Type  ", "", "   ", null }
-                )
-            );
+            string[] lines = SplitLines(DxMessagingBaseCallIgnoreSync.BuildContent(new List<string> { "  Keep.Type  ", "", "   ", null }));
 
-            Assert.That(
-                lines,
-                Is.EqualTo(new[] { HeaderLine, FormatLine, "Keep.Type" }),
-                "Null/blank entries must be dropped and retained entries trimmed."
-            );
+            Assert.That(lines, Is.EqualTo(new[] { HeaderLine, FormatLine, "Keep.Type" }), "Null/blank entries must be dropped and retained entries trimmed.");
         }
 
         private static string[] SplitLines(string content)

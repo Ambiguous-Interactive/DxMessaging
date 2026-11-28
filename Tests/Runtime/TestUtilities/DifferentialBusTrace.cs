@@ -108,32 +108,15 @@ namespace DxMessaging.Tests.Runtime
 
         public override string ToString() =>
             $"{Kind}(token={Token},context={Context},value={Value},priority={Priority})"
+            + (KindOffset != 0 || NestedToken != 0 || Depth != 0 ? $"[kindOffset={KindOffset},nestedToken={NestedToken},depth={Depth}]" : string.Empty)
+            + (Kind == BusTraceOperationKind.RemoveForeign ? $"[handleToken={HandleToken}]" : string.Empty)
             + (
-                KindOffset != 0 || NestedToken != 0 || Depth != 0
-                    ? $"[kindOffset={KindOffset},nestedToken={NestedToken},depth={Depth}]"
-                    : string.Empty
-            )
-            + (
-                Kind == BusTraceOperationKind.RemoveForeign
-                    ? $"[handleToken={HandleToken}]"
-                    : string.Empty
-            )
-            + (
-                Kind == BusTraceOperationKind.SetHandlerActive
-                || Kind == BusTraceOperationKind.EmitWithHandlerActive
+                Kind == BusTraceOperationKind.SetHandlerActive || Kind == BusTraceOperationKind.EmitWithHandlerActive
                     ? $"[handlerToken={HandlerToken},handlerActive={HandlerActive}]"
                     : string.Empty
             )
-            + (
-                0 <= LeaseSlot
-                    ? $"[leaseSlot={LeaseSlot},sourceLeaseSlot={SourceLeaseSlot}]"
-                    : string.Empty
-            )
-            + (
-                0 <= HandleSlot
-                    ? $"[handleSlot={HandleSlot},sourceHandleSlot={SourceHandleSlot}]"
-                    : string.Empty
-            );
+            + (0 <= LeaseSlot ? $"[leaseSlot={LeaseSlot},sourceLeaseSlot={SourceLeaseSlot}]" : string.Empty)
+            + (0 <= HandleSlot ? $"[handleSlot={HandleSlot},sourceHandleSlot={SourceHandleSlot}]" : string.Empty);
     }
 
     /// <summary>Immutable, versioned replay inputs; a seed identifies the original generator sequence.</summary>
@@ -145,12 +128,7 @@ namespace DxMessaging.Tests.Runtime
         internal const int TokenCount = 4;
         internal const int MaxOperations = 256;
 
-        internal BusTraceSequence(
-            MessageScenario scenario,
-            uint seed,
-            IEnumerable<BusTraceOperation> operations,
-            int generatorVersion = GeneratorVersion
-        )
+        internal BusTraceSequence(MessageScenario scenario, uint seed, IEnumerable<BusTraceOperation> operations, int generatorVersion = GeneratorVersion)
         {
             Scenario = scenario ?? throw new ArgumentNullException(nameof(scenario));
             Seed = seed;
@@ -168,10 +146,7 @@ namespace DxMessaging.Tests.Runtime
             {
                 if (copy.Count == MaxOperations)
                 {
-                    throw new ArgumentException(
-                        "Trace exceeds the operation limit.",
-                        nameof(operations)
-                    );
+                    throw new ArgumentException("Trace exceeds the operation limit.", nameof(operations));
                 }
                 copy.Add(operation);
             }
@@ -207,9 +182,7 @@ namespace DxMessaging.Tests.Runtime
             OccupiedTypeSlots = occupiedTypeSlots;
             OccupiedTargetSlots = occupiedTargetSlots;
             FinalEmissions = new List<string>(finalEmissions ?? Array.Empty<string>()).AsReadOnly();
-            UnmatchedDiagnostics = new List<string>(
-                unmatchedDiagnostics ?? Array.Empty<string>()
-            ).AsReadOnly();
+            UnmatchedDiagnostics = new List<string>(unmatchedDiagnostics ?? Array.Empty<string>()).AsReadOnly();
         }
 
         internal ReadOnlyCollection<string> Callbacks { get; }
@@ -238,12 +211,7 @@ namespace DxMessaging.Tests.Runtime
     /// <summary>The earliest observable difference, including both sides and reproducible input identity.</summary>
     internal sealed class BusTraceMismatch
     {
-        internal BusTraceMismatch(
-            int index,
-            string category,
-            BusTraceObservation control,
-            BusTraceObservation candidate
-        )
+        internal BusTraceMismatch(int index, string category, BusTraceObservation control, BusTraceObservation candidate)
         {
             Index = index;
             Category = category;
@@ -278,12 +246,7 @@ namespace DxMessaging.Tests.Runtime
     internal static class DifferentialBusTrace
     {
         /// <summary>Generates a stable xorshift sequence independent of System.Random implementation changes.</summary>
-        internal static BusTraceSequence Generate(
-            MessageScenario scenario,
-            uint seed,
-            int length,
-            int generatorVersion = BusTraceSequence.GeneratorVersion
-        )
+        internal static BusTraceSequence Generate(MessageScenario scenario, uint seed, int length, int generatorVersion = BusTraceSequence.GeneratorVersion)
         {
             if (length < 0 || BusTraceSequence.MaxOperations < length)
             {
@@ -361,27 +324,18 @@ namespace DxMessaging.Tests.Runtime
                 }
                 int context = index < 2 ? 0 : (int)(Next(ref state) % 2);
                 int value = unchecked((int)Next(ref state));
-                if (
-                    kind == BusTraceOperationKind.SetDiagnostics
-                    || kind == BusTraceOperationKind.Trim
-                )
+                if (kind == BusTraceOperationKind.SetDiagnostics || kind == BusTraceOperationKind.Trim)
                 {
                     value &= 1;
                 }
                 int kindOffset = 5 <= generatorVersion ? (int)(Next(ref state) % 3) : 0;
-                int nestedToken =
-                    5 <= generatorVersion
-                        ? (int)(Next(ref state) % BusTraceSequence.TokenCount)
-                        : 0;
+                int nestedToken = 5 <= generatorVersion ? (int)(Next(ref state) % BusTraceSequence.TokenCount) : 0;
                 if (kind == BusTraceOperationKind.EmitNested && !registered[nestedToken])
                 {
                     nestedToken = token;
                 }
                 int handleToken = kind == BusTraceOperationKind.RemoveForeign ? nestedToken : 0;
-                if (
-                    kind == BusTraceOperationKind.RemoveForeign
-                    && (handleToken == token || (!registered[handleToken] && !removed[handleToken]))
-                )
+                if (kind == BusTraceOperationKind.RemoveForeign && (handleToken == token || (!registered[handleToken] && !removed[handleToken])))
                 {
                     kind = BusTraceOperationKind.Emit;
                     handleToken = 0;
@@ -405,8 +359,7 @@ namespace DxMessaging.Tests.Runtime
                         context = registrations[token].Context;
                     }
                 }
-                int depth =
-                    kind == BusTraceOperationKind.EmitNested ? 1 + (int)(Next(ref state) % 10) : 0;
+                int depth = kind == BusTraceOperationKind.EmitNested ? 1 + (int)(Next(ref state) % 10) : 0;
                 operations.Add(
                     new BusTraceOperation(
                         kind,
@@ -418,14 +371,8 @@ namespace DxMessaging.Tests.Runtime
                         nestedToken: kind == BusTraceOperationKind.EmitNested ? nestedToken : 0,
                         depth: depth,
                         handleToken: handleToken,
-                        handlerToken: kind == BusTraceOperationKind.EmitWithHandlerActive
-                            ? nestedToken
-                            : 0,
-                        handlerActive: (
-                            kind == BusTraceOperationKind.SetHandlerActive
-                            || kind == BusTraceOperationKind.EmitWithHandlerActive
-                        )
-                            && (value & 1) != 0
+                        handlerToken: kind == BusTraceOperationKind.EmitWithHandlerActive ? nestedToken : 0,
+                        handlerActive: (kind == BusTraceOperationKind.SetHandlerActive || kind == BusTraceOperationKind.EmitWithHandlerActive) && (value & 1) != 0
                     )
                 );
                 if (kind == BusTraceOperationKind.Register)
@@ -442,16 +389,10 @@ namespace DxMessaging.Tests.Runtime
             return new BusTraceSequence(scenario, seed, operations, generatorVersion);
         }
 
-        private static BusTraceSequence GenerateGlobalOverrides(
-            MessageScenario scenario,
-            uint seed,
-            int length
-        )
+        private static BusTraceSequence GenerateGlobalOverrides(MessageScenario scenario, uint seed, int length)
         {
             // Earlier handle and callback inputs keep their own independent identity lanes.
-            List<BusTraceOperation> operations = new(
-                Generate(scenario, seed, Math.Min(length, Math.Max(4, length / 2)), 9).Operations
-            );
+            List<BusTraceOperation> operations = new(Generate(scenario, seed, Math.Min(length, Math.Max(4, length / 2)), 9).Operations);
             BusTraceOperation[] prefix =
             {
                 new(BusTraceOperationKind.AcquireGlobalOverride, context: 1, leaseSlot: 0),
@@ -490,41 +431,22 @@ namespace DxMessaging.Tests.Runtime
                 int context = (int)(Next(ref state) % 2);
                 BusTraceOperation operation = choice switch
                 {
-                    0 => new(
-                        BusTraceOperationKind.AcquireGlobalOverride,
-                        context: context,
-                        leaseSlot: slot
-                    ),
-                    1 => new(
-                        BusTraceOperationKind.CopyGlobalOverride,
-                        leaseSlot: slot,
-                        sourceLeaseSlot: source
-                    ),
+                    0 => new(BusTraceOperationKind.AcquireGlobalOverride, context: context, leaseSlot: slot),
+                    1 => new(BusTraceOperationKind.CopyGlobalOverride, leaseSlot: slot, sourceLeaseSlot: source),
                     2 => new(BusTraceOperationKind.DisposeGlobalOverride, leaseSlot: slot),
                     3 => new(BusTraceOperationKind.ReplaceGlobalBus, context: context),
-                    _ => new(
-                        BusTraceOperationKind.Emit,
-                        context: context,
-                        value: unchecked((int)Next(ref state))
-                    ),
+                    _ => new(BusTraceOperationKind.Emit, context: context, value: unchecked((int)Next(ref state))),
                 };
                 if (IsGlobalOverride(operation.Kind) && !leases.Apply(operation))
                 {
-                    operation = new(
-                        BusTraceOperationKind.Emit,
-                        value: unchecked((int)Next(ref state))
-                    );
+                    operation = new(BusTraceOperationKind.Emit, value: unchecked((int)Next(ref state)));
                 }
                 operations.Add(operation);
             }
             return new BusTraceSequence(scenario, seed, operations, 10);
         }
 
-        private static BusTraceSequence GenerateUntypedEmissions(
-            MessageScenario scenario,
-            uint seed,
-            int length
-        )
+        private static BusTraceSequence GenerateUntypedEmissions(MessageScenario scenario, uint seed, int length)
         {
             BusTraceSequence previous = GenerateGlobalOverrides(scenario, seed, length);
             List<BusTraceOperation> operations = new(previous.Operations.Count);
@@ -559,17 +481,11 @@ namespace DxMessaging.Tests.Runtime
             return new BusTraceSequence(scenario, seed, operations, 11);
         }
 
-        private static BusTraceSequence GenerateNativeLifecycle(
-            MessageScenario scenario,
-            uint seed,
-            int length
-        )
+        private static BusTraceSequence GenerateNativeLifecycle(MessageScenario scenario, uint seed, int length)
         {
             const int lifecycleOperationCount = 6;
             int managedLength = Math.Max(0, length - lifecycleOperationCount);
-            List<BusTraceOperation> operations = new(
-                Generate(scenario, seed, managedLength, 7).Operations
-            );
+            List<BusTraceOperation> operations = new(Generate(scenario, seed, managedLength, 7).Operations);
             int persistentSlot = (int)((seed == 0 ? 1U : seed) % BusTraceSequence.TokenCount);
             int destroyedSlot = (persistentSlot + 1) % BusTraceSequence.TokenCount;
             BusTraceOperation[] lifecycle =
@@ -589,12 +505,7 @@ namespace DxMessaging.Tests.Runtime
                 }
                 operations.Add(operation);
             }
-            return new BusTraceSequence(
-                scenario,
-                seed,
-                operations,
-                BusTraceSequence.NativeLifecycleGeneratorVersion
-            );
+            return new BusTraceSequence(scenario, seed, operations, BusTraceSequence.NativeLifecycleGeneratorVersion);
         }
 
         internal static bool IsGlobalOverride(BusTraceOperationKind kind) =>
@@ -604,9 +515,7 @@ namespace DxMessaging.Tests.Runtime
             || kind == BusTraceOperationKind.ReplaceGlobalBus;
 
         internal static bool IsNativeLifecycle(BusTraceOperationKind kind) =>
-            kind == BusTraceOperationKind.MoveHostToScene
-            || kind == BusTraceOperationKind.PersistHost
-            || kind == BusTraceOperationKind.DestroyHost;
+            kind == BusTraceOperationKind.MoveHostToScene || kind == BusTraceOperationKind.PersistHost || kind == BusTraceOperationKind.DestroyHost;
 
         /*
             Only logical issuance and alias dependencies are modeled, never the production
@@ -650,12 +559,7 @@ namespace DxMessaging.Tests.Runtime
                 }
                 if (operation.Kind == BusTraceOperationKind.CopyGlobalOverride)
                 {
-                    if (
-                        source < 0
-                        || _identities.Length <= source
-                        || source == slot
-                        || _identities[source] == 0
-                    )
+                    if (source < 0 || _identities.Length <= source || source == slot || _identities[source] == 0)
                     {
                         return false;
                     }
@@ -672,23 +576,14 @@ namespace DxMessaging.Tests.Runtime
             }
         }
 
-        private static BusTraceSequence GenerateHandleSlots(
-            MessageScenario scenario,
-            uint seed,
-            int length,
-            int version
-        )
+        private static BusTraceSequence GenerateHandleSlots(MessageScenario scenario, uint seed, int length, int version)
         {
             List<BusTraceOperation> operations = new(length);
             HandleDependencies handles = new();
             BusTraceOperation[] prefix =
             {
                 new(BusTraceOperationKind.Register, handleSlot: 0),
-                new(
-                    BusTraceOperationKind.DuplicateRegistration,
-                    handleSlot: 1,
-                    sourceHandleSlot: 0
-                ),
+                new(BusTraceOperationKind.DuplicateRegistration, handleSlot: 1, sourceHandleSlot: 0),
                 new(BusTraceOperationKind.CopyHandle, handleSlot: 2, sourceHandleSlot: 0),
                 new(BusTraceOperationKind.Emit),
             };
@@ -708,9 +603,7 @@ namespace DxMessaging.Tests.Runtime
                 Retain the complete earlier operation vocabulary in each longer campaign.
                 Its token-associated handles are independent of the new explicit handle slots.
             */
-            operations.AddRange(
-                Generate(scenario, seed, (length - operations.Count) / 2, 7).Operations
-            );
+            operations.AddRange(Generate(scenario, seed, (length - operations.Count) / 2, 7).Operations);
             uint state = seed ^ 0x9e3779b9u;
             if (state == 0)
             {
@@ -725,37 +618,11 @@ namespace DxMessaging.Tests.Runtime
                 int value = unchecked((int)Next(ref state));
                 BusTraceOperation operation = choice switch
                 {
-                    0 => new(
-                        BusTraceOperationKind.Register,
-                        token: owner,
-                        context: (value & 1),
-                        priority: value % 3,
-                        kindOffset: (int)(Next(ref state) % 3),
-                        handleSlot: slot
-                    ),
-                    1 => new(
-                        BusTraceOperationKind.DuplicateRegistration,
-                        token: handles.Owner(source),
-                        handleSlot: slot,
-                        sourceHandleSlot: source
-                    ),
-                    2 => new(
-                        BusTraceOperationKind.CopyHandle,
-                        token: handles.Owner(source),
-                        handleSlot: slot,
-                        sourceHandleSlot: source
-                    ),
-                    3 => new(
-                        BusTraceOperationKind.Remove,
-                        token: handles.Owner(slot),
-                        handleSlot: slot
-                    ),
-                    4 => new(
-                        BusTraceOperationKind.Emit,
-                        context: value & 1,
-                        value: value,
-                        kindOffset: (int)(Next(ref state) % 3)
-                    ),
+                    0 => new(BusTraceOperationKind.Register, token: owner, context: (value & 1), priority: value % 3, kindOffset: (int)(Next(ref state) % 3), handleSlot: slot),
+                    1 => new(BusTraceOperationKind.DuplicateRegistration, token: handles.Owner(source), handleSlot: slot, sourceHandleSlot: source),
+                    2 => new(BusTraceOperationKind.CopyHandle, token: handles.Owner(source), handleSlot: slot, sourceHandleSlot: source),
+                    3 => new(BusTraceOperationKind.Remove, token: handles.Owner(slot), handleSlot: slot),
+                    4 => new(BusTraceOperationKind.Emit, context: value & 1, value: value, kindOffset: (int)(Next(ref state) % 3)),
                     5 => new(BusTraceOperationKind.Enable, token: owner),
                     6 => new(BusTraceOperationKind.Disable, token: owner),
                     7 => new(BusTraceOperationKind.Trim, value: value & 1),
@@ -795,9 +662,7 @@ namespace DxMessaging.Tests.Runtime
             private readonly int[] _identities = new int[BusTraceSequence.HandleSlotCount];
             private readonly int[] _owners = new int[BusTraceSequence.HandleSlotCount];
             private readonly bool[] _live = new bool[BusTraceSequence.MaxOperations + 1];
-            private readonly BusTraceOperation[] _registrations = new BusTraceOperation[
-                BusTraceSequence.HandleSlotCount
-            ];
+            private readonly BusTraceOperation[] _registrations = new BusTraceOperation[BusTraceSequence.HandleSlotCount];
             private int _nextIdentity;
 
             internal int Owner(int slot) => _owners[slot];
@@ -819,10 +684,7 @@ namespace DxMessaging.Tests.Runtime
                         && _owners[slot] == operation.Token
                         && (
                             operation.Kind == BusTraceOperationKind.EmitNested
-                                ? 0 < operation.Depth
-                                    && 0 <= source
-                                    && _live[_identities[source]]
-                                    && _owners[source] == operation.NestedToken
+                                ? 0 < operation.Depth && 0 <= source && _live[_identities[source]] && _owners[source] == operation.NestedToken
                                 : source == -1
                         );
                 }
@@ -846,19 +708,13 @@ namespace DxMessaging.Tests.Runtime
                         return false;
                     }
                 }
-                else if (
-                    operation.Kind == BusTraceOperationKind.DuplicateRegistration
-                    || operation.Kind == BusTraceOperationKind.CopyHandle
-                )
+                else if (operation.Kind == BusTraceOperationKind.DuplicateRegistration || operation.Kind == BusTraceOperationKind.CopyHandle)
                 {
                     if (
                         source < 0
                         || _identities[source] == 0
                         || _owners[source] != operation.Token
-                        || (
-                            operation.Kind == BusTraceOperationKind.DuplicateRegistration
-                            && !_live[_identities[source]]
-                        )
+                        || (operation.Kind == BusTraceOperationKind.DuplicateRegistration && !_live[_identities[source]])
                     )
                     {
                         return false;
@@ -897,19 +753,11 @@ namespace DxMessaging.Tests.Runtime
             {
                 return false;
             }
-            if (
-                sequence.Scenario.Kind != MessageKind.Untargeted
-                && sequence.Scenario.Kind != MessageKind.Targeted
-                && sequence.Scenario.Kind != MessageKind.Broadcast
-            )
+            if (sequence.Scenario.Kind != MessageKind.Untargeted && sequence.Scenario.Kind != MessageKind.Targeted && sequence.Scenario.Kind != MessageKind.Broadcast)
             {
                 return false;
             }
-            if (
-                sequence.Scenario.UseInterceptor
-                || sequence.Scenario.UsePostProcessor
-                || sequence.Scenario.DiagnosticsEnabled
-            )
+            if (sequence.Scenario.UseInterceptor || sequence.Scenario.UsePostProcessor || sequence.Scenario.DiagnosticsEnabled)
             {
                 return false;
             }
@@ -925,10 +773,7 @@ namespace DxMessaging.Tests.Runtime
                     || BusTraceSequence.HandleSlotCount <= operation.HandleSlot
                     || operation.SourceHandleSlot < -1
                     || BusTraceSequence.HandleSlotCount <= operation.SourceHandleSlot
-                    || (
-                        sequence.Version < 8
-                        && (operation.HandleSlot != -1 || operation.SourceHandleSlot != -1)
-                    )
+                    || (sequence.Version < 8 && (operation.HandleSlot != -1 || operation.SourceHandleSlot != -1))
                     || (operation.HandleSlot == -1 && operation.SourceHandleSlot != -1)
                     || operation.Token < 0
                     || registered.Length <= operation.Token
@@ -940,46 +785,22 @@ namespace DxMessaging.Tests.Runtime
                     || registered.Length <= operation.NestedToken
                     || operation.HandleToken < 0
                     || registered.Length <= operation.HandleToken
-                    || (
-                        operation.Kind != BusTraceOperationKind.RemoveForeign
-                        && operation.HandleToken != 0
-                    )
+                    || (operation.Kind != BusTraceOperationKind.RemoveForeign && operation.HandleToken != 0)
                     || operation.HandlerToken < 0
                     || registered.Length <= operation.HandlerToken
-                    || (
-                        operation.Kind != BusTraceOperationKind.EmitWithHandlerActive
-                        && operation.HandlerToken != 0
-                    )
-                    || (
-                        operation.Kind != BusTraceOperationKind.SetHandlerActive
-                        && operation.Kind != BusTraceOperationKind.EmitWithHandlerActive
-                        && operation.HandlerActive
-                    )
+                    || (operation.Kind != BusTraceOperationKind.EmitWithHandlerActive && operation.HandlerToken != 0)
+                    || (operation.Kind != BusTraceOperationKind.SetHandlerActive && operation.Kind != BusTraceOperationKind.EmitWithHandlerActive && operation.HandlerActive)
                     || operation.Depth < 0
                     || 10 < operation.Depth
-                    || (
-                        sequence.Version < 5
-                        && (
-                            operation.KindOffset != 0
-                            || operation.NestedToken != 0
-                            || operation.Depth != 0
-                        )
-                    )
-                    || (
-                        operation.Kind != BusTraceOperationKind.EmitNested
-                        && (operation.NestedToken != 0 || operation.Depth != 0)
-                    )
+                    || (sequence.Version < 5 && (operation.KindOffset != 0 || operation.NestedToken != 0 || operation.Depth != 0))
+                    || (operation.Kind != BusTraceOperationKind.EmitNested && (operation.NestedToken != 0 || operation.Depth != 0))
                 )
                 {
                     return false;
                 }
                 if (IsGlobalOverride(operation.Kind))
                 {
-                    if (
-                        sequence.Version < 10
-                        || operation.HandleSlot != -1
-                        || !leases.Apply(operation)
-                    )
+                    if (sequence.Version < 10 || operation.HandleSlot != -1 || !leases.Apply(operation))
                     {
                         return false;
                     }
@@ -991,10 +812,7 @@ namespace DxMessaging.Tests.Runtime
                 }
                 if (0 <= operation.HandleSlot)
                 {
-                    if (
-                        (sequence.Version < 9 && IsCallbackAction(operation.Kind))
-                        || !handles.Apply(operation)
-                    )
+                    if ((sequence.Version < 9 && IsCallbackAction(operation.Kind)) || !handles.Apply(operation))
                     {
                         return false;
                     }
@@ -1004,19 +822,13 @@ namespace DxMessaging.Tests.Runtime
                 {
                     case BusTraceOperationKind.MoveHostToScene:
                     case BusTraceOperationKind.PersistHost:
-                        if (
-                            sequence.Version < BusTraceSequence.NativeLifecycleGeneratorVersion
-                            || !liveHosts[operation.Token]
-                        )
+                        if (sequence.Version < BusTraceSequence.NativeLifecycleGeneratorVersion || !liveHosts[operation.Token])
                         {
                             return false;
                         }
                         break;
                     case BusTraceOperationKind.DestroyHost:
-                        if (
-                            sequence.Version < BusTraceSequence.NativeLifecycleGeneratorVersion
-                            || !liveHosts[operation.Token]
-                        )
+                        if (sequence.Version < BusTraceSequence.NativeLifecycleGeneratorVersion || !liveHosts[operation.Token])
                         {
                             return false;
                         }
@@ -1038,14 +850,7 @@ namespace DxMessaging.Tests.Runtime
                         removed[operation.Token] = true;
                         break;
                     case BusTraceOperationKind.RemoveForeign:
-                        if (
-                            sequence.Version < 6
-                            || operation.Token == operation.HandleToken
-                            || (
-                                !registered[operation.HandleToken]
-                                && !removed[operation.HandleToken]
-                            )
-                        )
+                        if (sequence.Version < 6 || operation.Token == operation.HandleToken || (!registered[operation.HandleToken] && !removed[operation.HandleToken]))
                         {
                             return false;
                         }
@@ -1060,12 +865,7 @@ namespace DxMessaging.Tests.Runtime
                     case BusTraceOperationKind.EmitUntyped:
                         break;
                     case BusTraceOperationKind.EmitNested:
-                        if (
-                            sequence.Version < 5
-                            || operation.Depth == 0
-                            || !registered[operation.Token]
-                            || !registered[operation.NestedToken]
-                        )
+                        if (sequence.Version < 5 || operation.Depth == 0 || !registered[operation.Token] || !registered[operation.NestedToken])
                         {
                             return false;
                         }
@@ -1078,13 +878,7 @@ namespace DxMessaging.Tests.Runtime
                         break;
                     case BusTraceOperationKind.SetHandlerActive:
                     case BusTraceOperationKind.EmitWithHandlerActive:
-                        if (
-                            sequence.Version < 7
-                            || (
-                                operation.Kind == BusTraceOperationKind.EmitWithHandlerActive
-                                && !registered[operation.Token]
-                            )
-                        )
+                        if (sequence.Version < 7 || (operation.Kind == BusTraceOperationKind.EmitWithHandlerActive && !registered[operation.Token]))
                         {
                             return false;
                         }
@@ -1136,24 +930,17 @@ namespace DxMessaging.Tests.Runtime
         }
 
         /// <summary>Creates a fresh adapter per replay; infrastructure and cleanup failures propagate and are not shrinkable mismatches.</summary>
-        internal static ReadOnlyCollection<BusTraceObservation> Replay(
-            BusTraceSequence sequence,
-            Func<MessageScenario, IBusTraceAdapter> factory
-        )
+        internal static ReadOnlyCollection<BusTraceObservation> Replay(BusTraceSequence sequence, Func<MessageScenario, IBusTraceAdapter> factory)
         {
             if (!IsValid(sequence))
             {
-                throw new ArgumentException(
-                    "Trace contains unsupported operations or invalid handle dependencies.",
-                    nameof(sequence)
-                );
+                throw new ArgumentException("Trace contains unsupported operations or invalid handle dependencies.", nameof(sequence));
             }
             if (factory == null)
             {
                 throw new ArgumentNullException(nameof(factory));
             }
-            IBusTraceAdapter adapter = factory(sequence.Scenario)
-                ?? throw new InvalidOperationException("Adapter factory returned null.");
+            IBusTraceAdapter adapter = factory(sequence.Scenario) ?? throw new InvalidOperationException("Adapter factory returned null.");
             Exception replayError = null;
             try
             {
@@ -1177,20 +964,13 @@ namespace DxMessaging.Tests.Runtime
                 }
                 catch (Exception cleanupError) when (replayError != null)
                 {
-                    throw new AggregateException(
-                        "Replay and adapter cleanup both failed.",
-                        replayError,
-                        cleanupError
-                    );
+                    throw new AggregateException("Replay and adapter cleanup both failed.", replayError, cleanupError);
                 }
             }
         }
 
         /// <summary>Compares observations in order and stops at the first differing callback, exception, or state.</summary>
-        internal static BusTraceMismatch Compare(
-            IReadOnlyList<BusTraceObservation> control,
-            IReadOnlyList<BusTraceObservation> candidate
-        )
+        internal static BusTraceMismatch Compare(IReadOnlyList<BusTraceObservation> control, IReadOnlyList<BusTraceObservation> candidate)
         {
             // SYNC: replayMismatchCategory in scripts/unity/perf-evidence-reducers.js.
             if (control == null)
@@ -1210,32 +990,18 @@ namespace DxMessaging.Tests.Runtime
                 BusTraceObservation expected = control[index];
                 BusTraceObservation actual = candidate[index];
                 bool callbacksEqual = expected.Callbacks.Count == actual.Callbacks.Count;
-                for (
-                    int callback = 0;
-                    callbacksEqual && callback < expected.Callbacks.Count;
-                    ++callback
-                )
+                for (int callback = 0; callbacksEqual && callback < expected.Callbacks.Count; ++callback)
                 {
-                    callbacksEqual = string.Equals(
-                        expected.Callbacks[callback],
-                        actual.Callbacks[callback],
-                        StringComparison.Ordinal
-                    );
+                    callbacksEqual = string.Equals(expected.Callbacks[callback], actual.Callbacks[callback], StringComparison.Ordinal);
                 }
                 string category =
                     !callbacksEqual ? "callbacks"
-                    : !string.Equals(expected.Exception, actual.Exception, StringComparison.Ordinal)
-                        ? "exception"
+                    : !string.Equals(expected.Exception, actual.Exception, StringComparison.Ordinal) ? "exception"
                     : expected.TrimResult != actual.TrimResult ? "trim"
-                    : !string.Equals(expected.State, actual.State, StringComparison.Ordinal)
-                        ? "state"
-                    : expected.OccupiedTypeSlots != actual.OccupiedTypeSlots
-                    || expected.OccupiedTargetSlots != actual.OccupiedTargetSlots
-                        ? "storage"
-                    : !SameEntries(expected.FinalEmissions, actual.FinalEmissions)
-                        ? "final-emission"
-                    : !SameEntries(expected.UnmatchedDiagnostics, actual.UnmatchedDiagnostics)
-                        ? "unmatched-diagnostic"
+                    : !string.Equals(expected.State, actual.State, StringComparison.Ordinal) ? "state"
+                    : expected.OccupiedTypeSlots != actual.OccupiedTypeSlots || expected.OccupiedTargetSlots != actual.OccupiedTargetSlots ? "storage"
+                    : !SameEntries(expected.FinalEmissions, actual.FinalEmissions) ? "final-emission"
+                    : !SameEntries(expected.UnmatchedDiagnostics, actual.UnmatchedDiagnostics) ? "unmatched-diagnostic"
                     : null;
                 if (category != null)
                 {
@@ -1245,10 +1011,7 @@ namespace DxMessaging.Tests.Runtime
             return null;
         }
 
-        private static bool SameEntries(
-            IReadOnlyList<string> expected,
-            IReadOnlyList<string> actual
-        )
+        private static bool SameEntries(IReadOnlyList<string> expected, IReadOnlyList<string> actual)
         {
             if (expected.Count != actual.Count)
             {
@@ -1265,10 +1028,7 @@ namespace DxMessaging.Tests.Runtime
         }
 
         /// <summary>Finds a deterministic one-deletion-minimal trace while preserving validity and mismatch category.</summary>
-        internal static BusTraceSequence Shrink(
-            BusTraceSequence original,
-            Func<BusTraceSequence, BusTraceMismatch> evaluate
-        )
+        internal static BusTraceSequence Shrink(BusTraceSequence original, Func<BusTraceSequence, BusTraceMismatch> evaluate)
         {
             if (!IsValid(original))
             {
@@ -1278,20 +1038,14 @@ namespace DxMessaging.Tests.Runtime
             {
                 throw new ArgumentNullException(nameof(evaluate));
             }
-            BusTraceMismatch initial = evaluate(original)
-                ?? throw new ArgumentException("Cannot shrink a passing trace.", nameof(original));
+            BusTraceMismatch initial = evaluate(original) ?? throw new ArgumentException("Cannot shrink a passing trace.", nameof(original));
             BusTraceSequence current = original;
             int index = 0;
             while (index < current.Operations.Count)
             {
                 List<BusTraceOperation> remaining = new(current.Operations);
                 remaining.RemoveAt(index);
-                BusTraceSequence candidate = new(
-                    current.Scenario,
-                    current.Seed,
-                    remaining,
-                    current.Version
-                );
+                BusTraceSequence candidate = new(current.Scenario, current.Seed, remaining, current.Version);
                 BusTraceMismatch mismatch = IsValid(candidate) ? evaluate(candidate) : null;
                 if (mismatch != null && mismatch.Category == initial.Category)
                 {

@@ -2,7 +2,8 @@
 
 ## Overview
 
-This skill documents best practices for configuring npm package contents using `package.json` "files" field and `.npmignore`. Understanding how these mechanisms interact prevents bloated packages or missing files.
+This skill documents best practices for configuring npm package contents using `package.json` "files" field and `.npmignore`. Understanding how these mechanisms interact prevents
+bloated packages or missing files.
 
 ## Solution
 
@@ -15,7 +16,8 @@ npm uses two complementary mechanisms:
 All Repository Files -> "files" Allowlist -> .npmignore Exclusions -> Final Package
 ```
 
-**Key insight:** Items not matched by "files" are already excluded. However, `.npmignore` remains valuable for excluding subdirectories within included paths, handling complex patterns, and providing defense-in-depth.
+**Key insight:** Items not matched by "files" are already excluded. However, `.npmignore` remains valuable for excluding subdirectories within included paths, handling complex
+patterns, and providing defense-in-depth.
 
 ## Best Practices for "files" Field
 
@@ -189,28 +191,17 @@ npm pack --dry-run 2>&1 | grep "Tests\.meta" || echo "Tests.meta correctly exclu
 
 ## Issue #204 invariants
 
-[Issue #204](https://github.com/Ambiguous-Interactive/DxMessaging/issues/204) shipped
-build artifacts and orphaned `.meta` files in the npm tarball. Verify these
-invariants against the real `npm pack --json --dry-run` output (never a
-config-string proxy) whenever packaging metadata changes:
+[Issue #204](https://github.com/Ambiguous-Interactive/DxMessaging/issues/204) shipped build artifacts and orphaned `.meta` files in the npm tarball. Verify these invariants against
+the real `npm pack --json --dry-run` output (never a config-string proxy) whenever packaging metadata changes:
 
-1. The npm tarball contains no `bin/`, `obj/`, `*.pdb`, `*.tmp`,
-   `*.csproj.user`, `.vs/`, `.idea/`, `*.suo`, or `*.DotSettings.user`
-   paths.
-1. Every shipped Unity-relevant path has a corresponding `.meta` neighbour
-   in the tarball (a `Foo.cs` ships with `Foo.cs.meta`; a `Foo.asmdef`
-   ships with `Foo.asmdef.meta`).
-1. Every shipped directory has its directory `.meta` in the tarball. If
-   `Runtime/Core/Foo.cs` ships, the tarball must also contain
-   `Runtime/Core.meta` and `Runtime.meta`.
+1. The npm tarball contains no `bin/`, `obj/`, `*.pdb`, `*.tmp`, `*.csproj.user`, `.vs/`, `.idea/`, `*.suo`, or `*.DotSettings.user` paths.
+1. Every shipped Unity-relevant path has a corresponding `.meta` neighbour in the tarball (a `Foo.cs` ships with `Foo.cs.meta`; a `Foo.asmdef` ships with `Foo.asmdef.meta`).
+1. Every shipped directory has its directory `.meta` in the tarball. If `Runtime/Core/Foo.cs` ships, the tarball must also contain `Runtime/Core.meta` and `Runtime.meta`.
 
 ### New tooling directories
 
-When a script writes outputs to a new top-level directory (for example
-`.artifacts/`, `.profiler-output/`, `.unity-test-project/`), add the
-directory to `.gitignore` AND `.npmignore` IN THE SAME CHANGE. Skipping
-either lets build artifacts leak into the tarball or the working tree on
-a fresh checkout.
+When a script writes outputs to a new top-level directory (for example `.artifacts/`, `.profiler-output/`, `.unity-test-project/`), add the directory to `.gitignore` AND
+`.npmignore` IN THE SAME CHANGE. Skipping either lets build artifacts leak into the tarball or the working tree on a fresh checkout.
 
 ## See Also
 

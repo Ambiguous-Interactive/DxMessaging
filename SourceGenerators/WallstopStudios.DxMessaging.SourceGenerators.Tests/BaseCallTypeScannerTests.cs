@@ -67,8 +67,7 @@ internal sealed class BaseCallTypeScannerTests
             """
         );
 
-        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot =
-            BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
+        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot = BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
 
         Assert.That(snapshot, Contains.Key("Broken"));
         BaseCallTypeScannerCore.ScanEntry entry = snapshot["Broken"];
@@ -93,8 +92,7 @@ internal sealed class BaseCallTypeScannerTests
             """
         );
 
-        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot =
-            BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
+        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot = BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
 
         Assert.That(snapshot, Is.Empty);
     }
@@ -128,17 +126,12 @@ internal sealed class BaseCallTypeScannerTests
             "CS0114"
         );
 
-        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot =
-            BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
+        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot = BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
 
         Assert.That(snapshot, Contains.Key("ImplicitHider"));
         BaseCallTypeScannerCore.ScanEntry entry = snapshot["ImplicitHider"];
         Assert.That(entry.MissingBaseFor, Is.EquivalentTo(expected));
-        Assert.That(
-            entry.DiagnosticIds,
-            Is.EquivalentTo(expectedArray0),
-            "Scanner should conservatively classify DXMSG009 as DXMSG007 (IL ambiguity)."
-        );
+        Assert.That(entry.DiagnosticIds, Is.EquivalentTo(expectedArray0), "Scanner should conservatively classify DXMSG009 as DXMSG007 (IL ambiguity).");
     }
 
     [Test]
@@ -158,8 +151,7 @@ internal sealed class BaseCallTypeScannerTests
             """
         );
 
-        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot =
-            BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
+        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot = BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
 
         Assert.That(snapshot, Contains.Key("ExplicitHider"));
         BaseCallTypeScannerCore.ScanEntry entry = snapshot["ExplicitHider"];
@@ -198,18 +190,13 @@ internal sealed class BaseCallTypeScannerTests
             """
         );
 
-        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot =
-            BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
+        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot = BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
 
         Assert.That(snapshot, Contains.Key("ddd"));
         Assert.That(snapshot["ddd"].DiagnosticIds, Is.EquivalentTo(expectedArray));
 
         Assert.That(snapshot, Contains.Key("BrokenThing"));
-        Assert.That(
-            snapshot["BrokenThing"].DiagnosticIds,
-            Is.EquivalentTo(expectedArray2),
-            "DXMSG010 must land on the leaf (the type the user is editing)."
-        );
+        Assert.That(snapshot["BrokenThing"].DiagnosticIds, Is.EquivalentTo(expectedArray2), "DXMSG010 must land on the leaf (the type the user is editing).");
         Assert.That(snapshot["BrokenThing"].MissingBaseFor, Is.EquivalentTo(expectedArray1));
     }
 
@@ -251,8 +238,7 @@ internal sealed class BaseCallTypeScannerTests
             """
         );
 
-        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot =
-            BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
+        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot = BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
 
         Assert.That(snapshot, Contains.Key("ddd"));
         Assert.That(snapshot["ddd"].DiagnosticIds, Is.EquivalentTo(expectedArray3));
@@ -261,11 +247,7 @@ internal sealed class BaseCallTypeScannerTests
         Assert.That(snapshot, Does.Not.ContainKey("Middle"));
 
         Assert.That(snapshot, Contains.Key("BrokenThing"));
-        Assert.That(
-            snapshot["BrokenThing"].DiagnosticIds,
-            Is.EquivalentTo(expectedArray2),
-            "Chain walker must skip Middle and detect ddd's broken override."
-        );
+        Assert.That(snapshot["BrokenThing"].DiagnosticIds, Is.EquivalentTo(expectedArray2), "Chain walker must skip Middle and detect ddd's broken override.");
     }
 
     [Test]
@@ -287,8 +269,7 @@ internal sealed class BaseCallTypeScannerTests
             """
         );
 
-        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot =
-            BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
+        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot = BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
 
         Assert.That(snapshot, Is.Empty);
     }
@@ -327,8 +308,7 @@ internal sealed class BaseCallTypeScannerTests
             """
         );
 
-        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot =
-            BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), ignoredTypeNames);
+        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot = BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), ignoredTypeNames);
 
         Assert.That(snapshot, Is.Empty);
     }
@@ -355,8 +335,7 @@ internal sealed class BaseCallTypeScannerTests
             """
         );
 
-        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot =
-            BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
+        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot = BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
 
         Assert.That(snapshot, Is.Empty);
     }
@@ -386,8 +365,7 @@ internal sealed class BaseCallTypeScannerTests
         // Feed in only the generic-type-definition (no closed instantiation exists).
         IEnumerable<Type> candidates = fixture.GetTypes().Where(t => t.IsGenericTypeDefinition);
 
-        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot =
-            BaseCallTypeScannerCore.Scan(candidates, null);
+        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot = BaseCallTypeScannerCore.Scan(candidates, null);
 
         Assert.That(snapshot, Is.Empty);
     }
@@ -412,8 +390,7 @@ internal sealed class BaseCallTypeScannerTests
         Type messageAwareComponent = fixture.GetType("DxMessaging.Unity.MessageAwareComponent")!;
         Type brokenLeaf = fixture.GetType("BrokenLeaf")!;
 
-        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot =
-            BaseCallTypeScannerCore.Scan(new[] { messageAwareComponent, brokenLeaf }, null);
+        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot = BaseCallTypeScannerCore.Scan(new[] { messageAwareComponent, brokenLeaf }, null);
 
         Assert.That(snapshot, Does.Not.ContainKey("DxMessaging.Unity.MessageAwareComponent"));
         Assert.That(snapshot, Contains.Key("BrokenLeaf"));
@@ -445,19 +422,10 @@ internal sealed class BaseCallTypeScannerTests
             """
         );
 
-        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot =
-            BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
+        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot = BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
 
-        Assert.That(
-            snapshot,
-            Contains.Key("Outer.Nested"),
-            "Nested type FQN must use '.' (analyzer form), not '+' (Reflection form)."
-        );
-        Assert.That(
-            snapshot,
-            Does.Not.ContainKey("Outer+Nested"),
-            "Plus-form FQN must not appear in the snapshot."
-        );
+        Assert.That(snapshot, Contains.Key("Outer.Nested"), "Nested type FQN must use '.' (analyzer form), not '+' (Reflection form).");
+        Assert.That(snapshot, Does.Not.ContainKey("Outer+Nested"), "Plus-form FQN must not appear in the snapshot.");
     }
 
     [Test]
@@ -485,8 +453,7 @@ internal sealed class BaseCallTypeScannerTests
             """
         );
 
-        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot =
-            BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
+        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot = BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
 
         Assert.That(snapshot, Contains.Key("FirstBroken"));
         Assert.That(snapshot, Contains.Key("SecondBroken"));
@@ -522,8 +489,7 @@ internal sealed class BaseCallTypeScannerTests
             """
         );
 
-        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot =
-            BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
+        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot = BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
 
         Assert.That(snapshot, Contains.Key("PartiallyIgnored"));
         BaseCallTypeScannerCore.ScanEntry entry = snapshot["PartiallyIgnored"];
@@ -560,8 +526,7 @@ internal sealed class BaseCallTypeScannerTests
             """
         );
 
-        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot =
-            BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
+        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot = BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
 
         Assert.That(snapshot, Does.Not.ContainKey("AllSuppressed"));
     }
@@ -588,8 +553,7 @@ internal sealed class BaseCallTypeScannerTests
             """
         );
 
-        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot =
-            BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
+        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot = BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
 
         Assert.That(snapshot, Contains.Key("BrokenFocusLeaf"));
         BaseCallTypeScannerCore.ScanEntry entry = snapshot["BrokenFocusLeaf"];
@@ -619,8 +583,7 @@ internal sealed class BaseCallTypeScannerTests
             """
         );
 
-        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot =
-            BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
+        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot = BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
 
         Assert.That(snapshot, Contains.Key("HiddenPauseLeaf"));
         BaseCallTypeScannerCore.ScanEntry entry = snapshot["HiddenPauseLeaf"];
@@ -658,8 +621,7 @@ internal sealed class BaseCallTypeScannerTests
             """
         );
 
-        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot =
-            BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
+        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot = BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
 
         Assert.That(snapshot, Contains.Key("BrokenFocusMiddle"));
         Assert.That(snapshot["BrokenFocusMiddle"].DiagnosticIds, Is.EquivalentTo(expectedArray7));
@@ -693,8 +655,7 @@ internal sealed class BaseCallTypeScannerTests
             """
         );
 
-        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot =
-            BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
+        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot = BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
 
         Assert.That(snapshot, Does.Not.ContainKey("FocusIgnoredLeaf"));
     }
@@ -726,22 +687,13 @@ internal sealed class BaseCallTypeScannerTests
             """
         );
 
-        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot =
-            BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
+        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot = BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
 
         Assert.That(snapshot, Has.Count.EqualTo(1));
         Assert.That(snapshot, Contains.Key("BrokenThing"));
         BaseCallTypeScannerCore.ScanEntry entry = snapshot["BrokenThing"];
-        Assert.That(
-            entry.MissingBaseFor,
-            Is.EquivalentTo(expectedArray11),
-            "Both broken methods must appear in MissingBaseFor on a single entry."
-        );
-        Assert.That(
-            entry.DiagnosticIds,
-            Is.EquivalentTo(expectedArray12),
-            "DXMSG006 must be deduped to a single id even though both methods contribute it."
-        );
+        Assert.That(entry.MissingBaseFor, Is.EquivalentTo(expectedArray11), "Both broken methods must appear in MissingBaseFor on a single entry.");
+        Assert.That(entry.DiagnosticIds, Is.EquivalentTo(expectedArray12), "DXMSG006 must be deduped to a single id even though both methods contribute it.");
     }
 
     [Test]
@@ -798,29 +750,18 @@ internal sealed class BaseCallTypeScannerTests
 
         // Sanity-check the precondition: the method has no body.
         Type leaf = fixture.GetType("ExternLeaf")!;
-        MethodInfo? externMethod = leaf.GetMethod(
-            "OnEnable",
-            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-            null,
-            Type.EmptyTypes,
-            null
-        );
+        MethodInfo? externMethod = leaf.GetMethod("OnEnable", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly, null, Type.EmptyTypes, null);
         Assert.That(externMethod, Is.Not.Null);
         Assert.That(externMethod!.GetMethodBody(), Is.Null);
 
-        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot =
-            BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
+        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot = BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
 
         /*
             The IL inspector returns true (assume clean) when the body is null. The scanner records
             an entry only when MissingBaseFor is non-empty; so an assume-clean override produces
             no entry.
         */
-        Assert.That(
-            snapshot,
-            Does.Not.ContainKey("ExternLeaf"),
-            "Extern (no IL body) override must be treated as assume-clean and produce no entry."
-        );
+        Assert.That(snapshot, Does.Not.ContainKey("ExternLeaf"), "Extern (no IL body) override must be treated as assume-clean and produce no entry.");
     }
 
     [Test]
@@ -848,8 +789,7 @@ internal sealed class BaseCallTypeScannerTests
             """
         );
 
-        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot =
-            BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
+        Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot = BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
 
         Assert.That(snapshot, Is.Empty);
     }
@@ -908,10 +848,7 @@ namespace DxMessaging.Unity
         SyntaxTree stubs = CSharpSyntaxTree.ParseText(Stubs);
         SyntaxTree user = CSharpSyntaxTree.ParseText(userSource);
 
-        List<MetadataReference> references = new()
-        {
-            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-        };
+        List<MetadataReference> references = new() { MetadataReference.CreateFromFile(typeof(object).Assembly.Location) };
         // Ensure System.Runtime is loaded; required for MetadataReference resolution on net10.0.
         Assembly runtime = Assembly.Load("System.Runtime");
         if (!string.IsNullOrEmpty(runtime.Location))
@@ -931,18 +868,13 @@ namespace DxMessaging.Unity
         Diagnostic[] blockingDiagnostics = emit
             .Diagnostics.Where(diagnostic =>
                 diagnostic.Severity == DiagnosticSeverity.Error
-                || (
-                    diagnostic.Severity == DiagnosticSeverity.Warning
-                    && !allowedWarningIds.Contains(diagnostic.Id, StringComparer.Ordinal)
-                )
+                || (diagnostic.Severity == DiagnosticSeverity.Warning && !allowedWarningIds.Contains(diagnostic.Id, StringComparer.Ordinal))
             )
             .ToArray();
         if (blockingDiagnostics.Length != 0)
         {
             string errors = string.Join("\n", blockingDiagnostics.Select(d => d.ToString()));
-            throw new InvalidOperationException(
-                $"Test fixture failed to compile:\n{errors}\n\nUser source:\n{userSource}"
-            );
+            throw new InvalidOperationException($"Test fixture failed to compile:\n{errors}\n\nUser source:\n{userSource}");
         }
 
         string[] emittedWarningIds = emit
@@ -950,9 +882,7 @@ namespace DxMessaging.Unity
             .Select(diagnostic => diagnostic.Id)
             .OrderBy(id => id, StringComparer.Ordinal)
             .ToArray();
-        string[] expectedWarningIds = allowedWarningIds
-            .OrderBy(id => id, StringComparer.Ordinal)
-            .ToArray();
+        string[] expectedWarningIds = allowedWarningIds.OrderBy(id => id, StringComparer.Ordinal).ToArray();
         if (!emittedWarningIds.SequenceEqual(expectedWarningIds, StringComparer.Ordinal))
         {
             throw new InvalidOperationException(

@@ -2,9 +2,8 @@
 
 ## Overview
 
-This skill covers practices for writing git commands in CI/CD pipelines that handle
-shallow clones, missing tags, initial commits, and merge bases without failing, and
-implementing markdown parsers that survive malformed input without aborting.
+This skill covers practices for writing git commands in CI/CD pipelines that handle shallow clones, missing tags, initial commits, and merge bases without failing, and implementing
+markdown parsers that survive malformed input without aborting.
 
 ## Solution
 
@@ -164,8 +163,7 @@ git add --renormalize .
 git checkout -- .
 ```
 
-`.gitattributes` is the source of truth for line endings; the pre-commit
-`mixed-line-ending` hook is the enforcement.
+`.gitattributes` is the source of truth for line endings; the pre-commit `mixed-line-ending` hook is the enforcement.
 
 ## See Also
 

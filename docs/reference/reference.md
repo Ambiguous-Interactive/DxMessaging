@@ -209,9 +209,7 @@ message.EmitGameObjectBroadcast(gameObject);
 message.EmitComponentBroadcast(this);
 ```
 
-For lower-level sources that are already represented by an `InstanceId`, call
-`EmitBroadcast`. Prefer the Unity helpers above when the source is a GameObject or
-Component.
+For lower-level sources that are already represented by an `InstanceId`, call `EmitBroadcast`. Prefer the Unity helpers above when the source is a GameObject or Component.
 
 ### String Message Conveniences
 
@@ -225,19 +223,15 @@ Component.
 
 ## Interceptors (Bus-Level)
 
-Interceptors can modify a message or cancel dispatch before handlers run. The declarations below
-belong to `IMessageBus`.
+Interceptors can modify a message or cancel dispatch before handlers run. The declarations below belong to `IMessageBus`.
 
-> **Changed in v4.0.0:** Bus registration methods return `MessageBusRegistration`. Keep the handle
-> and call `Deregister<T>(in handle)` on the same bus with the registered message type. For
-> `RegisterGlobalAcceptAll`, use `Deregister<IMessage>(in handle)`.
+> **Changed in v4.0.0:** Bus registration methods return `MessageBusRegistration`. Keep the handle and call `Deregister<T>(in handle)` on the same bus with the registered message
+> type. For `RegisterGlobalAcceptAll`, use `Deregister<IMessage>(in handle)`.
 
-`MessageBusRegistration.IsValid` distinguishes a nonempty handle from `None`. It does not query
-whether the callback is still registered and stays true on a retained handle after deregistration
-or bus reset. After successful cleanup, assign `MessageBusRegistration.None` to the retained field.
+`MessageBusRegistration.IsValid` distinguishes a nonempty handle from `None`. It does not query whether the callback is still registered and stays true on a retained handle after
+deregistration or bus reset. After successful cleanup, assign `MessageBusRegistration.None` to the retained field.
 
-Token methods return a separate `MessageRegistrationHandle`; remove it through the token that
-created it with `RemoveRegistration(handle)`.
+Token methods return a separate `MessageRegistrationHandle`; remove it through the token that created it with `RemoveRegistration(handle)`.
 
 ```csharp
 // Intercept untargeted messages
@@ -328,8 +322,7 @@ string logOutput = bus.Log.ToString();
 
 ### MessagingComponent
 
-Unity owner component that hosts registrations and message dispatch for other `MonoBehaviour`
-components on the same GameObject. `MessageAwareComponent` adds it automatically.
+Unity owner component that hosts registrations and message dispatch for other `MonoBehaviour` components on the same GameObject. `MessageAwareComponent` adds it automatically.
 
 ```csharp
 public sealed class MessagingComponent : MonoBehaviour

@@ -142,19 +142,7 @@ namespace DxMessaging.Core.MessageBus
         /// such a handle as a no-op (it owns no store for it).
         /// </summary>
         public MessageBusRegistration(long externalId, object externalState)
-            : this(
-                null,
-                Kind.External,
-                default,
-                0,
-                externalId,
-                0L,
-                0L,
-                null,
-                null,
-                externalState,
-                default
-            ) { }
+            : this(null, Kind.External, default, 0, externalId, 0L, 0L, null, null, externalState, default) { }
 
         /// <summary>The invalid/empty handle. Deregistering it is a silent no-op.</summary>
         public static readonly MessageBusRegistration None = default;
@@ -185,8 +173,7 @@ namespace DxMessaging.Core.MessageBus
             && context.Equals(other.context);
 
         /// <inheritdoc />
-        public override bool Equals(object obj) =>
-            obj is MessageBusRegistration other && Equals(other);
+        public override bool Equals(object obj) => obj is MessageBusRegistration other && Equals(other);
 
         /// <inheritdoc />
         public override int GetHashCode()
@@ -219,14 +206,12 @@ namespace DxMessaging.Core.MessageBus
         /// <param name="left">Left value to compare.</param>
         /// <param name="right">Right value to compare.</param>
         /// <returns><c>true</c> when both values have the same opaque registration identity; otherwise <c>false</c>.</returns>
-        public static bool operator ==(MessageBusRegistration left, MessageBusRegistration right) =>
-            left.Equals(right);
+        public static bool operator ==(MessageBusRegistration left, MessageBusRegistration right) => left.Equals(right);
 
         /// <summary>Compares two values for inequality.</summary>
         /// <param name="left">Left value to compare.</param>
         /// <param name="right">Right value to compare.</param>
         /// <returns><c>false</c> when both values have the same opaque registration identity; otherwise <c>true</c>.</returns>
-        public static bool operator !=(MessageBusRegistration left, MessageBusRegistration right) =>
-            !left.Equals(right);
+        public static bool operator !=(MessageBusRegistration left, MessageBusRegistration right) => !left.Equals(right);
     }
 }

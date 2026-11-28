@@ -54,11 +54,7 @@ namespace DxMessaging.Tests.Editor.PipelineTransportResearch
             public bool PortRebound;
         }
 
-        public static string StartOwnedResponsePhaseControls(
-            bool expectResponseCandidate,
-            bool negativeOnly = false,
-            bool closedResponseOnly = false
-        )
+        public static string StartOwnedResponsePhaseControls(bool expectResponseCandidate, bool negativeOnly = false, bool closedResponseOnly = false)
         {
             if (_phaseControlTask != null && !_phaseControlTask.IsCompleted)
                 throw new InvalidOperationException("Owned phase diagnostic is already active.");
@@ -67,23 +63,15 @@ namespace DxMessaging.Tests.Editor.PipelineTransportResearch
                     Application.dataPath,
                     "../Packages/com.wallstop-studios.dxmessaging/.artifacts/perf-lab/621-response-ownership-s397/"
                         + (
-                            closedResponseOnly
-                                ? (
-                                    expectResponseCandidate
-                                        ? "closed-response-candidate-polling.json"
-                                        : "closed-response-baseline-polling.json"
-                                )
-                            : negativeOnly
-                                ? "candidate-handler-negative-controls-final-polling.json"
+                            closedResponseOnly ? (expectResponseCandidate ? "closed-response-candidate-polling.json" : "closed-response-baseline-polling.json")
+                            : negativeOnly ? "candidate-handler-negative-controls-final-polling.json"
                             : expectResponseCandidate ? "candidate-controls-final-polling.json"
                             : "baseline-controls-v2-polling.json"
                         )
                 )
             );
             if (File.Exists(path) || File.Exists(path + ".status"))
-                throw new InvalidOperationException(
-                    "Owned phase evidence must not be overwritten."
-                );
+                throw new InvalidOperationException("Owned phase evidence must not be overwritten.");
             Directory.CreateDirectory(Path.GetDirectoryName(path));
             File.WriteAllText(path + ".status", "running");
             _phaseControlTask = RunControls();
@@ -94,21 +82,8 @@ namespace DxMessaging.Tests.Editor.PipelineTransportResearch
                 {
                     foreach (
                         string kind in closedResponseOnly ? new[] { "CommandsResponseClosed" }
-                        : negativeOnly
-                            ? new[]
-                            {
-                                "CommandsIoFault",
-                                "CommandsDisposedFault",
-                                "CommandsListenerFault",
-                            }
-                        : new[]
-                        {
-                            "HandlerFault",
-                            "CommandsMetadataFault",
-                            "CommandsSocketDisposed",
-                            "CommandsHeadersSent",
-                            "LiveCommands",
-                        }
+                        : negativeOnly ? new[] { "CommandsIoFault", "CommandsDisposedFault", "CommandsListenerFault" }
+                        : new[] { "HandlerFault", "CommandsMetadataFault", "CommandsSocketDisposed", "CommandsHeadersSent", "LiveCommands" }
                     )
                     {
                         int count = 50;
@@ -123,118 +98,51 @@ namespace DxMessaging.Tests.Editor.PipelineTransportResearch
                             };
                             try
                             {
-                                Task<HttpListenerContext> accept = owner.Observe(
-                                    owner.Listener.GetContextAsync()
-                                );
-                                await WithinOperationDeadline(
-                                    owner.Observe(
-                                        owner.Client.ConnectAsync(IPAddress.Loopback, owner.Port)
-                                    )
-                                );
-                                string endpoint =
-                                    kind == "HandlerFault"
-                                        ? "/api/status"
-                                        : "/api/commands?detail=compact";
+                                Task<HttpListenerContext> accept = owner.Observe(owner.Listener.GetContextAsync());
+                                await WithinOperationDeadline(owner.Observe(owner.Client.ConnectAsync(IPAddress.Loopback, owner.Port)));
+                                string endpoint = kind == "HandlerFault" ? "/api/status" : "/api/commands?detail=compact";
                                 byte[] request = Encoding.ASCII.GetBytes(
                                     $"GET {endpoint} HTTP/1.1\r\nHost: 127.0.0.1:{owner.Port}\r\nAuthorization: Bearer {Token}\r\nConnection: close\r\n\r\n"
                                 );
-                                await WithinOperationDeadline(
-                                    owner.Observe(
-                                        owner
-                                            .Client.GetStream()
-                                            .WriteAsync(request, 0, request.Length)
-                                    )
-                                );
+                                await WithinOperationDeadline(owner.Observe(owner.Client.GetStream().WriteAsync(request, 0, request.Length)));
                                 await WithinOperationDeadline(accept);
                                 owner.Context = accept.Result;
-                                row.PeerBefore =
-                                    owner.Context.Request.RemoteEndPoint.Address.ToString();
+                                row.PeerBefore = owner.Context.Request.RemoteEndPoint.Address.ToString();
                                 Assert.That(row.PeerBefore, Is.EqualTo("127.0.0.1"));
                                 if (kind == "HandlerFault")
-                                    owner.Server.StatusControl = () =>
-                                        throw new InvalidOperationException(
-                                            "controlled-handler-fault-621"
-                                        );
+                                    owner.Server.StatusControl = () => throw new InvalidOperationException("controlled-handler-fault-621");
                                 if (kind == "CommandsMetadataFault")
-                                    owner.Server.CommandMetadataControl = () =>
-                                        throw new InvalidOperationException(
-                                            "controlled-metadata-fault-621"
-                                        );
+                                    owner.Server.CommandMetadataControl = () => throw new InvalidOperationException("controlled-metadata-fault-621");
                                 if (kind == "CommandsIoFault")
-                                    owner.Server.CommandMetadataControl = () =>
-                                        throw new IOException("controlled-metadata-fault-621");
+                                    owner.Server.CommandMetadataControl = () => throw new IOException("controlled-metadata-fault-621");
                                 if (kind == "CommandsDisposedFault")
-                                    owner.Server.CommandMetadataControl = () =>
-                                        throw new ObjectDisposedException(
-                                            "controlled-metadata-fault-621"
-                                        );
+                                    owner.Server.CommandMetadataControl = () => throw new ObjectDisposedException("controlled-metadata-fault-621");
                                 if (kind == "CommandsListenerFault")
-                                    owner.Server.CommandMetadataControl = () =>
-                                        throw new HttpListenerException(
-                                            5,
-                                            "controlled-metadata-fault-621"
-                                        );
+                                    owner.Server.CommandMetadataControl = () => throw new HttpListenerException(5, "controlled-metadata-fault-621");
                                 if (kind == "CommandsResponseClosed")
-                                    owner.Server.CommandMetadataControl = () =>
-                                        owner.Context.Response.Abort();
+                                    owner.Server.CommandMetadataControl = () => owner.Context.Response.Abort();
                                 if (kind == "CommandsSocketDisposed")
                                     owner.Server.CommandMetadataControl = () =>
                                     {
                                         object connection = typeof(HttpListenerContext)
-                                            .GetProperty(
-                                                "Connection",
-                                                BindingFlags.Instance | BindingFlags.NonPublic
-                                            )
+                                            .GetProperty("Connection", BindingFlags.Instance | BindingFlags.NonPublic)
                                             .GetValue(owner.Context);
-                                        Socket socket = (Socket)
-                                            connection
-                                                .GetType()
-                                                .GetField(
-                                                    "sock",
-                                                    BindingFlags.Instance | BindingFlags.NonPublic
-                                                )
-                                                .GetValue(connection);
-                                        Assert.That(
-                                            ((IPEndPoint)socket.LocalEndPoint).Port,
-                                            Is.EqualTo(owner.Port)
-                                        );
-                                        Assert.That(
-                                            ((IPEndPoint)socket.RemoteEndPoint).Address,
-                                            Is.EqualTo(IPAddress.Loopback)
-                                        );
+                                        Socket socket = (Socket)connection.GetType().GetField("sock", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(connection);
+                                        Assert.That(((IPEndPoint)socket.LocalEndPoint).Port, Is.EqualTo(owner.Port));
+                                        Assert.That(((IPEndPoint)socket.RemoteEndPoint).Address, Is.EqualTo(IPAddress.Loopback));
                                         socket.Dispose();
                                     };
                                 if (kind == "CommandsHeadersSent")
                                     owner.Server.CommandMetadataControl = () =>
                                     {
                                         owner.Context.Response.SendChunked = true;
-                                        owner.Context.Response.OutputStream.Write(
-                                            new byte[] { 120 },
-                                            0,
-                                            1
-                                        );
+                                        owner.Context.Response.OutputStream.Write(new byte[] { 120 }, 0, 1);
                                     };
-                                Task<string> read = owner.Observe(
-                                    new StreamReader(
-                                        owner.Client.GetStream(),
-                                        Encoding.UTF8
-                                    ).ReadToEndAsync()
-                                );
+                                Task<string> read = owner.Observe(new StreamReader(owner.Client.GetStream(), Encoding.UTF8).ReadToEndAsync());
                                 row.Phase = "dispatch";
                                 owner.BeginObservation();
-                                MethodInfo actual = typeof(BasePipelineServer).GetMethod(
-                                    "ProcessRequestDetached",
-                                    BindingFlags.Instance | BindingFlags.NonPublic
-                                );
-                                await WithinOperationDeadline(
-                                    owner.Observe(
-                                        (Task)
-                                            actual.Invoke(
-                                                owner.Server,
-                                                new object[] { owner.Context }
-                                            )
-                                    )
-                                );
+                                MethodInfo actual = typeof(BasePipelineServer).GetMethod("ProcessRequestDetached", BindingFlags.Instance | BindingFlags.NonPublic);
+                                await WithinOperationDeadline(owner.Observe((Task)actual.Invoke(owner.Server, new object[] { owner.Context })));
                                 row.Phase = "post-dispatch-abort";
                                 owner.Context.Response.Abort();
                                 row.Phase = "client-read";
@@ -246,19 +154,12 @@ namespace DxMessaging.Tests.Editor.PipelineTransportResearch
                                 row.Errors = owner.Errors.ToArray();
                                 row.ResponseEvents = owner.ResponseEvents.ToArray();
                                 row.AdmissionEvents = owner.AdmissionEvents.Count;
-                                Assert.That(
-                                    row.AdmissionEvents,
-                                    Is.Zero,
-                                    "These actions occur after actual peer admission."
-                                );
+                                Assert.That(row.AdmissionEvents, Is.Zero, "These actions occur after actual peer admission.");
                                 if (kind == "HandlerFault")
                                 {
                                     Assert.That(row.StatusCalls, Is.EqualTo(1));
                                     Assert.That(row.Errors.Length, Is.EqualTo(1));
-                                    Assert.That(
-                                        row.Errors[0],
-                                        Does.Contain("controlled-handler-fault-621")
-                                    );
+                                    Assert.That(row.Errors[0], Does.Contain("controlled-handler-fault-621"));
                                     Assert.That(row.Response, Does.StartWith("HTTP/1.1 400"));
                                 }
                                 else
@@ -272,10 +173,7 @@ namespace DxMessaging.Tests.Editor.PipelineTransportResearch
                                     else if (kind == "CommandsMetadataFault" || negativeOnly)
                                     {
                                         Assert.That(row.Errors.Length, Is.EqualTo(1));
-                                        Assert.That(
-                                            row.Errors[0],
-                                            Does.Contain("controlled-metadata-fault-621")
-                                        );
+                                        Assert.That(row.Errors[0], Does.Contain("controlled-metadata-fault-621"));
                                         Assert.That(row.Response, Does.StartWith("HTTP/1.1 500"));
                                         Assert.That(row.ResponseEvents, Is.Empty);
                                         if (expectResponseCandidate)
@@ -283,10 +181,8 @@ namespace DxMessaging.Tests.Editor.PipelineTransportResearch
                                             string expectedType = kind switch
                                             {
                                                 "CommandsIoFault" => "System.IO.IOException",
-                                                "CommandsDisposedFault" =>
-                                                    "System.ObjectDisposedException",
-                                                "CommandsListenerFault" =>
-                                                    "System.Net.HttpListenerException",
+                                                "CommandsDisposedFault" => "System.ObjectDisposedException",
+                                                "CommandsListenerFault" => "System.Net.HttpListenerException",
                                                 _ => "System.InvalidOperationException",
                                             };
                                             Assert.That(row.Errors[0], Does.Contain(expectedType));
@@ -294,50 +190,24 @@ namespace DxMessaging.Tests.Editor.PipelineTransportResearch
                                     }
                                     else if (closedResponseOnly)
                                     {
-                                        Assert.That(
-                                            row.Errors.Length,
-                                            Is.EqualTo(expectResponseCandidate ? 0 : 1)
-                                        );
-                                        Assert.That(
-                                            row.ResponseEvents.Length,
-                                            Is.EqualTo(expectResponseCandidate ? 1 : 0)
-                                        );
-                                        string actualFailure = expectResponseCandidate
-                                            ? row.ResponseEvents[0]
-                                            : row.Errors[0];
-                                        Assert.That(
-                                            actualFailure,
-                                            Does.Contain("System.ObjectDisposedException")
-                                        );
+                                        Assert.That(row.Errors.Length, Is.EqualTo(expectResponseCandidate ? 0 : 1));
+                                        Assert.That(row.ResponseEvents.Length, Is.EqualTo(expectResponseCandidate ? 1 : 0));
+                                        string actualFailure = expectResponseCandidate ? row.ResponseEvents[0] : row.Errors[0];
+                                        Assert.That(actualFailure, Does.Contain("System.ObjectDisposedException"));
                                         Assert.That(actualFailure, Does.Contain("SendJsonPayload"));
                                     }
-                                    else if (
-                                        expectResponseCandidate
-                                        && kind == "CommandsSocketDisposed"
-                                    )
+                                    else if (expectResponseCandidate && kind == "CommandsSocketDisposed")
                                     {
                                         Assert.That(row.Errors, Is.Empty);
                                         Assert.That(row.ResponseEvents.Length, Is.EqualTo(1));
-                                        Assert.That(
-                                            row.ResponseEvents[0],
-                                            Does.Contain("System.IO.IOException")
-                                        );
-                                        Assert.That(
-                                            row.ResponseEvents[0],
-                                            Does.Contain("SendJsonPayload")
-                                        );
+                                        Assert.That(row.ResponseEvents[0], Does.Contain("System.IO.IOException"));
+                                        Assert.That(row.ResponseEvents[0], Does.Contain("SendJsonPayload"));
                                     }
                                     else
                                     {
-                                        Assert.That(
-                                            row.Errors.Length,
-                                            Is.EqualTo(expectResponseCandidate ? 1 : 2)
-                                        );
+                                        Assert.That(row.Errors.Length, Is.EqualTo(expectResponseCandidate ? 1 : 2));
                                         if (expectResponseCandidate)
-                                            Assert.That(
-                                                row.Errors[0],
-                                                Does.Contain("System.InvalidOperationException")
-                                            );
+                                            Assert.That(row.Errors[0], Does.Contain("System.InvalidOperationException"));
                                         Assert.That(row.ResponseEvents, Is.Empty);
                                     }
                                 }
@@ -355,10 +225,7 @@ namespace DxMessaging.Tests.Editor.PipelineTransportResearch
                                 List<string> taskErrors = new();
                                 foreach (Task task in owner._tasks)
                                 {
-                                    await WithinOperationDeadline(
-                                        task,
-                                        propagateTaskFailure: false
-                                    );
+                                    await WithinOperationDeadline(task, propagateTaskFailure: false);
                                     if (task.IsFaulted)
                                         taskErrors.Add(task.Exception.ToString());
                                 }
@@ -403,27 +270,19 @@ namespace DxMessaging.Tests.Editor.PipelineTransportResearch
                 finally
                 {
                     File.WriteAllText(path, JsonUtility.ToJson(result, true));
-                    File.WriteAllText(
-                        path + ".status",
-                        result.Outcome == "observed" ? "done" : "error"
-                    );
+                    File.WriteAllText(path + ".status", result.Outcome == "observed" ? "done" : "error");
                 }
             }
             return path;
         }
 
-        private static async Task WithinOperationDeadline(
-            Task task,
-            bool propagateTaskFailure = true
-        )
+        private static async Task WithinOperationDeadline(Task task, bool propagateTaskFailure = true)
         {
             Stopwatch deadline = Stopwatch.StartNew();
             while (!task.IsCompleted)
             {
                 if (5000 <= deadline.ElapsedMilliseconds)
-                    throw new TimeoutException(
-                        "Owned diagnostic operation exceeded the existing five-second deadline."
-                    );
+                    throw new TimeoutException("Owned diagnostic operation exceeded the existing five-second deadline.");
                 await Task.Yield();
             }
             if (propagateTaskFailure)
@@ -454,16 +313,7 @@ namespace DxMessaging.Tests.Editor.PipelineTransportResearch
                     yield return new Case("ClosedResponse", i);
                 for (int i = 0; i < 50; ++i)
                     yield return new Case("SocketDisposed", i);
-                foreach (
-                    string kind in new[]
-                    {
-                        "Authorized",
-                        "MissingToken",
-                        "WrongToken",
-                        "UntrustedOrigin",
-                        "Shutdown",
-                    }
-                )
+                foreach (string kind in new[] { "Authorized", "MissingToken", "WrongToken", "UntrustedOrigin", "Shutdown" })
                     yield return new Case(kind);
             }
         }
@@ -473,10 +323,7 @@ namespace DxMessaging.Tests.Editor.PipelineTransportResearch
         {
             Assert.That(_retainedFixture, Is.Null);
             _retainedFixture = this;
-            Assert.That(
-                typeof(BasePipelineServer).Assembly.GetName().Name,
-                Is.EqualTo("Unity.Pipeline")
-            );
+            Assert.That(typeof(BasePipelineServer).Assembly.GetName().Name, Is.EqualTo("Unity.Pipeline"));
         }
 
         [OneTimeTearDown]
@@ -515,9 +362,7 @@ namespace DxMessaging.Tests.Editor.PipelineTransportResearch
                     failures.Add(error);
                 }
             }
-            TestContext.WriteLine(
-                $"Pipeline fixture cleanup: owners={_owners.Count},allKnownTasksObserved=true; ports rebound; each owner released once."
-            );
+            TestContext.WriteLine($"Pipeline fixture cleanup: owners={_owners.Count},allKnownTasksObserved=true; ports rebound; each owner released once.");
             if (failures.Count == 0)
                 _owners.Clear();
             base.TearDownManagedResources();
@@ -526,9 +371,7 @@ namespace DxMessaging.Tests.Editor.PipelineTransportResearch
         }
 
         [UnityTest]
-        public IEnumerator ActualDetachedRequestRespectsContextLifetimeAndAuthorization(
-            [ValueSource(nameof(Cases))] Case scenario
-        )
+        public IEnumerator ActualDetachedRequestRespectsContextLifetimeAndAuthorization([ValueSource(nameof(Cases))] Case scenario)
         {
             TransportOwner owner = TrackDisposable(new TransportOwner());
             _owners.Add(owner);
@@ -536,18 +379,10 @@ namespace DxMessaging.Tests.Editor.PipelineTransportResearch
             Task<HttpListenerContext> accept = owner.Observe(owner.Listener.GetContextAsync());
             Task connect = owner.Observe(owner.Client.ConnectAsync(IPAddress.Loopback, owner.Port));
             yield return Await(connect);
-            string authorization =
-                scenario.Kind == "MissingToken"
-                    ? ""
-                    : $"Authorization: Bearer {(scenario.Kind == "WrongToken" ? "wrong-fixture-token" : Token)}\r\n";
-            string origin =
-                scenario.Kind == "UntrustedOrigin" ? "Origin: https://untrusted.invalid\r\n" : "";
-            byte[] request = Encoding.ASCII.GetBytes(
-                $"GET /api/status HTTP/1.1\r\nHost: 127.0.0.1:{owner.Port}\r\n{authorization}{origin}Connection: close\r\n\r\n"
-            );
-            yield return Await(
-                owner.Observe(owner.Client.GetStream().WriteAsync(request, 0, request.Length))
-            );
+            string authorization = scenario.Kind == "MissingToken" ? "" : $"Authorization: Bearer {(scenario.Kind == "WrongToken" ? "wrong-fixture-token" : Token)}\r\n";
+            string origin = scenario.Kind == "UntrustedOrigin" ? "Origin: https://untrusted.invalid\r\n" : "";
+            byte[] request = Encoding.ASCII.GetBytes($"GET /api/status HTTP/1.1\r\nHost: 127.0.0.1:{owner.Port}\r\n{authorization}{origin}Connection: close\r\n\r\n");
+            yield return Await(owner.Observe(owner.Client.GetStream().WriteAsync(request, 0, request.Length)));
             yield return Await(accept);
             owner.Context = accept.Result;
             owner.ResponseBefore = ObserveResponse(owner.Context);
@@ -559,27 +394,14 @@ namespace DxMessaging.Tests.Editor.PipelineTransportResearch
                 owner.Context.Response.KeepAlive = false;
                 owner.Context.Response.ContentLength64 = 0;
                 owner.Context.Response.Close();
-                Assert.That(
-                    owner.Server.IsRunning,
-                    Is.True,
-                    "The listener remains active while this context terminates."
-                );
+                Assert.That(owner.Server.IsRunning, Is.True, "The listener remains active while this context terminates.");
             }
             else if (scenario.Kind == "SocketDisposed" || scenario.Kind == "SocketShutdown")
             {
-                object connection = typeof(HttpListenerContext)
-                    .GetProperty("Connection", BindingFlags.Instance | BindingFlags.NonPublic)
-                    .GetValue(owner.Context);
-                Socket socket = (Socket)
-                    connection
-                        .GetType()
-                        .GetField("sock", BindingFlags.Instance | BindingFlags.NonPublic)
-                        .GetValue(connection);
+                object connection = typeof(HttpListenerContext).GetProperty("Connection", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(owner.Context);
+                Socket socket = (Socket)connection.GetType().GetField("sock", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(connection);
                 Assert.That(((IPEndPoint)socket.LocalEndPoint).Port, Is.EqualTo(owner.Port));
-                Assert.That(
-                    ((IPEndPoint)socket.RemoteEndPoint).Address,
-                    Is.EqualTo(IPAddress.Loopback)
-                );
+                Assert.That(((IPEndPoint)socket.RemoteEndPoint).Address, Is.EqualTo(IPAddress.Loopback));
                 if (scenario.Kind == "SocketDisposed")
                     socket.Dispose();
                 else
@@ -598,8 +420,7 @@ namespace DxMessaging.Tests.Editor.PipelineTransportResearch
             {
                 endpointError = error.ToString();
                 if (error is SocketException socketError)
-                    endpointError +=
-                        $"\nSocketErrorCode={socketError.SocketErrorCode},NativeErrorCode={socketError.NativeErrorCode},ErrorCode={socketError.ErrorCode}";
+                    endpointError += $"\nSocketErrorCode={socketError.SocketErrorCode},NativeErrorCode={socketError.NativeErrorCode},ErrorCode={socketError.ErrorCode}";
             }
             owner.PeerAfter = peerAfter;
             owner.EndpointError = endpointError;
@@ -608,9 +429,7 @@ namespace DxMessaging.Tests.Editor.PipelineTransportResearch
             {
                 TestContext.WriteLine("Pipeline abort endpoint: " + (endpointError ?? "none"));
                 owner.Context.Response.Abort();
-                TestContext.WriteLine(
-                    $"Pipeline abort completed: kind={scenario.Kind},active={owner.Server.IsRunning},handlerCalls={owner.Server.StatusCalls}"
-                );
+                TestContext.WriteLine($"Pipeline abort completed: kind={scenario.Kind},active={owner.Server.IsRunning},handlerCalls={owner.Server.StatusCalls}");
                 Assert.That(owner.Server.IsRunning, Is.True);
                 Assert.That(owner.Server.StatusCalls, Is.Zero);
                 yield break;
@@ -618,14 +437,9 @@ namespace DxMessaging.Tests.Editor.PipelineTransportResearch
             owner.BeginObservation();
             try
             {
-                MethodInfo actual = typeof(BasePipelineServer).GetMethod(
-                    "ProcessRequestDetached",
-                    BindingFlags.Instance | BindingFlags.NonPublic
-                );
+                MethodInfo actual = typeof(BasePipelineServer).GetMethod("ProcessRequestDetached", BindingFlags.Instance | BindingFlags.NonPublic);
                 Assert.That(actual, Is.Not.Null);
-                Task handling = owner.Observe(
-                    (Task)actual.Invoke(owner.Server, new object[] { owner.Context })
-                );
+                Task handling = owner.Observe((Task)actual.Invoke(owner.Server, new object[] { owner.Context }));
                 yield return Await(handling);
             }
             finally
@@ -635,9 +449,7 @@ namespace DxMessaging.Tests.Editor.PipelineTransportResearch
             string response = "terminal context";
             if (scenario.Kind != "Shutdown")
             {
-                Task<string> read = owner.Observe(
-                    new StreamReader(owner.Client.GetStream(), Encoding.UTF8).ReadToEndAsync()
-                );
+                Task<string> read = owner.Observe(new StreamReader(owner.Client.GetStream(), Encoding.UTF8).ReadToEndAsync());
                 yield return Await(read);
                 response = read.Result;
             }
@@ -648,51 +460,30 @@ namespace DxMessaging.Tests.Editor.PipelineTransportResearch
             TestContext.WriteLine("Pipeline endpoint observation: " + (endpointError ?? "none"));
             foreach (string error in owner.Errors)
                 TestContext.WriteLine("Pipeline actual error: " + error);
-            Assert.That(
-                owner.Server.StatusCalls,
-                Is.EqualTo(expectedCalls),
-                "Only a live authorized request reaches the real status handler."
-            );
+            Assert.That(owner.Server.StatusCalls, Is.EqualTo(expectedCalls), "Only a live authorized request reaches the real status handler.");
             if (scenario.Kind == "Authorized")
                 Assert.That(response, Does.StartWith("HTTP/1.1 200"));
             if (scenario.Kind == "MissingToken" || scenario.Kind == "WrongToken")
                 Assert.That(response, Does.StartWith("HTTP/1.1 401"));
             if (scenario.Kind == "UntrustedOrigin")
                 Assert.That(response, Does.StartWith("HTTP/1.1 403"));
-            Assert.That(
-                owner.Errors,
-                Is.Empty,
-                "Terminal contexts must not cause an unhandled error; all logs remain observable."
-            );
+            Assert.That(owner.Errors, Is.Empty, "Terminal contexts must not cause an unhandled error; all logs remain observable.");
             int expectedRejections =
-                scenario.Kind == "ClosedResponse"
-                || scenario.Kind == "SocketDisposed"
-                || scenario.Kind == "SocketShutdown"
-                || scenario.Kind == "Shutdown"
-                    ? 1
-                    : 0;
-            Assert.That(
-                owner.AdmissionEvents.Count,
-                Is.EqualTo(expectedRejections),
-                "Terminated contexts must retain one explicit pre-admission rejection event."
-            );
+                scenario.Kind == "ClosedResponse" || scenario.Kind == "SocketDisposed" || scenario.Kind == "SocketShutdown" || scenario.Kind == "Shutdown" ? 1 : 0;
+            Assert.That(owner.AdmissionEvents.Count, Is.EqualTo(expectedRejections), "Terminated contexts must retain one explicit pre-admission rejection event.");
         }
 
         public static IEnumerable<Case> AbortCases
         {
             get
             {
-                foreach (
-                    string kind in new[] { "ClosedResponse", "SocketDisposed", "SocketShutdown" }
-                )
+                foreach (string kind in new[] { "ClosedResponse", "SocketDisposed", "SocketShutdown" })
                     yield return new Case(kind, probeCleanup: true);
             }
         }
 
         [UnityTest]
-        public IEnumerator ActualAbortReleasesTerminatedOwnedContext(
-            [ValueSource(nameof(AbortCases))] Case scenario
-        )
+        public IEnumerator ActualAbortReleasesTerminatedOwnedContext([ValueSource(nameof(AbortCases))] Case scenario)
         {
             yield return ActualDetachedRequestRespectsContextLifetimeAndAuthorization(scenario);
         }
@@ -711,9 +502,7 @@ namespace DxMessaging.Tests.Editor.PipelineTransportResearch
         /// Keep the actual endpoint, dispatch and response failures attributable by phase.
         /// </remarks>
         [UnityTest]
-        public IEnumerator ActualDetachedRequestRejectsShutdownSocket(
-            [ValueSource(nameof(ShutdownCases))] Case scenario
-        )
+        public IEnumerator ActualDetachedRequestRejectsShutdownSocket([ValueSource(nameof(ShutdownCases))] Case scenario)
         {
             yield return ActualDetachedRequestRespectsContextLifetimeAndAuthorization(scenario);
         }
@@ -734,9 +523,7 @@ namespace DxMessaging.Tests.Editor.PipelineTransportResearch
         /// it does not establish the cause or frequency of naturally expired sockets.
         /// </remarks>
         [UnityTest]
-        public IEnumerator ActualAcceptLoopUsesExpectedSynchronizationContext(
-            [ValueSource(nameof(AcceptCases))] Case scenario
-        )
+        public IEnumerator ActualAcceptLoopUsesExpectedSynchronizationContext([ValueSource(nameof(AcceptCases))] Case scenario)
         {
             SynchronizationContext original = SynchronizationContext.Current;
             Assert.That(original, Is.Not.Null, "A live Unity caller context is required.");
@@ -745,17 +532,12 @@ namespace DxMessaging.Tests.Editor.PipelineTransportResearch
             _owners.Add(owner);
             owner.Scenario = scenario;
             RecordingContext recording = new(original);
-            MethodInfo actual = typeof(BasePipelineServer).GetMethod(
-                "HandleRequests",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
+            MethodInfo actual = typeof(BasePipelineServer).GetMethod("HandleRequests", BindingFlags.Instance | BindingFlags.NonPublic);
             Assert.That(actual, Is.Not.Null);
             Task loop;
             try
             {
-                SynchronizationContext.SetSynchronizationContext(
-                    scenario.Kind == "CapturedAccept" ? recording : null
-                );
+                SynchronizationContext.SetSynchronizationContext(scenario.Kind == "CapturedAccept" ? recording : null);
                 loop = owner.Observe((Task)actual.Invoke(owner.Server, null));
             }
             finally
@@ -768,18 +550,10 @@ namespace DxMessaging.Tests.Editor.PipelineTransportResearch
             owner.BeginObservation();
             try
             {
-                yield return Await(
-                    owner.Observe(owner.Client.ConnectAsync(IPAddress.Loopback, owner.Port))
-                );
-                byte[] request = Encoding.ASCII.GetBytes(
-                    $"GET /api/status HTTP/1.1\r\nHost: 127.0.0.1:{owner.Port}\r\nAuthorization: Bearer {Token}\r\nConnection: close\r\n\r\n"
-                );
-                yield return Await(
-                    owner.Observe(owner.Client.GetStream().WriteAsync(request, 0, request.Length))
-                );
-                read = owner.Observe(
-                    new StreamReader(owner.Client.GetStream(), Encoding.UTF8).ReadToEndAsync()
-                );
+                yield return Await(owner.Observe(owner.Client.ConnectAsync(IPAddress.Loopback, owner.Port)));
+                byte[] request = Encoding.ASCII.GetBytes($"GET /api/status HTTP/1.1\r\nHost: 127.0.0.1:{owner.Port}\r\nAuthorization: Bearer {Token}\r\nConnection: close\r\n\r\n");
+                yield return Await(owner.Observe(owner.Client.GetStream().WriteAsync(request, 0, request.Length)));
+                read = owner.Observe(new StreamReader(owner.Client.GetStream(), Encoding.UTF8).ReadToEndAsync());
                 yield return Await(read);
                 owner.AcceptDiagnostic =
                     $"callerThread={callerThread},handlerThread={owner.Server.StatusThread},callerContext={original.GetType().FullName},handlerContext={owner.Server.StatusContext},postsBeforeStop={recording.PostCount},loopPendingBeforeStop={!loop.IsCompleted}";
@@ -841,11 +615,7 @@ namespace DxMessaging.Tests.Editor.PipelineTransportResearch
             Stopwatch deadline = Stopwatch.StartNew();
             while (!task.IsCompleted)
             {
-                Assert.That(
-                    deadline.ElapsedMilliseconds,
-                    Is.LessThan(5000),
-                    "Owned networking must terminate within the bounded operation deadline."
-                );
+                Assert.That(deadline.ElapsedMilliseconds, Is.LessThan(5000), "Owned networking must terminate within the bounded operation deadline.");
                 yield return null;
             }
             task.GetAwaiter().GetResult();
@@ -871,11 +641,9 @@ namespace DxMessaging.Tests.Editor.PipelineTransportResearch
             }
             protected override bool WritesDescriptor => false;
 
-            protected override void CreateInstanceDescriptor() =>
-                throw new InvalidOperationException("Fixture descriptor write forbidden.");
+            protected override void CreateInstanceDescriptor() => throw new InvalidOperationException("Fixture descriptor write forbidden.");
 
-            protected override void DeleteInstanceDescriptor() =>
-                throw new InvalidOperationException("Fixture descriptor delete forbidden.");
+            protected override void DeleteInstanceDescriptor() => throw new InvalidOperationException("Fixture descriptor delete forbidden.");
 
             protected override void UpdateHeartBeat() { }
 
@@ -942,15 +710,9 @@ namespace DxMessaging.Tests.Editor.PipelineTransportResearch
                     Listener.Prefixes.Add($"http://127.0.0.1:{Port}/");
                     Listener.Start();
                     Type actual = typeof(BasePipelineServer);
-                    actual
-                        .GetField("m_HttpListener", BindingFlags.Instance | BindingFlags.NonPublic)
-                        .SetValue(Server, Listener);
-                    actual
-                        .GetField("m_Port", BindingFlags.Instance | BindingFlags.NonPublic)
-                        .SetValue(Server, Port);
-                    actual
-                        .GetField("m_IsRunning", BindingFlags.Instance | BindingFlags.NonPublic)
-                        .SetValue(Server, true);
+                    actual.GetField("m_HttpListener", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(Server, Listener);
+                    actual.GetField("m_Port", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(Server, Port);
+                    actual.GetField("m_IsRunning", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(Server, true);
                     Assert.That(Server.IsRunning, Is.True);
                     Assert.That(Server.WatchdogEnabled, Is.False);
                 }
@@ -984,24 +746,12 @@ namespace DxMessaging.Tests.Editor.PipelineTransportResearch
 
             private void Capture(string text, string stack, LogType kind)
             {
-                if (
-                    kind == LogType.Log
-                    && text.StartsWith(
-                        "Pipeline: rejected request before peer admission because transport ended:",
-                        StringComparison.Ordinal
-                    )
-                )
+                if (kind == LogType.Log && text.StartsWith("Pipeline: rejected request before peer admission because transport ended:", StringComparison.Ordinal))
                 {
                     lock (_logGate)
                         AdmissionEvents.Add(text + "\n" + stack);
                 }
-                if (
-                    kind == LogType.Log
-                    && text.StartsWith(
-                        "Pipeline: response transport ended during JSON ",
-                        StringComparison.Ordinal
-                    )
-                )
+                if (kind == LogType.Log && text.StartsWith("Pipeline: response transport ended during JSON ", StringComparison.Ordinal))
                 {
                     lock (_logGate)
                         ResponseEvents.Add(text + "\n" + stack);
@@ -1023,12 +773,8 @@ namespace DxMessaging.Tests.Editor.PipelineTransportResearch
                     TestContext.WriteLine("Pipeline admission events: " + AdmissionEvents.Count);
                     foreach (string admission in AdmissionEvents)
                         TestContext.WriteLine("Pipeline actual admission: " + admission);
-                    TestContext.WriteLine(
-                        "Pipeline accept teardown: " + (AcceptDiagnostic ?? "none")
-                    );
-                    TestContext.WriteLine(
-                        "Pipeline teardown endpoint: " + (EndpointError ?? "none")
-                    );
+                    TestContext.WriteLine("Pipeline accept teardown: " + (AcceptDiagnostic ?? "none"));
+                    TestContext.WriteLine("Pipeline teardown endpoint: " + (EndpointError ?? "none"));
                     foreach (string error in Errors)
                         TestContext.WriteLine("Pipeline teardown actual error: " + error);
                 }
@@ -1046,11 +792,7 @@ namespace DxMessaging.Tests.Editor.PipelineTransportResearch
                 {
                     if (!task.IsCompleted)
                         task.Wait(5000);
-                    Assert.That(
-                        task.IsCompleted,
-                        Is.True,
-                        "Disposal must terminate every known task."
-                    );
+                    Assert.That(task.IsCompleted, Is.True, "Disposal must terminate every known task.");
                     if (task.IsFaulted && !OutsideNUnitDiagnostic)
                         TestContext.WriteLine("Pipeline owned task fault: " + task.Exception);
                 }

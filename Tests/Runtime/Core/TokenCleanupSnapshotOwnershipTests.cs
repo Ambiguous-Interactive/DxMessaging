@@ -30,35 +30,15 @@ namespace DxMessaging.Tests.Runtime.Core
                     {
                         foreach (string outer in new[] { "Rollback", "Disable", "Unregister" })
                         {
-                            foreach (
-                                string mutation in new[]
-                                {
-                                    "None",
-                                    "Enable",
-                                    "DisableEnable",
-                                    "ClearRestage",
-                                    "ReplaceLater",
-                                }
-                            )
+                            foreach (string mutation in new[] { "None", "Enable", "DisableEnable", "ClearRestage", "ReplaceLater" })
                             {
                                 foreach (bool after in new[] { false, true })
                                 {
-                                    foreach (
-                                        string rejection in new[] { "None", "Before", "After" }
-                                    )
+                                    foreach (string rejection in new[] { "None", "Before", "After" })
                                     {
                                         foreach (bool diagnostics in new[] { false, true })
                                         {
-                                            yield return new TestCaseData(
-                                                scenario,
-                                                family,
-                                                count,
-                                                outer,
-                                                mutation,
-                                                after,
-                                                rejection,
-                                                diagnostics
-                                            ).SetName(
+                                            yield return new TestCaseData(scenario, family, count, outer, mutation, after, rejection, diagnostics).SetName(
                                                 $"CleanupOwnership_{scenario}_family{family}_count{count}_{outer}_{mutation}_after{after}_reject{rejection}_diagnostics{diagnostics}"
                                             );
                                         }
@@ -84,16 +64,7 @@ namespace DxMessaging.Tests.Runtime.Core
             bool diagnostics
         )
         {
-            Scope scope = new Scope(
-                scenario,
-                family,
-                count,
-                outer,
-                mutation,
-                after,
-                rejection,
-                diagnostics
-            );
+            Scope scope = new Scope(scenario, family, count, outer, mutation, after, rejection, diagnostics);
             RunScopeAndAssert(scope, outer, rejection);
         }
 
@@ -127,16 +98,8 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.That(scope.NestedAcceptanceAdmitted, Is.True, report);
             Assert.That(scope.PostLiveIds, Is.EqualTo(scope.ExpectedLiveIds), report);
             Assert.That(scope.PostDelivery, Is.EqualTo(scope.ExpectedPostDelivery), report);
-            Assert.That(
-                scope.EnabledAfterOuter,
-                Is.EqualTo(scope.NestedLeaseCount != 0 || rejection != "None"),
-                report
-            );
-            Assert.That(
-                scope.MetadataAfterOuter,
-                Is.EqualTo(scope.ExpectedRecoveryIndices.Count),
-                report
-            );
+            Assert.That(scope.EnabledAfterOuter, Is.EqualTo(scope.NestedLeaseCount != 0 || rejection != "None"), report);
+            Assert.That(scope.MetadataAfterOuter, Is.EqualTo(scope.ExpectedRecoveryIndices.Count), report);
             Assert.That(scope.DisableFailure, Is.Null, report);
             Assert.That(scope.DisabledDelivery, Is.All.EqualTo(0), report);
             Assert.That(scope.DisabledLiveIds, Is.Empty, report);
@@ -169,14 +132,7 @@ namespace DxMessaging.Tests.Runtime.Core
                             {
                                 foreach (bool diagnostics in new[] { false, true })
                                 {
-                                    yield return new TestCaseData(
-                                        scenario,
-                                        family,
-                                        seed,
-                                        after,
-                                        rejection,
-                                        diagnostics
-                                    ).SetName(
+                                    yield return new TestCaseData(scenario, family, seed, after, rejection, diagnostics).SetName(
                                         $"CleanupSaturation_{scenario}_family{family}_seed{seed}_after{after}_reject{rejection}_diagnostics{diagnostics}"
                                     );
                                 }
@@ -189,26 +145,9 @@ namespace DxMessaging.Tests.Runtime.Core
 
         /// <summary>Saturates inline versions without consuming replacement cleanup or retaining snapshot references.</summary>
         [TestCaseSource(nameof(SaturationCases))]
-        public void InlineVersionSaturationPreservesSnapshotCleanup(
-            MessageScenario scenario,
-            int family,
-            int seed,
-            bool after,
-            string rejection,
-            bool diagnostics
-        )
+        public void InlineVersionSaturationPreservesSnapshotCleanup(MessageScenario scenario, int family, int seed, bool after, string rejection, bool diagnostics)
         {
-            Scope scope = new Scope(
-                scenario,
-                family,
-                2,
-                "Disable",
-                "DisableEnable",
-                after,
-                rejection,
-                diagnostics,
-                seed
-            );
+            Scope scope = new Scope(scenario, family, 2, "Disable", "DisableEnable", after, rejection, diagnostics, seed);
             RunScopeAndAssert(scope, "Disable", rejection);
             Assert.That(scope.VersionsAfter, Has.Length.EqualTo(2), scope.Report);
             Assert.That(scope.VersionsAfter, Is.All.EqualTo(int.MaxValue), scope.Report);
@@ -219,22 +158,13 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             for (Type type = registration.GetType(); type != null; type = type.BaseType)
             {
-                PropertyInfo property = type.GetProperty(
-                    "DeregistrationVersion",
-                    BindingFlags.Instance
-                        | BindingFlags.Public
-                        | BindingFlags.NonPublic
-                        | BindingFlags.DeclaredOnly
-                );
+                PropertyInfo property = type.GetProperty("DeregistrationVersion", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
                 if (property != null)
                 {
                     return property;
                 }
             }
-            throw new MissingMemberException(
-                registration.GetType().FullName,
-                "DeregistrationVersion"
-            );
+            throw new MissingMemberException(registration.GetType().FullName, "DeregistrationVersion");
         }
 
         private static bool CachesScrubbed(MessageRegistrationToken token)
@@ -278,14 +208,7 @@ namespace DxMessaging.Tests.Runtime.Core
                             {
                                 foreach (bool diagnostics in new[] { false, true })
                                 {
-                                    yield return new TestCaseData(
-                                        scenario,
-                                        family,
-                                        count,
-                                        after,
-                                        rejection,
-                                        diagnostics
-                                    ).SetName(
+                                    yield return new TestCaseData(scenario, family, count, after, rejection, diagnostics).SetName(
                                         $"CleanupRetarget_{scenario}_family{family}_count{count}_after{after}_reject{rejection}_diagnostics{diagnostics}"
                                     );
                                 }
@@ -298,23 +221,9 @@ namespace DxMessaging.Tests.Runtime.Core
 
         /// <summary>Preserves nested new-bus leases while failed retargeting restores the future bus selection.</summary>
         [TestCaseSource(nameof(RetargetCases))]
-        public void ActiveRetargetKeepsNewCleanupAndPreviousBusRecovery(
-            MessageScenario scenario,
-            int family,
-            int count,
-            bool after,
-            string rejection,
-            bool diagnostics
-        )
+        public void ActiveRetargetKeepsNewCleanupAndPreviousBusRecovery(MessageScenario scenario, int family, int count, bool after, string rejection, bool diagnostics)
         {
-            RetargetScope scope = new RetargetScope(
-                scenario,
-                family,
-                count,
-                after,
-                rejection,
-                diagnostics
-            );
+            RetargetScope scope = new RetargetScope(scenario, family, count, after, rejection, diagnostics);
             using (new LeakWatcher(scope.OldInner, label: scope.Label + ":old"))
             using (new LeakWatcher(scope.Inner, label: scope.Label + ":new"))
             {
@@ -408,14 +317,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 CleanupCounters,
                 FinalCounters;
 
-            internal RetargetScope(
-                MessageScenario scenario,
-                int family,
-                int count,
-                bool after,
-                string rejection,
-                bool diagnostics
-            )
+            internal RetargetScope(MessageScenario scenario, int family, int count, bool after, string rejection, bool diagnostics)
             {
                 _scenario = scenario;
                 _family = family;
@@ -427,8 +329,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     _indices[index] = index;
                 }
-                Label =
-                    $"[{scenario.Kind}] retarget,family={family},count={count},after={after},rejection={rejection},diagnostics={diagnostics}";
+                Label = $"[{scenario.Kind}] retarget,family={family},count={count},after={after},rejection={rejection},diagnostics={diagnostics}";
                 OldBus = new ProbeBus(OldInner, false, "None");
                 Bus = new ProbeBus(Inner, after, rejection);
                 _handler = new MessageHandler(new InstanceId(994), OldBus) { active = true };
@@ -450,11 +351,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 OldBus.BeginPhase("Initial", _indices);
                 _token.Enable();
-                Setup =
-                    _token.Enabled
-                    && _token._metadata.Count == _count
-                    && OldBus.Leases.Count == _count
-                    && Bus.Leases.Count == 0;
+                Setup = _token.Enabled && _token._metadata.Count == _count && OldBus.Leases.Count == _count && Bus.Leases.Count == 0;
                 int oldAttempts = OldBus.RegistrationAttempts;
                 OldBus.BeginPhase("Restore", _indices);
                 Bus.BeginPhase("Outer", _indices);
@@ -474,9 +371,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         Bus.RestorePhase(saved);
                     }
                 };
-                Failure = Capture(() =>
-                    _token.RetargetMessageBus(Bus, MessageBusRebindMode.RebindActive)
-                );
+                Failure = Capture(() => _token.RetargetMessageBus(Bus, MessageBusRebindMode.RebindActive));
                 EnabledAfterOuter = _token.Enabled;
                 MetadataAfterOuter = _token._metadata.Count;
                 OldRestorationAttempts = OldBus.RegistrationAttempts - oldAttempts;
@@ -599,9 +494,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     MessagingDebug.enabled = _oldDebug;
                     MessagingDebug.LogFunction = _oldLog;
-                    StaticsRestored =
-                        MessagingDebug.enabled == _oldDebug
-                        && ReferenceEquals(MessagingDebug.LogFunction, _oldLog);
+                    StaticsRestored = MessagingDebug.enabled == _oldDebug && ReferenceEquals(MessagingDebug.LogFunction, _oldLog);
                 }
             }
         }
@@ -620,8 +513,7 @@ namespace DxMessaging.Tests.Runtime.Core
             private readonly MessageRegistrationToken _token;
             private readonly int[] _calls;
             private readonly List<int> _staged = new List<int>();
-            private readonly List<MessageRegistrationHandle> _handles =
-                new List<MessageRegistrationHandle>();
+            private readonly List<MessageRegistrationHandle> _handles = new List<MessageRegistrationHandle>();
             private readonly int _versionSeed;
             private readonly List<object> _versionOwners = new List<object>();
             private long _firstCleanupId;
@@ -661,17 +553,7 @@ namespace DxMessaging.Tests.Runtime.Core
             internal int[] VersionsAfter;
             internal bool SnapshotCachesScrubbed;
 
-            internal Scope(
-                MessageScenario scenario,
-                int family,
-                int count,
-                string outer,
-                string mutation,
-                bool after,
-                string rejection,
-                bool diagnostics,
-                int versionSeed = -1
-            )
+            internal Scope(MessageScenario scenario, int family, int count, string outer, string mutation, bool after, string rejection, bool diagnostics, int versionSeed = -1)
             {
                 _versionSeed = versionSeed;
                 _scenario = scenario;
@@ -681,8 +563,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 _mutation = mutation;
                 _rejection = rejection;
                 _calls = new int[2 * count];
-                Label =
-                    $"[{scenario.Kind}] family={family},count={count},outer={outer},mutation={mutation},after={after},rejection={rejection},diagnostics={diagnostics}";
+                Label = $"[{scenario.Kind}] family={family},count={count},outer={outer},mutation={mutation},after={after},rejection={rejection},diagnostics={diagnostics}";
                 if (0 <= versionSeed)
                 {
                     Label += $",versionSeed={versionSeed}";
@@ -710,10 +591,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     Array slots = (Array)MessageBusInspection.ReadField(_token, "_slots");
                     foreach (MessageRegistrationHandle handle in _handles)
                     {
-                        object registration = MessageBusInspection.ReadField(
-                            slots.GetValue(handle.Slot),
-                            "Registration"
-                        );
+                        object registration = MessageBusInspection.ReadField(slots.GetValue(handle.Slot), "Registration");
                         VersionProperty(registration).SetValue(registration, _versionSeed);
                         _versionOwners.Add(registration);
                     }
@@ -776,8 +654,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     VersionsAfter = new int[_versionOwners.Count];
                     for (int index = 0; index < _versionOwners.Count; ++index)
                     {
-                        VersionsAfter[index] = (int)
-                            VersionProperty(_versionOwners[index]).GetValue(_versionOwners[index]);
+                        VersionsAfter[index] = (int)VersionProperty(_versionOwners[index]).GetValue(_versionOwners[index]);
                     }
                     SnapshotCachesScrubbed = CachesScrubbed(_token);
                 }
@@ -882,14 +759,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 ExpectedPostDelivery = Vector(callbacks);
                 ExpectedRecoveryDelivery = Vector(ExpectedRecoveryIndices);
-                int expectedNested =
-                    _mutation == "None" || (_mutation == "Enable" && _outer != "Rollback")
-                        ? 0
-                        : _count;
-                NestedAcceptanceAdmitted =
-                    _mutation == "ReplaceLater"
-                        ? 0 < NestedLeaseCount
-                        : NestedLeaseCount == expectedNested;
+                int expectedNested = _mutation == "None" || (_mutation == "Enable" && _outer != "Rollback") ? 0 : _count;
+                NestedAcceptanceAdmitted = _mutation == "ReplaceLater" ? 0 < NestedLeaseCount : NestedLeaseCount == expectedNested;
             }
 
             private int[] Vector(IEnumerable<int> indices)
@@ -904,13 +775,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             private void Stage(int index)
             {
-                MessageRegistrationHandle handle = RegisterForScenario(
-                    _token,
-                    _scenario,
-                    _family,
-                    _calls,
-                    index
-                );
+                MessageRegistrationHandle handle = RegisterForScenario(_token, _scenario, _family, _calls, index);
                 _staged.Add(index);
                 _handles.Add(handle);
             }
@@ -966,20 +831,12 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     MessagingDebug.enabled = _oldDebug;
                     MessagingDebug.LogFunction = _oldLog;
-                    StaticsRestored =
-                        MessagingDebug.enabled == _oldDebug
-                        && ReferenceEquals(MessagingDebug.LogFunction, _oldLog);
+                    StaticsRestored = MessagingDebug.enabled == _oldDebug && ReferenceEquals(MessagingDebug.LogFunction, _oldLog);
                 }
             }
         }
 
-        private static MessageRegistrationHandle RegisterForScenario(
-            MessageRegistrationToken token,
-            MessageScenario scenario,
-            int family,
-            int[] calls,
-            int index
-        )
+        private static MessageRegistrationHandle RegisterForScenario(MessageRegistrationToken token, MessageScenario scenario, int family, int[] calls, int index)
         {
             Action<ProbeMessage> action = _ => ++calls[index];
             MessageHandler.FastHandler<ProbeMessage> fast = (in ProbeMessage _) => ++calls[index];
@@ -991,32 +848,13 @@ namespace DxMessaging.Tests.Runtime.Core
                     switch (scenario.Kind)
                     {
                         case MessageKind.Untargeted:
-                            handle =
-                                family == 0
-                                    ? token.RegisterUntargeted(action)
-                                    : ScenarioHarness.RegisterUntargeted(scenario, token, fast);
+                            handle = family == 0 ? token.RegisterUntargeted(action) : ScenarioHarness.RegisterUntargeted(scenario, token, fast);
                             break;
                         case MessageKind.Targeted:
-                            handle =
-                                family == 0
-                                    ? token.RegisterTargeted(Context, action)
-                                    : ScenarioHarness.RegisterTargeted(
-                                        scenario,
-                                        token,
-                                        Context,
-                                        fast
-                                    );
+                            handle = family == 0 ? token.RegisterTargeted(Context, action) : ScenarioHarness.RegisterTargeted(scenario, token, Context, fast);
                             break;
                         case MessageKind.Broadcast:
-                            handle =
-                                family == 0
-                                    ? token.RegisterBroadcast(Context, action)
-                                    : ScenarioHarness.RegisterBroadcast(
-                                        scenario,
-                                        token,
-                                        Context,
-                                        fast
-                                    );
+                            handle = family == 0 ? token.RegisterBroadcast(Context, action) : ScenarioHarness.RegisterBroadcast(scenario, token, Context, fast);
                             break;
                         default:
                             throw new ArgumentOutOfRangeException(nameof(scenario));
@@ -1035,28 +873,17 @@ namespace DxMessaging.Tests.Runtime.Core
                     }
                     handle = scenario.Kind switch
                     {
-                        MessageKind.Untargeted => token.RegisterUntargetedInterceptor<ProbeMessage>(
-                            Scalar
-                        ),
-                        MessageKind.Targeted => token.RegisterTargetedInterceptor<ProbeMessage>(
-                            Contextual
-                        ),
-                        MessageKind.Broadcast => token.RegisterBroadcastInterceptor<ProbeMessage>(
-                            Contextual
-                        ),
+                        MessageKind.Untargeted => token.RegisterUntargetedInterceptor<ProbeMessage>(Scalar),
+                        MessageKind.Targeted => token.RegisterTargetedInterceptor<ProbeMessage>(Contextual),
+                        MessageKind.Broadcast => token.RegisterBroadcastInterceptor<ProbeMessage>(Contextual),
                         _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
                     };
                     break;
                 case 3:
                     Action<IUntargetedMessage> untargetedAction = _ => ++calls[index];
                     Action<InstanceId, ITargetedMessage> targetedAction = (_, __) => ++calls[index];
-                    Action<InstanceId, IBroadcastMessage> broadcastAction = (_, __) =>
-                        ++calls[index];
-                    handle = token.RegisterGlobalAcceptAll(
-                        untargetedAction,
-                        targetedAction,
-                        broadcastAction
-                    );
+                    Action<InstanceId, IBroadcastMessage> broadcastAction = (_, __) => ++calls[index];
+                    handle = token.RegisterGlobalAcceptAll(untargetedAction, targetedAction, broadcastAction);
                     break;
                 case 4:
                     void Untargeted(in IUntargetedMessage _)
@@ -1123,12 +950,8 @@ namespace DxMessaging.Tests.Runtime.Core
             internal int Callbacks,
                 InvalidHandles,
                 FailOnAttempt = -1;
-            internal readonly Exception RegistrationMarker = new InvalidOperationException(
-                "snapshot-registration-marker"
-            );
-            internal readonly Exception CleanupMarker = new InvalidOperationException(
-                "snapshot-cleanup-marker"
-            );
+            internal readonly Exception RegistrationMarker = new InvalidOperationException("snapshot-registration-marker");
+            internal readonly Exception CleanupMarker = new InvalidOperationException("snapshot-cleanup-marker");
             internal readonly List<Lease> Leases = new List<Lease>();
             internal readonly List<string> Events = new List<string>();
 
@@ -1191,9 +1014,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 if (_indices.Length <= cursor)
                 {
-                    throw new InvalidOperationException(
-                        "Unexpected registration outside the caller's declared staging order."
-                    );
+                    throw new InvalidOperationException("Unexpected registration outside the caller's declared staging order.");
                 }
                 return _indices[cursor];
             }
@@ -1215,57 +1036,37 @@ namespace DxMessaging.Tests.Runtime.Core
                 return new MessageBusRegistration(lease.Id, lease);
             }
 
-            public override MessageBusRegistration RegisterUntargeted<T>(
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterUntargeted<T>(MessageHandler handler, int priority = 0)
             {
                 int index = BeforeRegistration();
                 return Keep<T>(base.RegisterUntargeted<T>(handler, priority), index);
             }
 
-            public override MessageBusRegistration RegisterTargeted<T>(
-                InstanceId context,
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterTargeted<T>(InstanceId context, MessageHandler handler, int priority = 0)
             {
                 int index = BeforeRegistration();
                 return Keep<T>(base.RegisterTargeted<T>(context, handler, priority), index);
             }
 
-            public override MessageBusRegistration RegisterSourcedBroadcast<T>(
-                InstanceId context,
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterSourcedBroadcast<T>(InstanceId context, MessageHandler handler, int priority = 0)
             {
                 int index = BeforeRegistration();
                 return Keep<T>(base.RegisterSourcedBroadcast<T>(context, handler, priority), index);
             }
 
-            public override MessageBusRegistration RegisterUntargetedInterceptor<T>(
-                IMessageBus.UntargetedInterceptor<T> interceptor,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterUntargetedInterceptor<T>(IMessageBus.UntargetedInterceptor<T> interceptor, int priority = 0)
             {
                 int index = BeforeRegistration();
                 return Keep<T>(base.RegisterUntargetedInterceptor(interceptor, priority), index);
             }
 
-            public override MessageBusRegistration RegisterTargetedInterceptor<T>(
-                IMessageBus.TargetedInterceptor<T> interceptor,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterTargetedInterceptor<T>(IMessageBus.TargetedInterceptor<T> interceptor, int priority = 0)
             {
                 int index = BeforeRegistration();
                 return Keep<T>(base.RegisterTargetedInterceptor(interceptor, priority), index);
             }
 
-            public override MessageBusRegistration RegisterBroadcastInterceptor<T>(
-                IMessageBus.BroadcastInterceptor<T> interceptor,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterBroadcastInterceptor<T>(IMessageBus.BroadcastInterceptor<T> interceptor, int priority = 0)
             {
                 int index = BeforeRegistration();
                 return Keep<T>(base.RegisterBroadcastInterceptor(interceptor, priority), index);
@@ -1280,12 +1081,7 @@ namespace DxMessaging.Tests.Runtime.Core
             public override void Deregister<T>(in MessageBusRegistration registration)
             {
                 Lease lease = registration.ExternalState as Lease;
-                if (
-                    lease == null
-                    || !ReferenceEquals(lease.Owner, this)
-                    || lease.Id != registration.ExternalId
-                    || lease.MessageType != typeof(T)
-                )
+                if (lease == null || !ReferenceEquals(lease.Owner, this) || lease.Id != registration.ExternalId || lease.MessageType != typeof(T))
                 {
                     ++InvalidHandles;
                     throw new InvalidOperationException("Foreign lease roundtrip mismatch.");
@@ -1330,10 +1126,7 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private readonly struct ProbeMessage
-            : IUntargetedMessage,
-                ITargetedMessage,
-                IBroadcastMessage
+        private readonly struct ProbeMessage : IUntargetedMessage, ITargetedMessage, IBroadcastMessage
         {
             public Type MessageType => typeof(ProbeMessage);
         }

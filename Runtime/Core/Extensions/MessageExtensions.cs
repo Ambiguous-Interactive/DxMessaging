@@ -138,12 +138,7 @@ namespace DxMessaging.Core.Extensions
         /// <param name="target">Target that this message is intended for.</param>
         /// <param name="messageBus">Explicit bus override. If null, the provider is consulted before the global bus.</param>
         /// <param name="messageBusProvider">Provider used when no explicit bus is supplied. Missing or unavailable providers and null results fall back to the global bus.</param>
-        public static void EmitTargeted<TMessage>(
-            this TMessage message,
-            InstanceId target,
-            IMessageBus messageBus = null,
-            IMessageBusProvider messageBusProvider = null
-        )
+        public static void EmitTargeted<TMessage>(this TMessage message, InstanceId target, IMessageBus messageBus = null, IMessageBusProvider messageBusProvider = null)
             where TMessage : class, ITargetedMessage
         {
             IMessageBus resolvedBus = ResolveMessageBus(messageBus, messageBusProvider);
@@ -163,12 +158,7 @@ namespace DxMessaging.Core.Extensions
         /// <param name="target">Target that this message is intended for.</param>
         /// <param name="messageBus">Explicit bus override. If null, the provider is consulted before the global bus.</param>
         /// <param name="messageBusProvider">Provider used when no explicit bus is supplied. Missing or unavailable providers and null results fall back to the global bus.</param>
-        public static void EmitTargeted<TMessage>(
-            this ref TMessage message,
-            InstanceId target,
-            IMessageBus messageBus = null,
-            IMessageBusProvider messageBusProvider = null
-        )
+        public static void EmitTargeted<TMessage>(this ref TMessage message, InstanceId target, IMessageBus messageBus = null, IMessageBusProvider messageBusProvider = null)
             where TMessage : struct, ITargetedMessage
         {
             IMessageBus resolvedBus = ResolveMessageBus(messageBus, messageBusProvider);
@@ -181,11 +171,7 @@ namespace DxMessaging.Core.Extensions
         /// <param name="message">UntargetedMessage to emit.</param>
         /// <param name="messageBus">Explicit bus override. If null, the provider is consulted before the global bus.</param>
         /// <param name="messageBusProvider">Provider used when no explicit bus is supplied. Missing or unavailable providers and null results fall back to the global bus.</param>
-        public static void EmitUntargeted<TMessage>(
-            this TMessage message,
-            IMessageBus messageBus = null,
-            IMessageBusProvider messageBusProvider = null
-        )
+        public static void EmitUntargeted<TMessage>(this TMessage message, IMessageBus messageBus = null, IMessageBusProvider messageBusProvider = null)
             where TMessage : class, IUntargetedMessage
         {
             IMessageBus resolvedBus = ResolveMessageBus(messageBus, messageBusProvider);
@@ -219,11 +205,7 @@ namespace DxMessaging.Core.Extensions
         /// <param name="message">Untargeted message to emit.</param>
         /// <param name="messageBus">Explicit bus override. If null, the provider is consulted before the global bus.</param>
         /// <param name="messageBusProvider">Provider used when no explicit bus is supplied. Missing or unavailable providers and null results fall back to the global bus.</param>
-        public static void Emit<TMessage>(
-            this TMessage message,
-            IMessageBus messageBus = null,
-            IMessageBusProvider messageBusProvider = null
-        )
+        public static void Emit<TMessage>(this TMessage message, IMessageBus messageBus = null, IMessageBusProvider messageBusProvider = null)
             where TMessage : class, IUntargetedMessage
         {
             IMessageBus resolvedBus = ResolveMessageBus(messageBus, messageBusProvider);
@@ -242,11 +224,7 @@ namespace DxMessaging.Core.Extensions
         /// <param name="message">UntargetedMessage to emit.</param>
         /// <param name="messageBus">Explicit bus override. If null, the provider is consulted before the global bus.</param>
         /// <param name="messageBusProvider">Provider used when no explicit bus is supplied. Missing or unavailable providers and null results fall back to the global bus.</param>
-        public static void EmitUntargeted<TMessage>(
-            this ref TMessage message,
-            IMessageBus messageBus = null,
-            IMessageBusProvider messageBusProvider = null
-        )
+        public static void EmitUntargeted<TMessage>(this ref TMessage message, IMessageBus messageBus = null, IMessageBusProvider messageBusProvider = null)
             where TMessage : struct, IUntargetedMessage
         {
             IMessageBus resolvedBus = ResolveMessageBus(messageBus, messageBusProvider);
@@ -274,11 +252,7 @@ namespace DxMessaging.Core.Extensions
         /// <param name="message">Untargeted message to emit.</param>
         /// <param name="messageBus">Explicit bus override. If null, the provider is consulted before the global bus.</param>
         /// <param name="messageBusProvider">Provider used when no explicit bus is supplied. Missing or unavailable providers and null results fall back to the global bus.</param>
-        public static void Emit<TMessage>(
-            this ref TMessage message,
-            IMessageBus messageBus = null,
-            IMessageBusProvider messageBusProvider = null
-        )
+        public static void Emit<TMessage>(this ref TMessage message, IMessageBus messageBus = null, IMessageBusProvider messageBusProvider = null)
             where TMessage : struct, IUntargetedMessage
         {
             IMessageBus resolvedBus = ResolveMessageBus(messageBus, messageBusProvider);
@@ -312,12 +286,7 @@ namespace DxMessaging.Core.Extensions
         /// heal.EmitAt((InstanceId)this);           // GameObject-targeted listeners will not receive this
         /// </code>
         /// </example>
-        public static void EmitAt<TMessage>(
-            this ref TMessage message,
-            InstanceId target,
-            IMessageBus messageBus = null,
-            IMessageBusProvider messageBusProvider = null
-        )
+        public static void EmitAt<TMessage>(this ref TMessage message, InstanceId target, IMessageBus messageBus = null, IMessageBusProvider messageBusProvider = null)
             where TMessage : struct, ITargetedMessage
         {
             IMessageBus resolvedBus = ResolveMessageBus(messageBus, messageBusProvider);
@@ -351,12 +320,7 @@ namespace DxMessaging.Core.Extensions
         /// dmg.EmitComponentBroadcast(this);
         /// </code>
         /// </example>
-        public static void EmitFrom<TMessage>(
-            this ref TMessage message,
-            InstanceId source,
-            IMessageBus messageBus = null,
-            IMessageBusProvider messageBusProvider = null
-        )
+        public static void EmitFrom<TMessage>(this ref TMessage message, InstanceId source, IMessageBus messageBus = null, IMessageBusProvider messageBusProvider = null)
             where TMessage : struct, IBroadcastMessage
         {
             IMessageBus resolvedBus = ResolveMessageBus(messageBus, messageBusProvider);
@@ -464,12 +428,7 @@ namespace DxMessaging.Core.Extensions
         /// <param name="source">Source of this message.</param>
         /// <param name="messageBus">Explicit bus override. If null, the provider is consulted before the global bus.</param>
         /// <param name="messageBusProvider">Provider used when no explicit bus is supplied. Missing or unavailable providers and null results fall back to the global bus.</param>
-        public static void EmitBroadcast<TMessage>(
-            this TMessage message,
-            InstanceId source,
-            IMessageBus messageBus = null,
-            IMessageBusProvider messageBusProvider = null
-        )
+        public static void EmitBroadcast<TMessage>(this TMessage message, InstanceId source, IMessageBus messageBus = null, IMessageBusProvider messageBusProvider = null)
             where TMessage : class, IBroadcastMessage
         {
             IMessageBus resolvedBus = ResolveMessageBus(messageBus, messageBusProvider);
@@ -489,12 +448,7 @@ namespace DxMessaging.Core.Extensions
         /// <param name="source">Source of this message.</param>
         /// <param name="messageBus">Explicit bus override. If null, the provider is consulted before the global bus.</param>
         /// <param name="messageBusProvider">Provider used when no explicit bus is supplied. Missing or unavailable providers and null results fall back to the global bus.</param>
-        public static void EmitBroadcast<TMessage>(
-            this ref TMessage message,
-            InstanceId source,
-            IMessageBus messageBus = null,
-            IMessageBusProvider messageBusProvider = null
-        )
+        public static void EmitBroadcast<TMessage>(this ref TMessage message, InstanceId source, IMessageBus messageBus = null, IMessageBusProvider messageBusProvider = null)
             where TMessage : struct, IBroadcastMessage
         {
             IMessageBus resolvedBus = ResolveMessageBus(messageBus, messageBusProvider);
@@ -513,12 +467,7 @@ namespace DxMessaging.Core.Extensions
         /// <param name="target">Target to send the message to.</param>
         /// <param name="messageBus">Explicit bus override. If null, the provider is consulted before the global bus.</param>
         /// <param name="messageBusProvider">Provider used when no explicit bus is supplied. Missing or unavailable providers and null results fall back to the global bus.</param>
-        public static void Emit(
-            this string message,
-            InstanceId target,
-            IMessageBus messageBus = null,
-            IMessageBusProvider messageBusProvider = null
-        )
+        public static void Emit(this string message, InstanceId target, IMessageBus messageBus = null, IMessageBusProvider messageBusProvider = null)
         {
             StringMessage stringMessage = new(message);
             IMessageBus resolvedBus = ResolveMessageBus(messageBus, messageBusProvider);
@@ -538,12 +487,7 @@ namespace DxMessaging.Core.Extensions
         /// <param name="target">Target to send the message to.</param>
         /// <param name="messageBus">Explicit bus override. If null, the provider is consulted before the global bus.</param>
         /// <param name="messageBusProvider">Provider used when no explicit bus is supplied. Missing or unavailable providers and null results fall back to the global bus.</param>
-        public static void EmitAt(
-            this string message,
-            InstanceId target,
-            IMessageBus messageBus = null,
-            IMessageBusProvider messageBusProvider = null
-        )
+        public static void EmitAt(this string message, InstanceId target, IMessageBus messageBus = null, IMessageBusProvider messageBusProvider = null)
         {
             StringMessage stringMessage = new(message);
             IMessageBus resolvedBus = ResolveMessageBus(messageBus, messageBusProvider);
@@ -560,11 +504,7 @@ namespace DxMessaging.Core.Extensions
         /// <param name="message">Message to send globally.</param>
         /// <param name="messageBus">Explicit bus override. If null, the provider is consulted before the global bus.</param>
         /// <param name="messageBusProvider">Provider used when no explicit bus is supplied. Missing or unavailable providers and null results fall back to the global bus.</param>
-        public static void Emit(
-            this string message,
-            IMessageBus messageBus = null,
-            IMessageBusProvider messageBusProvider = null
-        )
+        public static void Emit(this string message, IMessageBus messageBus = null, IMessageBusProvider messageBusProvider = null)
         {
             GlobalStringMessage stringMessage = new(message);
             IMessageBus resolvedBus = ResolveMessageBus(messageBus, messageBusProvider);
@@ -586,22 +526,14 @@ namespace DxMessaging.Core.Extensions
         /// <param name="source">Source of the message.</param>
         /// <param name="messageBus">Explicit bus override. If null, the provider is consulted before the global bus.</param>
         /// <param name="messageBusProvider">Provider used when no explicit bus is supplied. Missing or unavailable providers and null results fall back to the global bus.</param>
-        public static void EmitFrom(
-            this string message,
-            InstanceId source,
-            IMessageBus messageBus = null,
-            IMessageBusProvider messageBusProvider = null
-        )
+        public static void EmitFrom(this string message, InstanceId source, IMessageBus messageBus = null, IMessageBusProvider messageBusProvider = null)
         {
             SourcedStringMessage stringMessage = new(message);
             IMessageBus resolvedBus = ResolveMessageBus(messageBus, messageBusProvider);
             resolvedBus.SourcedBroadcast(ref source, ref stringMessage);
         }
 
-        private static IMessageBus ResolveMessageBus(
-            IMessageBus explicitBus,
-            IMessageBusProvider messageBusProvider
-        )
+        private static IMessageBus ResolveMessageBus(IMessageBus explicitBus, IMessageBusProvider messageBusProvider)
         {
             if (explicitBus != null)
             {

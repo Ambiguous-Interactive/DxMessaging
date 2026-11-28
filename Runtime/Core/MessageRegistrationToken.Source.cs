@@ -30,11 +30,7 @@ namespace DxMessaging.Core
         /// </remarks>
         public bool RetargetSource(MessageRegistrationHandle handle, InstanceId newSource)
         {
-            if (
-                !TryGetSlot(handle.Slot, handle.Id, out RegistrationSlot slot)
-                || !(slot.Registration is ISourceRegistration source)
-                || !source.SupportsSourceRetargeting
-            )
+            if (!TryGetSlot(handle.Slot, handle.Id, out RegistrationSlot slot) || !(slot.Registration is ISourceRegistration source) || !source.SupportsSourceRetargeting)
             {
                 return false;
             }
@@ -44,50 +40,30 @@ namespace DxMessaging.Core
                 return true;
             }
             Registration registration = slot.Registration;
-            if (
-                registration.IsRegistering
-                || IsCleanupInFlight(handle)
-                || slot.Deregistration is PendingDeregistration
-                || (_sourceMoves != null && _sourceMoves.Contains(handle))
-            )
+            if (registration.IsRegistering || IsCleanupInFlight(handle) || slot.Deregistration is PendingDeregistration || (_sourceMoves != null && _sourceMoves.Contains(handle)))
             {
-                throw new InvalidOperationException(
-                    "Finish the current registration, source move or overlapping cleanup before moving the same handle again."
-                );
+                throw new InvalidOperationException("Finish the current registration, source move or overlapping cleanup before moving the same handle again.");
             }
-            List<MessageRegistrationHandle> moves = _sourceMoves ??=
-                new List<MessageRegistrationHandle>();
+            List<MessageRegistrationHandle> moves = _sourceMoves ??= new List<MessageRegistrationHandle>();
             moves.Add(handle);
             long cancellationVersion = _activationCancellationVersion;
             bool active = slot.Deregistration != null;
-            IMessageBus activeMessageBus = active
-                ? (slot.Deregistration as MessageHandler.HandlerDeregistration)?.CapturedMessageBus
-                : null;
+            IMessageBus activeMessageBus = active ? (slot.Deregistration as MessageHandler.HandlerDeregistration)?.CapturedMessageBus : null;
             try
             {
                 if (active)
                 {
                     if (activeMessageBus == null)
                     {
-                        throw new InvalidOperationException(
-                            "The active source registration has no accepted bus binding."
-                        );
+                        throw new InvalidOperationException("The active source registration has no accepted bus binding.");
                     }
-                    Exception cleanupFailure = InvokeOwnedDeregistration(
-                        handle,
-                        slot.Deregistration,
-                        0,
-                        isOrphan: false
-                    );
+                    Exception cleanupFailure = InvokeOwnedDeregistration(handle, slot.Deregistration, 0, isOrphan: false);
                     if (cleanupFailure != null)
                     {
                         _enabled = 0 < _deregistrationCount;
                         ExceptionDispatchInfo.Capture(cleanupFailure).Throw();
                     }
-                    if (
-                        !TryGetSlot(handle.Slot, handle.Id, out slot)
-                        || !ReferenceEquals(slot.Registration, registration)
-                    )
+                    if (!TryGetSlot(handle.Slot, handle.Id, out slot) || !ReferenceEquals(slot.Registration, registration))
                     {
                         return false;
                     }
@@ -106,9 +82,7 @@ namespace DxMessaging.Core
                 }
                 try
                 {
-                    MessageHandler.HandlerDeregistration cleanup = registration.Register(
-                        activeMessageBus
-                    );
+                    MessageHandler.HandlerDeregistration cleanup = registration.Register(activeMessageBus);
                     AddDeregistration(handle.Slot, handle.Id, cleanup);
                 }
                 catch (Exception activationFailure)
@@ -124,11 +98,7 @@ namespace DxMessaging.Core
                     {
                         try
                         {
-                            AddDeregistration(
-                                handle.Slot,
-                                handle.Id,
-                                registration.Register(activeMessageBus)
-                            );
+                            AddDeregistration(handle.Slot, handle.Id, registration.Register(activeMessageBus));
                         }
                         catch (Exception exception)
                         {
@@ -147,8 +117,7 @@ namespace DxMessaging.Core
                     ExceptionDispatchInfo.Capture(activationFailure).Throw();
                 }
                 _enabled = 0 < _deregistrationCount;
-                return TryGetSlot(handle.Slot, handle.Id, out slot)
-                    && ReferenceEquals(slot.Registration, registration);
+                return TryGetSlot(handle.Slot, handle.Id, out slot) && ReferenceEquals(slot.Registration, registration);
             }
             finally
             {
@@ -162,15 +131,9 @@ namespace DxMessaging.Core
         /// <param name="newSource">New source, converted through InstanceId. Null selects the empty identity.</param>
         /// <returns>True when source-bound staging remains; false for an unsupported, stale, foreign, or removed handle.</returns>
         /// <remarks>Added in 4.0.0. Uses the same cleanup, reentrancy and recovery rules as the InstanceId overload.</remarks>
-        public bool RetargetSource(
-            MessageRegistrationHandle handle,
-            UnityEngine.GameObject newSource
-        )
+        public bool RetargetSource(MessageRegistrationHandle handle, UnityEngine.GameObject newSource)
         {
-            return RetargetSource(
-                handle,
-                newSource == null ? InstanceId.EmptyId : (InstanceId)newSource
-            );
+            return RetargetSource(handle, newSource == null ? InstanceId.EmptyId : (InstanceId)newSource);
         }
 #endif
 

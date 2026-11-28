@@ -29,15 +29,9 @@ namespace DxMessaging.Tests.Runtime.Core
         /// fails loudly with exact numbers rather than a stack overflow.
         /// </summary>
         [Test]
-        public void EmitDuringHandlerDoesNotInfinitelyRecurse(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void EmitDuringHandlerDoesNotInfinitelyRecurse([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(EmitDuringHandlerDoesNotInfinitelyRecurse) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(EmitDuringHandlerDoesNotInfinitelyRecurse) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -94,15 +88,9 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void RecursiveEmitTerminatesViaInterceptor(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void RecursiveEmitTerminatesViaInterceptor([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(RecursiveEmitTerminatesViaInterceptor) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(RecursiveEmitTerminatesViaInterceptor) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -112,13 +100,7 @@ namespace DxMessaging.Tests.Runtime.Core
             int handlerInvocations = 0;
             int interceptorInvocations = 0;
 
-            RegisterDepthLimitedInterceptor(
-                scenario,
-                token,
-                threshold: ReentrantSafetyDepth,
-                getDepth: () => depth,
-                onInvoked: () => ++interceptorInvocations
-            );
+            RegisterDepthLimitedInterceptor(scenario, token, threshold: ReentrantSafetyDepth, getDepth: () => depth, onInvoked: () => ++interceptorInvocations);
 
             _ = RegisterCountingHandler(scenario, token, hostId, priority: 0, onInvoked: () =>
             {
@@ -164,15 +146,9 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void RegisterDuringEmitIsDeferredToNextEmission(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void RegisterDuringEmitIsDeferredToNextEmission([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(RegisterDuringEmitIsDeferredToNextEmission) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(RegisterDuringEmitIsDeferredToNextEmission) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -182,23 +158,11 @@ namespace DxMessaging.Tests.Runtime.Core
             int secondaryCount = 0;
             MessageRegistrationHandle? secondaryHandle = null;
 
-            MessageRegistrationHandle primaryHandle = RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                priority: 0,
-                onInvoked: () =>
-                {
-                    ++primaryCount;
-                    secondaryHandle ??= RegisterCountingHandler(
-                        scenario,
-                        token,
-                        hostId,
-                        priority: 0,
-                        onInvoked: () => ++secondaryCount
-                    );
-                }
-            );
+            MessageRegistrationHandle primaryHandle = RegisterCountingHandler(scenario, token, hostId, priority: 0, onInvoked: () =>
+            {
+                ++primaryCount;
+                secondaryHandle ??= RegisterCountingHandler(scenario, token, hostId, priority: 0, onInvoked: () => ++secondaryCount);
+            });
 
             EmitForScenario(scenario, hostId);
             Assert.AreEqual(
@@ -262,15 +226,9 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void DeregisterDuringEmitIsHonouredOnCurrentSnapshot(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void DeregisterDuringEmitIsHonouredOnCurrentSnapshot([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(DeregisterDuringEmitIsHonouredOnCurrentSnapshot) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(DeregisterDuringEmitIsHonouredOnCurrentSnapshot) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -290,23 +248,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
             });
 
-            secondHandle = RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                priority: 1,
-                onInvoked: () => ++secondCount
-            );
+            secondHandle = RegisterCountingHandler(scenario, token, hostId, priority: 1, onInvoked: () => ++secondCount);
 
             EmitForScenario(scenario, hostId);
-            Assert.AreEqual(
-                1,
-                firstCount,
-                "[{0}] First emission must invoke primary exactly once. firstCount={1}, secondCount={2}.",
-                scenario.Kind,
-                firstCount,
-                secondCount
-            );
+            Assert.AreEqual(1, firstCount, "[{0}] First emission must invoke primary exactly once. firstCount={1}, secondCount={2}.", scenario.Kind, firstCount, secondCount);
             Assert.AreEqual(
                 1,
                 secondCount,
@@ -317,14 +262,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             EmitForScenario(scenario, hostId);
-            Assert.AreEqual(
-                2,
-                firstCount,
-                "[{0}] Second emission must invoke primary again. firstCount={1}, secondCount={2}.",
-                scenario.Kind,
-                firstCount,
-                secondCount
-            );
+            Assert.AreEqual(2, firstCount, "[{0}] Second emission must invoke primary again. firstCount={1}, secondCount={2}.", scenario.Kind, firstCount, secondCount);
             Assert.AreEqual(
                 1,
                 secondCount,
@@ -336,15 +274,9 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void MultipleNestedEmissionsRespectSnapshotIsolation(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void MultipleNestedEmissionsRespectSnapshotIsolation([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(MultipleNestedEmissionsRespectSnapshotIsolation) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(MultipleNestedEmissionsRespectSnapshotIsolation) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -371,13 +303,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     if (!latecomerRegistered)
                     {
                         latecomerRegistered = true;
-                        _ = RegisterCountingHandler(
-                            scenario,
-                            token,
-                            hostId,
-                            priority: 0,
-                            onInvoked: () => ++latecomerInvocations
-                        );
+                        _ = RegisterCountingHandler(scenario, token, hostId, priority: 0, onInvoked: () => ++latecomerInvocations);
                     }
                 }
                 finally
@@ -423,15 +349,9 @@ namespace DxMessaging.Tests.Runtime.Core
         /// emission (snapshot semantics) but must NOT run on the second emission.
         /// </summary>
         [Test]
-        public void DeregisterSamePriorityDuringEmitIsHonouredOnCurrentSnapshot(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void DeregisterSamePriorityDuringEmitIsHonouredOnCurrentSnapshot([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(DeregisterSamePriorityDuringEmitIsHonouredOnCurrentSnapshot) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(DeregisterSamePriorityDuringEmitIsHonouredOnCurrentSnapshot) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -441,36 +361,21 @@ namespace DxMessaging.Tests.Runtime.Core
             int bCount = 0;
             MessageRegistrationHandle bHandle = default;
 
-            MessageRegistrationHandle aHandle = RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                priority: 0,
-                onInvoked: () =>
+            MessageRegistrationHandle aHandle = RegisterCountingHandler(scenario, token, hostId, priority: 0, onInvoked: () =>
+            {
+                ++aCount;
+                if (bHandle != default)
                 {
-                    ++aCount;
-                    if (bHandle != default)
-                    {
-                        token.RemoveRegistration(bHandle);
-                        bHandle = default;
-                    }
+                    token.RemoveRegistration(bHandle);
+                    bHandle = default;
                 }
-            );
+            });
 
-            bHandle = RegisterCountingHandler(scenario, token, hostId, priority: 0, onInvoked: () =>
-                ++bCount
-            );
+            bHandle = RegisterCountingHandler(scenario, token, hostId, priority: 0, onInvoked: () => ++bCount);
             MessageRegistrationHandle bHandleSnapshot = bHandle;
 
             EmitForScenario(scenario, hostId);
-            Assert.AreEqual(
-                1,
-                aCount,
-                "[{0}] First emission must invoke A exactly once. aCount={1}, bCount={2}.",
-                scenario.Kind,
-                aCount,
-                bCount
-            );
+            Assert.AreEqual(1, aCount, "[{0}] First emission must invoke A exactly once. aCount={1}, bCount={2}.", scenario.Kind, aCount, bCount);
             Assert.AreEqual(
                 1,
                 bCount,
@@ -481,22 +386,8 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             EmitForScenario(scenario, hostId);
-            Assert.AreEqual(
-                2,
-                aCount,
-                "[{0}] Second emission must invoke A again. aCount={1}, bCount={2}.",
-                scenario.Kind,
-                aCount,
-                bCount
-            );
-            Assert.AreEqual(
-                1,
-                bCount,
-                "[{0}] B must NOT run on the second emission once removed. aCount={1}, bCount={2}.",
-                scenario.Kind,
-                aCount,
-                bCount
-            );
+            Assert.AreEqual(2, aCount, "[{0}] Second emission must invoke A again. aCount={1}, bCount={2}.", scenario.Kind, aCount, bCount);
+            Assert.AreEqual(1, bCount, "[{0}] B must NOT run on the second emission once removed. aCount={1}, bCount={2}.", scenario.Kind, aCount, bCount);
 
             token.RemoveRegistration(aHandle);
             if (bHandle != default)
@@ -519,15 +410,9 @@ namespace DxMessaging.Tests.Runtime.Core
         /// only A and C must run on the second.
         /// </summary>
         [Test]
-        public void DeregisterMultipleHandlersDuringEmitAcrossPriorities(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void DeregisterMultipleHandlersDuringEmitAcrossPriorities([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(DeregisterMultipleHandlersDuringEmitAcrossPriorities) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(DeregisterMultipleHandlersDuringEmitAcrossPriorities) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -540,51 +425,26 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationHandle bHandle = default;
             MessageRegistrationHandle dHandle = default;
 
-            MessageRegistrationHandle aHandle = RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                priority: 0,
-                onInvoked: () =>
+            MessageRegistrationHandle aHandle = RegisterCountingHandler(scenario, token, hostId, priority: 0, onInvoked: () =>
+            {
+                ++aCount;
+                if (bHandle != default)
                 {
-                    ++aCount;
-                    if (bHandle != default)
-                    {
-                        token.RemoveRegistration(bHandle);
-                        bHandle = default;
-                    }
-                    if (dHandle != default)
-                    {
-                        token.RemoveRegistration(dHandle);
-                        dHandle = default;
-                    }
+                    token.RemoveRegistration(bHandle);
+                    bHandle = default;
                 }
-            );
-            bHandle = RegisterCountingHandler(scenario, token, hostId, priority: 1, onInvoked: () =>
-                ++bCount
-            );
-            MessageRegistrationHandle cHandle = RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                priority: 2,
-                onInvoked: () => ++cCount
-            );
-            dHandle = RegisterCountingHandler(scenario, token, hostId, priority: 3, onInvoked: () =>
-                ++dCount
-            );
+                if (dHandle != default)
+                {
+                    token.RemoveRegistration(dHandle);
+                    dHandle = default;
+                }
+            });
+            bHandle = RegisterCountingHandler(scenario, token, hostId, priority: 1, onInvoked: () => ++bCount);
+            MessageRegistrationHandle cHandle = RegisterCountingHandler(scenario, token, hostId, priority: 2, onInvoked: () => ++cCount);
+            dHandle = RegisterCountingHandler(scenario, token, hostId, priority: 3, onInvoked: () => ++dCount);
 
             EmitForScenario(scenario, hostId);
-            Assert.AreEqual(
-                1,
-                aCount,
-                "[{0}] First emission must run A once. aCount={1}, bCount={2}, cCount={3}, dCount={4}.",
-                scenario.Kind,
-                aCount,
-                bCount,
-                cCount,
-                dCount
-            );
+            Assert.AreEqual(1, aCount, "[{0}] First emission must run A once. aCount={1}, bCount={2}, cCount={3}, dCount={4}.", scenario.Kind, aCount, bCount, cCount, dCount);
             Assert.AreEqual(
                 1,
                 bCount,
@@ -595,16 +455,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 cCount,
                 dCount
             );
-            Assert.AreEqual(
-                1,
-                cCount,
-                "[{0}] First emission must run untouched C. aCount={1}, bCount={2}, cCount={3}, dCount={4}.",
-                scenario.Kind,
-                aCount,
-                bCount,
-                cCount,
-                dCount
-            );
+            Assert.AreEqual(1, cCount, "[{0}] First emission must run untouched C. aCount={1}, bCount={2}, cCount={3}, dCount={4}.", scenario.Kind, aCount, bCount, cCount, dCount);
             Assert.AreEqual(
                 1,
                 dCount,
@@ -617,16 +468,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             EmitForScenario(scenario, hostId);
-            Assert.AreEqual(
-                2,
-                aCount,
-                "[{0}] Second emission must run A again. aCount={1}, bCount={2}, cCount={3}, dCount={4}.",
-                scenario.Kind,
-                aCount,
-                bCount,
-                cCount,
-                dCount
-            );
+            Assert.AreEqual(2, aCount, "[{0}] Second emission must run A again. aCount={1}, bCount={2}, cCount={3}, dCount={4}.", scenario.Kind, aCount, bCount, cCount, dCount);
             Assert.AreEqual(
                 1,
                 bCount,
@@ -637,16 +479,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 cCount,
                 dCount
             );
-            Assert.AreEqual(
-                2,
-                cCount,
-                "[{0}] C must run on the second emission. aCount={1}, bCount={2}, cCount={3}, dCount={4}.",
-                scenario.Kind,
-                aCount,
-                bCount,
-                cCount,
-                dCount
-            );
+            Assert.AreEqual(2, cCount, "[{0}] C must run on the second emission. aCount={1}, bCount={2}, cCount={3}, dCount={4}.", scenario.Kind, aCount, bCount, cCount, dCount);
             Assert.AreEqual(
                 1,
                 dCount,
@@ -678,15 +511,9 @@ namespace DxMessaging.Tests.Runtime.Core
         /// Second emission: A and X run, B does NOT (removed before snapshot).
         /// </summary>
         [Test]
-        public void RegisterAndDeregisterDuringEmitInteractsCorrectly(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void RegisterAndDeregisterDuringEmitInteractsCorrectly([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(RegisterAndDeregisterDuringEmitInteractsCorrectly) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(RegisterAndDeregisterDuringEmitInteractsCorrectly) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -698,42 +525,20 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationHandle bHandle = default;
             MessageRegistrationHandle? xHandle = null;
 
-            MessageRegistrationHandle aHandle = RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                priority: 0,
-                onInvoked: () =>
+            MessageRegistrationHandle aHandle = RegisterCountingHandler(scenario, token, hostId, priority: 0, onInvoked: () =>
+            {
+                ++aCount;
+                xHandle ??= RegisterCountingHandler(scenario, token, hostId, priority: 1, onInvoked: () => ++xCount);
+                if (bHandle != default)
                 {
-                    ++aCount;
-                    xHandle ??= RegisterCountingHandler(
-                        scenario,
-                        token,
-                        hostId,
-                        priority: 1,
-                        onInvoked: () => ++xCount
-                    );
-                    if (bHandle != default)
-                    {
-                        token.RemoveRegistration(bHandle);
-                        bHandle = default;
-                    }
+                    token.RemoveRegistration(bHandle);
+                    bHandle = default;
                 }
-            );
-            bHandle = RegisterCountingHandler(scenario, token, hostId, priority: 2, onInvoked: () =>
-                ++bCount
-            );
+            });
+            bHandle = RegisterCountingHandler(scenario, token, hostId, priority: 2, onInvoked: () => ++bCount);
 
             EmitForScenario(scenario, hostId);
-            Assert.AreEqual(
-                1,
-                aCount,
-                "[{0}] First emission must run A once. aCount={1}, bCount={2}, xCount={3}.",
-                scenario.Kind,
-                aCount,
-                bCount,
-                xCount
-            );
+            Assert.AreEqual(1, aCount, "[{0}] First emission must run A once. aCount={1}, bCount={2}, xCount={3}.", scenario.Kind, aCount, bCount, xCount);
             Assert.AreEqual(
                 1,
                 bCount,
@@ -754,24 +559,8 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             EmitForScenario(scenario, hostId);
-            Assert.AreEqual(
-                2,
-                aCount,
-                "[{0}] Second emission must run A again. aCount={1}, bCount={2}, xCount={3}.",
-                scenario.Kind,
-                aCount,
-                bCount,
-                xCount
-            );
-            Assert.AreEqual(
-                1,
-                bCount,
-                "[{0}] B must NOT run on the second emission once removed. aCount={1}, bCount={2}, xCount={3}.",
-                scenario.Kind,
-                aCount,
-                bCount,
-                xCount
-            );
+            Assert.AreEqual(2, aCount, "[{0}] Second emission must run A again. aCount={1}, bCount={2}, xCount={3}.", scenario.Kind, aCount, bCount, xCount);
+            Assert.AreEqual(1, bCount, "[{0}] B must NOT run on the second emission once removed. aCount={1}, bCount={2}, xCount={3}.", scenario.Kind, aCount, bCount, xCount);
             Assert.AreEqual(
                 1,
                 xCount,
@@ -807,29 +596,16 @@ namespace DxMessaging.Tests.Runtime.Core
         /// </summary>
         [Test]
         public void DeregisterCrossMessageHandlerSamePriorityIsHonouredOnCurrentSnapshot(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario
         )
         {
-            GameObject hostA = new(
-                nameof(DeregisterCrossMessageHandlerSamePriorityIsHonouredOnCurrentSnapshot)
-                    + "A"
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject hostA = new(nameof(DeregisterCrossMessageHandlerSamePriorityIsHonouredOnCurrentSnapshot) + "A" + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(hostA);
-            GameObject hostB = new(
-                nameof(DeregisterCrossMessageHandlerSamePriorityIsHonouredOnCurrentSnapshot)
-                    + "B"
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject hostB = new(nameof(DeregisterCrossMessageHandlerSamePriorityIsHonouredOnCurrentSnapshot) + "B" + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(hostB);
 
-            EmptyMessageAwareComponent componentA =
-                hostA.GetComponent<EmptyMessageAwareComponent>();
-            EmptyMessageAwareComponent componentB =
-                hostB.GetComponent<EmptyMessageAwareComponent>();
+            EmptyMessageAwareComponent componentA = hostA.GetComponent<EmptyMessageAwareComponent>();
+            EmptyMessageAwareComponent componentB = hostB.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken tokenA = GetToken(componentA);
             MessageRegistrationToken tokenB = GetToken(componentB);
 
@@ -843,39 +619,20 @@ namespace DxMessaging.Tests.Runtime.Core
             int bCount = 0;
             MessageRegistrationHandle bHandle = default;
 
-            MessageRegistrationHandle aHandle = RegisterCountingHandler(
-                scenario,
-                tokenA,
-                sharedId,
-                priority: 0,
-                onInvoked: () =>
+            MessageRegistrationHandle aHandle = RegisterCountingHandler(scenario, tokenA, sharedId, priority: 0, onInvoked: () =>
+            {
+                ++aCount;
+                if (bHandle != default)
                 {
-                    ++aCount;
-                    if (bHandle != default)
-                    {
-                        tokenB.RemoveRegistration(bHandle);
-                        bHandle = default;
-                    }
+                    tokenB.RemoveRegistration(bHandle);
+                    bHandle = default;
                 }
-            );
+            });
 
-            bHandle = RegisterCountingHandler(
-                scenario,
-                tokenB,
-                sharedId,
-                priority: 0,
-                onInvoked: () => ++bCount
-            );
+            bHandle = RegisterCountingHandler(scenario, tokenB, sharedId, priority: 0, onInvoked: () => ++bCount);
 
             EmitForScenario(scenario, sharedId);
-            Assert.AreEqual(
-                1,
-                aCount,
-                "[{0}] First emission must invoke A on its own MessageHandler. aCount={1}, bCount={2}.",
-                scenario.Kind,
-                aCount,
-                bCount
-            );
+            Assert.AreEqual(1, aCount, "[{0}] First emission must invoke A on its own MessageHandler. aCount={1}, bCount={2}.", scenario.Kind, aCount, bCount);
             Assert.AreEqual(
                 1,
                 bCount,
@@ -886,22 +643,8 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             EmitForScenario(scenario, sharedId);
-            Assert.AreEqual(
-                2,
-                aCount,
-                "[{0}] Second emission must invoke A again. aCount={1}, bCount={2}.",
-                scenario.Kind,
-                aCount,
-                bCount
-            );
-            Assert.AreEqual(
-                1,
-                bCount,
-                "[{0}] B must NOT run on the second emission once removed. aCount={1}, bCount={2}.",
-                scenario.Kind,
-                aCount,
-                bCount
-            );
+            Assert.AreEqual(2, aCount, "[{0}] Second emission must invoke A again. aCount={1}, bCount={2}.", scenario.Kind, aCount, bCount);
+            Assert.AreEqual(1, bCount, "[{0}] B must NOT run on the second emission once removed. aCount={1}, bCount={2}.", scenario.Kind, aCount, bCount);
 
             tokenA.RemoveRegistration(aHandle);
             if (bHandle != default)
@@ -917,15 +660,9 @@ namespace DxMessaging.Tests.Runtime.Core
         /// mutates the same HandlerActionCache the in-flight dispatch is iterating.
         /// </summary>
         [Test]
-        public void HandlerRemovingItselfDuringEmitIsHonouredOnCurrentSnapshot(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void HandlerRemovingItselfDuringEmitIsHonouredOnCurrentSnapshot([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(HandlerRemovingItselfDuringEmitIsHonouredOnCurrentSnapshot) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(HandlerRemovingItselfDuringEmitIsHonouredOnCurrentSnapshot) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -945,22 +682,10 @@ namespace DxMessaging.Tests.Runtime.Core
             });
 
             EmitForScenario(scenario, hostId);
-            Assert.AreEqual(
-                1,
-                aCount,
-                "[{0}] Self-removing handler must complete its in-flight invocation. aCount={1}.",
-                scenario.Kind,
-                aCount
-            );
+            Assert.AreEqual(1, aCount, "[{0}] Self-removing handler must complete its in-flight invocation. aCount={1}.", scenario.Kind, aCount);
 
             EmitForScenario(scenario, hostId);
-            Assert.AreEqual(
-                1,
-                aCount,
-                "[{0}] Self-removed handler must NOT run on the next emission. aCount={1}.",
-                scenario.Kind,
-                aCount
-            );
+            Assert.AreEqual(1, aCount, "[{0}] Self-removed handler must NOT run on the next emission. aCount={1}.", scenario.Kind, aCount);
         }
 
         /// <summary>
@@ -976,15 +701,10 @@ namespace DxMessaging.Tests.Runtime.Core
         /// </summary>
         [Test]
         public void HandlerThrowAfterDeregistrationStillPropagatesRemovalToNextEmit(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario
         )
         {
-            GameObject host = new(
-                nameof(HandlerThrowAfterDeregistrationStillPropagatesRemovalToNextEmit)
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(HandlerThrowAfterDeregistrationStillPropagatesRemovalToNextEmit) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -995,25 +715,17 @@ namespace DxMessaging.Tests.Runtime.Core
             const string ThrowMessage = "DxMessaging-test-throw-after-deregister";
             MessageRegistrationHandle bHandle = default;
 
-            MessageRegistrationHandle aHandle = RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                priority: 0,
-                onInvoked: () =>
+            MessageRegistrationHandle aHandle = RegisterCountingHandler(scenario, token, hostId, priority: 0, onInvoked: () =>
+            {
+                ++aCount;
+                if (bHandle != default)
                 {
-                    ++aCount;
-                    if (bHandle != default)
-                    {
-                        token.RemoveRegistration(bHandle);
-                        bHandle = default;
-                    }
-                    throw new InvalidOperationException(ThrowMessage);
+                    token.RemoveRegistration(bHandle);
+                    bHandle = default;
                 }
-            );
-            bHandle = RegisterCountingHandler(scenario, token, hostId, priority: 1, onInvoked: () =>
-                ++bCount
-            );
+                throw new InvalidOperationException(ThrowMessage);
+            });
+            bHandle = RegisterCountingHandler(scenario, token, hostId, priority: 1, onInvoked: () => ++bCount);
 
             /*
                 First emit: A runs, removes B, then throws. The exception propagates;
@@ -1022,66 +734,20 @@ namespace DxMessaging.Tests.Runtime.Core
                 A removed B before throwing, the snapshot was already frozen; but the
                 dispatch loop bails out of the bucket walk after A's throw.
             */
-            InvalidOperationException firstThrow = Assert.Throws<InvalidOperationException>(() =>
-                EmitForScenario(scenario, hostId)
-            );
-            Assert.AreEqual(
-                ThrowMessage,
-                firstThrow.Message,
-                "[{0}] First emit must propagate A's exception. aCount={1}, bCount={2}.",
-                scenario.Kind,
-                aCount,
-                bCount
-            );
-            Assert.AreEqual(
-                1,
-                aCount,
-                "[{0}] A must have run exactly once before throwing. aCount={1}, bCount={2}.",
-                scenario.Kind,
-                aCount,
-                bCount
-            );
-            Assert.AreEqual(
-                0,
-                bCount,
-                "[{0}] B must NOT run on first emit; propagation aborts the bucket walk. aCount={1}, bCount={2}.",
-                scenario.Kind,
-                aCount,
-                bCount
-            );
+            InvalidOperationException firstThrow = Assert.Throws<InvalidOperationException>(() => EmitForScenario(scenario, hostId));
+            Assert.AreEqual(ThrowMessage, firstThrow.Message, "[{0}] First emit must propagate A's exception. aCount={1}, bCount={2}.", scenario.Kind, aCount, bCount);
+            Assert.AreEqual(1, aCount, "[{0}] A must have run exactly once before throwing. aCount={1}, bCount={2}.", scenario.Kind, aCount, bCount);
+            Assert.AreEqual(0, bCount, "[{0}] B must NOT run on first emit; propagation aborts the bucket walk. aCount={1}, bCount={2}.", scenario.Kind, aCount, bCount);
 
             /*
                 Second emit: A still registered (its registration wasn't unwound by
                 the throw), so it throws again. B's removal from the prior emit took
                 effect; B is no longer in the snapshot, so bCount stays at 0.
             */
-            InvalidOperationException secondThrow = Assert.Throws<InvalidOperationException>(() =>
-                EmitForScenario(scenario, hostId)
-            );
-            Assert.AreEqual(
-                ThrowMessage,
-                secondThrow.Message,
-                "[{0}] Second emit must also propagate A's exception. aCount={1}, bCount={2}.",
-                scenario.Kind,
-                aCount,
-                bCount
-            );
-            Assert.AreEqual(
-                2,
-                aCount,
-                "[{0}] A must run on second emit (still registered). aCount={1}, bCount={2}.",
-                scenario.Kind,
-                aCount,
-                bCount
-            );
-            Assert.AreEqual(
-                0,
-                bCount,
-                "[{0}] B must remain removed despite the prior exception. aCount={1}, bCount={2}.",
-                scenario.Kind,
-                aCount,
-                bCount
-            );
+            InvalidOperationException secondThrow = Assert.Throws<InvalidOperationException>(() => EmitForScenario(scenario, hostId));
+            Assert.AreEqual(ThrowMessage, secondThrow.Message, "[{0}] Second emit must also propagate A's exception. aCount={1}, bCount={2}.", scenario.Kind, aCount, bCount);
+            Assert.AreEqual(2, aCount, "[{0}] A must run on second emit (still registered). aCount={1}, bCount={2}.", scenario.Kind, aCount, bCount);
+            Assert.AreEqual(0, bCount, "[{0}] B must remain removed despite the prior exception. aCount={1}, bCount={2}.", scenario.Kind, aCount, bCount);
 
             token.RemoveRegistration(aHandle);
             if (bHandle != default)
@@ -1106,15 +772,9 @@ namespace DxMessaging.Tests.Runtime.Core
         /// removed peer.)
         /// </summary>
         [Test]
-        public void DeregisterFromInterceptorIsObservedOnCurrentEmission(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void DeregisterFromInterceptorIsObservedOnCurrentEmission([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(DeregisterFromInterceptorIsObservedOnCurrentEmission) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(DeregisterFromInterceptorIsObservedOnCurrentEmission) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -1124,13 +784,7 @@ namespace DxMessaging.Tests.Runtime.Core
             int handlerCount = 0;
             MessageRegistrationHandle handlerHandle = default;
 
-            handlerHandle = RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                priority: 0,
-                onInvoked: () => ++handlerCount
-            );
+            handlerHandle = RegisterCountingHandler(scenario, token, hostId, priority: 0, onInvoked: () => ++handlerCount);
 
             /*
                 Interceptor returns true (allows dispatch to proceed) but removes
@@ -1160,8 +814,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(
                 0,
                 handlerCount,
-                "[{0}] Handler removed by interceptor must NOT run on the same emission "
-                    + "(interceptors precede snapshot acquisition). interceptorCount={1}, handlerCount={2}.",
+                "[{0}] Handler removed by interceptor must NOT run on the same emission " + "(interceptors precede snapshot acquisition). interceptorCount={1}, handlerCount={2}.",
                 scenario.Kind,
                 interceptorCount,
                 handlerCount
@@ -1186,60 +839,40 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
-        private static void RegisterRemovingInterceptor(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            Action onInvoked
-        )
+        private static void RegisterRemovingInterceptor(MessageScenario scenario, MessageRegistrationToken token, Action onInvoked)
         {
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
                 {
-                    _ = ScenarioHarness.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(
-                        scenario,
-                        token,
-                        (ref SimpleUntargetedMessage _) =>
-                        {
-                            onInvoked();
-                            return true;
-                        }
-                    );
+                    _ = ScenarioHarness.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(scenario, token, (ref SimpleUntargetedMessage _) =>
+                    {
+                        onInvoked();
+                        return true;
+                    });
                     return;
                 }
                 case MessageKind.Targeted:
                 {
-                    _ = ScenarioHarness.RegisterTargetedInterceptor<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        (ref InstanceId _, ref SimpleTargetedMessage _) =>
-                        {
-                            onInvoked();
-                            return true;
-                        }
-                    );
+                    _ = ScenarioHarness.RegisterTargetedInterceptor<SimpleTargetedMessage>(scenario, token, (ref InstanceId _, ref SimpleTargetedMessage _) =>
+                    {
+                        onInvoked();
+                        return true;
+                    });
                     return;
                 }
                 case MessageKind.Broadcast:
                 {
-                    _ = ScenarioHarness.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        (ref InstanceId _, ref SimpleBroadcastMessage _) =>
-                        {
-                            onInvoked();
-                            return true;
-                        }
-                    );
+                    _ = ScenarioHarness.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(scenario, token, (ref InstanceId _, ref SimpleBroadcastMessage _) =>
+                    {
+                        onInvoked();
+                        return true;
+                    });
                     return;
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
@@ -1256,100 +889,57 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 case MessageKind.Untargeted:
                 {
-                    return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
-                        scenario,
-                        token,
-                        (in SimpleUntargetedMessage _) => onInvoked(),
-                        priority
-                    );
+                    return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(scenario, token, (in SimpleUntargetedMessage _) => onInvoked(), priority);
                 }
                 case MessageKind.Targeted:
                 {
-                    return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        target,
-                        (in SimpleTargetedMessage _) => onInvoked(),
-                        priority
-                    );
+                    return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(scenario, token, target, (in SimpleTargetedMessage _) => onInvoked(), priority);
                 }
                 case MessageKind.Broadcast:
                 {
-                    return ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        target,
-                        (in SimpleBroadcastMessage _) => onInvoked(),
-                        priority
-                    );
+                    return ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(scenario, token, target, (in SimpleBroadcastMessage _) => onInvoked(), priority);
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
 
-        private static void RegisterDepthLimitedInterceptor(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            int threshold,
-            Func<int> getDepth,
-            Action onInvoked
-        )
+        private static void RegisterDepthLimitedInterceptor(MessageScenario scenario, MessageRegistrationToken token, int threshold, Func<int> getDepth, Action onInvoked)
         {
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
                 {
-                    _ = ScenarioHarness.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(
-                        scenario,
-                        token,
-                        (ref SimpleUntargetedMessage _) =>
-                        {
-                            onInvoked();
-                            return getDepth() < threshold;
-                        }
-                    );
+                    _ = ScenarioHarness.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(scenario, token, (ref SimpleUntargetedMessage _) =>
+                    {
+                        onInvoked();
+                        return getDepth() < threshold;
+                    });
                     return;
                 }
                 case MessageKind.Targeted:
                 {
-                    _ = ScenarioHarness.RegisterTargetedInterceptor<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        (ref InstanceId _, ref SimpleTargetedMessage _) =>
-                        {
-                            onInvoked();
-                            return getDepth() < threshold;
-                        }
-                    );
+                    _ = ScenarioHarness.RegisterTargetedInterceptor<SimpleTargetedMessage>(scenario, token, (ref InstanceId _, ref SimpleTargetedMessage _) =>
+                    {
+                        onInvoked();
+                        return getDepth() < threshold;
+                    });
                     return;
                 }
                 case MessageKind.Broadcast:
                 {
-                    _ = ScenarioHarness.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        (ref InstanceId _, ref SimpleBroadcastMessage _) =>
-                        {
-                            onInvoked();
-                            return getDepth() < threshold;
-                        }
-                    );
+                    _ = ScenarioHarness.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(scenario, token, (ref InstanceId _, ref SimpleBroadcastMessage _) =>
+                    {
+                        onInvoked();
+                        return getDepth() < threshold;
+                    });
                     return;
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
@@ -1378,11 +968,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }

@@ -508,10 +508,7 @@
     },
     "contractTests": {
       "sourceRefs": ["topology", "characterization"],
-      "methods": [
-        "TrueTwinsObserveMatchingRegistrationsDispatchAndCleanup",
-        "ActualTopologyDriftFailsValidation"
-      ],
+      "methods": ["TrueTwinsObserveMatchingRegistrationsDispatchAndCleanup", "ActualTopologyDriftFailsValidation"],
       "scope": "Topology twin tests compare actual public DX bridge with independent DX workload. No native result is bound by this draft; this is not MP topology or semantic equality evidence."
     },
     "dxmessaging": {
@@ -530,10 +527,7 @@
   "rows": {
     "GlobalToOne": {
       "supported": true,
-      "publicResultIds": [
-        "Comparison_DxMessaging_GlobalToOne",
-        "Comparison_MessagePipe_GlobalToOne"
-      ],
+      "publicResultIds": ["Comparison_DxMessaging_GlobalToOne", "Comparison_MessagePipe_GlobalToOne"],
       "internalTwin": "UntargetedFlood_OneHandler",
       "workloadScope": "One fresh keyless listener; no mutation, nesting, throw, reset, or activity toggle is performed by the measured callback.",
       "topology": {
@@ -661,10 +655,7 @@
     },
     "GlobalToMany": {
       "supported": true,
-      "publicResultIds": [
-        "Comparison_DxMessaging_GlobalToMany",
-        "Comparison_MessagePipe_GlobalToMany"
-      ],
+      "publicResultIds": ["Comparison_DxMessaging_GlobalToMany", "Comparison_MessagePipe_GlobalToMany"],
       "internalTwin": "UntargetedFlood_SixteenHandlers_OnePriority",
       "workloadScope": "Sixteen fresh keyless listeners, contiguous initial registration order; no holes or callback-time mutation in the measured row.",
       "topology": {
@@ -806,10 +797,7 @@
             "postProcessors": 0
           },
           "priorities": [0],
-          "routes": [
-            41000, 41001, 41002, 41003, 41004, 41005, 41006, 41007, 41008, 41009, 41010, 41011,
-            41012, 41013, 41014, 41015
-          ],
+          "routes": [41000, 41001, 41002, 41003, 41004, 41005, 41006, 41007, 41008, 41009, 41010, 41011, 41012, 41013, 41014, 41015],
           "dispatchRoute": 41000,
           "liveBefore": 16,
           "liveDuringOperation": 16,
@@ -1179,10 +1167,7 @@
     },
     "PostProcess": {
       "supported": true,
-      "publicResultIds": [
-        "Comparison_DxMessaging_PostProcess",
-        "Comparison_MessagePipe_PostProcess"
-      ],
+      "publicResultIds": ["Comparison_DxMessaging_PostProcess", "Comparison_MessagePipe_PostProcess"],
       "internalTwin": "InternalComparisonTwin_PostProcess",
       "workloadScope": "DX uses one separate post registration plus one normal handler; MP uses after-next middleware on one subscriber. The empty post body does not increment the progress marker.",
       "topology": {
@@ -1310,10 +1295,7 @@
     },
     "FilteredPostProcess": {
       "supported": true,
-      "publicResultIds": [
-        "Comparison_DxMessaging_FilteredPostProcess",
-        "Comparison_MessagePipe_FilteredPostProcess"
-      ],
+      "publicResultIds": ["Comparison_DxMessaging_FilteredPostProcess", "Comparison_MessagePipe_FilteredPostProcess"],
       "internalTwin": "InternalComparisonTwin_FilteredPostProcess",
       "workloadScope": "DX uses interceptor, normal and separate post registrations; MP uses a subscriber-local predicate outside after-next middleware. Both predicates allow and post bodies are empty.",
       "topology": {
@@ -1569,10 +1551,7 @@
     },
     "StructNoBox": {
       "supported": true,
-      "publicResultIds": [
-        "Comparison_DxMessaging_StructNoBox",
-        "Comparison_MessagePipe_StructNoBox"
-      ],
+      "publicResultIds": ["Comparison_DxMessaging_StructNoBox", "Comparison_MessagePipe_StructNoBox"],
       "internalTwin": "InternalComparisonTwin_StructNoBox",
       "workloadScope": "Both dispatch the exact ComparisonStructPayload(1) type. DX passes by readonly reference and MP by value; exact payload identity does not imply any other semantic match.",
       "topology": {

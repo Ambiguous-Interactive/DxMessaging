@@ -23,11 +23,7 @@ namespace DxMessaging.Tests.Runtime
         /// Captures the current global diagnostics state and applies any non-null
         /// overrides. Values left null are captured but not modified.
         /// </summary>
-        public DiagnosticsScope(
-            DiagnosticsTarget? diagnosticsTargets = null,
-            int? messageBufferSize = null,
-            bool? diagnosticsStackTraces = null
-        )
+        public DiagnosticsScope(DiagnosticsTarget? diagnosticsTargets = null, int? messageBufferSize = null, bool? diagnosticsStackTraces = null)
         {
             _savedDiagnosticsTargets = IMessageBus.GlobalDiagnosticsTargets;
             _savedDiagnosticsStackTraces = IMessageBus.GlobalDiagnosticsStackTraces;

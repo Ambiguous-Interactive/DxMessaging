@@ -7,10 +7,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
 
     internal static class UnityAtomsComparisonRoster
     {
-        internal static readonly IReadOnlyList<(
-            string key,
-            Func<IMessagingTechBridge> factory
-        )> Bridges = new (string key, Func<IMessagingTechBridge> factory)[]
+        internal static readonly IReadOnlyList<(string key, Func<IMessagingTechBridge> factory)> Bridges = new (string key, Func<IMessagingTechBridge> factory)[]
         {
             ("UnityAtoms", () => new UnityAtomsBridge()),
         };

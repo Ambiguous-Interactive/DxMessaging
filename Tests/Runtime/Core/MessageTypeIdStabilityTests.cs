@@ -40,11 +40,7 @@ namespace DxMessaging.Tests.Runtime.Core
             cache.GetOrAdd<RoutingTestMessage>();
 
             int idBeforeReset = MessageHelperIndexer<RoutingTestMessage>.SequentialId;
-            Assert.GreaterOrEqual(
-                idBeforeReset,
-                0,
-                "Message type should have a valid sequential ID after registration"
-            );
+            Assert.GreaterOrEqual(idBeforeReset, 0, "Message type should have a valid sequential ID after registration");
 
             int receivedCount = 0;
             MessageRegistrationHandle handle = _token.RegisterUntargeted<RoutingTestMessage>(
@@ -61,11 +57,7 @@ namespace DxMessaging.Tests.Runtime.Core
             DxMessagingStaticState.Reset();
 
             int idAfterReset = MessageHelperIndexer<RoutingTestMessage>.SequentialId;
-            Assert.AreEqual(
-                idBeforeReset,
-                idAfterReset,
-                "Message type ID should be preserved after Reset()"
-            );
+            Assert.AreEqual(idBeforeReset, idAfterReset, "Message type ID should be preserved after Reset()");
 
             _messageBus.UntargetedBroadcast(ref message);
             Assert.AreEqual(2, receivedCount, "Message should still route correctly after reset");
@@ -90,11 +82,7 @@ namespace DxMessaging.Tests.Runtime.Core
             PostResetRoutingMessage message = new PostResetRoutingMessage();
             _messageBus.UntargetedBroadcast(ref message);
 
-            Assert.AreEqual(
-                1,
-                receivedCount,
-                "Handler registered after reset should receive messages"
-            );
+            Assert.AreEqual(1, receivedCount, "Handler registered after reset should receive messages");
 
             yield return null;
             _token.RemoveRegistration(handle);
@@ -116,21 +104,9 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.GreaterOrEqual(idB, 0, "DistinctMessageB should have a valid ID");
             Assert.GreaterOrEqual(idC, 0, "DistinctMessageC should have a valid ID");
 
-            Assert.AreNotEqual(
-                idA,
-                idB,
-                "DistinctMessageA and DistinctMessageB should have different IDs"
-            );
-            Assert.AreNotEqual(
-                idB,
-                idC,
-                "DistinctMessageB and DistinctMessageC should have different IDs"
-            );
-            Assert.AreNotEqual(
-                idA,
-                idC,
-                "DistinctMessageA and DistinctMessageC should have different IDs"
-            );
+            Assert.AreNotEqual(idA, idB, "DistinctMessageA and DistinctMessageB should have different IDs");
+            Assert.AreNotEqual(idB, idC, "DistinctMessageB and DistinctMessageC should have different IDs");
+            Assert.AreNotEqual(idA, idC, "DistinctMessageA and DistinctMessageC should have different IDs");
 
             DxMessagingStaticState.Reset();
 
@@ -138,37 +114,13 @@ namespace DxMessaging.Tests.Runtime.Core
             int idBAfterReset = MessageHelperIndexer<DistinctMessageB>.SequentialId;
             int idCAfterReset = MessageHelperIndexer<DistinctMessageC>.SequentialId;
 
-            Assert.AreEqual(
-                idA,
-                idAAfterReset,
-                "DistinctMessageA ID should be preserved after reset"
-            );
-            Assert.AreEqual(
-                idB,
-                idBAfterReset,
-                "DistinctMessageB ID should be preserved after reset"
-            );
-            Assert.AreEqual(
-                idC,
-                idCAfterReset,
-                "DistinctMessageC ID should be preserved after reset"
-            );
+            Assert.AreEqual(idA, idAAfterReset, "DistinctMessageA ID should be preserved after reset");
+            Assert.AreEqual(idB, idBAfterReset, "DistinctMessageB ID should be preserved after reset");
+            Assert.AreEqual(idC, idCAfterReset, "DistinctMessageC ID should be preserved after reset");
 
-            Assert.AreNotEqual(
-                idAAfterReset,
-                idBAfterReset,
-                "Message types should remain distinct after reset"
-            );
-            Assert.AreNotEqual(
-                idBAfterReset,
-                idCAfterReset,
-                "Message types should remain distinct after reset"
-            );
-            Assert.AreNotEqual(
-                idAAfterReset,
-                idCAfterReset,
-                "Message types should remain distinct after reset"
-            );
+            Assert.AreNotEqual(idAAfterReset, idBAfterReset, "Message types should remain distinct after reset");
+            Assert.AreNotEqual(idBAfterReset, idCAfterReset, "Message types should remain distinct after reset");
+            Assert.AreNotEqual(idAAfterReset, idCAfterReset, "Message types should remain distinct after reset");
         }
 
         [Test]
@@ -181,11 +133,7 @@ namespace DxMessaging.Tests.Runtime.Core
             int totalBeforeReset = MessageHelperIndexer.TotalMessages;
 
             Assert.GreaterOrEqual(preResetId, 0, "PreResetMessage should have a valid ID");
-            Assert.Greater(
-                totalBeforeReset,
-                0,
-                "TotalMessages should be greater than zero after registration"
-            );
+            Assert.Greater(totalBeforeReset, 0, "TotalMessages should be greater than zero after registration");
 
             DxMessagingStaticState.Reset();
 
@@ -213,45 +161,23 @@ namespace DxMessaging.Tests.Runtime.Core
             int totalAfterReset = MessageHelperIndexer.TotalMessages;
 
             Assert.GreaterOrEqual(postResetId, 0, "PostResetMessage should have a valid ID");
-            Assert.AreNotEqual(
-                preResetId,
-                postResetId,
-                "New message type should get a different ID than existing types"
-            );
+            Assert.AreNotEqual(preResetId, postResetId, "New message type should get a different ID than existing types");
 
             int registrationDelta = totalAfterReset - totalBeforeNewType;
             Assert.That(
                 registrationDelta,
                 Is.EqualTo(0).Or.EqualTo(1),
-                "Registering one message type must change TotalMessages by zero "
-                    + "(already assigned in a persistent domain) or one (freshly assigned)"
+                "Registering one message type must change TotalMessages by zero " + "(already assigned in a persistent domain) or one (freshly assigned)"
             );
             if (registrationDelta == 1)
             {
-                Assert.AreEqual(
-                    totalBeforeNewType,
-                    postResetId,
-                    "A freshly assigned message type must take the next sequential id"
-                );
+                Assert.AreEqual(totalBeforeNewType, postResetId, "A freshly assigned message type must take the next sequential id");
             }
-            Assert.Greater(
-                totalAfterReset,
-                postResetId,
-                "TotalMessages must account for the new type id (ids are a 0-based "
-                    + "index below the running count)"
-            );
-            Assert.GreaterOrEqual(
-                totalAfterReset,
-                totalBeforeReset,
-                "TotalMessages must never shrink (ids are assigned once and preserved)"
-            );
+            Assert.Greater(totalAfterReset, postResetId, "TotalMessages must account for the new type id (ids are a 0-based " + "index below the running count)");
+            Assert.GreaterOrEqual(totalAfterReset, totalBeforeReset, "TotalMessages must never shrink (ids are assigned once and preserved)");
 
             int preResetIdAfterNewRegistration = MessageHelperIndexer<PreResetMessage>.SequentialId;
-            Assert.AreEqual(
-                preResetId,
-                preResetIdAfterNewRegistration,
-                "Pre-existing message type ID should not change when new types are registered"
-            );
+            Assert.AreEqual(preResetId, preResetIdAfterNewRegistration, "Pre-existing message type ID should not change when new types are registered");
         }
 
         [Test]
@@ -272,18 +198,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 int idAfterReset = MessageHelperIndexer<MultiResetMessage>.SequentialId;
                 int totalAfterReset = MessageHelperIndexer.TotalMessages;
 
-                Assert.AreEqual(
-                    originalId,
-                    idAfterReset,
-                    "Message type ID should be preserved after reset cycle {0}",
-                    i + 1
-                );
-                Assert.AreEqual(
-                    originalTotal,
-                    totalAfterReset,
-                    "TotalMessages should be preserved after reset cycle {0}",
-                    i + 1
-                );
+                Assert.AreEqual(originalId, idAfterReset, "Message type ID should be preserved after reset cycle {0}", i + 1);
+                Assert.AreEqual(originalTotal, totalAfterReset, "TotalMessages should be preserved after reset cycle {0}", i + 1);
             }
         }
 
@@ -293,20 +209,18 @@ namespace DxMessaging.Tests.Runtime.Core
             int messageACount = 0;
             int messageBCount = 0;
 
-            MessageRegistrationHandle handleA =
-                _token.RegisterUntargeted<MultiResetRoutingMessageA>(
-                    (in MultiResetRoutingMessageA msg) =>
-                    {
-                        ++messageACount;
-                    }
-                );
-            MessageRegistrationHandle handleB =
-                _token.RegisterUntargeted<MultiResetRoutingMessageB>(
-                    (in MultiResetRoutingMessageB msg) =>
-                    {
-                        ++messageBCount;
-                    }
-                );
+            MessageRegistrationHandle handleA = _token.RegisterUntargeted<MultiResetRoutingMessageA>(
+                (in MultiResetRoutingMessageA msg) =>
+                {
+                    ++messageACount;
+                }
+            );
+            MessageRegistrationHandle handleB = _token.RegisterUntargeted<MultiResetRoutingMessageB>(
+                (in MultiResetRoutingMessageB msg) =>
+                {
+                    ++messageBCount;
+                }
+            );
 
             MultiResetRoutingMessageA messageA = new MultiResetRoutingMessageA();
             MultiResetRoutingMessageB messageB = new MultiResetRoutingMessageB();
@@ -327,32 +241,12 @@ namespace DxMessaging.Tests.Runtime.Core
                 int expectedBCount = 2 + i;
 
                 _messageBus.UntargetedBroadcast(ref messageA);
-                Assert.AreEqual(
-                    expectedACount,
-                    messageACount,
-                    "Message A should route correctly after reset cycle {0}",
-                    i + 1
-                );
-                Assert.AreEqual(
-                    expectedBCount - 1,
-                    messageBCount,
-                    "Message B count should not change when A is sent after reset cycle {0}",
-                    i + 1
-                );
+                Assert.AreEqual(expectedACount, messageACount, "Message A should route correctly after reset cycle {0}", i + 1);
+                Assert.AreEqual(expectedBCount - 1, messageBCount, "Message B count should not change when A is sent after reset cycle {0}", i + 1);
 
                 _messageBus.UntargetedBroadcast(ref messageB);
-                Assert.AreEqual(
-                    expectedACount,
-                    messageACount,
-                    "Message A count should not change when B is sent after reset cycle {0}",
-                    i + 1
-                );
-                Assert.AreEqual(
-                    expectedBCount,
-                    messageBCount,
-                    "Message B should route correctly after reset cycle {0}",
-                    i + 1
-                );
+                Assert.AreEqual(expectedACount, messageACount, "Message A count should not change when B is sent after reset cycle {0}", i + 1);
+                Assert.AreEqual(expectedBCount, messageBCount, "Message B should route correctly after reset cycle {0}", i + 1);
             }
 
             yield return null;
@@ -374,27 +268,15 @@ namespace DxMessaging.Tests.Runtime.Core
             cache.GetOrAdd<MonotonicMessageC>();
             int idC = MessageHelperIndexer<MonotonicMessageC>.SequentialId;
 
-            Assert.Greater(
-                idB,
-                idA,
-                "Later registered message types should have higher IDs (B > A)"
-            );
-            Assert.Greater(
-                idC,
-                idB,
-                "Later registered message types should have higher IDs (C > B)"
-            );
+            Assert.Greater(idB, idA, "Later registered message types should have higher IDs (B > A)");
+            Assert.Greater(idC, idB, "Later registered message types should have higher IDs (C > B)");
 
             DxMessagingStaticState.Reset();
 
             cache.GetOrAdd<MonotonicMessageD>();
             int idD = MessageHelperIndexer<MonotonicMessageD>.SequentialId;
 
-            Assert.Greater(
-                idD,
-                idC,
-                "New message type registered after reset should have higher ID than pre-reset types"
-            );
+            Assert.Greater(idD, idC, "New message type registered after reset should have higher ID than pre-reset types");
         }
 
         private struct RoutingTestMessage : IUntargetedMessage { }

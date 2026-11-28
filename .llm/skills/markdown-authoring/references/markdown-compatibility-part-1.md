@@ -13,20 +13,15 @@ Admonitions (callout boxes) are a common MkDocs extension that use `!!!` syntax.
 #### No Forbidden: MkDocs Admonitions
 
 ```markdown
-!!! note "Important"
-This is a note admonition that only renders in MkDocs.
+!!! note "Important" This is a note admonition that only renders in MkDocs.
 
-!!! warning "Caution"
-This warning will appear as broken text on GitHub.
+!!! warning "Caution" This warning will appear as broken text on GitHub.
 
-!!! danger "Critical"
-This danger callout is MkDocs-specific.
+!!! danger "Critical" This danger callout is MkDocs-specific.
 
-!!! tip "Pro Tip"
-This tip syntax is not standard markdown.
+!!! tip "Pro Tip" This tip syntax is not standard markdown.
 
-!!! info
-Admonitions without titles are also forbidden.
+!!! info Admonitions without titles are also forbidden.
 ```
 
 #### Yes Correct: Blockquotes with Emoji
@@ -66,12 +61,9 @@ MkDocs supports collapsible sections with `???` syntax.
 #### No Forbidden: MkDocs Collapsibles
 
 ```markdown
-??? note "Click to expand"
-This content is hidden by default in MkDocs.
-It appears as broken syntax elsewhere.
+??? note "Click to expand" This content is hidden by default in MkDocs. It appears as broken syntax elsewhere.
 
-???+ warning "Expanded by default"
-The plus makes it expanded initially.
+???+ warning "Expanded by default" The plus makes it expanded initially.
 ```
 
 #### Yes Correct: Use Details/Summary HTML
@@ -104,20 +96,11 @@ MkDocs Material provides tabbed content with `===` syntax.
 #### No Forbidden: MkDocs Tabs
 
 ```markdown
-=== "Python"
-`python
-    print("Hello")
-    `
+=== "Python" `python     print("Hello")     `
 
-=== "JavaScript"
-`javascript
-    console.log("Hello");
-    `
+=== "JavaScript" `javascript     console.log("Hello");     `
 
-=== "C#"
-`csharp
-    Console.WriteLine("Hello");
-    `
+=== "C#" `csharp     Console.WriteLine("Hello");     `
 ```
 
 #### Yes Correct: Use Headers

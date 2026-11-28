@@ -63,38 +63,18 @@ namespace DxMessaging.Editor.CustomEditors
                 _coloredStylesUseProSkin = proSkin;
                 _matchingStyle = new GUIStyle(EditorStyles.label)
                 {
-                    normal =
-                    {
-                        textColor = DxMessagingEditorPalette.ForSkin(
-                            DxMessagingEditorPalette.BroadcastText,
-                            DxMessagingEditorPalette.BroadcastTextOnLight,
-                            proSkin
-                        ),
-                    },
+                    normal = { textColor = DxMessagingEditorPalette.ForSkin(DxMessagingEditorPalette.BroadcastText, DxMessagingEditorPalette.BroadcastTextOnLight, proSkin) },
                     fontStyle = FontStyle.Bold,
                 };
                 _potentialMatchStyle = new GUIStyle(EditorStyles.label)
                 {
-                    normal =
-                    {
-                        textColor = DxMessagingEditorPalette.ForSkin(
-                            DxMessagingEditorPalette.Amber,
-                            DxMessagingEditorPalette.AmberOnLight,
-                            proSkin
-                        ),
-                    },
+                    normal = { textColor = DxMessagingEditorPalette.ForSkin(DxMessagingEditorPalette.Amber, DxMessagingEditorPalette.AmberOnLight, proSkin) },
                     fontStyle = FontStyle.Bold,
                 };
             }
             _defaultStyle ??= new GUIStyle(EditorStyles.label);
-            _leftAlignedStyle ??= new GUIStyle(EditorStyles.label)
-            {
-                alignment = TextAnchor.MiddleLeft,
-            };
-            _rightAlignedStyle ??= new GUIStyle(EditorStyles.label)
-            {
-                alignment = TextAnchor.MiddleRight,
-            };
+            _leftAlignedStyle ??= new GUIStyle(EditorStyles.label) { alignment = TextAnchor.MiddleLeft };
+            _rightAlignedStyle ??= new GUIStyle(EditorStyles.label) { alignment = TextAnchor.MiddleRight };
 
             MessagingComponent component = target as MessagingComponent;
             if (component == null)
@@ -102,24 +82,17 @@ namespace DxMessaging.Editor.CustomEditors
                 return;
             }
 
-            MessagingComponentInspectorState inspectorState =
-                MessagingComponentInspectorSnapshot.Capture(component);
+            MessagingComponentInspectorState inspectorState = MessagingComponentInspectorSnapshot.Capture(component);
             ProviderDiagnosticsView providerDiagnostics = inspectorState.ProviderDiagnostics;
 
             if (providerDiagnostics.SerializedProviderMissingWarning)
             {
-                EditorGUILayout.HelpBox(
-                    "Auto-configure serialized provider is enabled, but no provider asset is assigned.",
-                    MessageType.Warning
-                );
+                EditorGUILayout.HelpBox("Auto-configure serialized provider is enabled, but no provider asset is assigned.", MessageType.Warning);
             }
 
             if (providerDiagnostics.SerializedProviderNullBusWarning)
             {
-                EditorGUILayout.HelpBox(
-                    "The serialized provider resolved without returning a message bus. Verify the provider implementation.",
-                    MessageType.Warning
-                );
+                EditorGUILayout.HelpBox("The serialized provider resolved without returning a message bus. Verify the provider implementation.", MessageType.Warning);
             }
 
             if (component._registeredListeners.Count == 0)
@@ -135,14 +108,10 @@ namespace DxMessaging.Editor.CustomEditors
             {
                 if (
                     component._registeredListeners.Values.Any(token => !token.DiagnosticMode)
-                    && GUILayout.Button(
-                        $"Enable Diagnostics for All ({component._registeredListeners.Count})"
-                    )
+                    && GUILayout.Button($"Enable Diagnostics for All ({component._registeredListeners.Count})")
                 )
                 {
-                    foreach (
-                        MessageRegistrationToken token in component._registeredListeners.Values
-                    )
+                    foreach (MessageRegistrationToken token in component._registeredListeners.Values)
                     {
                         token.DiagnosticMode = true;
                     }
@@ -150,14 +119,10 @@ namespace DxMessaging.Editor.CustomEditors
 
                 if (
                     component._registeredListeners.Values.Any(token => token.DiagnosticMode)
-                    && GUILayout.Button(
-                        $"Disable Diagnostics for All ({component._registeredListeners.Count})"
-                    )
+                    && GUILayout.Button($"Disable Diagnostics for All ({component._registeredListeners.Count})")
                 )
                 {
-                    foreach (
-                        MessageRegistrationToken token in component._registeredListeners.Values
-                    )
+                    foreach (MessageRegistrationToken token in component._registeredListeners.Values)
                     {
                         token.DiagnosticMode = false;
                     }
@@ -190,11 +155,7 @@ namespace DxMessaging.Editor.CustomEditors
                     EditorGUILayout.Space();
                     EditorGUILayout.LabelField("Global Buffer", EditorStyles.boldLabel);
 
-                    _globalBufferExpanded = EditorGUILayout.Foldout(
-                        _globalBufferExpanded,
-                        "Global Messages",
-                        true
-                    );
+                    _globalBufferExpanded = EditorGUILayout.Foldout(_globalBufferExpanded, "Global Messages", true);
                     int totalGlobalMessages = concreteBus._emissionBuffer.Count;
                     if (_globalBufferExpanded && 0 < totalGlobalMessages)
                     {
@@ -228,11 +189,7 @@ namespace DxMessaging.Editor.CustomEditors
                             }
                         }
 
-                        MessageEmissionData[] pagedGlobalMessages = concreteBus
-                            ._emissionBuffer.Reverse()
-                            .Skip(page * PageSize)
-                            .Take(PageSize)
-                            .ToArray();
+                        MessageEmissionData[] pagedGlobalMessages = concreteBus._emissionBuffer.Reverse().Skip(page * PageSize).Take(PageSize).ToArray();
                         foreach (MessageEmissionData globalEmissionData in pagedGlobalMessages)
                         {
                             using (new EditorGUILayout.VerticalScope("box"))
@@ -244,39 +201,20 @@ namespace DxMessaging.Editor.CustomEditors
                                     Object unityObject = context.Value.Object;
                                     if (
                                         (
-                                            typeof(ITargetedMessage).IsAssignableFrom(
-                                                globalEmissionData.message.MessageType
-                                            )
-                                            && (
-                                                unityObject == component.gameObject
-                                                || component
-                                                    .GetComponents<MonoBehaviour>()
-                                                    .Any(script => script == unityObject)
-                                            )
+                                            typeof(ITargetedMessage).IsAssignableFrom(globalEmissionData.message.MessageType)
+                                            && (unityObject == component.gameObject || component.GetComponents<MonoBehaviour>().Any(script => script == unityObject))
                                         )
                                         || (
-                                            typeof(IBroadcastMessage).IsAssignableFrom(
-                                                globalEmissionData.message.MessageType
-                                            )
+                                            typeof(IBroadcastMessage).IsAssignableFrom(globalEmissionData.message.MessageType)
                                             && (
                                                 component._registeredListeners.Keys.Any(script =>
-                                                    script.gameObject == unityObject
-                                                    || script
-                                                        .GetComponents<MonoBehaviour>()
-                                                        .Any(matchedScript =>
-                                                            matchedScript == unityObject
-                                                        )
+                                                    script.gameObject == unityObject || script.GetComponents<MonoBehaviour>().Any(matchedScript => matchedScript == unityObject)
                                                 )
                                             )
                                         )
                                     )
                                     {
-                                        style = component._registeredListeners.Values.Any(
-                                            listener =>
-                                                listener._emissionBuffer.Contains(
-                                                    globalEmissionData
-                                                )
-                                        )
+                                        style = component._registeredListeners.Values.Any(listener => listener._emissionBuffer.Contains(globalEmissionData))
                                             ? _matchingStyle
                                             : _potentialMatchStyle;
                                     }
@@ -287,9 +225,7 @@ namespace DxMessaging.Editor.CustomEditors
                                 }
                                 else
                                 {
-                                    style = component._registeredListeners.Values.Any(listener =>
-                                        listener._emissionBuffer.Contains(globalEmissionData)
-                                    )
+                                    style = component._registeredListeners.Values.Any(listener => listener._emissionBuffer.Contains(globalEmissionData))
                                         ? _matchingStyle
                                         : _defaultStyle;
                                 }
@@ -297,9 +233,7 @@ namespace DxMessaging.Editor.CustomEditors
                                 GUIContent labelContent = new("Message Type");
                                 GUIContent valueContent = new(
                                     globalEmissionData.message.MessageType.Name,
-                                    DxMessagingEmissionCaptureNotice.DescribeCallSiteTooltip(
-                                        globalEmissionData.stackTrace
-                                    )
+                                    DxMessagingEmissionCaptureNotice.DescribeCallSiteTooltip(globalEmissionData.stackTrace)
                                 );
 
                                 EditorGUILayout.LabelField(labelContent, valueContent, style);
@@ -307,28 +241,15 @@ namespace DxMessaging.Editor.CustomEditors
                                 {
                                     Object unityObject = context.Value.Object;
                                     string label = "Context";
-                                    if (
-                                        typeof(ITargetedMessage).IsAssignableFrom(
-                                            globalEmissionData.message.MessageType
-                                        )
-                                    )
+                                    if (typeof(ITargetedMessage).IsAssignableFrom(globalEmissionData.message.MessageType))
                                     {
                                         label = "Target";
                                     }
-                                    else if (
-                                        typeof(IBroadcastMessage).IsAssignableFrom(
-                                            globalEmissionData.message.MessageType
-                                        )
-                                    )
+                                    else if (typeof(IBroadcastMessage).IsAssignableFrom(globalEmissionData.message.MessageType))
                                     {
                                         label = "Source";
                                     }
-                                    EditorGUILayout.ObjectField(
-                                        label,
-                                        unityObject,
-                                        typeof(Object),
-                                        true
-                                    );
+                                    EditorGUILayout.ObjectField(label, unityObject, typeof(Object), true);
                                 }
                             }
                         }
@@ -344,24 +265,14 @@ namespace DxMessaging.Editor.CustomEditors
                 if (!component._registeredListeners[listener].DiagnosticMode)
                 {
                     EditorGUILayout.Space();
-                    EditorGUILayout.HelpBox(
-                        $"Diagnostics are disabled for {listener.GetType().Name}. Enable diagnostics to view diagnostics data.",
-                        MessageType.Info
-                    );
+                    EditorGUILayout.HelpBox($"Diagnostics are disabled for {listener.GetType().Name}. Enable diagnostics to view diagnostics data.", MessageType.Info);
                 }
                 else
                 {
                     _listenerBufferFoldouts.TryAdd(listener, false);
-                    _listenerBufferFoldouts[listener] = EditorGUILayout.Foldout(
-                        _listenerBufferFoldouts[listener],
-                        listener.GetType().Name,
-                        true
-                    );
+                    _listenerBufferFoldouts[listener] = EditorGUILayout.Foldout(_listenerBufferFoldouts[listener], listener.GetType().Name, true);
 
-                    int totalMessages = component
-                        ._registeredListeners[listener]
-                        ._emissionBuffer
-                        .Count;
+                    int totalMessages = component._registeredListeners[listener]._emissionBuffer.Count;
                     if (_listenerBufferFoldouts[listener] && 0 < totalMessages)
                     {
                         int page = _listenerBufferPaging.GetValueOrDefault(listener, 0);
@@ -408,9 +319,7 @@ namespace DxMessaging.Editor.CustomEditors
                                 GUIContent labelContent = new("Message Type");
                                 GUIContent valueContent = new(
                                     globalEmissionData.message.MessageType.Name,
-                                    DxMessagingEmissionCaptureNotice.DescribeCallSiteTooltip(
-                                        globalEmissionData.stackTrace
-                                    )
+                                    DxMessagingEmissionCaptureNotice.DescribeCallSiteTooltip(globalEmissionData.stackTrace)
                                 );
 
                                 EditorGUILayout.LabelField(labelContent, valueContent);
@@ -420,28 +329,15 @@ namespace DxMessaging.Editor.CustomEditors
                                 {
                                     Object unityObject = context.Value.Object;
                                     string label = "Context";
-                                    if (
-                                        typeof(ITargetedMessage).IsAssignableFrom(
-                                            globalEmissionData.message.MessageType
-                                        )
-                                    )
+                                    if (typeof(ITargetedMessage).IsAssignableFrom(globalEmissionData.message.MessageType))
                                     {
                                         label = "Target";
                                     }
-                                    else if (
-                                        typeof(IBroadcastMessage).IsAssignableFrom(
-                                            globalEmissionData.message.MessageType
-                                        )
-                                    )
+                                    else if (typeof(IBroadcastMessage).IsAssignableFrom(globalEmissionData.message.MessageType))
                                     {
                                         label = "Source";
                                     }
-                                    EditorGUILayout.ObjectField(
-                                        label,
-                                        unityObject,
-                                        typeof(Object),
-                                        true
-                                    );
+                                    EditorGUILayout.ObjectField(label, unityObject, typeof(Object), true);
                                 }
                             }
                         }
@@ -459,30 +355,18 @@ namespace DxMessaging.Editor.CustomEditors
                     continue;
                 }
 
-                if (
-                    !component._registeredListeners.TryGetValue(
-                        listener,
-                        out MessageRegistrationToken token
-                    )
-                )
+                if (!component._registeredListeners.TryGetValue(listener, out MessageRegistrationToken token))
                 {
                     continue;
                 }
 
                 _listenerFoldouts.TryAdd(listener, false);
-                _listenerFoldouts[listener] = EditorGUILayout.Foldout(
-                    _listenerFoldouts[listener],
-                    listener.GetType().Name,
-                    true
-                );
+                _listenerFoldouts[listener] = EditorGUILayout.Foldout(_listenerFoldouts[listener], listener.GetType().Name, true);
                 if (_listenerFoldouts[listener])
                 {
                     EditorGUI.indentLevel++;
                     EditorGUILayout.ObjectField("Listener", listener, typeof(MonoBehaviour), true);
-                    token.DiagnosticMode = EditorGUILayout.Toggle(
-                        "Enable Diagnostics",
-                        token.DiagnosticMode
-                    );
+                    token.DiagnosticMode = EditorGUILayout.Toggle("Enable Diagnostics", token.DiagnosticMode);
                     if (token.DiagnosticMode)
                     {
                         if (token._metadata.Count == 0)
@@ -496,10 +380,7 @@ namespace DxMessaging.Editor.CustomEditors
                     }
                     else
                     {
-                        EditorGUILayout.HelpBox(
-                            "Enable diagnostics to view registration details.",
-                            MessageType.Info
-                        );
+                        EditorGUILayout.HelpBox("Enable diagnostics to view registration details.", MessageType.Info);
                     }
 
                     EditorGUI.indentLevel--;
@@ -507,10 +388,7 @@ namespace DxMessaging.Editor.CustomEditors
             }
         }
 
-        private void DrawPaginatedRegistrations(
-            MonoBehaviour listener,
-            MessageRegistrationToken token
-        )
+        private void DrawPaginatedRegistrations(MonoBehaviour listener, MessageRegistrationToken token)
         {
             _listenerRegistrationPaging.TryAdd(listener, 0);
             int page = _listenerRegistrationPaging[listener];
@@ -545,21 +423,13 @@ namespace DxMessaging.Editor.CustomEditors
                 }
             }
 
-            KeyValuePair<
-                MessageRegistrationHandle,
-                MessageRegistrationMetadata
-            >[] pagedRegistrations = token
+            KeyValuePair<MessageRegistrationHandle, MessageRegistrationMetadata>[] pagedRegistrations = token
                 ._metadata.OrderBy(kvp => kvp.Key)
                 .Skip(page * PageSize)
                 .Take(PageSize)
                 .ToArray();
 
-            foreach (
-                (
-                    MessageRegistrationHandle handle,
-                    MessageRegistrationMetadata metadata
-                ) in pagedRegistrations
-            )
+            foreach ((MessageRegistrationHandle handle, MessageRegistrationMetadata metadata) in pagedRegistrations)
             {
                 using (new EditorGUILayout.VerticalScope("box"))
                 {
@@ -567,10 +437,7 @@ namespace DxMessaging.Editor.CustomEditors
 
                     string messageName = metadata.type?.Name ?? string.Empty;
                     GUIContent labelContent = new(messageName, $"Priority: {metadata.priority}");
-                    GUIContent valueContent = new(
-                        metadata.registrationType.ToString(),
-                        $"Priority: {metadata.priority}"
-                    );
+                    GUIContent valueContent = new(metadata.registrationType.ToString(), $"Priority: {metadata.priority}");
 
                     EditorGUILayout.LabelField(labelContent, valueContent);
                     if (metadata.context?.Object != null)

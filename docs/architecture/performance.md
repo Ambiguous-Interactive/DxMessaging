@@ -1,66 +1,43 @@
 # Performance Benchmarks
 
-This page shows the latest dispatch-throughput and cross-library comparison
-numbers for DxMessaging. The published tables come from a Release Standalone
-IL2CPP player, the same backend and build shape used by shipped games.
+This page shows the latest dispatch-throughput and cross-library comparison numbers for DxMessaging. The published tables come from a Release Standalone IL2CPP player, the same
+backend and build shape used by shipped games.
 
-These numbers are for orientation, not a leaderboard. Real-world performance
-depends on what your handlers actually do; the benchmarks measure raw dispatch
-cost with minimal handler work. For the full methodology, CI mechanics, baseline
-capture, the regression smoke gate, and how to add or bump a comparison library,
-see the
+These numbers are for orientation, not a leaderboard. Real-world performance depends on what your handlers actually do; the benchmarks measure raw dispatch cost with minimal
+handler work. For the full methodology, CI mechanics, baseline capture, the regression smoke gate, and how to add or bump a comparison library, see the
 [Perf Benchmark Methodology runbook](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/docs/runbooks/perf-benchmark-methodology.md).
 
-See also: [Performance optimizations](./design-and-architecture.md#performance-optimizations)
-for design details.
+See also: [Performance optimizations](./design-and-architecture.md#performance-optimizations) for design details.
 
 ## Performance targets and parity claims
 
-DxMessaging 4.0 treats 80% of MessagePipe throughput on each named comparison row as a research
-target, not a parity claim. A formal parity result has a stricter rule: the lower confidence bound
-for each required row must reach 90%, as tracked in
-[#414](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414). The current tables are
-measurements, not a statement that either threshold has been met. Each generated block identifies
-its source commit, Unity version, Release IL2CPP profile, and runner; the linked methodology runbook
-defines the evidence and uncertainty required before a verdict.
+DxMessaging 4.0 treats 80% of MessagePipe throughput on each named comparison row as a research target, not a parity claim. A formal parity result has a stricter rule: the lower
+confidence bound for each required row must reach 90%, as tracked in [#414](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414). The current tables are measurements,
+not a statement that either threshold has been met. Each generated block identifies its source commit, Unity version, Release IL2CPP profile, and runner; the linked methodology
+runbook defines the evidence and uncertainty required before a verdict.
 
-Untargeted emissions with no interceptors, global accept-all handlers, or post-processors reuse
-their resolved handler route across steady-state emissions. Registration changes and sweeps refresh
-the route. Dispatch keeps live handler-state and reset checks while preserving the zero-allocation
-steady-state contract.
+Untargeted emissions with no interceptors, global accept-all handlers, or post-processors reuse their resolved handler route across steady-state emissions. Registration changes and
+sweeps refresh the route. Dispatch keeps live handler-state and reset checks while preserving the zero-allocation steady-state contract.
 
 ## How to read these tables
 
-- **Scopes.** Each dispatch table is labeled by execution scope and backend.
-  **Standalone (IL2CPP)** -- a Release player on the ahead-of-time backend
-  shipped games run -- is the only published scope. The renderer also understands
-  PlayMode and EditMode rows for local or manually dispatched runs; backends differ
-  by design, so read each scope against its own backend.
-- **Throughput.** Dispatch tables report emits per second. Comparison tables
-  report operations per second because subscribe/unsubscribe is not an emit.
-  Higher is better. Registration scenarios report wall-clock time instead,
-  where lower is better. The published rates come from the Standalone (IL2CPP)
-  leg.
-- **Allocations.** Lower is better, and `0` means the measured operation did not
-  allocate. Release IL2CPP players cannot expose Unity's allocation recorder, so
-  the published Standalone tables omit allocation columns instead of showing a
-  page of `n/a` values. Editor benchmark runs can include those columns. The
-  comparison summary labels zero-allocation emit paths as regression-test
-  contracts, separate from the stripped player's measurements.
-- **Comparison matrix `N/A`.** The cross-library matrix has a column per
-  scenario and a row per library. A cell shows `N/A` when that library does not
-  idiomatically support that capability -- it is a capability gap, not a
-  failure, and the value is never faked.
-- **Comparison matrix winners.** In the throughput matrix the fastest
-  technology per scenario column is rendered in bold (ties are all bolded;
-  `N/A` never wins). The GC-allocations and GC-allocated-bytes matrices are not
-  bolded: an allocation count or byte total is a property to read, not a race.
+- **Scopes.** Each dispatch table is labeled by execution scope and backend. **Standalone (IL2CPP)** -- a Release player on the ahead-of-time backend shipped games run -- is the
+  only published scope. The renderer also understands PlayMode and EditMode rows for local or manually dispatched runs; backends differ by design, so read each scope against its
+  own backend.
+- **Throughput.** Dispatch tables report emits per second. Comparison tables report operations per second because subscribe/unsubscribe is not an emit. Higher is better.
+  Registration scenarios report wall-clock time instead, where lower is better. The published rates come from the Standalone (IL2CPP) leg.
+- **Allocations.** Lower is better, and `0` means the measured operation did not allocate. Release IL2CPP players cannot expose Unity's allocation recorder, so the published
+  Standalone tables omit allocation columns instead of showing a page of `n/a` values. Editor benchmark runs can include those columns. The comparison summary labels
+  zero-allocation emit paths as regression-test contracts, separate from the stripped player's measurements.
+- **Comparison matrix `N/A`.** The cross-library matrix has a column per scenario and a row per library. A cell shows `N/A` when that library does not idiomatically support that
+  capability -- it is a capability gap, not a failure, and the value is never faked.
+- **Comparison matrix winners.** In the throughput matrix the fastest technology per scenario column is rendered in bold (ties are all bolded; `N/A` never wins). The GC-allocations
+  and GC-allocated-bytes matrices are not bolded: an allocation count or byte total is a property to read, not a race.
 
 ## Latest CI performance results
 
-The block below is regenerated from the latest benchmark run. It starts with a
-per-scenario DxMessaging summary and the cross-library matrix, then gives the
-full internal dispatch breakdown and runner details. Do not edit it by hand.
+The block below is regenerated from the latest benchmark run. It starts with a per-scenario DxMessaging summary and the cross-library matrix, then gives the full internal dispatch
+breakdown and runner details. Do not edit it by hand.
 
 <!-- AUTOGENERATED:DISPATCH-THROUGHPUT BEGIN -->
 
@@ -69,14 +46,13 @@ full internal dispatch breakdown and runner details. Do not edit it by hand.
 
 Latest CI benchmark run: Unity 6000.5.2f1, commit `fb7f88279462ac17c23707b3227243367dab96e5`.
 
-Runner: 13th Gen Intel(R) Core(TM) i9-13900KF; execution profile highest-efficiency-class-affinity-normal-v1; maximum EfficiencyClass 1; affinity 0xFFFF; priority Normal, 24C/32T @ 3000MHz; 64GB DDR5@5200; NVIDIA GeForce RTX 3060; Microsoft Windows 11 Pro N (10.0.26300)
+Runner: 13th Gen Intel(R) Core(TM) i9-13900KF; execution profile highest-efficiency-class-affinity-normal-v1; maximum EfficiencyClass 1; affinity 0xFFFF; priority Normal, 24C/32T @
+3000MHz; 64GB DDR5@5200; NVIDIA GeForce RTX 3060; Microsoft Windows 11 Pro N (10.0.26300)
 
 ### DxMessaging comparison summary - Standalone (IL2CPP)
 
-Time per operation is the reciprocal of the measured rate. Allocation evidence uses
-measured counts when the selected scope exposes them; otherwise it reports the
-steady-state contract and marks the count unmeasured. The MessagePipe percentages
-use matching commit and platform rows. Independent-build uncertainty is unmeasured.
+Time per operation is the reciprocal of the measured rate. Allocation evidence uses measured counts when the selected scope exposes them; otherwise it reports the steady-state
+contract and marks the count unmeasured. The MessagePipe percentages use matching commit and platform rows. Independent-build uncertainty is unmeasured.
 
 | Scenario                              | DxMessaging rate | Time / operation | GC allocation evidence                | Share of MessagePipe rate |
 | ------------------------------------- | ---------------- | ---------------- | ------------------------------------- | ------------------------- |
@@ -156,49 +132,30 @@ Platform: Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.5.2f1).
 
 ## Comparison libraries
 
-The cross-library comparison matrices above measure DxMessaging against other
-common Unity messaging and eventing approaches on the same apples-to-apples
-scenarios:
+The cross-library comparison matrices above measure DxMessaging against other common Unity messaging and eventing approaches on the same apples-to-apples scenarios:
 
-- **External libraries:** MessagePipe, UniRx MessageBroker, Zenject SignalBus,
-  and Unity Atoms.
-- **Zero-dependency baselines:** plain C# event, UnityEvent, a ScriptableObject
-  event channel, and Unity `SendMessage`.
+- **External libraries:** MessagePipe, UniRx MessageBroker, Zenject SignalBus, and Unity Atoms.
+- **Zero-dependency baselines:** plain C# event, UnityEvent, a ScriptableObject event channel, and Unity `SendMessage`.
 
-Each library implements only the scenarios it idiomatically supports;
-unsupported cells render `N/A`. The comparison suite source lives in
-[`Tests/Runtime/Comparisons/`](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/Tests/Runtime/Comparisons).
-For a feature-by-feature discussion of when each approach wins, see the
-[Comparisons guide](./comparisons.md).
+Each library implements only the scenarios it idiomatically supports; unsupported cells render `N/A`. The comparison suite source lives in
+[`Tests/Runtime/Comparisons/`](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/Tests/Runtime/Comparisons). For a feature-by-feature discussion of when each
+approach wins, see the [Comparisons guide](./comparisons.md).
 
 ## Memory footprint and reclamation
 
-Dispatch state is stored per message type and, for targeted and broadcast
-paths, per `InstanceId`. Long-running sessions accumulate slots for every
-type or entity ever touched unless something reclaims them. The memory
-reclamation system caps that growth without changing dispatch semantics or
-allocating during emit.
+Dispatch state is stored per message type and, for targeted and broadcast paths, per `InstanceId`. Long-running sessions accumulate slots for every type or entity ever touched
+unless something reclaims them. The memory reclamation system caps that growth without changing dispatch semantics or allocating during emit.
 
 Reclamation runs on two paths:
 
-- An idle sweep that runs from emit-time clock samples and the Unity
-  PlayerLoop, gated by `DxMessagingRuntimeSettings.EvictionEnabled` and
-  `EvictionTickIntervalSeconds`. Empty slots become eligible only after
-  remaining empty for at least `IdleEvictionSeconds` of wall time.
-- An explicit `IMessageBus.Trim(force)` and `MessageHandler.TrimAll(force)`
-  pair that runs synchronously at scene boundaries, in tests, or in
-  maintenance windows. The master switch `EnableTrimApi` controls whether
-  the explicit calls perform work; idle sweeps remain controlled by
-  `EvictionEnabled` independently.
+- An idle sweep that runs from emit-time clock samples and the Unity PlayerLoop, gated by `DxMessagingRuntimeSettings.EvictionEnabled` and `EvictionTickIntervalSeconds`. Empty
+  slots become eligible only after remaining empty for at least `IdleEvictionSeconds` of wall time.
+- An explicit `IMessageBus.Trim(force)` and `MessageHandler.TrimAll(force)` pair that runs synchronously at scene boundaries, in tests, or in maintenance windows. The master switch
+  `EnableTrimApi` controls whether the explicit calls perform work; idle sweeps remain controlled by `EvictionEnabled` independently.
 
-Active registrations are never reclaimed. Only empty slots and shared pool
-entries are touched. Sweep work runs outside the hot handler loop, so emit
-throughput is unaffected; the per-emit overhead is one branch that samples
-the wall clock.
+Active registrations are never reclaimed. Only empty slots and shared pool entries are touched. Sweep work runs outside the hot handler loop, so emit throughput is unaffected; the
+per-emit overhead is one branch that samples the wall clock.
 
-For tuning recommendations, the public `Trim` and diagnostic-counter API
-surface, and worked examples (scene transitions, leak diagnosis, mobile
-caps, shipped-title configurations), see the
-[Memory Reclamation guide](../guides/memory-reclamation.md). For the
-parameter reference, see the
+For tuning recommendations, the public `Trim` and diagnostic-counter API surface, and worked examples (scene transitions, leak diagnosis, mobile caps, shipped-title
+configurations), see the [Memory Reclamation guide](../guides/memory-reclamation.md). For the parameter reference, see the
 [Runtime Settings reference](../reference/runtime-settings.md).

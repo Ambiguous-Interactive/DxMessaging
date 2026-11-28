@@ -1,6 +1,7 @@
 # Message Bus Providers
 
-DxMessaging provides a flexible provider system that lets you configure which message bus drives your components. This works both at design time (with ScriptableObject providers) and at runtime (with provider handles).
+DxMessaging provides a flexible provider system that lets you configure which message bus drives your components. This works both at design time (with ScriptableObject providers)
+and at runtime (with provider handles).
 
 This guide covers:
 
@@ -52,7 +53,8 @@ public interface IMessageBusProvider
 
 When a component needs a bus, it calls `Resolve()` on its provider. The provider returns the appropriate bus instance.
 
-**Key insight:** By abstracting bus resolution behind this interface, components don't need to know whether they're using the global bus, a container-managed bus, or something completely custom.
+**Key insight:** By abstracting bus resolution behind this interface, components don't need to know whether they're using the global bus, a container-managed bus, or something
+completely custom.
 
 ---
 
@@ -62,7 +64,8 @@ DxMessaging ships with two ScriptableObject-based providers. These are assets yo
 
 ### Current Global Message Bus Provider
 
-`CurrentGlobalMessageBusProvider` returns whatever bus is currently set as the global bus via `MessageHandler.MessageBus`. If you override the global bus at runtime, this provider reflects that change.
+`CurrentGlobalMessageBusProvider` returns whatever bus is currently set as the global bus via `MessageHandler.MessageBus`. If you override the global bus at runtime, this provider
+reflects that change.
 
 #### Creating the asset
 
@@ -101,7 +104,8 @@ public sealed class MessagingComponentConfigurator : MonoBehaviour
 
 ### Initial Global Message Bus Provider
 
-`InitialGlobalMessageBusProvider` always returns the original startup bus that was created during static initialization. It ignores any calls to `SetGlobalMessageBus()` or `OverrideGlobalMessageBus()`.
+`InitialGlobalMessageBusProvider` always returns the original startup bus that was created during static initialization. It ignores any calls to `SetGlobalMessageBus()` or
+`OverrideGlobalMessageBus()`.
 
 #### Creating the asset
 
@@ -151,7 +155,8 @@ public class DiagnosticLogger : MonoBehaviour
 - A ScriptableObject provider (design-time configuration)
 - A runtime provider instance (runtime configuration)
 
-The handle selects an available runtime provider first, then the serialized asset. It calls only the selected provider's `Resolve()` method. A null result does not try the other provider or select the global bus. Provider exceptions propagate to the caller.
+The handle selects an available runtime provider first, then the serialized asset. It calls only the selected provider's `Resolve()` method. A null result does not try the other
+provider or select the global bus. Provider exceptions propagate to the caller.
 
 ### Key Methods
 
@@ -185,9 +190,11 @@ When you call `TryGetProvider()` or `ResolveBus()`, it checks:
 1. Otherwise, use an available serialized ScriptableObject provider.
 1. With no provider, `TryGetProvider()` returns false and sets its output to null. `ResolveBus()` returns null.
 
-`ResolveBus()` returns the selected provider's result unchanged, including null. Code that requires a bus must handle that result or choose a fallback explicitly. Component configuration and the [registration builder](registration-builders.md#message-bus-selection) apply their own fallback rules; the handle does not apply those rules itself.
+`ResolveBus()` returns the selected provider's result unchanged, including null. Code that requires a bus must handle that result or choose a fallback explicitly. Component
+configuration and the [registration builder](registration-builders.md#message-bus-selection) apply their own fallback rules; the handle does not apply those rules itself.
 
-`WithRuntimeProvider()` returns a new handle. Assign the return value to keep the override; the original struct stays unchanged. Passing null removes the runtime override and permits the serialized asset to be selected again.
+`WithRuntimeProvider()` returns a new handle. Assign the return value to keep the override; the original struct stays unchanged. Passing null removes the runtime override and
+permits the serialized asset to be selected again.
 
 **Why this matters:** You can design your prefabs with ScriptableObject references, then override them at runtime with DI-provided buses. No code changes needed.
 
@@ -218,7 +225,8 @@ public class PlayerController : MessageAwareComponent
 
 In the Inspector, you can drag a `CurrentGlobalMessageBusProvider` or `InitialGlobalMessageBusProvider` asset onto the `providerHandle` field.
 
-Pass the full handle to keep the serialized provider available after `Awake`. If a runtime override is destroyed, a new builder from `MessagingComponent.CreateRegistrationBuilder()` resolves the available serialized provider. Existing registrations keep their bus until you explicitly rebind them.
+Pass the full handle to keep the serialized provider available after `Awake`. If a runtime override is destroyed, a new builder from
+`MessagingComponent.CreateRegistrationBuilder()` resolves the available serialized provider. Existing registrations keep their bus until you explicitly rebind them.
 
 ### Example: Runtime Override
 
@@ -425,8 +433,7 @@ MessageHandler.SetGlobalMessageBus(provider.Resolve());
 
 ### Pattern 3: Scene-Scoped Buses
 
-Configure the existing `MessagingComponent` instances in the manager's scene, then emit
-on the same bus:
+Configure the existing `MessagingComponent` instances in the manager's scene, then emit on the same bus:
 
 ```csharp
 using System;
@@ -475,16 +482,12 @@ public class SceneMessageBusManager : MonoBehaviour
 }
 ```
 
-This uses `RuntimeMessageBusProvider` from the runtime override example above.
-The setup visits every root in the manager's scene and includes inactive descendants.
-Configure components created later with the same provider during their setup. Keep the
-manager in that scene.
+This uses `RuntimeMessageBusProvider` from the runtime override example above. The setup visits every root in the manager's scene and includes inactive descendants. Configure
+components created later with the same provider during their setup. Keep the manager in that scene.
 
-Other producers must pass `manager.Bus` after initialization, or a provider that resolves
-that bus. Helpers select an explicit bus first, then a non-null provider result, then the
-global bus. A provider exception propagates. The target or source identity selects recipients
-within the chosen bus; it does not select that bus from a GameObject's scene. Configuring a
-receiver does not change emitter defaults.
+Other producers must pass `manager.Bus` after initialization, or a provider that resolves that bus. Helpers select an explicit bus first, then a non-null provider result, then the
+global bus. A provider exception propagates. The target or source identity selects recipients within the chosen bus; it does not select that bus from a GameObject's scene.
+Configuring a receiver does not change emitter defaults.
 
 ### Pattern 4: Runtime Provider Override
 

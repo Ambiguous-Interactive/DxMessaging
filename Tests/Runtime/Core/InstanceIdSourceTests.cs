@@ -29,9 +29,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void StableIdMatchesLegacyInstanceIdForEveryUnityObjectKind()
         {
-            GameObject gameObject = new(
-                nameof(StableIdMatchesLegacyInstanceIdForEveryUnityObjectKind)
-            );
+            GameObject gameObject = new(nameof(StableIdMatchesLegacyInstanceIdForEveryUnityObjectKind));
             ScriptableObject scriptableObject = ScriptableObject.CreateInstance<ScriptableObject>();
             try
             {
@@ -46,18 +44,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 UnityEngine.Object[] objects = { gameObject, component, scriptableObject };
                 foreach (UnityEngine.Object unityObject in objects)
                 {
-                    MethodInfo legacyAccessor = typeof(UnityEngine.Object).GetMethod(
-                        "GetInstanceID",
-                        BindingFlags.Instance | BindingFlags.Public
-                    );
+                    MethodInfo legacyAccessor = typeof(UnityEngine.Object).GetMethod("GetInstanceID", BindingFlags.Instance | BindingFlags.Public);
                     Assert.That(legacyAccessor, Is.Not.Null);
                     int legacy = (int)legacyAccessor.Invoke(unityObject, null);
-                    Assert.AreEqual(
-                        legacy,
-                        InstanceId.StableId(unityObject),
-                        "StableId must equal the legacy instance id for {0}.",
-                        unityObject.GetType().Name
-                    );
+                    Assert.AreEqual(legacy, InstanceId.StableId(unityObject), "StableId must equal the legacy instance id for {0}.", unityObject.GetType().Name);
                 }
             }
             finally
@@ -106,13 +96,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void ShippedSourceUsesOnlyInstanceIdForUnityObjectIdentity()
         {
-            string[] bannedIdentifiers =
-            {
-                "GetInstance" + "ID",
-                "GetEntity" + "Id",
-                "InstanceID" + "ToObject",
-                "EntityId" + "ToObject",
-            };
+            string[] bannedIdentifiers = { "GetInstance" + "ID", "GetEntity" + "Id", "InstanceID" + "ToObject", "EntityId" + "ToObject" };
             const string allowedRelativePath = "Runtime/Core/InstanceId.cs";
 
             List<string> roots = new();
@@ -130,13 +114,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     continue;
                 }
 
-                foreach (
-                    string file in System.IO.Directory.EnumerateFiles(
-                        root,
-                        "*.cs",
-                        System.IO.SearchOption.AllDirectories
-                    )
-                )
+                foreach (string file in System.IO.Directory.EnumerateFiles(root, "*.cs", System.IO.SearchOption.AllDirectories))
                 {
                     string normalized = System.IO.Path.GetFullPath(file);
                     if (!scannedFiles.Add(normalized))
@@ -148,14 +126,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         Only the single version-gated source is allowed to name the legacy
                         API, matched by its full relative path (not just the file name).
                     */
-                    if (
-                        normalized
-                            .Replace('\\', '/')
-                            .EndsWith(
-                                allowedRelativePath,
-                                System.StringComparison.OrdinalIgnoreCase
-                            )
-                    )
+                    if (normalized.Replace('\\', '/').EndsWith(allowedRelativePath, System.StringComparison.OrdinalIgnoreCase))
                     {
                         continue;
                     }
@@ -176,14 +147,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         {
                             if (lines[lineIndex].Contains(bannedIdentifier))
                             {
-                                offenders.Add(
-                                    normalized
-                                        + ":"
-                                        + (lineIndex + 1)
-                                        + " ("
-                                        + bannedIdentifier
-                                        + ")"
-                                );
+                                offenders.Add(normalized + ":" + (lineIndex + 1) + " (" + bannedIdentifier + ")");
                             }
                         }
                     }
@@ -210,13 +174,7 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             string[] candidates =
             {
-                System.IO.Path.Combine(
-                    UnityEngine.Application.dataPath,
-                    "..",
-                    "Packages",
-                    "com.wallstop-studios.dxmessaging",
-                    subtree
-                ),
+                System.IO.Path.Combine(UnityEngine.Application.dataPath, "..", "Packages", "com.wallstop-studios.dxmessaging", subtree),
                 System.IO.Path.Combine(UnityEngine.Application.dataPath, "..", subtree),
                 System.IO.Path.Combine(System.IO.Directory.GetCurrentDirectory(), subtree),
             };

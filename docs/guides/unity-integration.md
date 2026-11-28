@@ -6,41 +6,35 @@ Unity-centric helpers make registration lifecycles explicit and safe.
 
 - Attach to any GameObject that will send or receive messages.
 - Creates a per-owner `MessageHandler` and offers `Create(this)` to get a `MessageRegistrationToken`.
-- Call `Configure(IMessageBus, MessageBusRebindMode)` before `Create` if you want the component to use a custom bus (e.g., one resolved from a DI container). Passing `MessageBusRebindMode.RebindActive` migrates current registrations; `PreserveRegistrations` defers the swap until the next enable.
+- Call `Configure(IMessageBus, MessageBusRebindMode)` before `Create` if you want the component to use a custom bus (e.g., one resolved from a DI container). Passing
+  `MessageBusRebindMode.RebindActive` migrates current registrations; `PreserveRegistrations` defers the swap until the next enable.
 - Optional: set `emitMessagesWhenDisabled` if you need to emit while disabled.
 
-**Fixed in v4.0.0:** A token created before host activation starts with delivery suspended
-unless `emitMessagesWhenDisabled` is enabled. Token enable state and handler activity are
+**Fixed in v4.0.0:** A token created before host activation starts with delivery suspended unless `emitMessagesWhenDisabled` is enabled. Token enable state and handler activity are
 separate; enabling a token does not activate its GameObject.
 
-During `Configure(..., RebindActive)`, a custom bus cleanup callback can release or replace
-another listener. Remaining owned listeners still migrate. The outer call leaves work accepted
-independently on a released token under that token's caller; it does not migrate that work.
-A cleanup exception propagates without discarding the remaining cached owners.
+During `Configure(..., RebindActive)`, a custom bus cleanup callback can release or replace another listener. Remaining owned listeners still migrate. The outer call leaves work
+accepted independently on a released token under that token's caller; it does not migrate that work. A cleanup exception propagates without discarding the remaining cached owners.
 
-Destroying an initialized `MessagingComponent` deactivates its shared handler and disposes its
-owned tokens, including tokens created by plain `MonoBehaviour` listeners. This also applies when only the
-`MessagingComponent` is removed. If a custom bus throws during deregistration, cleanup continues
-for other listeners and logs the full exception. Retain the component and listener references
-and retry `Release(listener)` after the bus recovers. An interceptor whose removal fails remains
-registered until that retry succeeds.
+Destroying an initialized `MessagingComponent` deactivates its shared handler and disposes its owned tokens, including tokens created by plain `MonoBehaviour` listeners. This also
+applies when only the `MessagingComponent` is removed. If a custom bus throws during deregistration, cleanup continues for other listeners and logs the full exception. Retain the
+component and listener references and retry `Release(listener)` after the bus recovers. An interceptor whose removal fails remains registered until that retry succeeds.
 
-`Release(listener)` returns `true` when cleanup completes and removes the cached token.
-A nested release of the same token returns `false` while the owning release is in progress.
-If a deregistration callback accepts new work on the token, the component keeps that work
-cached and returns `false`. Release it after the callback finishes. A cleanup exception also
-keeps the token cached for a public retry.
+`Release(listener)` returns `true` when cleanup completes and removes the cached token. A nested release of the same token returns `false` while the owning release is in progress.
+If a deregistration callback accepts new work on the token, the component keeps that work cached and returns `false`. Release it after the callback finishes. A cleanup exception
+also keeps the token cached for a public retry.
 
-Unity [only sends `OnDestroy` to previously active GameObjects](https://docs.unity3d.com/2021.3/Documentation/ScriptReference/MonoBehaviour.OnDestroy.html).
-If you create tokens on a host that has never been active, call `Release(listener)` or dispose each token before discarding it. A manual
-listener removed while its messaging owner survives must also release its token.
+Unity [only sends `OnDestroy` to previously active GameObjects](https://docs.unity3d.com/2021.3/Documentation/ScriptReference/MonoBehaviour.OnDestroy.html). If you create tokens on
+a host that has never been active, call `Release(listener)` or dispose each token before discarding it. A manual listener removed while its messaging owner survives must also
+release its token.
 
 ## MessageAwareComponent
 
 - Derive for a batteries-included pattern; it manages a token for you.
 - Override `RegisterMessageHandlers()` to stage registrations.
 - The token is enabled/disabled with the component's enable state.
-- Call `ConfigureMessageBus(IMessageBus, MessageBusRebindMode)` before `base.Awake()` (or shortly after via a DI bootstrapper) to ensure the token is created against your container-provided bus.
+- Call `ConfigureMessageBus(IMessageBus, MessageBusRebindMode)` before `base.Awake()` (or shortly after via a DI bootstrapper) to ensure the token is created against your
+  container-provided bus.
 
 ```csharp
 using DxMessaging.Unity;
@@ -80,8 +74,9 @@ public sealed class HealthComponent : MessageAwareComponent
 - Override `RegisterForStringMessages => true` when you want the built-in string demos.
 - **Don't hide Unity methods** with `new` (e.g., `new void OnEnable()`); always `override` and call `base.*`.
 
-> **Diagnostics and analyzer:**
-> DxMessaging ships a Roslyn analyzer + Inspector overlay that catches missing base calls at compile time and surfaces them as a HelpBox at the top of the offending component's Inspector. See the [Inspector Overlay & Base-Call Warnings](inspector-overlay.md) guide for the day-to-day workflow, or the [Roslyn Analyzers & Diagnostics](../reference/analyzers.md) reference for every diagnostic id and the suppression-precedence ordering.
+> **Diagnostics and analyzer:** DxMessaging ships a Roslyn analyzer + Inspector overlay that catches missing base calls at compile time and surfaces them as a HelpBox at the top of
+> the offending component's Inspector. See the [Inspector Overlay & Base-Call Warnings](inspector-overlay.md) guide for the day-to-day workflow, or the
+> [Roslyn Analyzers & Diagnostics](../reference/analyzers.md) reference for every diagnostic id and the suppression-precedence ordering.
 
 ## Registration timing
 
@@ -122,10 +117,8 @@ public sealed class InventoryUI : UnityEngine.MonoBehaviour
 
 ### Composable lifecycle ownership (4.0.0)
 
-Use `MessagingLifecycle` when your class already inherits another base, such as
-`RuntimeSingleton<T>`, and cannot inherit `MessageAwareComponent`. The manual example above
-keeps both the component and token. The helper below owns those references together and
-keeps failed cleanup available for retry. Keep your existing base class and follow its own
+Use `MessagingLifecycle` when your class already inherits another base, such as `RuntimeSingleton<T>`, and cannot inherit `MessageAwareComponent`. The manual example above keeps
+both the component and token. The helper below owns those references together and keeps failed cleanup available for retry. Keep your existing base class and follow its own
 base-call requirements.
 
 ```csharp
@@ -164,24 +157,18 @@ namespace Examples.Inventory
 }
 ```
 
-The helper requires explicit forwarding from all four callbacks; it does not install callbacks.
-`DXMSG015` reports missing initialization, activation, deactivation, or disposal for owned helper
-fields. It follows source forwarding methods and inherited callbacks, but does not prove
-conditional reachability, aliases, interface dispatch, or behavior in referenced binaries.
+The helper requires explicit forwarding from all four callbacks; it does not install callbacks. `DXMSG015` reports missing initialization, activation, deactivation, or disposal for
+owned helper fields. It follows source forwarding methods and inherited callbacks, but does not prove conditional reachability, aliases, interface dispatch, or behavior in
+referenced binaries.
 
-Configure the `MessagingComponent` bus or provider before creating the helper. Existing
-`Configure` calls and active bus migration also apply to its captured token. Disabling keeps
-staged handlers for pooling; successful disposal removes them and releases the listener cache.
-Activation stops when component destruction begins. A released or replaced token cannot be
-re-enabled through a stale helper, and stale disposal
-never releases its replacement. Keep one lifecycle owner per listener token. A second factory call throws `InvalidOperationException`
-until successful disposal or `Release` removes that token. Failed cleanup keeps ownership reserved.
+Configure the `MessagingComponent` bus or provider before creating the helper. Existing `Configure` calls and active bus migration also apply to its captured token. Disabling keeps
+staged handlers for pooling; successful disposal removes them and releases the listener cache. Activation stops when component destruction begins. A released or replaced token
+cannot be re-enabled through a stale helper, and stale disposal never releases its replacement. Keep one lifecycle owner per listener token. A second factory call throws
+`InvalidOperationException` until successful disposal or `Release` removes that token. Failed cleanup keeps ownership reserved.
 
-A custom bus can throw during cleanup. Retain the helper and retry `Dispose` after the bus
-recovers. Work accepted by a cleanup callback can also leave `IsDisposed` false without an
-exception. `Token` remains available until final cleanup succeeds. Afterward, `Token` and
-`Enable` throw `ObjectDisposedException`; `Disable` and repeated `Dispose` are harmless.
-For a never-active host, dispose explicitly because Unity may not send `OnDestroy`.
+A custom bus can throw during cleanup. Retain the helper and retry `Dispose` after the bus recovers. Work accepted by a cleanup callback can also leave `IsDisposed` false without
+an exception. `Token` remains available until final cleanup succeeds. Afterward, `Token` and `Enable` throw `ObjectDisposedException`; `Disable` and repeated `Dispose` are
+harmless. For a never-active host, dispose explicitly because Unity may not send `OnDestroy`.
 
 ## Manual enable/disable (advanced)
 
@@ -218,9 +205,8 @@ public sealed class StringDemoReceiver : MessageAwareComponent
 
 ## ReflexiveMessage (bridging legacy SendMessage)
 
-Reflected receiver lookup skips methods with unassigned generic type arguments and keeps callable
-concrete overloads, including compatible `object` and interface parameters. It does not infer generic
-type arguments. The native Unity single-argument path follows Unity's receiver rules.
+Reflected receiver lookup skips methods with unassigned generic type arguments and keeps callable concrete overloads, including compatible `object` and interface parameters. It
+does not infer generic type arguments. The native Unity single-argument path follows Unity's receiver rules.
 
 ```csharp
 using DxMessaging.Core;
@@ -230,12 +216,9 @@ var msg = new ReflexiveMessage("OnHit", ReflexiveSendMode.Upwards, 10);
 msg.EmitGameObjectTargeted(gameObject);
 ```
 
-Callbacks that reset the bus cancel the current reflexive emission, including callbacks in custom
-reflection metadata. Eligible zero- or one-argument sends use Unity's `GameObject.SendMessage` on
-an active GameObject. If a receiver resets the bus during that call, Unity may still deliver to
-other receivers on the same GameObject. DxMessaging checks for the reset after Unity finishes
-that delivery and does not continue the canceled emission. Emit a new message after the reset
-to deliver it.
+Callbacks that reset the bus cancel the current reflexive emission, including callbacks in custom reflection metadata. Eligible zero- or one-argument sends use Unity's
+`GameObject.SendMessage` on an active GameObject. If a receiver resets the bus during that call, Unity may still deliver to other receivers on the same GameObject. DxMessaging
+checks for the reset after Unity finishes that delivery and does not continue the canceled emission. Emit a new message after the reset to deliver it.
 
 Related
 

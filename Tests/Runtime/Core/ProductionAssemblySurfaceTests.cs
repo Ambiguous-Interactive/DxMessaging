@@ -21,103 +21,41 @@ namespace DxMessaging.Tests.Runtime.Core
             List<string> found = new();
             Dictionary<string, string[]> retiredSlotReadouts = new()
             {
-                ["DxMessaging.Core.MessageHandler+HandlerActionCache`1+OrderedEntries"] = new[]
-                {
-                    "KeyAt",
-                },
-                ["DxMessaging.Core.Internal.IHandlerActionCache"] = new[]
-                {
-                    "Version",
-                    "LastSeenVersion",
-                    "LastSeenEmissionId",
-                },
-                ["DxMessaging.Core.MessageHandler+HandlerActionCache`1"] = new[]
-                {
-                    "Version",
-                    "LastSeenVersion",
-                    "LastSeenEmissionId",
-                },
-                ["DxMessaging.Core.Internal.TypedSlot`1"] = new[]
-                {
-                    "Clear",
-                    "LastTouchTicks",
-                    "lastTouchTicks",
-                    "Version",
-                    "lastSeenVersion",
-                    "lastSeenEmissionId",
-                },
-                ["DxMessaging.Core.Internal.TypedGlobalSlot"] = new[]
-                {
-                    "Clear",
-                    "LastTouchTicks",
-                    "lastTouchTicks",
-                    "Version",
-                    "lastSeenVersion",
-                    "lastSeenEmissionId",
-                },
-                ["DxMessaging.Core.MessageBus.Internal.BusGlobalSlot"] = new[]
-                {
-                    "LastTouchTicks",
-                    "Version",
-                    "lastSeenVersion",
-                    "lastSeenEmissionId",
-                    "sharedCache",
-                },
+                ["DxMessaging.Core.MessageHandler+HandlerActionCache`1+OrderedEntries"] = new[] { "KeyAt" },
+                ["DxMessaging.Core.Internal.IHandlerActionCache"] = new[] { "Version", "LastSeenVersion", "LastSeenEmissionId" },
+                ["DxMessaging.Core.MessageHandler+HandlerActionCache`1"] = new[] { "Version", "LastSeenVersion", "LastSeenEmissionId" },
+                ["DxMessaging.Core.Internal.TypedSlot`1"] = new[] { "Clear", "LastTouchTicks", "lastTouchTicks", "Version", "lastSeenVersion", "lastSeenEmissionId" },
+                ["DxMessaging.Core.Internal.TypedGlobalSlot"] = new[] { "Clear", "LastTouchTicks", "lastTouchTicks", "Version", "lastSeenVersion", "lastSeenEmissionId" },
+                ["DxMessaging.Core.MessageBus.Internal.BusGlobalSlot"] = new[] { "LastTouchTicks", "Version", "lastSeenVersion", "lastSeenEmissionId", "sharedCache" },
             };
             foreach (Type type in assembly.GetTypes())
             {
-                if (
-                    (type.Namespace ?? string.Empty).Split('.').Contains("Testing")
-                    || type.FullName == "DxMessaging.Core.MessageBus.Internal.IEvictableSlot"
-                )
+                if ((type.Namespace ?? string.Empty).Split('.').Contains("Testing") || type.FullName == "DxMessaging.Core.MessageBus.Internal.IEvictableSlot")
                 {
                     found.Add(type.FullName);
                 }
-                foreach (
-                    MethodInfo method in type.GetMethods(
-                        BindingFlags.Static
-                            | BindingFlags.Public
-                            | BindingFlags.NonPublic
-                            | BindingFlags.DeclaredOnly
-                    )
-                )
+                foreach (MethodInfo method in type.GetMethods(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
                 {
                     if (
                         method.Name == "op_Implicit"
                         && method.ReturnType == typeof(Action)
-                        && type.FullName.StartsWith(
-                            "DxMessaging.Core.MessageHandler+",
-                            StringComparison.Ordinal
-                        )
+                        && type.FullName.StartsWith("DxMessaging.Core.MessageHandler+", StringComparison.Ordinal)
                     )
                     {
                         found.Add(type.FullName + "." + method.Name);
                     }
                 }
                 foreach (
-                    MemberInfo member in type.GetMembers(
-                        BindingFlags.Instance
-                            | BindingFlags.Static
-                            | BindingFlags.Public
-                            | BindingFlags.NonPublic
-                            | BindingFlags.DeclaredOnly
-                    )
+                    MemberInfo member in type.GetMembers(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)
                 )
                 {
                     if (
                         reservedNames.Any(name => member.Name.Contains(name))
                         || (
                             retiredSlotReadouts.TryGetValue(type.FullName, out string[] retired)
-                            && retired.Any(name =>
-                                member.Name == name
-                                || member.Name.EndsWith("." + name, StringComparison.Ordinal)
-                            )
+                            && retired.Any(name => member.Name == name || member.Name.EndsWith("." + name, StringComparison.Ordinal))
                         )
-                        || (
-                            type.FullName
-                                == "DxMessaging.Core.Configuration.DxMessagingRuntimeSettingsProvider"
-                            && member.Name == "Override"
-                        )
+                        || (type.FullName == "DxMessaging.Core.Configuration.DxMessagingRuntimeSettingsProvider" && member.Name == "Override")
                     )
                     {
                         found.Add(type.FullName + "." + member.Name);

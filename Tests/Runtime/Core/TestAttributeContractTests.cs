@@ -34,10 +34,7 @@ namespace DxMessaging.Tests.Runtime.Core
         /// <c>"new GameObject("</c> would miss. Compiled once because the
         /// fixture scan runs across every test source file.
         /// </summary>
-        private static readonly Regex GameObjectTargetTypedNewPattern = new(
-            @"\bGameObject\b\s+\w+\s*=\s*new\s*\(",
-            RegexOptions.Compiled | RegexOptions.CultureInvariant
-        );
+        private static readonly Regex GameObjectTargetTypedNewPattern = new(@"\bGameObject\b\s+\w+\s*=\s*new\s*\(", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
         /// <summary>
         /// Matches a standalone <c>[UnityTest]</c> attribute line (only leading
@@ -57,32 +54,24 @@ namespace DxMessaging.Tests.Runtime.Core
         /// test signature, capturing the method name. Applied only to the span
         /// between a <c>[UnityTest]</c> attribute and its method body.
         /// </summary>
-        private static readonly Regex UnityTestMethodNamePattern = new(
-            @"\bIEnumerator\s+(\w+)\s*\(",
-            RegexOptions.Compiled | RegexOptions.CultureInvariant
-        );
+        private static readonly Regex UnityTestMethodNamePattern = new(@"\bIEnumerator\s+(\w+)\s*\(", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
         /// <summary>
         /// Matches a real frame-yielding <c>yield return</c> (not a bare
         /// <c>yield break</c>, which makes a method a compiler iterator without
         /// ever advancing a frame).
         /// </summary>
-        private static readonly Regex YieldReturnPattern = new(
-            @"\byield\s+return\b",
-            RegexOptions.Compiled | RegexOptions.CultureInvariant
-        );
+        private static readonly Regex YieldReturnPattern = new(@"\byield\s+return\b", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
         private static bool IsDxMessagingTestAssembly(Assembly assembly)
         {
             string assemblyName = assembly.GetName().Name;
-            return assemblyName != null
-                && assemblyName.StartsWith(TestAssemblyNamePrefix, StringComparison.Ordinal);
+            return assemblyName != null && assemblyName.StartsWith(TestAssemblyNamePrefix, StringComparison.Ordinal);
         }
 
         private static bool IsDxMessagingTestNamespace(string namespaceName)
         {
-            return namespaceName != null
-                && namespaceName.StartsWith(TestNamespacePrefix, StringComparison.Ordinal);
+            return namespaceName != null && namespaceName.StartsWith(TestNamespacePrefix, StringComparison.Ordinal);
         }
 
         /// <summary>
@@ -97,9 +86,7 @@ namespace DxMessaging.Tests.Runtime.Core
         /// domain reload (recompile) resets the static and the snapshot is
         /// rebuilt on next access.
         /// </summary>
-        private static readonly Lazy<Type[]> DxMessagingTestTypes = new(
-            CollectDxMessagingTestTypes
-        );
+        private static readonly Lazy<Type[]> DxMessagingTestTypes = new(CollectDxMessagingTestTypes);
 
         private static Type[] CollectDxMessagingTestTypes()
         {
@@ -137,11 +124,7 @@ namespace DxMessaging.Tests.Runtime.Core
         public void UnityTestsDoNotUseTestCaseAttributes()
         {
             List<string> offenders = FindMethods(method =>
-                    HasAttribute<UnityTestAttribute>(method)
-                    && (
-                        HasAttribute<TestCaseAttribute>(method)
-                        || HasAttribute<TestCaseSourceAttribute>(method)
-                    )
+                    HasAttribute<UnityTestAttribute>(method) && (HasAttribute<TestCaseAttribute>(method) || HasAttribute<TestCaseSourceAttribute>(method))
                 )
                 .Select(FormatMethod)
                 .ToList();
@@ -149,8 +132,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.That(
                 offenders,
                 Is.Empty,
-                "Found [UnityTest] methods decorated with [TestCase] or [TestCaseSource]. Use [ValueSource] for parameterized coroutine tests.\n"
-                    + string.Join("\n", offenders)
+                "Found [UnityTest] methods decorated with [TestCase] or [TestCaseSource]. Use [ValueSource] for parameterized coroutine tests.\n" + string.Join("\n", offenders)
             );
         }
 
@@ -160,39 +142,20 @@ namespace DxMessaging.Tests.Runtime.Core
             List<string> offenders = FindMethods(method =>
                     method.ReturnType == typeof(IEnumerator)
                     && !HasAttribute<UnityTestAttribute>(method)
-                    && (
-                        HasAttribute<TestAttribute>(method)
-                        || HasAttribute<TestCaseAttribute>(method)
-                        || HasAttribute<TestCaseSourceAttribute>(method)
-                    )
+                    && (HasAttribute<TestAttribute>(method) || HasAttribute<TestCaseAttribute>(method) || HasAttribute<TestCaseSourceAttribute>(method))
                 )
                 .Select(FormatMethod)
                 .ToList();
 
-            Assert.That(
-                offenders,
-                Is.Empty,
-                "Found non-[UnityTest] methods returning IEnumerator. Use [UnityTest] for coroutine tests.\n"
-                    + string.Join("\n", offenders)
-            );
+            Assert.That(offenders, Is.Empty, "Found non-[UnityTest] methods returning IEnumerator. Use [UnityTest] for coroutine tests.\n" + string.Join("\n", offenders));
         }
 
         [Test]
         public void UnityTestsReturnIEnumerator()
         {
-            List<string> offenders = FindMethods(method =>
-                    HasAttribute<UnityTestAttribute>(method)
-                    && method.ReturnType != typeof(IEnumerator)
-                )
-                .Select(FormatMethod)
-                .ToList();
+            List<string> offenders = FindMethods(method => HasAttribute<UnityTestAttribute>(method) && method.ReturnType != typeof(IEnumerator)).Select(FormatMethod).ToList();
 
-            Assert.That(
-                offenders,
-                Is.Empty,
-                "Found [UnityTest] methods that do not return IEnumerator.\n"
-                    + string.Join("\n", offenders)
-            );
+            Assert.That(offenders, Is.Empty, "Found [UnityTest] methods that do not return IEnumerator.\n" + string.Join("\n", offenders));
         }
 
         /// <summary>
@@ -244,10 +207,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             foreach (MethodInfo method in GetDxMessagingTestMethods())
             {
-                if (
-                    !HasAttribute<UnityTestAttribute>(method)
-                    && !HasAttribute<TestAttribute>(method)
-                )
+                if (!HasAttribute<UnityTestAttribute>(method) && !HasAttribute<TestAttribute>(method))
                 {
                     continue;
                 }
@@ -294,12 +254,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     continue;
                 }
 
-                if (
-                    !kindsByFixture.TryGetValue(
-                        fixture,
-                        out Dictionary<string, HashSet<string>> nameMap
-                    )
-                )
+                if (!kindsByFixture.TryGetValue(fixture, out Dictionary<string, HashSet<string>> nameMap))
                 {
                     nameMap = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
                     kindsByFixture[fixture] = nameMap;
@@ -415,12 +370,7 @@ namespace DxMessaging.Tests.Runtime.Core
             };
 
             List<string> offenders = new();
-            foreach (
-                KeyValuePair<
-                    Type,
-                    Dictionary<string, HashSet<string>>
-                > fixturePair in kindsByFixture
-            )
+            foreach (KeyValuePair<Type, Dictionary<string, HashSet<string>>> fixturePair in kindsByFixture)
             {
                 foreach (KeyValuePair<string, HashSet<string>> namePair in fixturePair.Value)
                 {
@@ -440,11 +390,7 @@ namespace DxMessaging.Tests.Runtime.Core
                                 + "consolidate via [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))])"
                         );
                     }
-                    else if (
-                        kinds.Count == 2
-                        && kinds.Contains("Targeted")
-                        && kinds.Contains("Broadcast")
-                    )
+                    else if (kinds.Count == 2 && kinds.Contains("Targeted") && kinds.Contains("Broadcast"))
                     {
                         if (exemptedTwoKindPairs.Contains(fullKey))
                         {
@@ -477,9 +423,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
         private static bool HasMessageScenarioParameter(MethodInfo method)
         {
-            return method
-                .GetParameters()
-                .Any(parameter => parameter.ParameterType == typeof(MessageScenario));
+            return method.GetParameters().Any(parameter => parameter.ParameterType == typeof(MessageScenario));
         }
 
         /// <summary>
@@ -492,9 +436,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void EveryEmitPathHasAllocationCoverage()
         {
-            HashSet<MessageKind> covered = new(
-                MessageScenarios.AllKindsIncludingWithoutContext.Select(s => s.Kind)
-            );
+            HashSet<MessageKind> covered = new(MessageScenarios.AllKindsIncludingWithoutContext.Select(s => s.Kind));
             List<string> missing = new();
 
             foreach (MessageKind kind in Enum.GetValues(typeof(MessageKind)))
@@ -528,21 +470,11 @@ namespace DxMessaging.Tests.Runtime.Core
         public void DxMessagingStaticStateResetClearsBusCounts()
         {
             // Pollute the global bus so we can prove Reset clears it.
-            MessageHandler pollutingHandler = new(
-                new InstanceId(unchecked((int)0x517E0001)),
-                MessageHandler.MessageBus
-            )
-            {
-                active = true,
-            };
-            MessageRegistrationToken pollutingToken = MessageRegistrationToken.Create(
-                pollutingHandler,
-                MessageHandler.MessageBus
+            MessageHandler pollutingHandler = new(new InstanceId(unchecked((int)0x517E0001)), MessageHandler.MessageBus) { active = true };
+            MessageRegistrationToken pollutingToken = MessageRegistrationToken.Create(pollutingHandler, MessageHandler.MessageBus);
+            _ = pollutingToken.RegisterUntargeted<DxMessaging.Tests.Runtime.Scripts.Messages.SimpleUntargetedMessage>(
+                (in DxMessaging.Tests.Runtime.Scripts.Messages.SimpleUntargetedMessage _) => { }
             );
-            _ =
-                pollutingToken.RegisterUntargeted<DxMessaging.Tests.Runtime.Scripts.Messages.SimpleUntargetedMessage>(
-                    (in DxMessaging.Tests.Runtime.Scripts.Messages.SimpleUntargetedMessage _) => { }
-                );
             pollutingToken.Enable();
 
             try
@@ -750,9 +682,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     continue;
                 }
 
-                if (
-                    !typeof(DxMessaging.Tests.Runtime.Core.MessagingTestBase).IsAssignableFrom(type)
-                )
+                if (!typeof(DxMessaging.Tests.Runtime.Core.MessagingTestBase).IsAssignableFrom(type))
                 {
                     continue;
                 }
@@ -763,16 +693,9 @@ namespace DxMessaging.Tests.Runtime.Core
                     the bus.
                 */
                 bool hasTest = false;
-                foreach (
-                    MethodInfo method in type.GetMethods(
-                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
-                    )
-                )
+                foreach (MethodInfo method in type.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
                 {
-                    if (
-                        HasAttribute<TestAttribute>(method)
-                        || HasAttribute<UnityTestAttribute>(method)
-                    )
+                    if (HasAttribute<TestAttribute>(method) || HasAttribute<UnityTestAttribute>(method))
                     {
                         hasTest = true;
                         break;
@@ -805,13 +728,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     continue;
                 }
 
-                foreach (
-                    string file in System.IO.Directory.EnumerateFiles(
-                        root,
-                        "*.cs",
-                        System.IO.SearchOption.AllDirectories
-                    )
-                )
+                foreach (string file in System.IO.Directory.EnumerateFiles(root, "*.cs", System.IO.SearchOption.AllDirectories))
                 {
                     string text;
                     try
@@ -829,13 +746,7 @@ namespace DxMessaging.Tests.Runtime.Core
                             Match by simple type name; the file name pattern
                             mirrors the fixture name across the test tree.
                         */
-                        if (
-                            !string.Equals(
-                                System.IO.Path.GetFileNameWithoutExtension(file),
-                                fixture.Name,
-                                StringComparison.Ordinal
-                            )
-                        )
+                        if (!string.Equals(System.IO.Path.GetFileNameWithoutExtension(file), fixture.Name, StringComparison.Ordinal))
                         {
                             continue;
                         }
@@ -863,11 +774,8 @@ namespace DxMessaging.Tests.Runtime.Core
                     tests asmdef does not reference the syntax APIs, so the regex
                     form is the pragmatic option.
                 */
-                bool spawnsGameObjects =
-                    0 <= text.IndexOf("new GameObject(", StringComparison.Ordinal)
-                    || GameObjectTargetTypedNewPattern.IsMatch(text);
-                bool tracksWithSpawned =
-                    0 <= text.IndexOf("_spawned.Add", StringComparison.Ordinal);
+                bool spawnsGameObjects = 0 <= text.IndexOf("new GameObject(", StringComparison.Ordinal) || GameObjectTargetTypedNewPattern.IsMatch(text);
+                bool tracksWithSpawned = 0 <= text.IndexOf("_spawned.Add", StringComparison.Ordinal);
 
                 if (spawnsGameObjects && !tracksWithSpawned)
                 {
@@ -904,14 +812,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void TestSourcesAvoidRealTimeWaitAntiPatterns()
         {
-            string[] bannedTokens =
-            {
-                "Thread" + ".Sleep(",
-                "Task" + ".Delay(",
-                "WaitForSeconds" + "(",
-                "WaitForSecondsRealtime" + "(",
-                "Time" + ".timeScale",
-            };
+            string[] bannedTokens = { "Thread" + ".Sleep(", "Task" + ".Delay(", "WaitForSeconds" + "(", "WaitForSecondsRealtime" + "(", "Time" + ".timeScale" };
 
             List<string> roots = ResolveTestsTreeRootsFallback();
             HashSet<string> scannedFiles = new(StringComparer.OrdinalIgnoreCase);
@@ -924,13 +825,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     continue;
                 }
 
-                foreach (
-                    string file in System.IO.Directory.EnumerateFiles(
-                        root,
-                        "*.cs",
-                        System.IO.SearchOption.AllDirectories
-                    )
-                )
+                foreach (string file in System.IO.Directory.EnumerateFiles(root, "*.cs", System.IO.SearchOption.AllDirectories))
                 {
                     string normalized = System.IO.Path.GetFullPath(file);
                     if (!scannedFiles.Add(normalized))
@@ -972,9 +867,7 @@ namespace DxMessaging.Tests.Runtime.Core
                                 }
                             }
 
-                            offenders.Add(
-                                $"{System.IO.Path.GetFileName(file)}:{line} uses '{token}'"
-                            );
+                            offenders.Add($"{System.IO.Path.GetFileName(file)}:{line} uses '{token}'");
                             searchFrom = index + token.Length;
                         }
                     }
@@ -1056,13 +949,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     continue;
                 }
 
-                foreach (
-                    string file in System.IO.Directory.EnumerateFiles(
-                        root,
-                        "*.cs",
-                        System.IO.SearchOption.AllDirectories
-                    )
-                )
+                foreach (string file in System.IO.Directory.EnumerateFiles(root, "*.cs", System.IO.SearchOption.AllDirectories))
                 {
                     string normalized = System.IO.Path.GetFullPath(file);
                     if (!scannedFiles.Add(normalized))
@@ -1107,9 +994,7 @@ namespace DxMessaging.Tests.Runtime.Core
                             }
                         }
 
-                        offenders.Add(
-                            $"{System.IO.Path.GetFileName(file)}:{line} [UnityTest] {method} has no 'yield return'"
-                        );
+                        offenders.Add($"{System.IO.Path.GetFileName(file)}:{line} [UnityTest] {method} has no 'yield return'");
                     }
                 }
             }
@@ -1137,11 +1022,7 @@ namespace DxMessaging.Tests.Runtime.Core
         /// a location FAILURE never produces a false positive (the balanced-brace
         /// assumption for mis-location is documented on the caller's remarks).
         /// </summary>
-        private static bool UnityTestBodyHasYieldReturn(
-            string text,
-            int attributeIndex,
-            out string methodName
-        )
+        private static bool UnityTestBodyHasYieldReturn(string text, int attributeIndex, out string methodName)
         {
             methodName = "<unknown>";
             int open = text.IndexOf('{', attributeIndex);
@@ -1175,11 +1056,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 return true;
             }
 
-            Match name = UnityTestMethodNamePattern.Match(
-                text,
-                attributeIndex,
-                open - attributeIndex
-            );
+            Match name = UnityTestMethodNamePattern.Match(text, attributeIndex, open - attributeIndex);
             if (name.Success)
             {
                 methodName = name.Groups[1].Value;
@@ -1213,10 +1090,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     continue;
                 }
 
-                if (
-                    type.GetCustomAttributes(typeof(SetUpFixtureAttribute), inherit: false).Length
-                    == 0
-                )
+                if (type.GetCustomAttributes(typeof(SetUpFixtureAttribute), inherit: false).Length == 0)
                 {
                     continue;
                 }
@@ -1235,20 +1109,11 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 if (1 < pair.Value.Count)
                 {
-                    offenders.Add(
-                        $"{pair.Key}: {pair.Value.Count} SetUpFixture types ("
-                            + string.Join(", ", pair.Value)
-                            + ")"
-                    );
+                    offenders.Add($"{pair.Key}: {pair.Value.Count} SetUpFixture types (" + string.Join(", ", pair.Value) + ")");
                 }
             }
 
-            Assert.That(
-                offenders,
-                Is.Empty,
-                "Namespaces with multiple [SetUpFixture] declarations:\n  "
-                    + string.Join("\n  ", offenders)
-            );
+            Assert.That(offenders, Is.Empty, "Namespaces with multiple [SetUpFixture] declarations:\n  " + string.Join("\n  ", offenders));
         }
 
         /// <summary>
@@ -1264,10 +1129,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             foreach (MethodInfo method in GetDxMessagingTestMethods())
             {
-                if (
-                    !HasAttribute<UnityTestAttribute>(method)
-                    && !HasAttribute<TestAttribute>(method)
-                )
+                if (!HasAttribute<UnityTestAttribute>(method) && !HasAttribute<TestAttribute>(method))
                 {
                     continue;
                 }
@@ -1279,14 +1141,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         continue;
                     }
 
-                    bool hasValueSource =
-                        0
-                        < parameter
-                            .GetCustomAttributes(
-                                typeof(NUnit.Framework.ValueSourceAttribute),
-                                inherit: false
-                            )
-                            .Length;
+                    bool hasValueSource = 0 < parameter.GetCustomAttributes(typeof(NUnit.Framework.ValueSourceAttribute), inherit: false).Length;
                     if (hasValueSource)
                     {
                         continue;
@@ -1333,13 +1188,7 @@ namespace DxMessaging.Tests.Runtime.Core
             List<string> roots = new List<string>();
             string[] candidates =
             {
-                System.IO.Path.Combine(
-                    UnityEngine.Application.dataPath,
-                    "..",
-                    "Packages",
-                    "com.wallstop-studios.dxmessaging",
-                    subtree
-                ),
+                System.IO.Path.Combine(UnityEngine.Application.dataPath, "..", "Packages", "com.wallstop-studios.dxmessaging", subtree),
                 System.IO.Path.Combine(UnityEngine.Application.dataPath, "..", subtree),
                 System.IO.Path.Combine(System.IO.Directory.GetCurrentDirectory(), subtree),
             };
@@ -1378,11 +1227,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
         private static IEnumerable<MethodInfo> CollectDxMessagingTestMethods()
         {
-            BindingFlags methodFlags =
-                BindingFlags.Instance
-                | BindingFlags.Static
-                | BindingFlags.Public
-                | BindingFlags.NonPublic;
+            BindingFlags methodFlags = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
 
             foreach (Type type in DxMessagingTestTypes.Value)
             {

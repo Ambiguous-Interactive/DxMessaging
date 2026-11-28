@@ -30,13 +30,9 @@ namespace DxMessaging.Tests.Editor
     [TestFixture]
     public sealed class EditorToolingDocumentationCaptureTests
     {
-        private const string CompilerDiagnosticCodeLabelName =
-            "dxmessaging-documentation-diagnostic-code";
-        private const string CompilerDiagnosticMessageLabelName =
-            "dxmessaging-documentation-diagnostic-message";
-        private const string SourceGeneratorDirectoryPath =
-            "Packages/com.wallstop-studios.dxmessaging/SourceGenerators/"
-            + "WallstopStudios.DxMessaging.SourceGenerators";
+        private const string CompilerDiagnosticCodeLabelName = "dxmessaging-documentation-diagnostic-code";
+        private const string CompilerDiagnosticMessageLabelName = "dxmessaging-documentation-diagnostic-message";
+        private const string SourceGeneratorDirectoryPath = "Packages/com.wallstop-studios.dxmessaging/SourceGenerators/" + "WallstopStudios.DxMessaging.SourceGenerators";
         private const string Dxmsg002FileName = "dxmsg002-compiler-diagnostic.png";
         private const string Dxmsg003FileName = "dxmsg003-compiler-diagnostic.png";
         private const string Dxmsg004FileName = "dxmsg004-compiler-diagnostic.png";
@@ -46,8 +42,7 @@ namespace DxMessaging.Tests.Editor
         private const string Dxmsg009FileName = "dxmsg009-overlay.png";
         private const string Dxmsg010FileName = "dxmsg010-overlay.png";
         private const string FlowGraphFileName = "flow-graph.png";
-        private const string FlowGraphComponentSelectedFileName =
-            "flow-graph-component-selected.png";
+        private const string FlowGraphComponentSelectedFileName = "flow-graph-component-selected.png";
         private const string FlowGraphMessageSelectedFileName = "flow-graph-message-selected.png";
         private const string FlowGraphRouteSelectedFileName = "flow-graph-route-selected.png";
         private const string InspectorSubscriptionsFileName = "inspector-subscriptions.png";
@@ -57,8 +52,7 @@ namespace DxMessaging.Tests.Editor
         private const string MessageMonitorSelectedFileName = "message-monitor-selected.png";
         private const string ProjectSettingsFileName = "project-settings-panel.png";
 
-        internal const string DocumentationOutputDirectory =
-            "Packages/com.wallstop-studios.dxmessaging/docs/images/inspector-overlay";
+        internal const string DocumentationOutputDirectory = "Packages/com.wallstop-studios.dxmessaging/docs/images/inspector-overlay";
 
         internal static IReadOnlyList<string> CapturedFileNames { get; } =
             new[]
@@ -91,26 +85,17 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void CaptureInventoryNamesEveryPublishedAutomatedSurfaceExactlyOnce()
         {
-            Assert.That(
-                CapturedFileNames,
-                Is.Unique,
-                "Every generated documentation image needs one unambiguous output path."
-            );
+            Assert.That(CapturedFileNames, Is.Unique, "Every generated documentation image needs one unambiguous output path.");
             Assert.That(
                 CapturedFileNames.Count,
                 Is.EqualTo(18),
-                "The inventory covers eight analyzer states, Inspector subscriptions, "
-                    + "Project Settings, four Message Monitor states, and four Flow Graph states."
+                "The inventory covers eight analyzer states, Inspector subscriptions, " + "Project Settings, four Message Monitor states, and four Flow Graph states."
             );
             foreach (string fileName in CapturedFileNames)
             {
                 string imagePath = Path.Combine(DocumentationOutputDirectory, fileName);
                 Assert.That(File.Exists(imagePath), Is.True, $"Missing published {imagePath}.");
-                Assert.That(
-                    File.Exists(imagePath + ".meta"),
-                    Is.True,
-                    $"Missing Unity metadata for {imagePath}."
-                );
+                Assert.That(File.Exists(imagePath + ".meta"), Is.True, $"Missing Unity metadata for {imagePath}.");
             }
         }
 
@@ -137,11 +122,7 @@ namespace DxMessaging.Tests.Editor
             foreach (string fileName in diagnosticFiles)
             {
                 string path = Path.Combine(DocumentationOutputDirectory, fileName);
-                Assert.That(
-                    File.Exists(path),
-                    Is.True,
-                    $"The diagnostic comparison requires published image {path}."
-                );
+                Assert.That(File.Exists(path), Is.True, $"The diagnostic comparison requires published image {path}.");
                 encodedImages.Add(fileName, Convert.ToBase64String(File.ReadAllBytes(path)));
             }
 
@@ -151,11 +132,7 @@ namespace DxMessaging.Tests.Editor
                 {
                     string leftName = diagnosticFiles[left];
                     string rightName = diagnosticFiles[right];
-                    Assert.That(
-                        encodedImages[leftName],
-                        Is.Not.EqualTo(encodedImages[rightName]),
-                        $"{leftName} and {rightName} must show different diagnostic states."
-                    );
+                    Assert.That(encodedImages[leftName], Is.Not.EqualTo(encodedImages[rightName]), $"{leftName} and {rightName} must show different diagnostic states.");
                 }
             }
         }
@@ -163,74 +140,32 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void MessageMonitorCaptureSurfacesContainTrafficAndSelectedDetails()
         {
-            VisualElement overview = CreateMessageMonitorSurface(
-                DocumentationMessageMonitorState.Overview
-            );
-            VisualElement selected = CreateMessageMonitorSurface(
-                DocumentationMessageMonitorState.SelectedStack
-            );
+            VisualElement overview = CreateMessageMonitorSurface(DocumentationMessageMonitorState.Overview);
+            VisualElement selected = CreateMessageMonitorSurface(DocumentationMessageMonitorState.SelectedStack);
 
             Assert.That(
-                overview
-                    .Query<VisualElement>(className: DxMessagingMessageMonitorWindow.RowClassName)
-                    .ToList()
-                    .Count,
+                overview.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.RowClassName).ToList().Count,
                 Is.EqualTo(3),
                 "The overview capture must show one Untargeted, Targeted, and Broadcast message."
             );
             Assert.That(
                 overview.Q<ScrollView>(DxMessagingMessageMonitorWindow.ListName),
                 Is.Null,
-                "The offscreen capture host must replace the nested log ScrollView whose body "
-                    + "does not paint without a native docked-window geometry event."
+                "The offscreen capture host must replace the nested log ScrollView whose body " + "does not paint without a native docked-window geometry event."
             );
-            Label overviewDetails = overview.Q<Label>(
-                DxMessagingMessageMonitorWindow.DetailsTypeLabelName
-            );
+            Label overviewDetails = overview.Q<Label>(DxMessagingMessageMonitorWindow.DetailsTypeLabelName);
+            Assert.That(overviewDetails, Is.Not.Null, "The populated overview must render its newest-message details.");
+            Assert.That(overviewDetails.text, Does.Contain("PlayerDamaged"), "The overview must render the newest message's real selected-detail pane.");
+            Label selectedDetails = selected.Q<Label>(DxMessagingMessageMonitorWindow.DetailsTypeLabelName);
+            Assert.That(selectedDetails, Is.Not.Null, "The interaction capture must render the selected message details.");
+            Assert.That(selectedDetails.text, Does.Contain("EnemySpawned"), "The interaction capture must select a different message row.");
+            Foldout selectedStack = selected.Q<Foldout>(DxMessagingMessageMonitorWindow.DetailsStackFoldoutName);
+            Assert.That(selectedStack, Is.Not.Null, "The selected message must expose its captured call stack.");
+            Assert.That(selectedStack.value, Is.True, "The interaction capture must show the expanded stack disclosure.");
             Assert.That(
-                overviewDetails,
-                Is.Not.Null,
-                "The populated overview must render its newest-message details."
-            );
-            Assert.That(
-                overviewDetails.text,
-                Does.Contain("PlayerDamaged"),
-                "The overview must render the newest message's real selected-detail pane."
-            );
-            Label selectedDetails = selected.Q<Label>(
-                DxMessagingMessageMonitorWindow.DetailsTypeLabelName
-            );
-            Assert.That(
-                selectedDetails,
-                Is.Not.Null,
-                "The interaction capture must render the selected message details."
-            );
-            Assert.That(
-                selectedDetails.text,
-                Does.Contain("EnemySpawned"),
-                "The interaction capture must select a different message row."
-            );
-            Foldout selectedStack = selected.Q<Foldout>(
-                DxMessagingMessageMonitorWindow.DetailsStackFoldoutName
-            );
-            Assert.That(
-                selectedStack,
-                Is.Not.Null,
-                "The selected message must expose its captured call stack."
-            );
-            Assert.That(
-                selectedStack.value,
-                Is.True,
-                "The interaction capture must show the expanded stack disclosure."
-            );
-            Assert.That(
-                selected
-                    .Q<VisualElement>(DxMessagingMessageMonitorWindow.DetailsPaneName)
-                    .Query<ScrollView>()
-                    .First(),
+                selected.Q<VisualElement>(DxMessagingMessageMonitorWindow.DetailsPaneName).Query<ScrollView>().First(),
                 Is.Null,
-                "The offscreen capture host must replace the nested details ScrollView so its "
-                    + "emission fields and expanded stack paint into the documentation image."
+                "The offscreen capture host must replace the nested details ScrollView so its " + "emission fields and expanded stack paint into the documentation image."
             );
         }
 
@@ -249,12 +184,7 @@ namespace DxMessaging.Tests.Editor
                 DocumentationCompilerDiagnosticState.Dxmsg004,
             };
             string[] expectedIds = { "DXMSG002", "DXMSG003", "DXMSG004" };
-            string[] expectedCodeFragments =
-            {
-                "[DxBroadcastMessage]",
-                "public sealed class GameSystems",
-                "public sealed class GameSystems",
-            };
+            string[] expectedCodeFragments = { "[DxBroadcastMessage]", "public sealed class GameSystems", "public sealed class GameSystems" };
 
             for (int index = 0; index < states.Length; index++)
             {
@@ -262,147 +192,61 @@ namespace DxMessaging.Tests.Editor
                 Label message = surface.Q<Label>(CompilerDiagnosticMessageLabelName);
                 Label code = surface.Q<Label>(CompilerDiagnosticCodeLabelName);
 
-                Assert.That(
-                    message,
-                    Is.Not.Null,
-                    $"The {expectedIds[index]} specimen must render its compiler output."
-                );
-                Assert.That(
-                    message.text,
-                    Does.StartWith(expectedIds[index] + ":"),
-                    $"The specimen must preserve the exact {expectedIds[index]} diagnostic id."
-                );
-                Assert.That(
-                    code,
-                    Is.Not.Null,
-                    $"The {expectedIds[index]} specimen must render triggering C# code."
-                );
-                Assert.That(
-                    code.text,
-                    Does.Contain(expectedCodeFragments[index]),
-                    $"The {expectedIds[index]} specimen must show the declaration that triggers it."
-                );
+                Assert.That(message, Is.Not.Null, $"The {expectedIds[index]} specimen must render its compiler output.");
+                Assert.That(message.text, Does.StartWith(expectedIds[index] + ":"), $"The specimen must preserve the exact {expectedIds[index]} diagnostic id.");
+                Assert.That(code, Is.Not.Null, $"The {expectedIds[index]} specimen must render triggering C# code.");
+                Assert.That(code.text, Does.Contain(expectedCodeFragments[index]), $"The {expectedIds[index]} specimen must show the declaration that triggers it.");
             }
         }
 
         [Test]
         public void MessageMonitorComponentCaptureExpandsLoadedComponentDiagnostics()
         {
-            VisualElement components = CreateMessageMonitorSurface(
-                DocumentationMessageMonitorState.Components
-            );
-            Foldout componentFoldout = components.Q<Foldout>(
-                DxMessagingMessageMonitorWindow.ComponentFoldoutName
-            );
+            VisualElement components = CreateMessageMonitorSurface(DocumentationMessageMonitorState.Components);
+            Foldout componentFoldout = components.Q<Foldout>(DxMessagingMessageMonitorWindow.ComponentFoldoutName);
 
+            Assert.That(componentFoldout, Is.Not.Null, "The component capture must include the Component Diagnostics disclosure.");
+            Assert.That(componentFoldout.value, Is.True, "The component capture must expand the Component Diagnostics disclosure.");
             Assert.That(
-                componentFoldout,
-                Is.Not.Null,
-                "The component capture must include the Component Diagnostics disclosure."
-            );
-            Assert.That(
-                componentFoldout.value,
-                Is.True,
-                "The component capture must expand the Component Diagnostics disclosure."
-            );
-            Assert.That(
-                components
-                    .Query<VisualElement>(
-                        className: DxMessagingMessageMonitorWindow.ComponentRowClassName
-                    )
-                    .ToList()
-                    .Count,
+                components.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.ComponentRowClassName).ToList().Count,
                 Is.EqualTo(2),
                 "The component capture must show both deterministic loaded components."
             );
             Assert.That(
                 components.Q<ScrollView>(DxMessagingMessageMonitorWindow.ComponentScrollViewName),
                 Is.Null,
-                "The offscreen capture host must flatten the component ScrollView so both "
-                    + "diagnostic cards paint."
+                "The offscreen capture host must flatten the component ScrollView so both " + "diagnostic cards paint."
             );
-            List<Label> componentNames = components
-                .Query<Label>(name: DxMessagingMessageMonitorWindow.ComponentNameLabelName)
-                .ToList();
-            Assert.That(
-                componentNames.Exists(label => label.text.Contains("Arena/Player")),
-                Is.True,
-                "The component capture must identify the Arena/Player component."
-            );
-            Assert.That(
-                componentNames.Exists(label => label.text.Contains("UI/HUD")),
-                Is.True,
-                "The component capture must identify the UI/HUD component."
-            );
+            List<Label> componentNames = components.Query<Label>(name: DxMessagingMessageMonitorWindow.ComponentNameLabelName).ToList();
+            Assert.That(componentNames.Exists(label => label.text.Contains("Arena/Player")), Is.True, "The component capture must identify the Arena/Player component.");
+            Assert.That(componentNames.Exists(label => label.text.Contains("UI/HUD")), Is.True, "The component capture must identify the UI/HUD component.");
         }
 
         [Test]
         public void MessageMonitorFilterCaptureShowsTypedAndRouteKindFilters()
         {
             const string filterText = "type:Enemy context:WaveDirector";
-            VisualElement filtered = CreateMessageMonitorSurface(
-                DocumentationMessageMonitorState.Filtered
-            );
-            TextField filter = filtered.Q<TextField>(
-                DxMessagingMessageMonitorWindow.FilterFieldName
-            );
+            VisualElement filtered = CreateMessageMonitorSurface(DocumentationMessageMonitorState.Filtered);
+            TextField filter = filtered.Q<TextField>(DxMessagingMessageMonitorWindow.FilterFieldName);
 
+            Assert.That(filter, Is.Not.Null, "The filtered capture must include the Message Monitor filter field.");
+            Assert.That(filter.value, Is.EqualTo(filterText), "The filtered capture must show the exact typed facet query.");
             Assert.That(
-                filter,
-                Is.Not.Null,
-                "The filtered capture must include the Message Monitor filter field."
-            );
-            Assert.That(
-                filter.value,
-                Is.EqualTo(filterText),
-                "The filtered capture must show the exact typed facet query."
-            );
-            Assert.That(
-                filtered
-                    .Query<Label>(
-                        className: DxMessagingMessageMonitorWindow.ActiveFilterTokenClassName
-                    )
-                    .ToList()
-                    .Count,
+                filtered.Query<Label>(className: DxMessagingMessageMonitorWindow.ActiveFilterTokenClassName).ToList().Count,
                 Is.EqualTo(2),
                 "The active-filter strip must show both typed facet tokens."
             );
             Assert.That(
-                filtered
-                    .Query<VisualElement>(className: DxMessagingMessageMonitorWindow.RowClassName)
-                    .ToList()
-                    .Count,
+                filtered.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.RowClassName).ToList().Count,
                 Is.EqualTo(1),
                 "The combined typed and route-kind filters must leave one Broadcast row."
             );
-            Label messageType = filtered.Q<Label>(
-                DxMessagingMessageMonitorWindow.MessageTypeLabelName
-            );
-            Assert.That(
-                messageType,
-                Is.Not.Null,
-                "The filtered capture must keep a visible message row."
-            );
-            Assert.That(
-                messageType.text,
-                Does.Contain("EnemySpawned"),
-                "The filter must isolate the EnemySpawned traffic."
-            );
-            Assert.That(
-                filtered.Q<Toggle>(DxMessagingMessageMonitorWindow.UntargetedChipName).value,
-                Is.False,
-                "The filtered capture must show Untargeted traffic disabled."
-            );
-            Assert.That(
-                filtered.Q<Toggle>(DxMessagingMessageMonitorWindow.TargetedChipName).value,
-                Is.False,
-                "The filtered capture must show Targeted traffic disabled."
-            );
-            Assert.That(
-                filtered.Q<Toggle>(DxMessagingMessageMonitorWindow.BroadcastChipName).value,
-                Is.True,
-                "The filtered capture must show Broadcast traffic enabled."
-            );
+            Label messageType = filtered.Q<Label>(DxMessagingMessageMonitorWindow.MessageTypeLabelName);
+            Assert.That(messageType, Is.Not.Null, "The filtered capture must keep a visible message row.");
+            Assert.That(messageType.text, Does.Contain("EnemySpawned"), "The filter must isolate the EnemySpawned traffic.");
+            Assert.That(filtered.Q<Toggle>(DxMessagingMessageMonitorWindow.UntargetedChipName).value, Is.False, "The filtered capture must show Untargeted traffic disabled.");
+            Assert.That(filtered.Q<Toggle>(DxMessagingMessageMonitorWindow.TargetedChipName).value, Is.False, "The filtered capture must show Targeted traffic disabled.");
+            Assert.That(filtered.Q<Toggle>(DxMessagingMessageMonitorWindow.BroadcastChipName).value, Is.True, "The filtered capture must show Broadcast traffic enabled.");
         }
 
         /// <remarks>
@@ -414,58 +258,25 @@ namespace DxMessaging.Tests.Editor
         public void FlowGraphCaptureSurfacesContainSourceDestinationAndRouteDetails()
         {
             FlowGraphSnapshot snapshot = CreateFlowGraphSnapshot();
-            VisualElement source = CreateFlowGraphSurface(
-                snapshot,
-                DocumentationFlowGraphSelection.Message
-            );
-            VisualElement destination = CreateFlowGraphSurface(
-                snapshot,
-                DocumentationFlowGraphSelection.Component
-            );
-            VisualElement route = CreateFlowGraphSurface(
-                snapshot,
-                DocumentationFlowGraphSelection.Route
-            );
+            VisualElement source = CreateFlowGraphSurface(snapshot, DocumentationFlowGraphSelection.Message);
+            VisualElement destination = CreateFlowGraphSurface(snapshot, DocumentationFlowGraphSelection.Component);
+            VisualElement route = CreateFlowGraphSurface(snapshot, DocumentationFlowGraphSelection.Route);
 
             AssertFlowGraphDetailsTitle(source, "PlayerDamaged", "source");
             AssertFlowGraphDetailsTitle(destination, "Player", "destination");
             AssertFlowGraphDetailsTitle(route, "PlayerDamaged -> Player", "route");
             foreach (VisualElement surface in new[] { source, destination, route })
             {
-                Foldout evidence = surface.Q<Foldout>(
-                    DxMessagingFlowGraphWindow.DetailsEvidenceFoldoutName
-                );
-                Assert.That(
-                    evidence,
-                    Is.Not.Null,
-                    "Every selected Flow Graph capture must render its evidence disclosure."
-                );
-                Assert.That(
-                    evidence.value,
-                    Is.True,
-                    "Every selected Flow Graph capture must expand its evidence disclosure."
-                );
+                Foldout evidence = surface.Q<Foldout>(DxMessagingFlowGraphWindow.DetailsEvidenceFoldoutName);
+                Assert.That(evidence, Is.Not.Null, "Every selected Flow Graph capture must render its evidence disclosure.");
+                Assert.That(evidence.value, Is.True, "Every selected Flow Graph capture must expand its evidence disclosure.");
             }
             foreach (VisualElement surface in new[] { source, route })
             {
-                Foldout evidence = surface.Q<Foldout>(
-                    DxMessagingFlowGraphWindow.DetailsEvidenceFoldoutName
-                );
-                string[] labels = evidence
-                    .Query<Label>()
-                    .ToList()
-                    .Select(label => label.text)
-                    .ToArray();
-                Assert.That(
-                    labels,
-                    Does.Contain("DamageSystem.EmitPlayerDamaged()"),
-                    "The documentation example must show the emitting method, not the file suffix."
-                );
-                Assert.That(
-                    labels,
-                    Does.Contain("DamageSystem.cs:84"),
-                    "The documentation example must show the captured source file and line."
-                );
+                Foldout evidence = surface.Q<Foldout>(DxMessagingFlowGraphWindow.DetailsEvidenceFoldoutName);
+                string[] labels = evidence.Query<Label>().ToList().Select(label => label.text).ToArray();
+                Assert.That(labels, Does.Contain("DamageSystem.EmitPlayerDamaged()"), "The documentation example must show the emitting method, not the file suffix.");
+                Assert.That(labels, Does.Contain("DamageSystem.cs:84"), "The documentation example must show the captured source file and line.");
             }
         }
 
@@ -475,33 +286,20 @@ namespace DxMessaging.Tests.Editor
         {
             if (!EditorSurfaceCapture.IsSupported)
             {
-                Assert.Ignore(
-                    "Offscreen capture needs a graphics device; this editor runs with -nographics."
-                );
+                Assert.Ignore("Offscreen capture needs a graphics device; this editor runs with -nographics.");
             }
 
             IReadOnlyList<EditorSurfaceCaptureResult> results = null;
             yield return CaptureAll(DocumentationOutputDirectory, captured => results = captured);
             foreach (EditorSurfaceCaptureResult result in results)
             {
-                AssetDatabase.ImportAsset(
-                    result.OutputPath,
-                    ImportAssetOptions.ForceSynchronousImport
-                );
+                AssetDatabase.ImportAsset(result.OutputPath, ImportAssetOptions.ForceSynchronousImport);
             }
 
-            Assert.That(
-                results.Count,
-                Is.EqualTo(CapturedFileNames.Count),
-                "The capture must publish every declared documentation image."
-            );
+            Assert.That(results.Count, Is.EqualTo(CapturedFileNames.Count), "The capture must publish every declared documentation image.");
             foreach (EditorSurfaceCaptureResult result in results)
             {
-                Assert.That(
-                    result.PngColorType,
-                    Is.EqualTo(EditorSurfaceCapture.PngTruecolorWithoutAlpha),
-                    result.ToString()
-                );
+                Assert.That(result.PngColorType, Is.EqualTo(EditorSurfaceCapture.PngTruecolorWithoutAlpha), result.ToString());
                 Assert.That(result.DistinctColorCount, Is.GreaterThan(1), result.ToString());
                 Assert.That(result.ByteCount, Is.GreaterThan(0), result.ToString());
                 Assert.That(File.Exists(result.OutputPath), Is.True, result.ToString());
@@ -510,11 +308,7 @@ namespace DxMessaging.Tests.Editor
             }
             for (int index = 0; index < results.Count; index++)
             {
-                Assert.That(
-                    Path.GetFileName(results[index].OutputPath),
-                    Is.EqualTo(CapturedFileNames[index]),
-                    $"Published capture {index} must match the declared catalog."
-                );
+                Assert.That(Path.GetFileName(results[index].OutputPath), Is.EqualTo(CapturedFileNames[index]), $"Published capture {index} must match the declared catalog.");
             }
         }
 
@@ -527,9 +321,7 @@ namespace DxMessaging.Tests.Editor
         {
             if (!EditorSurfaceCapture.IsSupported)
             {
-                Assert.Ignore(
-                    "Offscreen capture needs a graphics device; this editor runs with -nographics."
-                );
+                Assert.Ignore("Offscreen capture needs a graphics device; this editor runs with -nographics.");
             }
             string outputDirectory = Path.Combine(
                 "Packages",
@@ -544,14 +336,8 @@ namespace DxMessaging.Tests.Editor
             for (int index = 0; index < results.Count; index++)
             {
                 EditorSurfaceCaptureResult result = results[index];
-                Assert.That(
-                    Path.GetFileName(result.OutputPath),
-                    Is.EqualTo(CapturedFileNames[index])
-                );
-                Assert.That(
-                    result.PngColorType,
-                    Is.EqualTo(EditorSurfaceCapture.PngTruecolorWithoutAlpha)
-                );
+                Assert.That(Path.GetFileName(result.OutputPath), Is.EqualTo(CapturedFileNames[index]));
+                Assert.That(result.PngColorType, Is.EqualTo(EditorSurfaceCapture.PngTruecolorWithoutAlpha));
                 Assert.That(result.DistinctColorCount, Is.GreaterThan(1));
                 Assert.That(result.ByteCount, Is.EqualTo(new FileInfo(result.OutputPath).Length));
                 TestContext.WriteLine(result.ToString());
@@ -559,148 +345,51 @@ namespace DxMessaging.Tests.Editor
             TestContext.WriteLine($"Complete editor tooling catalog: {outputDirectory}");
         }
 
-        internal static IEnumerator CaptureAll(
-            string outputDirectory,
-            Action<IReadOnlyList<EditorSurfaceCaptureResult>> completed
-        )
+        internal static IEnumerator CaptureAll(string outputDirectory, Action<IReadOnlyList<EditorSurfaceCaptureResult>> completed)
         {
             if (string.IsNullOrWhiteSpace(outputDirectory))
             {
-                throw new ArgumentException(
-                    "Capture needs an output directory.",
-                    nameof(outputDirectory)
-                );
+                throw new ArgumentException("Capture needs an output directory.", nameof(outputDirectory));
             }
             if (!EditorSurfaceCapture.IsSupported)
             {
-                throw new InvalidOperationException(
-                    "Editor tooling capture needs a graphics device; this editor is running with -nographics."
-                );
+                throw new InvalidOperationException("Editor tooling capture needs a graphics device; this editor is running with -nographics.");
             }
 
-            string stagingDirectory = Path.Combine(
-                "Temp",
-                "DxMessagingEditorToolingCapture-" + Guid.NewGuid().ToString("N")
-            );
+            string stagingDirectory = Path.Combine("Temp", "DxMessagingEditorToolingCapture-" + Guid.NewGuid().ToString("N"));
             List<EditorSurfaceCaptureResult> stagedResults = new(CapturedFileNames.Count);
             List<Object> createdObjects = new();
             try
             {
                 Directory.CreateDirectory(stagingDirectory);
 
-                DxMessagingSettings settings =
-                    ScriptableObject.CreateInstance<DxMessagingSettings>();
+                DxMessagingSettings settings = ScriptableObject.CreateInstance<DxMessagingSettings>();
                 settings.hideFlags = HideFlags.HideAndDontSave;
                 createdObjects.Add(settings);
 
-                GameObject host = EditorUtility.CreateGameObjectWithHideFlags(
-                    "DocumentationCaptureHost",
-                    HideFlags.HideAndDontSave
-                );
+                GameObject host = EditorUtility.CreateGameObjectWithHideFlags("DocumentationCaptureHost", HideFlags.HideAndDontSave);
                 createdObjects.Add(host);
-                DocumentationMessageAwareComponent component =
-                    host.AddComponent<DocumentationMessageAwareComponent>();
+                DocumentationMessageAwareComponent component = host.AddComponent<DocumentationMessageAwareComponent>();
 
-                stagedResults.Add(
-                    CaptureCompilerDiagnostic(
-                        stagingDirectory,
-                        DocumentationCompilerDiagnosticState.Dxmsg002
-                    )
-                );
-                stagedResults.Add(
-                    CaptureCompilerDiagnostic(
-                        stagingDirectory,
-                        DocumentationCompilerDiagnosticState.Dxmsg003
-                    )
-                );
-                stagedResults.Add(
-                    CaptureCompilerDiagnostic(
-                        stagingDirectory,
-                        DocumentationCompilerDiagnosticState.Dxmsg004
-                    )
-                );
-                stagedResults.Add(
-                    CaptureInspectorWarning(
-                        component,
-                        settings,
-                        "DXMSG006",
-                        "Awake",
-                        "Gameplay.HealthComponent",
-                        Dxmsg006FileName,
-                        stagingDirectory
-                    )
-                );
-                stagedResults.Add(
-                    CaptureInspectorWarning(
-                        component,
-                        settings,
-                        "DXMSG007",
-                        "OnEnable",
-                        "Gameplay.HiddenLifecycleComponent",
-                        Dxmsg007FileName,
-                        stagingDirectory
-                    )
-                );
+                stagedResults.Add(CaptureCompilerDiagnostic(stagingDirectory, DocumentationCompilerDiagnosticState.Dxmsg002));
+                stagedResults.Add(CaptureCompilerDiagnostic(stagingDirectory, DocumentationCompilerDiagnosticState.Dxmsg003));
+                stagedResults.Add(CaptureCompilerDiagnostic(stagingDirectory, DocumentationCompilerDiagnosticState.Dxmsg004));
+                stagedResults.Add(CaptureInspectorWarning(component, settings, "DXMSG006", "Awake", "Gameplay.HealthComponent", Dxmsg006FileName, stagingDirectory));
+                stagedResults.Add(CaptureInspectorWarning(component, settings, "DXMSG007", "OnEnable", "Gameplay.HiddenLifecycleComponent", Dxmsg007FileName, stagingDirectory));
                 stagedResults.Add(CaptureIgnoredInspector(component, settings, stagingDirectory));
+                stagedResults.Add(CaptureInspectorWarning(component, settings, "DXMSG009", "OnDisable", "Gameplay.ImplicitLifecycleComponent", Dxmsg009FileName, stagingDirectory));
                 stagedResults.Add(
-                    CaptureInspectorWarning(
-                        component,
-                        settings,
-                        "DXMSG009",
-                        "OnDisable",
-                        "Gameplay.ImplicitLifecycleComponent",
-                        Dxmsg009FileName,
-                        stagingDirectory
-                    )
+                    CaptureInspectorWarning(component, settings, "DXMSG010", "OnDestroy", "Gameplay.TransitiveLifecycleComponent", Dxmsg010FileName, stagingDirectory)
                 );
-                stagedResults.Add(
-                    CaptureInspectorWarning(
-                        component,
-                        settings,
-                        "DXMSG010",
-                        "OnDestroy",
-                        "Gameplay.TransitiveLifecycleComponent",
-                        Dxmsg010FileName,
-                        stagingDirectory
-                    )
-                );
-                stagedResults.Add(
-                    CaptureFlowGraph(stagingDirectory, DocumentationFlowGraphSelection.None)
-                );
-                stagedResults.Add(
-                    CaptureFlowGraph(stagingDirectory, DocumentationFlowGraphSelection.Component)
-                );
-                stagedResults.Add(
-                    CaptureFlowGraph(stagingDirectory, DocumentationFlowGraphSelection.Message)
-                );
-                stagedResults.Add(
-                    CaptureFlowGraph(stagingDirectory, DocumentationFlowGraphSelection.Route)
-                );
+                stagedResults.Add(CaptureFlowGraph(stagingDirectory, DocumentationFlowGraphSelection.None));
+                stagedResults.Add(CaptureFlowGraph(stagingDirectory, DocumentationFlowGraphSelection.Component));
+                stagedResults.Add(CaptureFlowGraph(stagingDirectory, DocumentationFlowGraphSelection.Message));
+                stagedResults.Add(CaptureFlowGraph(stagingDirectory, DocumentationFlowGraphSelection.Route));
                 stagedResults.Add(CaptureSubscriptions(component, stagingDirectory));
-                stagedResults.Add(
-                    CaptureMessageMonitor(
-                        stagingDirectory,
-                        DocumentationMessageMonitorState.Overview
-                    )
-                );
-                stagedResults.Add(
-                    CaptureMessageMonitor(
-                        stagingDirectory,
-                        DocumentationMessageMonitorState.Components
-                    )
-                );
-                stagedResults.Add(
-                    CaptureMessageMonitor(
-                        stagingDirectory,
-                        DocumentationMessageMonitorState.Filtered
-                    )
-                );
-                stagedResults.Add(
-                    CaptureMessageMonitor(
-                        stagingDirectory,
-                        DocumentationMessageMonitorState.SelectedStack
-                    )
-                );
+                stagedResults.Add(CaptureMessageMonitor(stagingDirectory, DocumentationMessageMonitorState.Overview));
+                stagedResults.Add(CaptureMessageMonitor(stagingDirectory, DocumentationMessageMonitorState.Components));
+                stagedResults.Add(CaptureMessageMonitor(stagingDirectory, DocumentationMessageMonitorState.Filtered));
+                stagedResults.Add(CaptureMessageMonitor(stagingDirectory, DocumentationMessageMonitorState.SelectedStack));
                 yield return CaptureProjectSettings(settings, stagingDirectory, stagedResults.Add);
 
                 ValidateCapturedResults(stagedResults);
@@ -723,15 +412,11 @@ namespace DxMessaging.Tests.Editor
             }
         }
 
-        private static void ValidateCapturedResults(
-            IReadOnlyList<EditorSurfaceCaptureResult> results
-        )
+        private static void ValidateCapturedResults(IReadOnlyList<EditorSurfaceCaptureResult> results)
         {
             if (results.Count != CapturedFileNames.Count)
             {
-                throw new InvalidOperationException(
-                    $"Capture produced {results.Count} images; expected {CapturedFileNames.Count}."
-                );
+                throw new InvalidOperationException($"Capture produced {results.Count} images; expected {CapturedFileNames.Count}.");
             }
 
             for (int index = 0; index < CapturedFileNames.Count; index++)
@@ -740,9 +425,7 @@ namespace DxMessaging.Tests.Editor
                 string expected = CapturedFileNames[index];
                 if (!string.Equals(actual, expected, StringComparison.Ordinal))
                 {
-                    throw new InvalidOperationException(
-                        $"Capture {index} produced '{actual}'; expected '{expected}'."
-                    );
+                    throw new InvalidOperationException($"Capture {index} produced '{actual}'; expected '{expected}'.");
                 }
             }
         }
@@ -750,37 +433,20 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void PublishCapturedResultsReturnsPublishedPaths()
         {
-            string testRoot = Path.Combine(
-                "Temp",
-                "DxMessagingCapturePublishSuccess-" + Guid.NewGuid().ToString("N")
-            );
+            string testRoot = Path.Combine("Temp", "DxMessagingCapturePublishSuccess-" + Guid.NewGuid().ToString("N"));
             string stagingDirectory = Path.Combine(testRoot, "staging");
             string outputDirectory = Path.Combine(testRoot, "output");
             try
             {
-                IReadOnlyList<EditorSurfaceCaptureResult> stagedResults = CreateStagedResultSet(
-                    stagingDirectory
-                );
+                IReadOnlyList<EditorSurfaceCaptureResult> stagedResults = CreateStagedResultSet(stagingDirectory);
 
-                IReadOnlyList<EditorSurfaceCaptureResult> publishedResults = PublishCapturedResults(
-                    stagedResults,
-                    stagingDirectory,
-                    outputDirectory
-                );
+                IReadOnlyList<EditorSurfaceCaptureResult> publishedResults = PublishCapturedResults(stagedResults, stagingDirectory, outputDirectory);
 
                 for (int index = 0; index < publishedResults.Count; index++)
                 {
                     string expectedPath = Path.Combine(outputDirectory, CapturedFileNames[index]);
-                    Assert.That(
-                        publishedResults[index].OutputPath,
-                        Is.EqualTo(expectedPath),
-                        $"Published result {index} must name its destination rather than staging."
-                    );
-                    Assert.That(
-                        File.Exists(expectedPath),
-                        Is.True,
-                        $"Published result {index} must exist at {expectedPath}."
-                    );
+                    Assert.That(publishedResults[index].OutputPath, Is.EqualTo(expectedPath), $"Published result {index} must name its destination rather than staging.");
+                    Assert.That(File.Exists(expectedPath), Is.True, $"Published result {index} must exist at {expectedPath}.");
                 }
             }
             finally
@@ -795,53 +461,31 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void PublishCapturedResultsRestoresPriorSetWhenReplacementFails()
         {
-            string testRoot = Path.Combine(
-                "Temp",
-                "DxMessagingCapturePublishRollback-" + Guid.NewGuid().ToString("N")
-            );
+            string testRoot = Path.Combine("Temp", "DxMessagingCapturePublishRollback-" + Guid.NewGuid().ToString("N"));
             string stagingDirectory = Path.Combine(testRoot, "staging");
             string outputDirectory = Path.Combine(testRoot, "output");
             byte[] previousFirst = { 201 };
             try
             {
-                IReadOnlyList<EditorSurfaceCaptureResult> stagedResults = CreateStagedResultSet(
-                    stagingDirectory
-                );
+                IReadOnlyList<EditorSurfaceCaptureResult> stagedResults = CreateStagedResultSet(stagingDirectory);
                 Directory.CreateDirectory(outputDirectory);
                 string firstPath = Path.Combine(outputDirectory, CapturedFileNames[0]);
                 string secondPath = Path.Combine(outputDirectory, CapturedFileNames[1]);
                 File.WriteAllBytes(firstPath, previousFirst);
 
                 int publishAttempt = 0;
-                Assert.Throws<IOException>(
-                    () =>
-                        PublishCapturedResults(
-                            stagedResults,
-                            stagingDirectory,
-                            outputDirectory,
-                            (sourcePath, destinationPath) =>
+                Assert.Throws<IOException>(() => PublishCapturedResults(stagedResults, stagingDirectory, outputDirectory, (sourcePath, destinationPath) =>
+                        {
+                            publishAttempt++;
+                            if (publishAttempt == 3)
                             {
-                                publishAttempt++;
-                                if (publishAttempt == 3)
-                                {
-                                    throw new IOException("Deterministic third-copy failure.");
-                                }
-                                File.Copy(sourcePath, destinationPath, overwrite: true);
+                                throw new IOException("Deterministic third-copy failure.");
                             }
-                        ),
-                    "The injected third-copy failure must abort publishing."
-                );
+                            File.Copy(sourcePath, destinationPath, overwrite: true);
+                        }), "The injected third-copy failure must abort publishing.");
 
-                Assert.That(
-                    File.ReadAllBytes(firstPath),
-                    Is.EqualTo(previousFirst),
-                    "Rollback must restore a destination that existed before publishing."
-                );
-                Assert.That(
-                    File.Exists(secondPath),
-                    Is.False,
-                    "Rollback must remove a destination created before a later copy failed."
-                );
+                Assert.That(File.ReadAllBytes(firstPath), Is.EqualTo(previousFirst), "Rollback must restore a destination that existed before publishing.");
+                Assert.That(File.Exists(secondPath), Is.False, "Rollback must remove a destination created before a later copy failed.");
             }
             finally
             {
@@ -878,14 +522,10 @@ namespace DxMessaging.Tests.Editor
 
             try
             {
-                publishFile ??= (sourcePath, destinationPath) =>
-                    File.Copy(sourcePath, destinationPath, overwrite: true);
+                publishFile ??= (sourcePath, destinationPath) => File.Copy(sourcePath, destinationPath, overwrite: true);
                 foreach (EditorSurfaceCaptureResult result in stagedResults)
                 {
-                    string outputPath = Path.Combine(
-                        outputDirectory,
-                        Path.GetFileName(result.OutputPath)
-                    );
+                    string outputPath = Path.Combine(outputDirectory, Path.GetFileName(result.OutputPath));
                     publishFile(result.OutputPath, outputPath);
                 }
             }
@@ -898,11 +538,7 @@ namespace DxMessaging.Tests.Editor
                         string outputPath = Path.Combine(outputDirectory, fileName);
                         if (existingFileNames.Contains(fileName))
                         {
-                            File.Copy(
-                                Path.Combine(backupDirectory, fileName),
-                                outputPath,
-                                overwrite: true
-                            );
+                            File.Copy(Path.Combine(backupDirectory, fileName), outputPath, overwrite: true);
                         }
                         else if (File.Exists(outputPath))
                         {
@@ -912,11 +548,7 @@ namespace DxMessaging.Tests.Editor
                 }
                 catch (Exception rollbackException)
                 {
-                    throw new AggregateException(
-                        "Capture publishing failed and its prior-file rollback also failed.",
-                        publishException,
-                        rollbackException
-                    );
+                    throw new AggregateException("Capture publishing failed and its prior-file rollback also failed.", publishException, rollbackException);
                 }
 
                 throw;
@@ -941,9 +573,7 @@ namespace DxMessaging.Tests.Editor
             return publishedResults;
         }
 
-        private static IReadOnlyList<EditorSurfaceCaptureResult> CreateStagedResultSet(
-            string stagingDirectory
-        )
+        private static IReadOnlyList<EditorSurfaceCaptureResult> CreateStagedResultSet(string stagingDirectory)
         {
             Directory.CreateDirectory(stagingDirectory);
             List<EditorSurfaceCaptureResult> results = new(CapturedFileNames.Count);
@@ -985,63 +615,42 @@ namespace DxMessaging.Tests.Editor
                 filePath = "Assets/Scripts/HealthComponent.cs",
                 line = 12,
             };
-            MessageAwareComponentInspectorState state =
-                MessageAwareComponentInspectorState.ForMissingBaseCallWarning(
-                    component,
-                    settings,
-                    fullName,
-                    entry,
-                    isFreshThisSession: true
-                );
-            MessageAwareComponentInspectorViewActions actions = new(
-                onOpenScript: _ => { },
-                onIgnoreType: _ => { },
-                onStopIgnoring: _ => { }
+            MessageAwareComponentInspectorState state = MessageAwareComponentInspectorState.ForMissingBaseCallWarning(
+                component,
+                settings,
+                fullName,
+                entry,
+                isFreshThisSession: true
             );
+            MessageAwareComponentInspectorViewActions actions = new(onOpenScript: _ => { }, onIgnoreType: _ => { }, onStopIgnoring: _ => { });
             VisualElement surface = MessageAwareComponentInspectorView.Create(state, actions);
             surface.style.width = 720;
             return Capture(surface, 800, 420, fileName, stagingDirectory);
         }
 
-        private static EditorSurfaceCaptureResult CaptureIgnoredInspector(
-            MessageAwareComponent component,
-            DxMessagingSettings settings,
-            string stagingDirectory
-        )
+        private static EditorSurfaceCaptureResult CaptureIgnoredInspector(MessageAwareComponent component, DxMessagingSettings settings, string stagingDirectory)
         {
-            MessageAwareComponentInspectorState state =
-                MessageAwareComponentInspectorState.ForIgnoredType(
-                    component,
-                    settings,
-                    "Gameplay.OptedOutLifecycleComponent",
-                    isFreshThisSession: true
-                );
-            MessageAwareComponentInspectorViewActions actions = new(
-                onOpenScript: _ => { },
-                onIgnoreType: _ => { },
-                onStopIgnoring: _ => { }
+            MessageAwareComponentInspectorState state = MessageAwareComponentInspectorState.ForIgnoredType(
+                component,
+                settings,
+                "Gameplay.OptedOutLifecycleComponent",
+                isFreshThisSession: true
             );
+            MessageAwareComponentInspectorViewActions actions = new(onOpenScript: _ => { }, onIgnoreType: _ => { }, onStopIgnoring: _ => { });
             VisualElement surface = MessageAwareComponentInspectorView.Create(state, actions);
             surface.style.width = 720;
             return Capture(surface, 800, 320, Dxmsg008FileName, stagingDirectory);
         }
 
-        private static EditorSurfaceCaptureResult CaptureSubscriptions(
-            MessageAwareComponent component,
-            string stagingDirectory
-        )
+        private static EditorSurfaceCaptureResult CaptureSubscriptions(MessageAwareComponent component, string stagingDirectory)
         {
-            MessageAwareComponentSubscriptionsState state =
-                MessageAwareComponentSubscriptionsState.Capture(component);
+            MessageAwareComponentSubscriptionsState state = MessageAwareComponentSubscriptionsState.Capture(component);
             VisualElement surface = MessageAwareComponentSubscriptionsView.Create(state);
             surface.style.width = 720;
             return Capture(surface, 800, 420, InspectorSubscriptionsFileName, stagingDirectory);
         }
 
-        private static EditorSurfaceCaptureResult CaptureCompilerDiagnostic(
-            string stagingDirectory,
-            DocumentationCompilerDiagnosticState state
-        )
+        private static EditorSurfaceCaptureResult CaptureCompilerDiagnostic(string stagingDirectory, DocumentationCompilerDiagnosticState state)
         {
             VisualElement surface = CreateCompilerDiagnosticSurface(state);
             string fileName = state switch
@@ -1053,9 +662,7 @@ namespace DxMessaging.Tests.Editor
             return Capture(surface, 980, 520, fileName, stagingDirectory);
         }
 
-        private static VisualElement CreateCompilerDiagnosticSurface(
-            DocumentationCompilerDiagnosticState state
-        )
+        private static VisualElement CreateCompilerDiagnosticSurface(DocumentationCompilerDiagnosticState state)
         {
             string diagnosticId;
             string severity;
@@ -1069,11 +676,7 @@ namespace DxMessaging.Tests.Editor
                     diagnosticId = "DXMSG002";
                     severity = "ERROR";
                     title = ReadSourceGeneratorDescriptorValue(diagnosticId, "title");
-                    message = string.Format(
-                        CultureInfo.InvariantCulture,
-                        ReadSourceGeneratorDescriptorValue(diagnosticId, "messageFormat"),
-                        "Gameplay.Messages.Heal"
-                    );
+                    message = string.Format(CultureInfo.InvariantCulture, ReadSourceGeneratorDescriptorValue(diagnosticId, "messageFormat"), "Gameplay.Messages.Heal");
                     triggeringCode =
                         "[DxBroadcastMessage]\n"
                         + "[DxTargetedMessage]\n"
@@ -1154,10 +757,7 @@ namespace DxMessaging.Tests.Editor
             DxMessagingEditorTheme.ApplyCompleteBorder(diagnosticCard, accent);
             surface.Add(diagnosticCard);
 
-            Label diagnosticMessage = new($"{diagnosticId}: {message}")
-            {
-                name = CompilerDiagnosticMessageLabelName,
-            };
+            Label diagnosticMessage = new($"{diagnosticId}: {message}") { name = CompilerDiagnosticMessageLabelName };
             diagnosticMessage.style.whiteSpace = WhiteSpace.Normal;
             diagnosticMessage.style.fontSize = 13;
             diagnosticCard.Add(diagnosticMessage);
@@ -1170,10 +770,7 @@ namespace DxMessaging.Tests.Editor
 
             Label code = new(triggeringCode) { name = CompilerDiagnosticCodeLabelName };
             code.AddToClassList(DxMessagingEditorTheme.CardClassName);
-            code.style.unityFont = EditorGUIUtility
-                .GetBuiltinSkin(EditorSkin.Inspector)
-                .GetStyle("TextField")
-                .font;
+            code.style.unityFont = EditorGUIUtility.GetBuiltinSkin(EditorSkin.Inspector).GetStyle("TextField").font;
             code.style.fontSize = 13;
             code.style.whiteSpace = WhiteSpace.Normal;
             code.style.paddingTop = 10;
@@ -1186,47 +783,31 @@ namespace DxMessaging.Tests.Editor
             return surface;
         }
 
-        private static string ReadSourceGeneratorDescriptorValue(
-            string diagnosticId,
-            string valueName
-        )
+        private static string ReadSourceGeneratorDescriptorValue(string diagnosticId, string valueName)
         {
             string[] sourcePaths = Directory.GetFiles(SourceGeneratorDirectoryPath, "*.cs");
             Array.Sort(sourcePaths, StringComparer.Ordinal);
-            string source = string.Join(
-                Environment.NewLine,
-                Array.ConvertAll(sourcePaths, File.ReadAllText)
-            );
+            string source = string.Join(Environment.NewLine, Array.ConvertAll(sourcePaths, File.ReadAllText));
             string idAnchor = $"id: \"{diagnosticId}\"";
             int idIndex = source.IndexOf(idAnchor, StringComparison.Ordinal);
             if (idIndex < 0)
             {
-                throw new InvalidOperationException(
-                    $"The source generator does not declare {diagnosticId}."
-                );
+                throw new InvalidOperationException($"The source generator does not declare {diagnosticId}.");
             }
 
             string valueAnchor = valueName + ": \"";
             int valueIndex = source.IndexOf(valueAnchor, idIndex, StringComparison.Ordinal);
-            int nextIdIndex = source.IndexOf(
-                "id: \"DXMSG",
-                idIndex + idAnchor.Length,
-                StringComparison.Ordinal
-            );
+            int nextIdIndex = source.IndexOf("id: \"DXMSG", idIndex + idAnchor.Length, StringComparison.Ordinal);
             if (valueIndex < 0 || (0 <= nextIdIndex && nextIdIndex < valueIndex))
             {
-                throw new InvalidOperationException(
-                    $"The {diagnosticId} descriptor does not declare {valueName}."
-                );
+                throw new InvalidOperationException($"The {diagnosticId} descriptor does not declare {valueName}.");
             }
 
             int valueStart = valueIndex + valueAnchor.Length;
             int valueEnd = source.IndexOf('"', valueStart);
             if (valueEnd < 0)
             {
-                throw new InvalidOperationException(
-                    $"The {diagnosticId} {valueName} value is not a quoted string."
-                );
+                throw new InvalidOperationException($"The {diagnosticId} {valueName} value is not a quoted string.");
             }
 
             return source.Substring(valueStart, valueEnd - valueStart);
@@ -1244,19 +825,9 @@ namespace DxMessaging.Tests.Editor
                 + "}";
         }
 
-        internal static bool AreProjectSettingsControlsReady(
-            VisualElement surface,
-            DxMessagingSettings settings
-        )
+        internal static bool AreProjectSettingsControlsReady(VisualElement surface, DxMessagingSettings settings)
         {
-            string[] names =
-            {
-                "_diagnosticsTargets",
-                "_diagnosticsStackTraces",
-                "_messageBufferSize",
-                "_suppressDomainReloadWarning",
-                "_baseCallIgnoredTypes",
-            };
+            string[] names = { "_diagnosticsTargets", "_diagnosticsStackTraces", "_messageBufferSize", "_suppressDomainReloadWarning", "_baseCallIgnoredTypes" };
             foreach (string name in names)
             {
                 PropertyField field = surface.Q<PropertyField>(name);
@@ -1265,9 +836,7 @@ namespace DxMessaging.Tests.Editor
                     return false;
                 }
             }
-            EnumFlagsField targets = surface
-                .Q<PropertyField>("_diagnosticsTargets")
-                .Q<EnumFlagsField>();
+            EnumFlagsField targets = surface.Q<PropertyField>("_diagnosticsTargets").Q<EnumFlagsField>();
             Toggle stacks = surface.Q<PropertyField>("_diagnosticsStackTraces").Q<Toggle>();
             IntegerField buffer = surface.Q<PropertyField>("_messageBufferSize").Q<IntegerField>();
             Toggle warning = surface.Q<PropertyField>("_suppressDomainReloadWarning").Q<Toggle>();
@@ -1276,8 +845,7 @@ namespace DxMessaging.Tests.Editor
             IntegerField size = ignored.Q<IntegerField>();
             bool listReady =
                 list != null
-                    ? list.itemsSource != null
-                        && list.itemsSource.Count == settings._baseCallIgnoredTypes.Count
+                    ? list.itemsSource != null && list.itemsSource.Count == settings._baseCallIgnoredTypes.Count
                     : size != null && size.value == settings._baseCallIgnoredTypes.Count;
             return targets != null
                 && Equals(targets.value, settings._diagnosticsTargets)
@@ -1290,11 +858,7 @@ namespace DxMessaging.Tests.Editor
                 && listReady;
         }
 
-        private static IEnumerator CaptureProjectSettings(
-            DxMessagingSettings settings,
-            string stagingDirectory,
-            Action<EditorSurfaceCaptureResult> completed
-        )
+        private static IEnumerator CaptureProjectSettings(DxMessagingSettings settings, string stagingDirectory, Action<EditorSurfaceCaptureResult> completed)
         {
             VisualElement surface = new();
             DxMessagingSettingsProvider.BuildSettingsUi(surface, new SerializedObject(settings));
@@ -1310,10 +874,7 @@ namespace DxMessaging.Tests.Editor
             );
         }
 
-        private static EditorSurfaceCaptureResult CaptureMessageMonitor(
-            string stagingDirectory,
-            DocumentationMessageMonitorState state
-        )
+        private static EditorSurfaceCaptureResult CaptureMessageMonitor(string stagingDirectory, DocumentationMessageMonitorState state)
         {
             VisualElement surface = CreateMessageMonitorSurface(state);
             string fileName;
@@ -1340,9 +901,7 @@ namespace DxMessaging.Tests.Editor
             return Capture(surface, 1200, canvasHeight, fileName, stagingDirectory);
         }
 
-        private static VisualElement CreateMessageMonitorSurface(
-            DocumentationMessageMonitorState state
-        )
+        private static VisualElement CreateMessageMonitorSurface(DocumentationMessageMonitorState state)
         {
             const string stackTrace =
                 "UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)\n"
@@ -1365,8 +924,7 @@ namespace DxMessaging.Tests.Editor
                 new(
                     "EnemySpawned",
                     "Context: Arena/WaveDirector",
-                    "Gameplay.Spawning.WaveDirector:SpawnEnemy () "
-                        + "(at Assets/Scripts/Spawning/WaveDirector.cs:117)",
+                    "Gameplay.Spawning.WaveDirector:SpawnEnemy () " + "(at Assets/Scripts/Spawning/WaveDirector.cs:117)",
                     messageTypeIdentity: "Gameplay.Messages.EnemySpawned, Gameplay",
                     messageTypeDisplayPath: "Gameplay.Messages.EnemySpawned",
                     routeKind: "Broadcast",
@@ -1375,8 +933,7 @@ namespace DxMessaging.Tests.Editor
                 new(
                     "RoundStarted",
                     "Context: none",
-                    "Gameplay.Match.RoundController:BeginRound () "
-                        + "(at Assets/Scripts/Match/RoundController.cs:62)",
+                    "Gameplay.Match.RoundController:BeginRound () " + "(at Assets/Scripts/Match/RoundController.cs:62)",
                     messageTypeIdentity: "Gameplay.Messages.RoundStarted, Gameplay",
                     messageTypeDisplayPath: "Gameplay.Messages.RoundStarted",
                     routeKind: "Untargeted",
@@ -1431,18 +988,12 @@ namespace DxMessaging.Tests.Editor
                     showTargeted: false,
                     showBroadcast: true
                 ),
-                DocumentationMessageMonitorState.SelectedStack => new MessageMonitorViewState(
-                    selectedEntryIndex: 1
-                ),
+                DocumentationMessageMonitorState.SelectedStack => new MessageMonitorViewState(selectedEntryIndex: 1),
                 _ => MessageMonitorViewState.Default,
             };
             DxMessagingMessageMonitorWindow.BuildMonitorUi(
                 surface,
-                new MessageMonitorSnapshot(
-                    diagnosticsEnabled: true,
-                    capacity: 100,
-                    entries: entries
-                ),
+                new MessageMonitorSnapshot(diagnosticsEnabled: true, capacity: 100, entries: entries),
                 viewState,
                 onRefresh: () => { },
                 onCopyExport: _ => { },
@@ -1457,49 +1008,31 @@ namespace DxMessaging.Tests.Editor
                 and host them in equivalent clipped containers for this static documentation frame.
                 The Flow Graph only has a top-level ScrollView and does not need this accommodation.
             */
-            ReplaceNestedScrollViewForCapture(
-                surface.Q<ScrollView>(DxMessagingMessageMonitorWindow.ListName)
-            );
-            VisualElement detailsPane = surface.Q<VisualElement>(
-                DxMessagingMessageMonitorWindow.DetailsPaneName
-            );
+            ReplaceNestedScrollViewForCapture(surface.Q<ScrollView>(DxMessagingMessageMonitorWindow.ListName));
+            VisualElement detailsPane = surface.Q<VisualElement>(DxMessagingMessageMonitorWindow.DetailsPaneName);
             ReplaceNestedScrollViewForCapture(detailsPane?.Query<ScrollView>().First());
             if (state == DocumentationMessageMonitorState.Filtered)
             {
-                ReplaceNestedScrollViewForCapture(
-                    surface.Q<ScrollView>(
-                        DxMessagingMessageMonitorWindow.ActiveFilterTokenScrollViewName
-                    )
-                );
+                ReplaceNestedScrollViewForCapture(surface.Q<ScrollView>(DxMessagingMessageMonitorWindow.ActiveFilterTokenScrollViewName));
             }
             if (state == DocumentationMessageMonitorState.SelectedStack)
             {
-                Foldout stack = surface.Q<Foldout>(
-                    DxMessagingMessageMonitorWindow.DetailsStackFoldoutName
-                );
+                Foldout stack = surface.Q<Foldout>(DxMessagingMessageMonitorWindow.DetailsStackFoldoutName);
                 if (stack == null)
                 {
-                    throw new InvalidOperationException(
-                        "The selected documentation message must expose its stack trace."
-                    );
+                    throw new InvalidOperationException("The selected documentation message must expose its stack trace.");
                 }
                 stack.value = true;
             }
             if (state == DocumentationMessageMonitorState.Components)
             {
-                Foldout componentFoldout = surface.Q<Foldout>(
-                    DxMessagingMessageMonitorWindow.ComponentFoldoutName
-                );
+                Foldout componentFoldout = surface.Q<Foldout>(DxMessagingMessageMonitorWindow.ComponentFoldoutName);
                 if (componentFoldout == null)
                 {
-                    throw new InvalidOperationException(
-                        "The component documentation state must expose Component Diagnostics."
-                    );
+                    throw new InvalidOperationException("The component documentation state must expose Component Diagnostics.");
                 }
                 componentFoldout.value = true;
-                ReplaceNestedScrollViewForCapture(
-                    surface.Q<ScrollView>(DxMessagingMessageMonitorWindow.ComponentScrollViewName)
-                );
+                ReplaceNestedScrollViewForCapture(surface.Q<ScrollView>(DxMessagingMessageMonitorWindow.ComponentScrollViewName));
             }
 
             /*
@@ -1530,9 +1063,7 @@ namespace DxMessaging.Tests.Editor
         {
             if (scrollView?.parent == null)
             {
-                throw new InvalidOperationException(
-                    "The documentation Monitor must expose each expected nested scroll body."
-                );
+                throw new InvalidOperationException("The documentation Monitor must expose each expected nested scroll body.");
             }
 
             VisualElement parent = scrollView.parent;
@@ -1553,10 +1084,7 @@ namespace DxMessaging.Tests.Editor
             parent.Insert(index, clippedContent);
         }
 
-        private static EditorSurfaceCaptureResult CaptureFlowGraph(
-            string stagingDirectory,
-            DocumentationFlowGraphSelection selection
-        )
+        private static EditorSurfaceCaptureResult CaptureFlowGraph(string stagingDirectory, DocumentationFlowGraphSelection selection)
         {
             FlowGraphSnapshot snapshot = CreateFlowGraphSnapshot();
             VisualElement surface = CreateFlowGraphSurface(snapshot, selection);
@@ -1572,22 +1100,14 @@ namespace DxMessaging.Tests.Editor
             return Capture(surface, 1280, surfaceHeight + 80, fileName, stagingDirectory);
         }
 
-        private static VisualElement CreateFlowGraphSurface(
-            FlowGraphSnapshot snapshot,
-            DocumentationFlowGraphSelection selection
-        )
+        private static VisualElement CreateFlowGraphSurface(FlowGraphSnapshot snapshot, DocumentationFlowGraphSelection selection)
         {
             string selectedItemKey = selection switch
             {
                 DocumentationFlowGraphSelection.None => string.Empty,
-                DocumentationFlowGraphSelection.Component =>
-                    DxMessagingFlowGraphWindow.CreateComponentSelectionKey(
-                        snapshot.ComponentNodes[0]
-                    ),
-                DocumentationFlowGraphSelection.Message =>
-                    DxMessagingFlowGraphWindow.CreateMessageSelectionKey(snapshot.MessageNodes[0]),
-                DocumentationFlowGraphSelection.Route =>
-                    DxMessagingFlowGraphWindow.CreateEdgeSelectionKey(snapshot.Edges[0]),
+                DocumentationFlowGraphSelection.Component => DxMessagingFlowGraphWindow.CreateComponentSelectionKey(snapshot.ComponentNodes[0]),
+                DocumentationFlowGraphSelection.Message => DxMessagingFlowGraphWindow.CreateMessageSelectionKey(snapshot.MessageNodes[0]),
+                DocumentationFlowGraphSelection.Route => DxMessagingFlowGraphWindow.CreateEdgeSelectionKey(snapshot.Edges[0]),
                 _ => throw new ArgumentOutOfRangeException(nameof(selection), selection, null),
             };
             VisualElement surface = new();
@@ -1603,14 +1123,10 @@ namespace DxMessaging.Tests.Editor
             );
             if (selection != DocumentationFlowGraphSelection.None)
             {
-                Foldout evidence = surface.Q<Foldout>(
-                    DxMessagingFlowGraphWindow.DetailsEvidenceFoldoutName
-                );
+                Foldout evidence = surface.Q<Foldout>(DxMessagingFlowGraphWindow.DetailsEvidenceFoldoutName);
                 if (evidence == null)
                 {
-                    throw new InvalidOperationException(
-                        $"The {selection} documentation selection must expose its evidence."
-                    );
+                    throw new InvalidOperationException($"The {selection} documentation selection must expose its evidence.");
                 }
                 evidence.value = true;
             }
@@ -1637,26 +1153,8 @@ namespace DxMessaging.Tests.Editor
             const string hudId = "component:hud";
             FlowGraphComponentNode[] components =
             {
-                new(
-                    playerId,
-                    "Arena/Player",
-                    "PlayerMessagingComponent",
-                    activeInHierarchy: true,
-                    listenerCount: 2,
-                    registrationCount: 2,
-                    callCount: 18,
-                    localMessageCount: 3
-                ),
-                new(
-                    hudId,
-                    "UI/HUD",
-                    "HudMessagingComponent",
-                    activeInHierarchy: true,
-                    listenerCount: 2,
-                    registrationCount: 2,
-                    callCount: 15,
-                    localMessageCount: 0
-                ),
+                new(playerId, "Arena/Player", "PlayerMessagingComponent", activeInHierarchy: true, listenerCount: 2, registrationCount: 2, callCount: 18, localMessageCount: 3),
+                new(hudId, "UI/HUD", "HudMessagingComponent", activeInHierarchy: true, listenerCount: 2, registrationCount: 2, callCount: 15, localMessageCount: 0),
             };
             FlowGraphMessageNode[] messages =
             {
@@ -1668,15 +1166,9 @@ namespace DxMessaging.Tests.Editor
                     recentLocalMessageCount: 3,
                     recentTracedDeliveryCount: 6,
                     messageKindName: "TARGETED",
-                    recentEmissionSites: new[]
-                    {
-                        "Gameplay.Combat.DamageSystem.EmitPlayerDamaged () (at Assets/Scripts/Combat/DamageSystem.cs:84)",
-                    },
+                    recentEmissionSites: new[] { "Gameplay.Combat.DamageSystem.EmitPlayerDamaged () (at Assets/Scripts/Combat/DamageSystem.cs:84)" },
                     recentContexts: new[] { "Arena/Player" },
-                    recentContextComponentIds: new Dictionary<string, string>
-                    {
-                        ["Arena/Player"] = playerId,
-                    }
+                    recentContextComponentIds: new Dictionary<string, string> { ["Arena/Player"] = playerId }
                 ),
                 new(
                     "Gameplay.Messages.ScoreChanged",
@@ -1685,10 +1177,7 @@ namespace DxMessaging.Tests.Editor
                     recentGlobalEmissionCount: 5,
                     recentTracedDeliveryCount: 5,
                     messageKindName: "UNTARGETED",
-                    recentEmissionSites: new[]
-                    {
-                        "Gameplay.Scoring.ScoreSystem.EmitScoreChanged () (at Assets/Scripts/Scoring/ScoreSystem.cs:51)",
-                    }
+                    recentEmissionSites: new[] { "Gameplay.Scoring.ScoreSystem.EmitScoreChanged () (at Assets/Scripts/Scoring/ScoreSystem.cs:51)" }
                 ),
             };
             FlowGraphEdge[] edges =
@@ -1748,76 +1237,23 @@ namespace DxMessaging.Tests.Editor
                     traceIds: new long[] { 1034, 1037, 1042 },
                     contextId: 1201
                 ),
-                new(
-                    messages[0].MessageTypeName,
-                    "Arena/WaveDirector",
-                    hudId,
-                    "UI/HUD",
-                    "Broadcast",
-                    recentTracedDeliveryCount: 2,
-                    traceIds: new long[] { 1035, 1041 }
-                ),
-                new(
-                    messages[1].MessageTypeName,
-                    string.Empty,
-                    playerId,
-                    "Arena/Player",
-                    "Untargeted",
-                    recentTracedDeliveryCount: 3,
-                    traceIds: new long[] { 1036, 1038, 1040 }
-                ),
-                new(
-                    messages[1].MessageTypeName,
-                    string.Empty,
-                    hudId,
-                    "UI/HUD",
-                    "Untargeted",
-                    recentTracedDeliveryCount: 2,
-                    traceIds: new long[] { 1039, 1040 }
-                ),
+                new(messages[0].MessageTypeName, "Arena/WaveDirector", hudId, "UI/HUD", "Broadcast", recentTracedDeliveryCount: 2, traceIds: new long[] { 1035, 1041 }),
+                new(messages[1].MessageTypeName, string.Empty, playerId, "Arena/Player", "Untargeted", recentTracedDeliveryCount: 3, traceIds: new long[] { 1036, 1038, 1040 }),
+                new(messages[1].MessageTypeName, string.Empty, hudId, "UI/HUD", "Untargeted", recentTracedDeliveryCount: 2, traceIds: new long[] { 1039, 1040 }),
             };
-            return new FlowGraphSnapshot(
-                components,
-                messages,
-                edges,
-                tracePaths,
-                Array.Empty<string>()
-            );
+            return new FlowGraphSnapshot(components, messages, edges, tracePaths, Array.Empty<string>());
         }
 
-        private static void AssertFlowGraphDetailsTitle(
-            VisualElement surface,
-            string expectedText,
-            string selectionDescription
-        )
+        private static void AssertFlowGraphDetailsTitle(VisualElement surface, string expectedText, string selectionDescription)
         {
             Label title = surface.Q<Label>(DxMessagingFlowGraphWindow.DetailsTitleLabelName);
-            Assert.That(
-                title,
-                Is.Not.Null,
-                $"The selected {selectionDescription} must render a Flow Graph details pane."
-            );
-            Assert.That(
-                title.text,
-                Does.Contain(expectedText),
-                $"The {selectionDescription} details title must identify the selected graph item."
-            );
+            Assert.That(title, Is.Not.Null, $"The selected {selectionDescription} must render a Flow Graph details pane.");
+            Assert.That(title.text, Does.Contain(expectedText), $"The {selectionDescription} details title must identify the selected graph item.");
         }
 
-        private static EditorSurfaceCaptureResult Capture(
-            VisualElement surface,
-            int canvasWidth,
-            int canvasHeight,
-            string fileName,
-            string stagingDirectory
-        )
+        private static EditorSurfaceCaptureResult Capture(VisualElement surface, int canvasWidth, int canvasHeight, string fileName, string stagingDirectory)
         {
-            return EditorSurfaceCapture.Capture(
-                surface,
-                canvasWidth,
-                canvasHeight,
-                Path.Combine(stagingDirectory, fileName)
-            );
+            return EditorSurfaceCapture.Capture(surface, canvasWidth, canvasHeight, Path.Combine(stagingDirectory, fileName));
         }
 
         private enum DocumentationFlowGraphSelection

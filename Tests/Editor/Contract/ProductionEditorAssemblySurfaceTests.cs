@@ -14,12 +14,7 @@ namespace DxMessaging.Tests.Editor.Contract
         [Test]
         public void EditorAssemblyContainsNoTestOnlyEntryPoints()
         {
-            Assert.That(
-                ProductionAssemblySurfaceTests.FindTestOnlyEntryPoints(
-                    typeof(DxMessagingEditorInitializer).Assembly
-                ),
-                Is.Empty
-            );
+            Assert.That(ProductionAssemblySurfaceTests.FindTestOnlyEntryPoints(typeof(DxMessagingEditorInitializer).Assembly), Is.Empty);
         }
 
         [Test]
@@ -29,21 +24,11 @@ namespace DxMessaging.Tests.Editor.Contract
                 .Assembly.GetTypes()
                 .Where(type => !type.IsDefined(typeof(CompilerGeneratedAttribute), inherit: false))
                 .SelectMany(type =>
-                    type.GetFields(
-                            BindingFlags.Static
-                                | BindingFlags.Public
-                                | BindingFlags.NonPublic
-                                | BindingFlags.DeclaredOnly
-                        )
+                    type.GetFields(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)
                         .Where(field =>
                             !field.IsInitOnly
                             && typeof(Delegate).IsAssignableFrom(field.FieldType)
-                            && !type.GetEvents(
-                                    BindingFlags.Static
-                                        | BindingFlags.Public
-                                        | BindingFlags.NonPublic
-                                        | BindingFlags.DeclaredOnly
-                                )
+                            && !type.GetEvents(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)
                                 .Any(signal => signal.Name == field.Name)
                         )
                 )

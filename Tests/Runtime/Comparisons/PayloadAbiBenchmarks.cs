@@ -82,11 +82,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             );
             PayloadAbiObservation observation = state.Observe();
             AssertZeroAllocation(workload, measurement.GcAllocations, measurement.GcAllocatedBytes);
-            AssertObservation(
-                workload,
-                observation,
-                expectedEmits: measurement.TotalEmittedOperations + BenchmarkProtocol.WarmupEmits
-            );
+            AssertObservation(workload, observation, expectedEmits: measurement.TotalEmittedOperations + BenchmarkProtocol.WarmupEmits);
             PayloadAbiResult result = PayloadAbiResult.Empty(workload, measurement, observation);
             Debug.Log(result.ToStructuredLog());
             TestContext.Out.WriteLine(PayloadAbiResult.CsvHeader);
@@ -117,53 +113,20 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 }
             );
 
-            AllocationProbe.AllocationSample byValueAllocation = AllocationProbe.MeasureWithBytes(
-                () =>
-                    byValueState.EmitMany(BenchmarkProtocol.BatchSize)
-            );
-            AllocationProbe.AllocationSample readonlyAllocation = AllocationProbe.MeasureWithBytes(
-                () =>
-                    readonlyState.EmitMany(BenchmarkProtocol.BatchSize)
-            );
+            AllocationProbe.AllocationSample byValueAllocation = AllocationProbe.MeasureWithBytes(() => byValueState.EmitMany(BenchmarkProtocol.BatchSize));
+            AllocationProbe.AllocationSample readonlyAllocation = AllocationProbe.MeasureWithBytes(() => readonlyState.EmitMany(BenchmarkProtocol.BatchSize));
             AssertZeroAllocation(byValue, byValueAllocation.Allocations, byValueAllocation.Bytes);
-            AssertZeroAllocation(
-                readonlyIn,
-                readonlyAllocation.Allocations,
-                readonlyAllocation.Bytes
-            );
+            AssertZeroAllocation(readonlyIn, readonlyAllocation.Allocations, readonlyAllocation.Bytes);
 
-            long byValueTimedOperations = measurementCase.ReadonlyFirst
-                ? measurement.Second.TotalOperations
-                : measurement.First.TotalOperations;
-            long readonlyTimedOperations = measurementCase.ReadonlyFirst
-                ? measurement.First.TotalOperations
-                : measurement.Second.TotalOperations;
-            AssertObservation(
-                byValue,
-                byValueState.Observe(),
-                BenchmarkProtocol.WarmupEmits + byValueTimedOperations + BenchmarkProtocol.BatchSize
-            );
-            AssertObservation(
-                readonlyIn,
-                readonlyState.Observe(),
-                BenchmarkProtocol.WarmupEmits
-                    + readonlyTimedOperations
-                    + BenchmarkProtocol.BatchSize
-            );
+            long byValueTimedOperations = measurementCase.ReadonlyFirst ? measurement.Second.TotalOperations : measurement.First.TotalOperations;
+            long readonlyTimedOperations = measurementCase.ReadonlyFirst ? measurement.First.TotalOperations : measurement.Second.TotalOperations;
+            AssertObservation(byValue, byValueState.Observe(), BenchmarkProtocol.WarmupEmits + byValueTimedOperations + BenchmarkProtocol.BatchSize);
+            AssertObservation(readonlyIn, readonlyState.Observe(), BenchmarkProtocol.WarmupEmits + readonlyTimedOperations + BenchmarkProtocol.BatchSize);
 
-            IReadOnlyList<double> normalizedCycles = NormalizeCycles(
-                measurement,
-                measurementCase.ReadonlyFirst
-            );
-            double readonlyToByValueRatio = measurementCase.ReadonlyFirst
-                ? measurement.FirstToSecondRatio
-                : 1d / measurement.FirstToSecondRatio;
-            double byValueRate = measurementCase.ReadonlyFirst
-                ? measurement.Second.OperationsPerSecond
-                : measurement.First.OperationsPerSecond;
-            double readonlyRate = measurementCase.ReadonlyFirst
-                ? measurement.First.OperationsPerSecond
-                : measurement.Second.OperationsPerSecond;
+            IReadOnlyList<double> normalizedCycles = NormalizeCycles(measurement, measurementCase.ReadonlyFirst);
+            double readonlyToByValueRatio = measurementCase.ReadonlyFirst ? measurement.FirstToSecondRatio : 1d / measurement.FirstToSecondRatio;
+            double byValueRate = measurementCase.ReadonlyFirst ? measurement.Second.OperationsPerSecond : measurement.First.OperationsPerSecond;
+            double readonlyRate = measurementCase.ReadonlyFirst ? measurement.First.OperationsPerSecond : measurement.Second.OperationsPerSecond;
             PayloadAbiResult byValueResult = PayloadAbiResult.Paired(
                 byValue,
                 byValueRate,
@@ -193,70 +156,33 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             TestContext.Out.WriteLine(readonlyResult.ToCsvRow());
         }
 
-        private static void AssertObservation(
-            PayloadAbiWorkload workload,
-            PayloadAbiObservation observation,
-            long expectedEmits
-        )
+        private static void AssertObservation(PayloadAbiWorkload workload, PayloadAbiObservation observation, long expectedEmits)
         {
-            Assert.AreEqual(
-                (long)workload.HandlerCount * expectedEmits,
-                observation.Progress,
-                $"[{workload.Key}] Every emit must preserve the declared callback fan-out."
-            );
-            Assert.AreEqual(
-                workload.HandlerCount,
-                observation.LiveRegistrations,
-                $"[{workload.Key}] The live registration topology changed during measurement."
-            );
-            Assert.AreEqual(
-                workload.HandlerCount == 0 ? 0 : 1,
-                observation.OccupiedTypeSlots,
-                $"[{workload.Key}] The workload must own exactly its declared message-type slot."
-            );
-            Assert.IsFalse(
-                observation.BusDiagnostics,
-                $"[{workload.Key}] Bus diagnostics must stay off."
-            );
-            Assert.IsFalse(
-                observation.TokenDiagnostics,
-                $"[{workload.Key}] Token diagnostics must stay off."
-            );
+            Assert.AreEqual((long)workload.HandlerCount * expectedEmits, observation.Progress, $"[{workload.Key}] Every emit must preserve the declared callback fan-out.");
+            Assert.AreEqual(workload.HandlerCount, observation.LiveRegistrations, $"[{workload.Key}] The live registration topology changed during measurement.");
+            Assert.AreEqual(workload.HandlerCount == 0 ? 0 : 1, observation.OccupiedTypeSlots, $"[{workload.Key}] The workload must own exactly its declared message-type slot.");
+            Assert.IsFalse(observation.BusDiagnostics, $"[{workload.Key}] Bus diagnostics must stay off.");
+            Assert.IsFalse(observation.TokenDiagnostics, $"[{workload.Key}] Token diagnostics must stay off.");
         }
 
-        private static void AssertZeroAllocation(
-            PayloadAbiWorkload workload,
-            long allocations,
-            long bytes
-        )
+        private static void AssertZeroAllocation(PayloadAbiWorkload workload, long allocations, long bytes)
         {
             if (allocations != AllocationProbe.Unmeasured)
             {
-                Assert.Zero(
-                    allocations,
-                    $"[{workload.Key}] Warm steady-state dispatch allocated managed objects."
-                );
+                Assert.Zero(allocations, $"[{workload.Key}] Warm steady-state dispatch allocated managed objects.");
             }
             if (bytes != AllocationProbe.Unmeasured)
             {
-                Assert.Zero(
-                    bytes,
-                    $"[{workload.Key}] Warm steady-state dispatch allocated managed bytes."
-                );
+                Assert.Zero(bytes, $"[{workload.Key}] Warm steady-state dispatch allocated managed bytes.");
             }
         }
 
-        private static IReadOnlyList<double> NormalizeCycles(
-            PairedBenchmarkMeasurement measurement,
-            bool readonlyFirst
-        )
+        private static IReadOnlyList<double> NormalizeCycles(PairedBenchmarkMeasurement measurement, bool readonlyFirst)
         {
             double[] ratios = new double[measurement.CycleRatios.Count];
             for (int index = 0; index < ratios.Length; ++index)
             {
-                ratios[index] = readonlyFirst
-                    ? measurement.CycleRatios[index]
-                    : 1d / measurement.CycleRatios[index];
+                ratios[index] = readonlyFirst ? measurement.CycleRatios[index] : 1d / measurement.CycleRatios[index];
             }
             return Array.AsReadOnly(ratios);
         }
@@ -265,39 +191,17 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         {
             return workload.Payload switch
             {
-                PayloadAbiPayload.Reference => new PayloadAbiState<ReferencePayload>(
-                    workload,
-                    new ReferencePayload()
-                ),
-                PayloadAbiPayload.CanonicalStruct => new PayloadAbiState<ComparisonStructPayload>(
-                    workload,
-                    new ComparisonStructPayload(1)
-                ),
-                PayloadAbiPayload.Readonly0 => new PayloadAbiState<Readonly0Payload>(
-                    workload,
-                    default
-                ),
-                PayloadAbiPayload.Readonly16 => new PayloadAbiState<Readonly16Payload>(
-                    workload,
-                    default
-                ),
-                PayloadAbiPayload.Readonly64 => new PayloadAbiState<Readonly64Payload>(
-                    workload,
-                    default
-                ),
-                PayloadAbiPayload.Readonly256 => new PayloadAbiState<Readonly256Payload>(
-                    workload,
-                    default
-                ),
+                PayloadAbiPayload.Reference => new PayloadAbiState<ReferencePayload>(workload, new ReferencePayload()),
+                PayloadAbiPayload.CanonicalStruct => new PayloadAbiState<ComparisonStructPayload>(workload, new ComparisonStructPayload(1)),
+                PayloadAbiPayload.Readonly0 => new PayloadAbiState<Readonly0Payload>(workload, default),
+                PayloadAbiPayload.Readonly16 => new PayloadAbiState<Readonly16Payload>(workload, default),
+                PayloadAbiPayload.Readonly64 => new PayloadAbiState<Readonly64Payload>(workload, default),
+                PayloadAbiPayload.Readonly256 => new PayloadAbiState<Readonly256Payload>(workload, default),
                 PayloadAbiPayload.Word1 => new PayloadAbiState<Word1Payload>(workload, default),
                 PayloadAbiPayload.Word2 => new PayloadAbiState<Word2Payload>(workload, default),
                 PayloadAbiPayload.Word4 => new PayloadAbiState<Word4Payload>(workload, default),
                 PayloadAbiPayload.Word8 => new PayloadAbiState<Word8Payload>(workload, default),
-                _ => throw new ArgumentOutOfRangeException(
-                    nameof(workload),
-                    workload.Payload,
-                    null
-                ),
+                _ => throw new ArgumentOutOfRangeException(nameof(workload), workload.Payload, null),
             };
         }
 
@@ -332,10 +236,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
 
             public PayloadAbiState(PayloadAbiWorkload workload, T message)
             {
-                _diagnostics = new DiagnosticsScope(
-                    DiagnosticsTarget.Off,
-                    diagnosticsStackTraces: false
-                );
+                _diagnostics = new DiagnosticsScope(DiagnosticsTarget.Off, diagnosticsStackTraces: false);
                 _registry = BenchmarkProtocol.IsolateIdleSweepRegistry();
                 MessageRegistrationToken token = null;
                 try
@@ -343,10 +244,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                     _message = message;
                     _sink = new CounterSink();
                     _bus = new MessageBus { DiagnosticsMode = false };
-                    _handler = new MessageHandler(new InstanceId(0x5041_0001), _bus)
-                    {
-                        active = true,
-                    };
+                    _handler = new MessageHandler(new InstanceId(0x5041_0001), _bus) { active = true };
                     token = MessageRegistrationToken.Create(_handler, _bus);
                     _token = token;
                     _token.DiagnosticMode = false;
@@ -431,20 +329,12 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 for (int index = 0; index < delegates.Length; ++index)
                 {
                     MonoReceiver<T> receiver = new(_sink);
-                    delegates[index] = RegisterReceiver(
-                        workload.Abi,
-                        receiver.HandleValue,
-                        receiver.HandleFast
-                    );
+                    delegates[index] = RegisterReceiver(workload.Abi, receiver.HandleValue, receiver.HandleFast);
                 }
                 return (delegates, 1);
             }
 
-            private Delegate RegisterReceiver(
-                PayloadAbiKind abi,
-                Action<T> byValue,
-                MessageHandler.FastHandler<T> readonlyIn
-            )
+            private Delegate RegisterReceiver(PayloadAbiKind abi, Action<T> byValue, MessageHandler.FastHandler<T> readonlyIn)
             {
                 switch (abi)
                 {
@@ -459,9 +349,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 }
             }
 
-            private (Delegate[] Delegates, int ReceiverTypes) RegisterHeterogeneous(
-                PayloadAbiKind abi
-            )
+            private (Delegate[] Delegates, int ReceiverTypes) RegisterHeterogeneous(PayloadAbiKind abi)
             {
                 HeterogeneousReceiver<T>[] receivers =
                 {
@@ -485,11 +373,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 Delegate[] delegates = new Delegate[receivers.Length];
                 for (int index = 0; index < receivers.Length; ++index)
                 {
-                    delegates[index] = RegisterReceiver(
-                        abi,
-                        receivers[index].HandleValue,
-                        receivers[index].HandleFast
-                    );
+                    delegates[index] = RegisterReceiver(abi, receivers[index].HandleValue, receivers[index].HandleFast);
                 }
                 HashSet<Type> receiverTypes = new();
                 for (int index = 0; index < receivers.Length; ++index)
@@ -715,14 +599,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
 
     public sealed class PayloadAbiWorkload
     {
-        internal PayloadAbiWorkload(
-            PayloadAbiPayload payload,
-            PayloadAbiShape shape,
-            PayloadAbiKind abi,
-            int logicalBytes,
-            int physicalBytes,
-            bool locator
-        )
+        internal PayloadAbiWorkload(PayloadAbiPayload payload, PayloadAbiShape shape, PayloadAbiKind abi, int logicalBytes, int physicalBytes, bool locator)
         {
             Payload = payload;
             Shape = shape;
@@ -749,11 +626,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
 
     public sealed class PayloadAbiMeasurementCase
     {
-        internal PayloadAbiMeasurementCase(
-            PayloadAbiWorkload first,
-            PayloadAbiWorkload second,
-            bool readonlyFirst
-        )
+        internal PayloadAbiMeasurementCase(PayloadAbiWorkload first, PayloadAbiWorkload second, bool readonlyFirst)
         {
             First = first;
             Second = second;
@@ -765,10 +638,8 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         public bool ReadonlyFirst { get; }
         public bool IsEmptyRoute => Second == null;
         public PayloadAbiWorkload ByValue => First.Abi == PayloadAbiKind.ByValue ? First : Second;
-        public PayloadAbiWorkload ReadonlyIn =>
-            First.Abi == PayloadAbiKind.ReadonlyIn ? First : Second;
-        public string Key =>
-            IsEmptyRoute ? First.Key : $"PayloadAbiPair_{First.Payload}_{First.Shape}";
+        public PayloadAbiWorkload ReadonlyIn => First.Abi == PayloadAbiKind.ReadonlyIn ? First : Second;
+        public string Key => IsEmptyRoute ? First.Key : $"PayloadAbiPair_{First.Payload}_{First.Shape}";
 
         public override string ToString() => Key;
     }
@@ -795,76 +666,24 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             foreach (PayloadAbiPayload payload in primary)
             {
                 (int logical, int physical) = Sizes(payload);
-                PayloadAbiWorkload empty = new(
-                    payload,
-                    PayloadAbiShape.EmptyRoute,
-                    PayloadAbiKind.None,
-                    logical,
-                    physical,
-                    false
-                );
+                PayloadAbiWorkload empty = new(payload, PayloadAbiShape.EmptyRoute, PayloadAbiKind.None, logical, physical, false);
                 workloads.Add(empty);
                 measurements.Add(new PayloadAbiMeasurementCase(empty, null, false));
-                foreach (
-                    PayloadAbiShape shape in new[]
-                    {
-                        PayloadAbiShape.OneHandler,
-                        PayloadAbiShape.MonomorphicSixteen,
-                        PayloadAbiShape.HeterogeneousSixteen,
-                    }
-                )
+                foreach (PayloadAbiShape shape in new[] { PayloadAbiShape.OneHandler, PayloadAbiShape.MonomorphicSixteen, PayloadAbiShape.HeterogeneousSixteen })
                 {
-                    PayloadAbiWorkload byValue = new(
-                        payload,
-                        shape,
-                        PayloadAbiKind.ByValue,
-                        logical,
-                        physical,
-                        false
-                    );
-                    PayloadAbiWorkload readonlyIn = new(
-                        payload,
-                        shape,
-                        PayloadAbiKind.ReadonlyIn,
-                        logical,
-                        physical,
-                        false
-                    );
+                    PayloadAbiWorkload byValue = new(payload, shape, PayloadAbiKind.ByValue, logical, physical, false);
+                    PayloadAbiWorkload readonlyIn = new(payload, shape, PayloadAbiKind.ReadonlyIn, logical, physical, false);
                     workloads.Add(byValue);
                     workloads.Add(readonlyIn);
                     bool readonlyFirst = pairIndex++ % 2 == 1;
-                    measurements.Add(
-                        new PayloadAbiMeasurementCase(byValue, readonlyIn, readonlyFirst)
-                    );
+                    measurements.Add(new PayloadAbiMeasurementCase(byValue, readonlyIn, readonlyFirst));
                 }
             }
-            foreach (
-                PayloadAbiPayload payload in new[]
-                {
-                    PayloadAbiPayload.Word1,
-                    PayloadAbiPayload.Word2,
-                    PayloadAbiPayload.Word4,
-                    PayloadAbiPayload.Word8,
-                }
-            )
+            foreach (PayloadAbiPayload payload in new[] { PayloadAbiPayload.Word1, PayloadAbiPayload.Word2, PayloadAbiPayload.Word4, PayloadAbiPayload.Word8 })
             {
                 (int logical, int physical) = Sizes(payload);
-                PayloadAbiWorkload byValue = new(
-                    payload,
-                    PayloadAbiShape.OneHandler,
-                    PayloadAbiKind.ByValue,
-                    logical,
-                    physical,
-                    true
-                );
-                PayloadAbiWorkload readonlyIn = new(
-                    payload,
-                    PayloadAbiShape.OneHandler,
-                    PayloadAbiKind.ReadonlyIn,
-                    logical,
-                    physical,
-                    true
-                );
+                PayloadAbiWorkload byValue = new(payload, PayloadAbiShape.OneHandler, PayloadAbiKind.ByValue, logical, physical, true);
+                PayloadAbiWorkload readonlyIn = new(payload, PayloadAbiShape.OneHandler, PayloadAbiKind.ReadonlyIn, logical, physical, true);
                 workloads.Add(byValue);
                 workloads.Add(readonlyIn);
                 bool readonlyFirst = pairIndex++ % 2 == 1;
@@ -992,11 +811,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         public IReadOnlyList<double> CycleRatios { get; }
         public long Progress { get; }
 
-        internal static PayloadAbiResult Empty(
-            PayloadAbiWorkload workload,
-            BenchmarkMeasurement measurement,
-            PayloadAbiObservation observation
-        ) =>
+        internal static PayloadAbiResult Empty(PayloadAbiWorkload workload, BenchmarkMeasurement measurement, PayloadAbiObservation observation) =>
             new(
                 workload,
                 measurement.OperationsPerSecond,
@@ -1020,19 +835,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             double ratio,
             double spread,
             IReadOnlyList<double> cycles
-        ) =>
-            new(
-                workload,
-                rate,
-                timedOperations,
-                allocation.Allocations,
-                allocation.Bytes,
-                readonlyFirst,
-                ratio,
-                spread,
-                cycles,
-                observation.Progress
-            );
+        ) => new(workload, rate, timedOperations, allocation.Allocations, allocation.Bytes, readonlyFirst, ratio, spread, cycles, observation.Progress);
 
         public string ToCsvRow() =>
             string.Join(
@@ -1058,8 +861,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         public string ToStructuredLog() =>
             $"PERF_PAYLOAD_ABI scenario={Workload.Key} payload={Workload.Payload} logicalBytes={Workload.LogicalBytes} physicalBytes={Workload.PhysicalBytes} handlers={Workload.HandlerCount} shape={Workload.Shape} abi={Workload.Abi} timedOperations={TimedOperations} operationsPerSecond={Format(OperationsPerSecond)} gcAllocations={GcAllocations} gcAllocatedBytes={GcAllocatedBytes} readonlyFirst={ReadonlyFirst.ToString().ToLowerInvariant()} readonlyToByValueRatio={Format(ReadonlyToByValueRatio)} cycleRatioSpreadPercent={Format(CycleRatioSpreadPercent)} cycleRatios={FormatCycles(CycleRatios)} progress={Progress}";
 
-        private static string Format(double value) =>
-            value.ToString("R", CultureInfo.InvariantCulture);
+        private static string Format(double value) => value.ToString("R", CultureInfo.InvariantCulture);
 
         private static string FormatCycles(IReadOnlyList<double> cycles)
         {

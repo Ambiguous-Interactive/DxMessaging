@@ -84,10 +84,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 Owner one occupies (ProbeMessage, priority 0), then fully deregisters so the priority
                 bucket is removed.
             */
-            MessageBusRegistration ownerOneRegistration = bus.RegisterUntargeted<ProbeMessage>(
-                ownerOne,
-                priority: 0
-            );
+            MessageBusRegistration ownerOneRegistration = bus.RegisterUntargeted<ProbeMessage>(ownerOne, priority: 0);
             bus.Deregister<ProbeMessage>(in ownerOneRegistration);
 
             /*
@@ -96,12 +93,7 @@ namespace DxMessaging.Tests.Editor.Contract
             */
             int ownerTwoInvocations = 0;
             Action<ProbeMessage> ownerTwoHandler = _ => ownerTwoInvocations++;
-            _ = ownerTwo.RegisterUntargetedMessageHandler<ProbeMessage>(
-                ownerTwoHandler,
-                ownerTwoHandler,
-                priority: 0,
-                messageBus: bus
-            );
+            _ = ownerTwo.RegisterUntargetedMessageHandler<ProbeMessage>(ownerTwoHandler, ownerTwoHandler, priority: 0, messageBus: bus);
 
             /*
                 Stale over-deregistration with owner one's old handle: the handler is not in the new
@@ -115,8 +107,7 @@ namespace DxMessaging.Tests.Editor.Contract
             Assert.AreEqual(
                 1,
                 ownerTwoInvocations,
-                "A stale over-deregistration of a handle whose (type, priority) slot was reused by a "
-                    + "different handler must leave the live handler fully functional."
+                "A stale over-deregistration of a handle whose (type, priority) slot was reused by a " + "different handler must leave the live handler fully functional."
             );
 
             ownerOne.active = false;
@@ -130,17 +121,11 @@ namespace DxMessaging.Tests.Editor.Contract
             MessageHandler ownerOne = new MessageHandler(OwnerOne, bus) { active = true };
             MessageHandler ownerTwo = new MessageHandler(OwnerTwo, bus) { active = true };
 
-            MessageBusRegistration ownerOneRegistration = bus.RegisterUntargeted<ProbeMessage>(
-                ownerOne,
-                priority: 0
-            );
+            MessageBusRegistration ownerOneRegistration = bus.RegisterUntargeted<ProbeMessage>(ownerOne, priority: 0);
             bus.Deregister<ProbeMessage>(in ownerOneRegistration);
 
             // A second bus-level registration so we hold the live bucket's handle for reflection.
-            MessageBusRegistration ownerTwoRegistration = bus.RegisterUntargeted<ProbeMessage>(
-                ownerTwo,
-                priority: 0
-            );
+            MessageBusRegistration ownerTwoRegistration = bus.RegisterUntargeted<ProbeMessage>(ownerTwo, priority: 0);
 
             long versionBefore = ReadCapturedBucketVersion(ownerTwoRegistration, priority: 0);
             Assert.That(
@@ -161,8 +146,7 @@ namespace DxMessaging.Tests.Editor.Contract
             Assert.AreEqual(
                 versionBefore,
                 versionAfter,
-                "The cold deregister fallback (handler not found) is a no-op classification path and "
-                    + "must not bump the version of the live bucket now occupying that priority."
+                "The cold deregister fallback (handler not found) is a no-op classification path and " + "must not bump the version of the live bucket now occupying that priority."
             );
 
             ownerOne.active = false;
@@ -175,18 +159,11 @@ namespace DxMessaging.Tests.Editor.Contract
         /// (<see cref="MessageBusRegistration"/>'s internal <c>capturedPrimary</c> field). Returns
         /// -1 if any step of the (intentionally private) layout could not be navigated.
         /// </summary>
-        private static long ReadCapturedBucketVersion(
-            MessageBusRegistration registration,
-            int priority
-        )
+        private static long ReadCapturedBucketVersion(MessageBusRegistration registration, int priority)
         {
-            const BindingFlags flags =
-                BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
 
-            FieldInfo capturedPrimaryField = typeof(MessageBusRegistration).GetField(
-                "capturedPrimary",
-                flags
-            );
+            FieldInfo capturedPrimaryField = typeof(MessageBusRegistration).GetField("capturedPrimary", flags);
             if (capturedPrimaryField == null)
             {
                 return -1;
@@ -199,10 +176,7 @@ namespace DxMessaging.Tests.Editor.Contract
             }
 
             FieldInfo handlersField = perTypeCache.GetType().GetField("handlers", flags);
-            if (
-                handlersField == null
-                || !(handlersField.GetValue(perTypeCache) is System.Collections.IDictionary buckets)
-            )
+            if (handlersField == null || !(handlersField.GetValue(perTypeCache) is System.Collections.IDictionary buckets))
             {
                 return -1;
             }

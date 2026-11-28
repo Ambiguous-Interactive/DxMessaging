@@ -28,14 +28,8 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         [Test]
         [TestCase(ComparisonScenario.GlobalToOneSubscriber, 1)]
         [TestCase(ComparisonScenario.PriorityOrderedDispatch, 4)]
-        [TestCase(
-            ComparisonScenario.GlobalToManySubscribers,
-            ComparisonScenarios.FanOutSubscribers
-        )]
-        public void RunReconcilesProgressMarkerIncludingAllocationProbeBatch(
-            ComparisonScenario scenario,
-            int fanOut
-        )
+        [TestCase(ComparisonScenario.GlobalToManySubscribers, ComparisonScenarios.FanOutSubscribers)]
+        public void RunReconcilesProgressMarkerIncludingAllocationProbeBatch(ComparisonScenario scenario, int fanOut)
         {
             Assert.DoesNotThrow(
                 () => ComparisonHarness.Run(() => new CountingFanOutBridge(fanOut), scenario),
@@ -50,10 +44,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         public void RunRejectsNonCanonicalFanOutBeforeMeasurement()
         {
             AssertionException exception = Assert.Throws<AssertionException>(() =>
-                ComparisonHarness.Run(
-                    () => new CountingFanOutBridge(fanOut: 2),
-                    ComparisonScenario.GlobalToOneSubscriber
-                )
+                ComparisonHarness.Run(() => new CountingFanOutBridge(fanOut: 2), ComparisonScenario.GlobalToOneSubscriber)
             );
 
             StringAssert.Contains("requires the canonical fan-out 1", exception.Message);
@@ -90,8 +81,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
 
             public long InvocationsPerOperation(ComparisonScenario scenario) => _fanOut;
 
-            public Type DispatchedPayloadType(ComparisonScenario scenario) =>
-                typeof(ComparisonStructPayload);
+            public Type DispatchedPayloadType(ComparisonScenario scenario) => typeof(ComparisonStructPayload);
 
             public void Dispose() { }
         }

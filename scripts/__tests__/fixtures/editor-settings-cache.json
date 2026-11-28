@@ -1076,21 +1076,13 @@
   "mutations": [
     ["source-proof.json", "sourceCommit", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
     ["source-proof.json", "allOtherTrackedUnityAssetsIdentical", false],
-    [
-      "source-proof.json",
-      "overlay.0.candidateSha256",
-      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    ],
+    ["source-proof.json", "overlay.0.candidateSha256", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
     ["source-proof.json", "packageRestored.0.matchesOriginal", false],
     ["freshness.json", "assemblyUtc", "2026-10-07T16:59:00Z"],
     ["freshness.json", "assemblyUtc", "invalid"],
     ["samples.json", "rows.0.sameMeta", false],
     ["samples.json", "assemblies.0.name", "wrong"],
-    [
-      "restored-samples.json",
-      "files.0.sha256",
-      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    ],
+    ["restored-samples.json", "files.0.sha256", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
     ["restoration.json", "newFixtureLoaded", true],
     ["preflight.json", "frameworkActive", true],
     ["full.cleanup.json", "scenes.0.dirty", true],

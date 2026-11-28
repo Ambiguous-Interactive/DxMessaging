@@ -83,31 +83,10 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             foreach (bool inside in new[] { false, true })
             foreach (bool diagnostics in new[] { false, true })
             {
-                bool fastLane =
-                    remove == (hold ^ reset)
-                    && trim == (reset ^ warm)
-                    && inside == (hold ^ warm)
-                    && diagnostics == (hold ^ reset ^ warm);
+                bool fastLane = remove == (hold ^ reset) && trim == (reset ^ warm) && inside == (hold ^ warm) && diagnostics == (hold ^ reset ^ warm);
                 // Preserve the two reported Mono failures in the representative lane.
-                fastLane |=
-                    !hold
-                    && !reset
-                    && inside
-                    && (
-                        (custom && !warm && !remove && !trim && diagnostics)
-                        || (!custom && warm && remove && trim && !diagnostics)
-                    );
-                yield return new TestCaseData(
-                    scenario,
-                    custom,
-                    hold,
-                    reset,
-                    warm,
-                    remove,
-                    trim,
-                    inside,
-                    diagnostics
-                )
+                fastLane |= !hold && !reset && inside && ((custom && !warm && !remove && !trim && diagnostics) || (!custom && warm && remove && trim && !diagnostics));
+                yield return new TestCaseData(scenario, custom, hold, reset, warm, remove, trim, inside, diagnostics)
                     .SetName(
                         $"InterceptorResetRetention_{scenario}_custom{custom}_hold{hold}_reset{reset}_warm{warm}_remove{remove}_trim{trim}_inside{inside}_diagnostics{diagnostics}"
                     )
@@ -138,17 +117,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             bool diagnostics
         )
         {
-            State state = new State(
-                scenario,
-                custom,
-                hold,
-                reset,
-                warm,
-                remove,
-                trim,
-                inside,
-                diagnostics
-            );
+            State state = new State(scenario, custom, hold, reset, warm, remove, trim, inside, diagnostics);
             using (LeakWatcher watcher = LeakWatcher.WatchWithSlots(state.Bus, label: state.Label))
             {
                 try
@@ -163,12 +132,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 }
             }
 
-            if (
-                state.PeerAlive != (!remove && (custom || !reset))
-                || state.AnchorAlive != (hold || custom || !reset)
-                || state.FinalPeerAlive
-                || state.FinalAnchorAlive
-            )
+            if (state.PeerAlive != (!remove && (custom || !reset)) || state.AnchorAlive != (hold || custom || !reset) || state.FinalPeerAlive || state.FinalAnchorAlive)
             {
                 TestContext.WriteLine(state.BuildReleasedOwnershipReport());
             }
@@ -180,31 +144,15 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 Assert.That(state.PeerAlive, Is.EqualTo(!remove && (custom || !reset)), report);
                 Assert.That(state.AnchorAlive, Is.EqualTo(hold || custom || !reset), report);
                 Assert.That(state.HandleValid, Is.EqualTo(hold), report);
-                Assert.That(
-                    state.BeforeAnchorCalls,
-                    Is.EqualTo((warm ? 1 : 0) + (inside ? 1 : 0)),
-                    report
-                );
-                Assert.That(
-                    state.BeforePeerCalls,
-                    Is.EqualTo((warm ? 1 : 0) + (inside && !reset && !remove ? 1 : 0)),
-                    report
-                );
+                Assert.That(state.BeforeAnchorCalls, Is.EqualTo((warm ? 1 : 0) + (inside ? 1 : 0)), report);
+                Assert.That(state.BeforePeerCalls, Is.EqualTo((warm ? 1 : 0) + (inside && !reset && !remove ? 1 : 0)), report);
                 Assert.That(state.ResetCalls, Is.EqualTo(reset ? 1 : 0), report);
                 int survivors = custom || !reset ? (remove ? 1 : 2) : 0;
                 Assert.That(state.BeforeRegistered, Is.EqualTo(survivors), report);
                 Assert.That(state.AfterStaleRegistered, Is.EqualTo(survivors + 1), report);
                 Assert.That(state.FreshCalls, Is.EqualTo(1), report);
-                Assert.That(
-                    state.AfterFreshAnchorCalls,
-                    Is.EqualTo(state.BeforeAnchorCalls + (custom || !reset ? 1 : 0)),
-                    report
-                );
-                Assert.That(
-                    state.AfterFreshPeerCalls,
-                    Is.EqualTo(state.BeforePeerCalls + (!remove && (custom || !reset) ? 1 : 0)),
-                    report
-                );
+                Assert.That(state.AfterFreshAnchorCalls, Is.EqualTo(state.BeforeAnchorCalls + (custom || !reset ? 1 : 0)), report);
+                Assert.That(state.AfterFreshPeerCalls, Is.EqualTo(state.BeforePeerCalls + (!remove && (custom || !reset) ? 1 : 0)), report);
                 Assert.That(state.AfterFreshRemovalRegistered, Is.EqualTo(survivors), report);
                 Assert.That(state.FinalPeerAlive, Is.False, report);
                 Assert.That(state.FinalAnchorAlive, Is.False, report);
@@ -269,17 +217,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             /// <param name="trim">Whether to force-trim after setup.</param>
             /// <param name="inside">Whether to emit before observation and reset inside the callback when requested.</param>
             /// <param name="diagnostics">Whether to enable bus diagnostics.</param>
-            internal State(
-                MessageScenario scenario,
-                bool custom,
-                bool hold,
-                bool reset,
-                bool warm,
-                bool remove,
-                bool trim,
-                bool inside,
-                bool diagnostics
-            )
+            internal State(MessageScenario scenario, bool custom, bool hold, bool reset, bool warm, bool remove, bool trim, bool inside, bool diagnostics)
             {
                 _scenario = scenario;
                 _custom = custom;
@@ -290,20 +228,14 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 _trim = trim;
                 _inside = inside;
                 Bus = custom
-                    ? Bus.CreateForInternalUse(
-                        new ConstantClock(),
-                        idleEvictionTicks: 30,
-                        idleEvictionEnabled: false,
-                        trimApiEnabled: true
-                    )
+                    ? Bus.CreateForInternalUse(new ConstantClock(), idleEvictionTicks: 30, idleEvictionEnabled: false, trimApiEnabled: true)
                     : (Bus)MessageHandler.InitialGlobalMessageBus;
                 Bus.DiagnosticsMode = diagnostics;
                 if (custom)
                 {
                     MessageHandler.SetGlobalMessageBus(Bus);
                 }
-                Label =
-                    $"[{scenario}] custom={custom},hold={hold},reset={reset},warm={warm},remove={remove},trim={trim},inside={inside},diagnostics={diagnostics}";
+                Label = $"[{scenario}] custom={custom},hold={hold},reset={reset},warm={warm},remove={remove},trim={trim},inside={inside},diagnostics={diagnostics}";
             }
 
             /// <summary>Describes the original recorded weak-target and callback observations.</summary>
@@ -373,9 +305,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     _observedFlat = -1;
                     return;
                 }
-                _observedGroups = (
-                    (IDictionary)MessageBusInspection.ReadField(cache, "handlers")
-                ).Count;
+                _observedGroups = ((IDictionary)MessageBusInspection.ReadField(cache, "handlers")).Count;
                 _observedFlat = ((Array)MessageBusInspection.ReadField(cache, "_flat")).Length;
             }
 
@@ -440,18 +370,9 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             {
                 return _scenario.Kind switch
                 {
-                    MessageKind.Untargeted => Bus.RegisterUntargetedInterceptor<ProbeMessage>(
-                        receiver.Scalar,
-                        priority
-                    ),
-                    MessageKind.Targeted => Bus.RegisterTargetedInterceptor<ProbeMessage>(
-                        receiver.Context,
-                        priority
-                    ),
-                    MessageKind.Broadcast => Bus.RegisterBroadcastInterceptor<ProbeMessage>(
-                        receiver.Context,
-                        priority
-                    ),
+                    MessageKind.Untargeted => Bus.RegisterUntargetedInterceptor<ProbeMessage>(receiver.Scalar, priority),
+                    MessageKind.Targeted => Bus.RegisterTargetedInterceptor<ProbeMessage>(receiver.Context, priority),
+                    MessageKind.Broadcast => Bus.RegisterBroadcastInterceptor<ProbeMessage>(receiver.Context, priority),
                     _ => throw new ArgumentOutOfRangeException(nameof(_scenario)),
                 };
             }
@@ -485,20 +406,11 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             {
                 int registered = Bus.RegisteredInterceptors;
                 int live = MessageBusInspection.CountLiveRegistrations(Bus);
-                int unique = (
-                    (IDictionary)
-                        MessageBusInspection.ReadField(Bus, "_uniqueInterceptorsAndPriorities")
-                ).Count;
+                int unique = ((IDictionary)MessageBusInspection.ReadField(Bus, "_uniqueInterceptorsAndPriorities")).Count;
                 int depth = (int)MessageBusInspection.ReadField(Bus, "_dispatchDepth");
                 object cache = _cache.Target;
-                int groups =
-                    cache == null
-                        ? -1
-                        : ((IDictionary)MessageBusInspection.ReadField(cache, "handlers")).Count;
-                int flat =
-                    cache == null
-                        ? -1
-                        : ((Array)MessageBusInspection.ReadField(cache, "_flat")).Length;
+                int groups = cache == null ? -1 : ((IDictionary)MessageBusInspection.ReadField(cache, "handlers")).Count;
+                int flat = cache == null ? -1 : ((Array)MessageBusInspection.ReadField(cache, "_flat")).Length;
                 return $"Final ownership {Label}; registered={registered},live={live},unique={unique},depth={depth},cacheAlive={cache != null},groups={groups},flat={flat}";
             }
         }
@@ -577,8 +489,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
         /// <param name="reference">Receiver reference observed by the case.</param>
         /// <returns>True when a non-null weak reference is alive.</returns>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private static bool IsAlive(WeakReference reference) =>
-            reference != null && reference.IsAlive;
+        private static bool IsAlive(WeakReference reference) => reference != null && reference.IsAlive;
 
         /// <summary>Runs the fixture's original full-collection and finalizer sequence.</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -600,10 +511,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
         }
 
         /// <summary>Implements all three message interfaces for the route checks.</summary>
-        private readonly struct ProbeMessage
-            : IUntargetedMessage,
-                ITargetedMessage,
-                IBroadcastMessage
+        private readonly struct ProbeMessage : IUntargetedMessage, ITargetedMessage, IBroadcastMessage
         {
             /// <summary>Gets the probe message's runtime type.</summary>
             public Type MessageType => typeof(ProbeMessage);

@@ -37,11 +37,8 @@ internal sealed class FiniteFloatingDefaultBoundaryTests
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(culture);
             CSharpCompilation Create(bool manual)
             {
-                string declaration =
-                    target == "class" ? "partial class" : "readonly partial struct";
-                string argument = namedExpression
-                    ? "Expression = " + SyntaxFactory.Literal(expression)
-                    : expression;
+                string declaration = target == "class" ? "partial class" : "readonly partial struct";
+                string argument = namedExpression ? "Expression = " + SyntaxFactory.Literal(expression) : expression;
                 string source = $$"""
 using DxMessaging.Core.Attributes;
 {{(manual ? "" : "[DxAutoConstructor]")}}
@@ -65,10 +62,7 @@ public static class Consumer
     }
 }
 """;
-                CSharpCompilation compilation =
-                    GeneratorTestUtilities.CreateAutoConstructorCompilationFromShippedAttributes(
-                        source
-                    );
+                CSharpCompilation compilation = GeneratorTestUtilities.CreateAutoConstructorCompilationFromShippedAttributes(source);
                 Assert.That(
                     compilation.GetTypeByMetadataName("Packet")!.IsReadOnly,
                     Is.EqualTo(target == "readonly struct"),
@@ -77,21 +71,12 @@ public static class Consumer
                 return compilation;
             }
 
-            AssertCallerAndMetadata(
-                Create(manual: true),
-                fieldType,
-                expectedBits,
-                "Manual: " + context
-            );
+            AssertCallerAndMetadata(Create(manual: true), fieldType, expectedBits, "Manual: " + context);
             GeneratorDriver driver = CSharpGeneratorDriver.Create(
                 generators: new ISourceGenerator[] { new DxAutoConstructorGenerator() },
                 parseOptions: new CSharpParseOptions(LanguageVersion.CSharp9)
             );
-            driver = driver.RunGeneratorsAndUpdateCompilation(
-                Create(manual: false),
-                out Compilation generated,
-                out ImmutableArray<Diagnostic> diagnostics
-            );
+            driver = driver.RunGeneratorsAndUpdateCompilation(Create(manual: false), out Compilation generated, out ImmutableArray<Diagnostic> diagnostics);
             Assert.That(driver.GetRunResult().Results.Single().Exception, Is.Null, context);
             Assert.That(driver.GetRunResult().GeneratedTrees, Has.Length.EqualTo(1), context);
             Assert.That(diagnostics, Is.Empty, context + "\n" + string.Join("\n", diagnostics));
@@ -122,18 +107,8 @@ public static class Consumer
             ("DoubleSmallestNormal", "double", "2.2250738585072014E-308d", "0010000000000000"),
             ("DoubleLargestFinite", "double", "double.MaxValue", "7FEFFFFFFFFFFFFF"),
             ("DoubleNegativeSmallestSubnormal", "double", "-double.Epsilon", "8000000000000001"),
-            (
-                "DoubleNegativeLargestSubnormal",
-                "double",
-                "-2.2250738585072009E-308d",
-                "800FFFFFFFFFFFFF"
-            ),
-            (
-                "DoubleNegativeSmallestNormal",
-                "double",
-                "-2.2250738585072014E-308d",
-                "8010000000000000"
-            ),
+            ("DoubleNegativeLargestSubnormal", "double", "-2.2250738585072009E-308d", "800FFFFFFFFFFFFF"),
+            ("DoubleNegativeSmallestNormal", "double", "-2.2250738585072014E-308d", "8010000000000000"),
             ("DoubleNegativeLargestFinite", "double", "double.MinValue", "FFEFFFFFFFFFFFFF"),
         };
         foreach ((string label, string type, string expression, string bits) in values)
@@ -144,15 +119,9 @@ public static class Consumer
                 {
                     foreach (string culture in new[] { "en-US", "fr-FR" })
                     {
-                        yield return new TestCaseData(
-                            label,
-                            type,
-                            expression,
-                            bits,
-                            target,
-                            named,
-                            culture
-                        ).SetName($"FiniteDefault({label},{target},Expression={named},{culture})");
+                        yield return new TestCaseData(label, type, expression, bits, target, named, culture).SetName(
+                            $"FiniteDefault({label},{target},Expression={named},{culture})"
+                        );
                     }
                 }
             }
@@ -160,18 +129,9 @@ public static class Consumer
     }
 
     /// <summary>Checks compiled calls and reflected optional metadata, without source-text oracles.</summary>
-    private static void AssertCallerAndMetadata(
-        Compilation compilation,
-        string fieldType,
-        string expectedBits,
-        string context
-    )
+    private static void AssertCallerAndMetadata(Compilation compilation, string fieldType, string expectedBits, string context)
     {
-        Assert.That(
-            compilation.GetDiagnostics(),
-            Is.Empty,
-            context + "\n" + string.Join("\n", compilation.GetDiagnostics())
-        );
+        Assert.That(compilation.GetDiagnostics(), Is.Empty, context + "\n" + string.Join("\n", compilation.GetDiagnostics()));
         using MemoryStream image = new();
         Microsoft.CodeAnalysis.Emit.EmitResult emit = compilation.Emit(image);
         Assert.That(emit.Success, Is.True, context + "\n" + string.Join("\n", emit.Diagnostics));
@@ -180,32 +140,15 @@ public static class Consumer
         try
         {
             Assembly assembly = load.LoadFromStream(image);
-            object[] values = (object[])
-                assembly.GetType("Consumer")!.GetMethod("Read")!.Invoke(null, null)!;
+            object[] values = (object[])assembly.GetType("Consumer")!.GetMethod("Read")!.Invoke(null, null)!;
             Assert.That(values[0], Is.EqualTo(1), "Omitted call runs the constructor: " + context);
-            Assert.That(
-                Bits(values[1], fieldType),
-                Is.EqualTo(expectedBits),
-                "Caller bits: " + context
-            );
+            Assert.That(Bits(values[1], fieldType), Is.EqualTo(expectedBits), "Caller bits: " + context);
             Assert.That(values[2], Is.EqualTo(2), "Explicit call runs the constructor: " + context);
-            Assert.That(
-                Bits(values[3], fieldType),
-                Is.EqualTo(new string('0', expectedBits.Length)),
-                "Explicit zero: " + context
-            );
-            ParameterInfo parameter = assembly
-                .GetType("Packet")!
-                .GetConstructors()
-                .Single()
-                .GetParameters()[1];
+            Assert.That(Bits(values[3], fieldType), Is.EqualTo(new string('0', expectedBits.Length)), "Explicit zero: " + context);
+            ParameterInfo parameter = assembly.GetType("Packet")!.GetConstructors().Single().GetParameters()[1];
             Assert.That(parameter.IsOptional, Is.True, "Optional metadata: " + context);
             Assert.That(parameter.HasDefaultValue, Is.True, "Default metadata exists: " + context);
-            Assert.That(
-                Bits(parameter.DefaultValue!, fieldType),
-                Is.EqualTo(expectedBits),
-                "Default metadata bits: " + context
-            );
+            Assert.That(Bits(parameter.DefaultValue!, fieldType), Is.EqualTo(expectedBits), "Default metadata bits: " + context);
         }
         finally
         {
@@ -216,10 +159,6 @@ public static class Consumer
     /// <summary>Reports the observed representation without parsing generated numeric literals.</summary>
     private static string Bits(object value, string fieldType) =>
         fieldType == "float"
-            ? BitConverter
-                .SingleToInt32Bits((float)value)
-                .ToString("X8", CultureInfo.InvariantCulture)
-            : BitConverter
-                .DoubleToInt64Bits((double)value)
-                .ToString("X16", CultureInfo.InvariantCulture);
+            ? BitConverter.SingleToInt32Bits((float)value).ToString("X8", CultureInfo.InvariantCulture)
+            : BitConverter.DoubleToInt64Bits((double)value).ToString("X16", CultureInfo.InvariantCulture);
 }

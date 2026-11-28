@@ -15,11 +15,11 @@ Using MkDocs-specific syntax breaks rendering in standard viewers, creating a po
 
 ## Problem Statement
 
-MkDocs and its Material theme provide powerful extensions like admonitions, tabs, and buttons. However, these extensions use non-standard syntax that renders as broken text in standard markdown viewers:
+MkDocs and its Material theme provide powerful extensions like admonitions, tabs, and buttons. However, these extensions use non-standard syntax that renders as broken text in
+standard markdown viewers:
 
 ```markdown
-!!! warning "Caution"
-This will not render correctly on GitHub.
+!!! warning "Caution" This will not render correctly on GitHub.
 ```
 
 On GitHub, this displays as literal text: `!!! warning "Caution"` followed by an indented paragraph -- not as a styled warning box.
@@ -32,7 +32,8 @@ Use only standard markdown syntax with Unicode emoji for visual emphasis. This e
 
 ## Nested Fenced Code Blocks
 
-When documenting markdown that contains code blocks, the **outer fence must have MORE backticks than any inner fence**. CommonMark requires opening and closing sequences to match exactly, so use 4+ backticks for outer fences when inner uses 3:
+When documenting markdown that contains code blocks, the **outer fence must have MORE backticks than any inner fence**. CommonMark requires opening and closing sequences to match
+exactly, so use 4+ backticks for outer fences when inner uses 3:
 
 `````markdown
 ````markdown
@@ -57,7 +58,8 @@ For deeper nesting, keep increasing: outer uses 5, middle uses 4, inner uses 3.
 
 ### Guardrail: Keep Real Sections Outside Fenced Examples
 
-If a heading like `## See Also` belongs to the actual document structure, do not place it inside a fenced markdown example. A useful check is: if removing the fence would change document structure, that heading likely belongs outside the code sample.
+If a heading like `## See Also` belongs to the actual document structure, do not place it inside a fenced markdown example. A useful check is: if removing the fence would change
+document structure, that heading likely belongs outside the code sample.
 
 ---
 
