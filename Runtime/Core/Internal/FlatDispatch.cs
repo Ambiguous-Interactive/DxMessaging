@@ -21,10 +21,7 @@ namespace DxMessaging.Core.Internal
     internal readonly struct FlatDispatchEntry<TMessage>
         where TMessage : IMessage
     {
-        public FlatDispatchEntry(
-            MessageHandler handler,
-            MessageHandler.FastHandler<TMessage> invoker
-        )
+        public FlatDispatchEntry(MessageHandler handler, MessageHandler.FastHandler<TMessage> invoker)
         {
             this.handler = handler;
             this.invoker = invoker;
@@ -45,10 +42,7 @@ namespace DxMessaging.Core.Internal
     internal readonly struct ContextFlatDispatchEntry<TMessage>
         where TMessage : IMessage
     {
-        public ContextFlatDispatchEntry(
-            MessageHandler handler,
-            MessageHandler.FastHandlerWithContext<TMessage> invoker
-        )
+        public ContextFlatDispatchEntry(MessageHandler handler, MessageHandler.FastHandlerWithContext<TMessage> invoker)
         {
             this.handler = handler;
             this.invoker = invoker;
@@ -135,8 +129,7 @@ namespace DxMessaging.Core.Internal
             holder ??= new THolder();
             System.Diagnostics.Debug.Assert(
                 holder._released,
-                "PooledFlatDispatch.Rent returned a holder that is still owned by a live "
-                    + "snapshot; a Release() was skipped or the pool was corrupted."
+                "PooledFlatDispatch.Rent returned a holder that is still owned by a live " + "snapshot; a Release() was skipped or the pool was corrupted."
             );
             holder._released = false;
             holder.entries = 0 < capacity ? EntryPool.Rent(capacity) : Array.Empty<TEntry>();
@@ -150,8 +143,7 @@ namespace DxMessaging.Core.Internal
             {
                 System.Diagnostics.Debug.Assert(
                     false,
-                    "PooledFlatDispatch.Release called twice on the same holder; the owning "
-                        + "DispatchSnapshot must release its flat array exactly once."
+                    "PooledFlatDispatch.Release called twice on the same holder; the owning " + "DispatchSnapshot must release its flat array exactly once."
                 );
                 return;
             }
@@ -189,8 +181,7 @@ namespace DxMessaging.Core.Internal
     /// reproduces the documented dispatch order exactly.
     /// </summary>
     /// <typeparam name="TMessage">Concrete message type of the dispatch slot.</typeparam>
-    internal sealed class FlatDispatch<TMessage>
-        : PooledFlatDispatch<FlatDispatchEntry<TMessage>, FlatDispatch<TMessage>>
+    internal sealed class FlatDispatch<TMessage> : PooledFlatDispatch<FlatDispatchEntry<TMessage>, FlatDispatch<TMessage>>
         where TMessage : IMessage { }
 
     /// <summary>
@@ -200,7 +191,6 @@ namespace DxMessaging.Core.Internal
     /// the message. Build order matches <see cref="FlatDispatch{TMessage}"/>.
     /// </summary>
     /// <typeparam name="TMessage">Concrete message type of the dispatch slot.</typeparam>
-    internal sealed class ContextFlatDispatch<TMessage>
-        : PooledFlatDispatch<ContextFlatDispatchEntry<TMessage>, ContextFlatDispatch<TMessage>>
+    internal sealed class ContextFlatDispatch<TMessage> : PooledFlatDispatch<ContextFlatDispatchEntry<TMessage>, ContextFlatDispatch<TMessage>>
         where TMessage : IMessage { }
 }

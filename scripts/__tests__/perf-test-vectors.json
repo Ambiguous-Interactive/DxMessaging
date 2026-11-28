@@ -69,53 +69,26 @@
       "role": "sentinel"
     }
   ],
-  "session240c1": [
-    0.3664825458329125, 0.9638895979446739, 1.1749603478334951, 0.4139565263871168,
-    0.30839240772835985, 0.35066743667156336, 0.41332080747580546
-  ],
-  "session240control": [
-    0.3397850194262837, 0.967803075233871, 1.1798167374564192, 0.3863364779458949,
-    0.31514396784308657, 0.3446972097633311, 0.38286598713193026
-  ],
-  "session240c2": [
-    0.3626055198992972, 0.9684320021425954, 1.198908896941916, 0.41538562631333986,
-    0.3070944651881458, 0.3511185780464608, 0.4086341036570222
-  ],
+  "session240c1": [0.3664825458329125, 0.9638895979446739, 1.1749603478334951, 0.4139565263871168, 0.30839240772835985, 0.35066743667156336, 0.41332080747580546],
+  "session240control": [0.3397850194262837, 0.967803075233871, 1.1798167374564192, 0.3863364779458949, 0.31514396784308657, 0.3446972097633311, 0.38286598713193026],
+  "session240c2": [0.3626055198992972, 0.9684320021425954, 1.198908896941916, 0.41538562631333986, 0.3070944651881458, 0.3511185780464608, 0.4086341036570222],
   "session240spreads": [
-    [
-      0.8204612835834624, 1.9333897889375118, 2.6835356075866956, 0.9103789875130497,
-      0.5659055890008702, 0.8146324113570858, 0.9451177125524346
-    ],
-    [
-      1.1028308453360225, 2.516331076690048, 1.831094466025407, 2.6269405956543146,
-      1.2355279753484494, 0.45885913299001935, 0.7936012788094526
-    ],
-    [
-      0.9706598505605957, 0.9008923477044295, 2.021145035917682, 0.8933299443459664,
-      0.6974634572843197, 1.335523904224556, 0.6007602409331403
-    ]
+    [0.8204612835834624, 1.9333897889375118, 2.6835356075866956, 0.9103789875130497, 0.5659055890008702, 0.8146324113570858, 0.9451177125524346],
+    [1.1028308453360225, 2.516331076690048, 1.831094466025407, 2.6269405956543146, 1.2355279753484494, 0.45885913299001935, 0.7936012788094526],
+    [0.9706598505605957, 0.9008923477044295, 2.021145035917682, 0.8933299443459664, 0.6974634572843197, 1.335523904224556, 0.6007602409331403]
   ],
   "dispatchBeforePostRoutes": [
     ["EmptyBus_Dispatch", "Empty Bus Dispatch"],
     ["UntargetedFlood_OneDirectHandler", "Untargeted Flood (One Direct Handler)"],
     ["UntargetedFlood_TwoHandlers_OnePriority", "Untargeted Flood (Two Handlers, One Priority)"],
-    [
-      "UntargetedFlood_ThreeHandlers_OnePriority",
-      "Untargeted Flood (Three Handlers, One Priority)"
-    ],
+    ["UntargetedFlood_ThreeHandlers_OnePriority", "Untargeted Flood (Three Handlers, One Priority)"],
     ["UntargetedFlood_OneInactiveHandler", "Untargeted Flood (One Inactive Handler)"],
-    [
-      "UntargetedFlood_SixteenHandlers_OnePriority",
-      "Untargeted Flood (Sixteen Handlers, One Priority)"
-    ],
+    ["UntargetedFlood_SixteenHandlers_OnePriority", "Untargeted Flood (Sixteen Handlers, One Priority)"],
     ["TargetedFlood_NoMatchingTarget", "Targeted Flood (No Matching Target)"]
   ],
   "dispatchAfterPostRoutes": [
     ["MessageBusConstruction_1000", "Message Bus Construction (1000)"],
-    [
-      "MessageRegistrationTokenConstruction_1000_PrebuiltHandlerAndBus",
-      "Registration Token Construction (1000, Prebuilt Handler + Bus)"
-    ]
+    ["MessageRegistrationTokenConstruction_1000_PrebuiltHandlerAndBus", "Registration Token Construction (1000, Prebuilt Handler + Bus)"]
   ],
   "attributionLabels": {
     "RegistrationAttribution_DirectBus_131072": "Registration Attribution (Direct Bus, 131072)",
@@ -531,12 +504,7 @@
     ["profile source", "executionProfile.source", "other", "profile topology"],
     ["selection policy", "executionProfile.selectionPolicy", "other", "profile topology"],
     ["efficiency class", "executionProfile.selectedEfficiencyClass", -1, "profile topology"],
-    [
-      "logical processors",
-      "executionProfile.selectedLogicalProcessorIndices",
-      [1, 2],
-      "profile topology"
-    ],
+    ["logical processors", "executionProfile.selectedLogicalProcessorIndices", [1, 2], "profile topology"],
     ["profile", "executionProfile.id", "other", "execution profile"],
     ["affinity", "executionProfile.affinityMask", "0xFFFFFFFF", "execution profile"],
     ["priority", "executionProfile.priorityClass", "High", "execution profile"],
@@ -563,39 +531,11 @@
     ],
     ["reordered row", "reverse", "0.rows", null, null, "summary row 0"],
     ["duplicated row", "set", "0.rows.1", null, "0.rows.0", "summary row 1"],
-    [
-      "manifest digest mismatch",
-      "set",
-      "1.bracketManifestSha256",
-      "0000000000000000000000000000000000000000000000000000000000000000",
-      null,
-      "manifest digest"
-    ],
-    [
-      "execution profile mismatch",
-      "set",
-      "2.executionProfile.affinityMask",
-      "0xFFFFFFFF",
-      null,
-      "execution profile"
-    ],
+    ["manifest digest mismatch", "set", "1.bracketManifestSha256", "0000000000000000000000000000000000000000000000000000000000000000", null, "manifest digest"],
+    ["execution profile mismatch", "set", "2.executionProfile.affinityMask", "0xFFFFFFFF", null, "execution profile"],
     ["duplicate commit provenance", "set", "2.commit", null, "0.commit", "distinct commits"],
-    [
-      "different outer source trees",
-      "set",
-      "2.sourceTree",
-      "cccccccccccccccccccccccccccccccccccccccc",
-      null,
-      "outer summaries.*same source tree"
-    ],
-    [
-      "identical center source tree",
-      "set",
-      "1.sourceTree",
-      null,
-      "0.sourceTree",
-      "outer and center.*different source trees"
-    ],
+    ["different outer source trees", "set", "2.sourceTree", "cccccccccccccccccccccccccccccccccccccccc", null, "outer summaries.*same source tree"],
+    ["identical center source tree", "set", "1.sourceTree", null, "0.sourceTree", "outer and center.*different source trees"],
     [
       "different outer candidate source",
       "set",
@@ -604,20 +544,9 @@
       null,
       "outer summaries.*same candidate-source digest"
     ],
-    [
-      "unchanged candidate source in center",
-      "set",
-      "1.candidateSourceSha256",
-      null,
-      "0.candidateSourceSha256",
-      "outer and center.*different candidate-source digests"
-    ]
+    ["unchanged candidate source in center", "set", "1.candidateSourceSha256", null, "0.candidateSourceSha256", "outer and center.*different candidate-source digests"]
   ],
-  "commits": [
-    "98b47536a0eb1445fcd2a9700899aab0be24897f",
-    "261b1867e052723517db8a77048c209a20108204",
-    "da5439ac21e60d5e04e4f453e3766e03daff0486"
-  ],
+  "commits": ["98b47536a0eb1445fcd2a9700899aab0be24897f", "261b1867e052723517db8a77048c209a20108204", "da5439ac21e60d5e04e4f453e3766e03daff0486"],
   "positions": ["first", "center", "last"],
   "invalidRawCycles": [
     ["missing measurements", "cycleMeasurements", null, "exactly 4", true],
@@ -626,178 +555,39 @@
     ["short measurements", "cycleMeasurements", [], "exactly 4"],
     ["null raw cycle", "cycleMeasurements.0", null, "cycleMeasurements.*object"],
     ["array raw cycle", "cycleMeasurements.3", [], "cycleMeasurements.*object"],
-    [
-      "missing firstOperations",
-      "cycleMeasurements.0.firstOperations",
-      null,
-      "positive safe integer",
-      true
-    ],
+    ["missing firstOperations", "cycleMeasurements.0.firstOperations", null, "positive safe integer", true],
     ["zero firstOperations", "cycleMeasurements.0.firstOperations", 0, "positive safe integer"],
-    [
-      "negative firstOperations",
-      "cycleMeasurements.0.firstOperations",
-      -40000,
-      "positive safe integer"
-    ],
-    [
-      "fractional firstOperations",
-      "cycleMeasurements.0.firstOperations",
-      40000.5,
-      "positive safe integer"
-    ],
-    [
-      "string firstOperations",
-      "cycleMeasurements.0.firstOperations",
-      "40000",
-      "positive safe integer"
-    ],
-    [
-      "unsafe firstOperations",
-      "cycleMeasurements.0.firstOperations",
-      9007199254760000,
-      "positive safe integer",
-      false,
-      "unsupported structured data"
-    ],
-    [
-      "unbalanced firstOperations",
-      "cycleMeasurements.0.firstOperations",
-      80000,
-      "balanced ABBA/BAAB"
-    ],
-    [
-      "missing secondOperations",
-      "cycleMeasurements.0.secondOperations",
-      null,
-      "positive safe integer",
-      true
-    ],
+    ["negative firstOperations", "cycleMeasurements.0.firstOperations", -40000, "positive safe integer"],
+    ["fractional firstOperations", "cycleMeasurements.0.firstOperations", 40000.5, "positive safe integer"],
+    ["string firstOperations", "cycleMeasurements.0.firstOperations", "40000", "positive safe integer"],
+    ["unsafe firstOperations", "cycleMeasurements.0.firstOperations", 9007199254760000, "positive safe integer", false, "unsupported structured data"],
+    ["unbalanced firstOperations", "cycleMeasurements.0.firstOperations", 80000, "balanced ABBA/BAAB"],
+    ["missing secondOperations", "cycleMeasurements.0.secondOperations", null, "positive safe integer", true],
     ["zero secondOperations", "cycleMeasurements.0.secondOperations", 0, "positive safe integer"],
-    [
-      "negative secondOperations",
-      "cycleMeasurements.0.secondOperations",
-      -40000,
-      "positive safe integer"
-    ],
-    [
-      "fractional secondOperations",
-      "cycleMeasurements.0.secondOperations",
-      40000.5,
-      "positive safe integer"
-    ],
-    [
-      "string secondOperations",
-      "cycleMeasurements.0.secondOperations",
-      "40000",
-      "positive safe integer"
-    ],
-    [
-      "unsafe secondOperations",
-      "cycleMeasurements.0.secondOperations",
-      9007199254760000,
-      "positive safe integer",
-      false,
-      "unsupported structured data"
-    ],
-    [
-      "unbalanced secondOperations",
-      "cycleMeasurements.0.secondOperations",
-      80000,
-      "balanced ABBA/BAAB"
-    ],
-    [
-      "missing firstActiveSeconds",
-      "cycleMeasurements.0.firstActiveSeconds",
-      null,
-      "finite number",
-      true
-    ],
+    ["negative secondOperations", "cycleMeasurements.0.secondOperations", -40000, "positive safe integer"],
+    ["fractional secondOperations", "cycleMeasurements.0.secondOperations", 40000.5, "positive safe integer"],
+    ["string secondOperations", "cycleMeasurements.0.secondOperations", "40000", "positive safe integer"],
+    ["unsafe secondOperations", "cycleMeasurements.0.secondOperations", 9007199254760000, "positive safe integer", false, "unsupported structured data"],
+    ["unbalanced secondOperations", "cycleMeasurements.0.secondOperations", 80000, "balanced ABBA/BAAB"],
+    ["missing firstActiveSeconds", "cycleMeasurements.0.firstActiveSeconds", null, "finite number", true],
     ["null firstActiveSeconds", "cycleMeasurements.0.firstActiveSeconds", null, "finite number"],
     ["string firstActiveSeconds", "cycleMeasurements.0.firstActiveSeconds", "1", "finite number"],
-    [
-      "negative firstActiveSeconds",
-      "cycleMeasurements.0.firstActiveSeconds",
-      -1,
-      "minimum active time"
-    ],
+    ["negative firstActiveSeconds", "cycleMeasurements.0.firstActiveSeconds", -1, "minimum active time"],
     ["zero firstActiveSeconds", "cycleMeasurements.0.firstActiveSeconds", 0, "minimum active time"],
-    [
-      "below minimum firstActiveSeconds",
-      "cycleMeasurements.0.firstActiveSeconds",
-      0.6249999999999999,
-      "minimum active time"
-    ],
-    [
-      "wrong raw time firstActiveSeconds",
-      "cycleMeasurements.0.firstActiveSeconds",
-      2,
-      "work and active time"
-    ],
-    [
-      "missing secondActiveSeconds",
-      "cycleMeasurements.0.secondActiveSeconds",
-      null,
-      "finite number",
-      true
-    ],
+    ["below minimum firstActiveSeconds", "cycleMeasurements.0.firstActiveSeconds", 0.6249999999999999, "minimum active time"],
+    ["wrong raw time firstActiveSeconds", "cycleMeasurements.0.firstActiveSeconds", 2, "work and active time"],
+    ["missing secondActiveSeconds", "cycleMeasurements.0.secondActiveSeconds", null, "finite number", true],
     ["null secondActiveSeconds", "cycleMeasurements.0.secondActiveSeconds", null, "finite number"],
     ["string secondActiveSeconds", "cycleMeasurements.0.secondActiveSeconds", "1", "finite number"],
-    [
-      "negative secondActiveSeconds",
-      "cycleMeasurements.0.secondActiveSeconds",
-      -1,
-      "minimum active time"
-    ],
-    [
-      "zero secondActiveSeconds",
-      "cycleMeasurements.0.secondActiveSeconds",
-      0,
-      "minimum active time"
-    ],
-    [
-      "below minimum secondActiveSeconds",
-      "cycleMeasurements.0.secondActiveSeconds",
-      0.6249999999999999,
-      "minimum active time"
-    ],
-    [
-      "wrong raw time secondActiveSeconds",
-      "cycleMeasurements.0.secondActiveSeconds",
-      2,
-      "work and active time"
-    ],
-    [
-      "missing cycleMeasurements.0.firstToSecondRatio",
-      "cycleMeasurements.0.firstToSecondRatio",
-      null,
-      "finite number",
-      true
-    ],
-    [
-      "zero cycleMeasurements.0.firstToSecondRatio",
-      "cycleMeasurements.0.firstToSecondRatio",
-      0,
-      "positive"
-    ],
-    [
-      "negative cycleMeasurements.0.firstToSecondRatio",
-      "cycleMeasurements.0.firstToSecondRatio",
-      -1,
-      "positive"
-    ],
-    [
-      "string cycleMeasurements.0.firstToSecondRatio",
-      "cycleMeasurements.0.firstToSecondRatio",
-      "1",
-      "finite number"
-    ],
-    [
-      "wrong cycleMeasurements.0.firstToSecondRatio",
-      "cycleMeasurements.0.firstToSecondRatio",
-      99,
-      "work and active time|aggregate ratio"
-    ],
+    ["negative secondActiveSeconds", "cycleMeasurements.0.secondActiveSeconds", -1, "minimum active time"],
+    ["zero secondActiveSeconds", "cycleMeasurements.0.secondActiveSeconds", 0, "minimum active time"],
+    ["below minimum secondActiveSeconds", "cycleMeasurements.0.secondActiveSeconds", 0.6249999999999999, "minimum active time"],
+    ["wrong raw time secondActiveSeconds", "cycleMeasurements.0.secondActiveSeconds", 2, "work and active time"],
+    ["missing cycleMeasurements.0.firstToSecondRatio", "cycleMeasurements.0.firstToSecondRatio", null, "finite number", true],
+    ["zero cycleMeasurements.0.firstToSecondRatio", "cycleMeasurements.0.firstToSecondRatio", 0, "positive"],
+    ["negative cycleMeasurements.0.firstToSecondRatio", "cycleMeasurements.0.firstToSecondRatio", -1, "positive"],
+    ["string cycleMeasurements.0.firstToSecondRatio", "cycleMeasurements.0.firstToSecondRatio", "1", "finite number"],
+    ["wrong cycleMeasurements.0.firstToSecondRatio", "cycleMeasurements.0.firstToSecondRatio", 99, "work and active time|aggregate ratio"],
     ["missing aggregateRateRatio", "aggregateRateRatio", null, "finite number", true],
     ["zero aggregateRateRatio", "aggregateRateRatio", 0, "positive"],
     ["negative aggregateRateRatio", "aggregateRateRatio", -1, "positive"],
@@ -995,12 +785,7 @@
       ],
       "work and active time"
     ],
-    [
-      "raw cycle ratio beyond tolerance",
-      "cycleMeasurements.0.firstToSecondRatio",
-      0.9950371902119793,
-      "work and active time"
-    ],
+    ["raw cycle ratio beyond tolerance", "cycleMeasurements.0.firstToSecondRatio", 0.9950371902119793, "work and active time"],
     ["aggregate beyond tolerance", "aggregateRateRatio", 1.000000000002, "aggregate ratio"],
     [
       "inexact operation sum",

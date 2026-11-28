@@ -26,13 +26,7 @@ namespace DxMessaging.Tests.Runtime.Core
             foreach (string mutation in new[] { "None", "Activate", "Dispose" })
             foreach (bool rejectCleanup in new[] { false, true })
             {
-                yield return new TestCaseData(
-                    scenario,
-                    carrier,
-                    before,
-                    mutation,
-                    rejectCleanup
-                ).SetName(
+                yield return new TestCaseData(scenario, carrier, before, mutation, rejectCleanup).SetName(
                     $"LeaseActivationOwnership_{scenario}_carrier{carrier}_before{before}_{mutation}_reject{rejectCleanup}"
                 );
             }
@@ -40,16 +34,9 @@ namespace DxMessaging.Tests.Runtime.Core
 
         /// <summary>Publishes one activation or retains retryable cleanup after reentrant disposal.</summary>
         [TestCaseSource(nameof(ActivationCases))]
-        public void ForeignRegistrationCallbackPreservesLeaseOwnership(
-            MessageScenario scenario,
-            int carrier,
-            bool before,
-            string mutation,
-            bool rejectCleanup
-        )
+        public void ForeignRegistrationCallbackPreservesLeaseOwnership(MessageScenario scenario, int carrier, bool before, string mutation, bool rejectCleanup)
         {
-            string label =
-                $"{scenario},carrier={carrier},before={before},{mutation},reject={rejectCleanup}";
+            string label = $"{scenario},carrier={carrier},before={before},{mutation},reject={rejectCleanup}";
             using Scope scope = new Scope(label);
             int calls = 0;
             int activations = 0;
@@ -64,12 +51,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         scope.Token = token;
                         Register(token, scenario, carrier, () => ++calls);
                     },
-                    Lifecycle = new MessageRegistrationLifecycle(
-                        null,
-                        _ => ++activations,
-                        _ => ++deactivations,
-                        _ => ++disposals
-                    ),
+                    Lifecycle = new MessageRegistrationLifecycle(null, _ => ++activations, _ => ++deactivations, _ => ++disposals),
                 }
             );
             Assert.That(scope.Lease.IsActive, Is.False, label + ": lease begins inactive");
@@ -96,108 +78,37 @@ namespace DxMessaging.Tests.Runtime.Core
             bool disposedDuringActivation = mutation == "Dispose";
             bool retryable = disposedDuringActivation && rejectCleanup;
             bool live = !disposedDuringActivation || retryable;
-            Assert.That(
-                scope.Bus.Callbacks,
-                Is.EqualTo(1),
-                label + ": foreign registration callback is one-shot"
-            );
-            Assert.That(
-                failure,
-                Is.SameAs(retryable ? scope.Bus.CleanupMarker : null),
-                label + ": only rejected accepted cleanup fails activation"
-            );
-            Assert.That(
-                activations,
-                Is.EqualTo(disposedDuringActivation ? 0 : 1),
-                label + ": activation is published once and never after disposal"
-            );
-            Assert.That(
-                disposals,
-                Is.EqualTo(disposedDuringActivation ? 1 : 0),
-                label + ": reentrant disposal hook runs once"
-            );
-            Assert.That(
-                deactivations,
-                Is.Zero,
-                label + ": unpublished activation has no deactivation hook"
-            );
-            Assert.That(
-                scope.Lease.IsActive,
-                Is.EqualTo(live),
-                label + ": lease reports remaining owned cleanup"
-            );
-            Assert.That(
-                scope.Token.Enabled,
-                Is.EqualTo(live),
-                label + ": token state agrees with cleanup ownership"
-            );
-            Assert.That(
-                scope.Lease.Handler.active,
-                Is.EqualTo(live),
-                label + ": handler follows complete or retryable cleanup"
-            );
-            Assert.That(
-                Total(scope.Inner),
-                Is.EqualTo(live ? 1 : 0),
-                label + ": accepted registration has a reachable owner"
-            );
+            Assert.That(scope.Bus.Callbacks, Is.EqualTo(1), label + ": foreign registration callback is one-shot");
+            Assert.That(failure, Is.SameAs(retryable ? scope.Bus.CleanupMarker : null), label + ": only rejected accepted cleanup fails activation");
+            Assert.That(activations, Is.EqualTo(disposedDuringActivation ? 0 : 1), label + ": activation is published once and never after disposal");
+            Assert.That(disposals, Is.EqualTo(disposedDuringActivation ? 1 : 0), label + ": reentrant disposal hook runs once");
+            Assert.That(deactivations, Is.Zero, label + ": unpublished activation has no deactivation hook");
+            Assert.That(scope.Lease.IsActive, Is.EqualTo(live), label + ": lease reports remaining owned cleanup");
+            Assert.That(scope.Token.Enabled, Is.EqualTo(live), label + ": token state agrees with cleanup ownership");
+            Assert.That(scope.Lease.Handler.active, Is.EqualTo(live), label + ": handler follows complete or retryable cleanup");
+            Assert.That(Total(scope.Inner), Is.EqualTo(live ? 1 : 0), label + ": accepted registration has a reachable owner");
             Emit(scope.Inner, scenario);
-            Assert.That(
-                calls,
-                Is.EqualTo(live ? 1 : 0),
-                label + ": selected delivery reflects live ownership"
-            );
+            Assert.That(calls, Is.EqualTo(live ? 1 : 0), label + ": selected delivery reflects live ownership");
             if (disposedDuringActivation && !retryable)
             {
-                Assert.Throws<ObjectDisposedException>(
-                    () => scope.Lease.Activate(),
-                    label + ": completed disposal rejects activation"
-                );
+                Assert.Throws<ObjectDisposedException>(() => scope.Lease.Activate(), label + ": completed disposal rejects activation");
             }
             else
             {
                 scope.Lease.Activate();
-                Assert.That(
-                    activations,
-                    Is.EqualTo(disposedDuringActivation ? 0 : 1),
-                    label + ": active or retryable ownership is not republished"
-                );
+                Assert.That(activations, Is.EqualTo(disposedDuringActivation ? 0 : 1), label + ": active or retryable ownership is not republished");
             }
             scope.Bus.RejectCleanup = false;
             scope.Lease.Dispose();
             scope.Lease.Dispose();
-            Assert.That(
-                disposals,
-                Is.EqualTo(1),
-                label + ": disposal retries do not repeat its hook"
-            );
-            Assert.That(
-                scope.Lease.IsActive,
-                Is.False,
-                label + ": valid lease cleanup becomes inactive"
-            );
-            Assert.That(
-                scope.Token.Enabled,
-                Is.False,
-                label + ": valid lease cleanup disables the token"
-            );
-            Assert.That(
-                scope.Token._metadata,
-                Is.Empty,
-                label + ": valid lease cleanup releases staging"
-            );
-            Assert.That(
-                Total(scope.Inner),
-                Is.Zero,
-                label + ": lease-only cleanup clears live registrations"
-            );
+            Assert.That(disposals, Is.EqualTo(1), label + ": disposal retries do not repeat its hook");
+            Assert.That(scope.Lease.IsActive, Is.False, label + ": valid lease cleanup becomes inactive");
+            Assert.That(scope.Token.Enabled, Is.False, label + ": valid lease cleanup disables the token");
+            Assert.That(scope.Token._metadata, Is.Empty, label + ": valid lease cleanup releases staging");
+            Assert.That(Total(scope.Inner), Is.Zero, label + ": lease-only cleanup clears live registrations");
             int afterCleanup = calls;
             Emit(scope.Inner, scenario);
-            Assert.That(
-                calls,
-                Is.EqualTo(afterCleanup),
-                label + ": retired callbacks stay retired"
-            );
+            Assert.That(calls, Is.EqualTo(afterCleanup), label + ": retired callbacks stay retired");
             AssertRecovery(scope, scenario, carrier, label);
         }
 
@@ -217,16 +128,9 @@ namespace DxMessaging.Tests.Runtime.Core
 
         /// <summary>Lets lease cleanup retry registrations accepted during its final token cleanup.</summary>
         [TestCaseSource(nameof(CleanupCases))]
-        public void CleanupAcceptedByForeignCallbackRemainsRetryableThroughLease(
-            MessageScenario scenario,
-            int carrier,
-            bool before,
-            string outer,
-            bool restage
-        )
+        public void CleanupAcceptedByForeignCallbackRemainsRetryableThroughLease(MessageScenario scenario, int carrier, bool before, string outer, bool restage)
         {
-            string label =
-                $"{scenario},carrier={carrier},before={before},{outer},restage={restage}";
+            string label = $"{scenario},carrier={carrier},before={before},{outer},restage={restage}";
             using Scope scope = new Scope(label);
             int originalCalls = 0;
             int replacementCalls = 0;
@@ -265,16 +169,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
             );
             Emit(scope.Inner, scenario);
-            Assert.That(
-                originalCalls,
-                Is.EqualTo(1),
-                label + ": original callback is live before cleanup"
-            );
-            Assert.That(
-                Total(scope.Inner),
-                Is.EqualTo(1),
-                label + ": setup owns one live registration"
-            );
+            Assert.That(originalCalls, Is.EqualTo(1), label + ": original callback is live before cleanup");
+            Assert.That(Total(scope.Inner), Is.EqualTo(1), label + ": setup owns one live registration");
             scope.Bus.Before = before;
             if (outer == "Deactivate")
                 scope.Bus.OnDeregister = DuringCleanup;
@@ -282,98 +178,31 @@ namespace DxMessaging.Tests.Runtime.Core
                 scope.Lease.Dispose();
             else
                 scope.Lease.Deactivate();
-            Assert.That(
-                scope.Bus.Callbacks,
-                Is.EqualTo(1),
-                label + ": one final or deactivation cleanup callback"
-            );
-            Assert.That(
-                activations,
-                Is.EqualTo(1),
-                label + ": token reenable does not publish lease activation"
-            );
-            Assert.That(
-                deactivations,
-                Is.EqualTo(1),
-                label + ": initial deactivation hook runs once"
-            );
-            Assert.That(
-                disposals,
-                Is.EqualTo(outer == "Dispose" ? 1 : 0),
-                label + ": disposal hook follows the selected operation"
-            );
-            Assert.That(
-                scope.Lease.IsActive,
-                Is.EqualTo(restage),
-                label + ": callback-accepted cleanup stays visible"
-            );
-            Assert.That(
-                scope.Token.Enabled,
-                Is.EqualTo(restage),
-                label + ": token reports deferred cleanup"
-            );
-            Assert.That(
-                Total(scope.Inner),
-                Is.EqualTo(restage ? 1 : 0),
-                label + ": only newly accepted cleanup can remain"
-            );
+            Assert.That(scope.Bus.Callbacks, Is.EqualTo(1), label + ": one final or deactivation cleanup callback");
+            Assert.That(activations, Is.EqualTo(1), label + ": token reenable does not publish lease activation");
+            Assert.That(deactivations, Is.EqualTo(1), label + ": initial deactivation hook runs once");
+            Assert.That(disposals, Is.EqualTo(outer == "Dispose" ? 1 : 0), label + ": disposal hook follows the selected operation");
+            Assert.That(scope.Lease.IsActive, Is.EqualTo(restage), label + ": callback-accepted cleanup stays visible");
+            Assert.That(scope.Token.Enabled, Is.EqualTo(restage), label + ": token reports deferred cleanup");
+            Assert.That(Total(scope.Inner), Is.EqualTo(restage ? 1 : 0), label + ": only newly accepted cleanup can remain");
             int beforeOriginal = originalCalls;
             Emit(scope.Inner, scenario);
-            Assert.That(
-                originalCalls,
-                Is.EqualTo(beforeOriginal),
-                label + ": original registration is retired"
-            );
-            Assert.That(
-                replacementCalls,
-                Is.EqualTo(restage ? 1 : 0),
-                label + ": new registration retains exact delivery identity"
-            );
+            Assert.That(originalCalls, Is.EqualTo(beforeOriginal), label + ": original registration is retired");
+            Assert.That(replacementCalls, Is.EqualTo(restage ? 1 : 0), label + ": new registration retains exact delivery identity");
             if (restage)
             {
                 scope.Lease.Activate();
-                Assert.That(
-                    activations,
-                    Is.EqualTo(1),
-                    label + ": pending cleanup stays reachable without republishing activation"
-                );
+                Assert.That(activations, Is.EqualTo(1), label + ": pending cleanup stays reachable without republishing activation");
             }
             scope.Lease.Dispose();
             scope.Lease.Dispose();
-            Assert.That(
-                Total(scope.Inner),
-                Is.Zero,
-                label + ": second lease disposal consumes deferred cleanup"
-            );
-            Assert.That(
-                scope.Lease.IsActive,
-                Is.False,
-                label + ": completed disposal becomes inactive"
-            );
-            Assert.That(
-                scope.Token.Enabled,
-                Is.False,
-                label + ": completed disposal disables the token"
-            );
-            Assert.That(
-                scope.Token._metadata,
-                Is.Empty,
-                label + ": completed disposal releases staging"
-            );
-            Assert.That(
-                disposals,
-                Is.EqualTo(1),
-                label + ": cleanup retry does not repeat disposal hooks"
-            );
-            Assert.That(
-                deactivations,
-                Is.EqualTo(1),
-                label + ": cleanup retry does not repeat deactivation hooks"
-            );
-            Assert.Throws<ObjectDisposedException>(
-                () => scope.Lease.Activate(),
-                label + ": completed disposal rejects activation"
-            );
+            Assert.That(Total(scope.Inner), Is.Zero, label + ": second lease disposal consumes deferred cleanup");
+            Assert.That(scope.Lease.IsActive, Is.False, label + ": completed disposal becomes inactive");
+            Assert.That(scope.Token.Enabled, Is.False, label + ": completed disposal disables the token");
+            Assert.That(scope.Token._metadata, Is.Empty, label + ": completed disposal releases staging");
+            Assert.That(disposals, Is.EqualTo(1), label + ": cleanup retry does not repeat disposal hooks");
+            Assert.That(deactivations, Is.EqualTo(1), label + ": cleanup retry does not repeat deactivation hooks");
+            Assert.Throws<ObjectDisposedException>(() => scope.Lease.Activate(), label + ": completed disposal rejects activation");
             AssertRecovery(scope, scenario, carrier, label);
         }
 
@@ -381,23 +210,15 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             foreach (MessageScenario scenario in MessageScenarios.AllKinds)
             foreach (int carrier in new[] { 0, 1, 2, 3, 4, 5 })
-            foreach (
-                string mutation in new[] { "Reactivate", "Dispose", "Throw", "DeactivateThrow" }
-            )
+            foreach (string mutation in new[] { "Reactivate", "Dispose", "Throw", "DeactivateThrow" })
             {
-                yield return new TestCaseData(scenario, carrier, mutation).SetName(
-                    $"LeaseActivationHookControl_{scenario}_carrier{carrier}_{mutation}"
-                );
+                yield return new TestCaseData(scenario, carrier, mutation).SetName($"LeaseActivationHookControl_{scenario}_carrier{carrier}_{mutation}");
             }
         }
 
         /// <summary>Preserves normal lifecycle callback reactivation and exception recovery.</summary>
         [TestCaseSource(nameof(ActivationHookCases))]
-        public void ActivationHookCanReenterAfterReplayOwnershipEnds(
-            MessageScenario scenario,
-            int carrier,
-            string mutation
-        )
+        public void ActivationHookCanReenterAfterReplayOwnershipEnds(MessageScenario scenario, int carrier, string mutation)
         {
             string label = $"{scenario},carrier={carrier},{mutation}";
             using Scope scope = new Scope(label);
@@ -452,58 +273,25 @@ namespace DxMessaging.Tests.Runtime.Core
             }
             bool throws = mutation == "Throw" || mutation == "DeactivateThrow";
             bool live = mutation == "Reactivate" || mutation == "Throw";
-            Assert.That(
-                failure,
-                Is.SameAs(throws ? marker : null),
-                label + ": callback failure identity is preserved"
-            );
-            Assert.That(
-                activations,
-                Is.EqualTo(mutation == "Reactivate" ? 2 : 1),
-                label + ": separate callback-requested activation remains supported"
-            );
-            Assert.That(
-                scope.Lease.IsActive,
-                Is.EqualTo(live),
-                label + ": callback owns the resulting lifecycle state"
-            );
-            Assert.That(
-                scope.Token.Enabled,
-                Is.EqualTo(live),
-                label + ": callback and token state agree"
-            );
-            Assert.That(
-                Total(scope.Inner),
-                Is.EqualTo(live ? 1 : 0),
-                label + ": callback controls live registrations"
-            );
+            Assert.That(failure, Is.SameAs(throws ? marker : null), label + ": callback failure identity is preserved");
+            Assert.That(activations, Is.EqualTo(mutation == "Reactivate" ? 2 : 1), label + ": separate callback-requested activation remains supported");
+            Assert.That(scope.Lease.IsActive, Is.EqualTo(live), label + ": callback owns the resulting lifecycle state");
+            Assert.That(scope.Token.Enabled, Is.EqualTo(live), label + ": callback and token state agree");
+            Assert.That(Total(scope.Inner), Is.EqualTo(live ? 1 : 0), label + ": callback controls live registrations");
             Emit(scope.Inner, scenario);
-            Assert.That(
-                calls,
-                Is.EqualTo(live ? 1 : 0),
-                label + ": callback-selected delivery remains exact"
-            );
+            Assert.That(calls, Is.EqualTo(live ? 1 : 0), label + ": callback-selected delivery remains exact");
             scope.Lease.Dispose();
             scope.Lease.Dispose();
-            Assert.That(
-                Total(scope.Inner),
-                Is.Zero,
-                label + ": callback reentry keeps valid cleanup"
-            );
+            Assert.That(Total(scope.Inner), Is.Zero, label + ": callback reentry keeps valid cleanup");
             Assert.That(disposals, Is.EqualTo(1), label + ": callback disposal runs once");
-            Assert.That(
-                deactivations,
-                Is.EqualTo(mutation == "Reactivate" ? 2 : 1),
-                label + ": deactivation follows distinct activation lifetimes"
-            );
+            Assert.That(deactivations, Is.EqualTo(mutation == "Reactivate" ? 2 : 1), label + ": deactivation follows distinct activation lifetimes");
             AssertRecovery(scope, scenario, carrier, label);
         }
 
         /// <summary>Keeps activation and delivery out of the disposal callback.</summary>
         [Test]
         public void DisposalDoesNotPublishNestedLeaseActivation(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
             [Values(false, true)] bool startsActive,
             [Values(false, true)] bool reenters
         )
@@ -544,55 +332,31 @@ namespace DxMessaging.Tests.Runtime.Core
 
             int expectedDeliveries = startsActive ? 1 : 0;
             Emit(scope.Inner, scenario);
-            Assert.That(
-                deliveries,
-                Is.EqualTo(expectedDeliveries),
-                label + ": initial delivery follows the requested activation"
-            );
+            Assert.That(deliveries, Is.EqualTo(expectedDeliveries), label + ": initial delivery follows the requested activation");
 
             scope.Lease.Dispose();
             scope.Lease.Dispose();
             Emit(scope.Inner, scenario);
 
-            string[] expectedHooks = startsActive
-                ? new[] { "activate", "deactivate", "dispose" }
-                : new[] { "dispose" };
+            string[] expectedHooks = startsActive ? new[] { "activate", "deactivate", "dispose" } : new[] { "dispose" };
             string observed =
-                label
-                + $": hooks={string.Join(",", hooks)}, live during disposal={liveDuringDispose}, "
-                + $"active during disposal={activeDuringDispose}, deliveries={deliveries}";
+                label + $": hooks={string.Join(",", hooks)}, live during disposal={liveDuringDispose}, " + $"active during disposal={activeDuringDispose}, deliveries={deliveries}";
             TestContext.WriteLine(observed);
             Assert.That(Total(scope.Inner), Is.Zero, label + ": disposal drains bus registrations");
             Assert.That(scope.Token.Enabled, Is.False, label + ": disposal disables the token");
             Assert.That(scope.Token._metadata, Is.Empty, label + ": disposal clears token staging");
             Assert.That(scope.Lease.IsActive, Is.False, label + ": disposed lease is inactive");
-            Assert.Throws<ObjectDisposedException>(
-                () => scope.Lease.Activate(),
-                label + ": completed disposal still rejects activation"
-            );
-            Assert.That(
-                liveDuringDispose,
-                Is.Zero,
-                observed + ": disposal callbacks cannot activate the lease"
-            );
-            Assert.That(
-                activeDuringDispose,
-                Is.False,
-                observed + ": lease stays inactive during the disposal callback"
-            );
-            Assert.That(
-                deliveries,
-                Is.EqualTo(expectedDeliveries),
-                observed + ": no subscription delivers during or after disposal"
-            );
+            Assert.Throws<ObjectDisposedException>(() => scope.Lease.Activate(), label + ": completed disposal still rejects activation");
+            Assert.That(liveDuringDispose, Is.Zero, observed + ": disposal callbacks cannot activate the lease");
+            Assert.That(activeDuringDispose, Is.False, observed + ": lease stays inactive during the disposal callback");
+            Assert.That(deliveries, Is.EqualTo(expectedDeliveries), observed + ": no subscription delivers during or after disposal");
             Assert.That(hooks, Is.EqualTo(expectedHooks), observed + ": lifecycle hook order");
         }
 
         /// <summary>Lets nested deactivation finish without publishing another activation.</summary>
         [Test]
         public void DeactivationDoesNotPublishNestedLeaseActivation(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
             [Values(false, true)] bool attemptActivation
         )
         {
@@ -624,21 +388,9 @@ namespace DxMessaging.Tests.Runtime.Core
                             }
                             firstDeactivation = false;
                             scope.Lease.Deactivate();
-                            Assert.That(
-                                scope.Lease.IsActive,
-                                Is.False,
-                                label + ": nested cleanup finishes"
-                            );
-                            Assert.That(
-                                scope.Token.Enabled,
-                                Is.False,
-                                label + ": nested cleanup disables the token"
-                            );
-                            Assert.That(
-                                Total(scope.Inner),
-                                Is.Zero,
-                                label + ": nested cleanup removes registrations"
-                            );
+                            Assert.That(scope.Lease.IsActive, Is.False, label + ": nested cleanup finishes");
+                            Assert.That(scope.Token.Enabled, Is.False, label + ": nested cleanup disables the token");
+                            Assert.That(Total(scope.Inner), Is.Zero, label + ": nested cleanup removes registrations");
                             if (attemptActivation)
                             {
                                 scope.Lease.Activate();
@@ -657,69 +409,29 @@ namespace DxMessaging.Tests.Runtime.Core
             scope.Lease.Deactivate();
             int deliveriesAfterDeactivation = deliveries;
             Assert.That(scope.Lease.IsActive, Is.False, label + ": outer deactivation finishes");
-            Assert.That(
-                scope.Token.Enabled,
-                Is.False,
-                label + ": outer deactivation leaves the token disabled"
-            );
-            Assert.That(
-                Total(scope.Inner),
-                Is.Zero,
-                label + ": outer deactivation leaves no registrations"
-            );
+            Assert.That(scope.Token.Enabled, Is.False, label + ": outer deactivation leaves the token disabled");
+            Assert.That(Total(scope.Inner), Is.Zero, label + ": outer deactivation leaves no registrations");
 
             scope.Lease.Activate();
             Assert.That(scope.Lease.IsActive, Is.True, label + ": outside activation succeeds");
-            Assert.That(
-                Total(scope.Inner),
-                Is.EqualTo(1),
-                label + ": outside activation registers once"
-            );
+            Assert.That(Total(scope.Inner), Is.EqualTo(1), label + ": outside activation registers once");
             Emit(scope.Inner, scenario);
             int deliveriesAfterReactivation = deliveries;
-            Assert.That(
-                deliveriesAfterReactivation,
-                Is.EqualTo(deliveriesAfterDeactivation + 1),
-                label + ": outside activation delivers once"
-            );
+            Assert.That(deliveriesAfterReactivation, Is.EqualTo(deliveriesAfterDeactivation + 1), label + ": outside activation delivers once");
             scope.Lease.Dispose();
             Emit(scope.Inner, scenario);
-            Assert.That(
-                deliveries,
-                Is.EqualTo(deliveriesAfterReactivation),
-                label + ": final disposal prevents delivery"
-            );
-            Assert.That(
-                Total(scope.Inner),
-                Is.Zero,
-                label + ": final disposal leaves no registrations"
-            );
+            Assert.That(deliveries, Is.EqualTo(deliveriesAfterReactivation), label + ": final disposal prevents delivery");
+            Assert.That(Total(scope.Inner), Is.Zero, label + ": final disposal leaves no registrations");
 
             TestContext.WriteLine(
                 $"{label}: hooks={string.Join(",", hooks)}, active during hook={activeDuringHook}, live during hook={liveDuringHook}, deliveries during hook={deliveriesAfterDeactivation - 1}"
             );
             Action assertions = () =>
             {
-                Assert.That(
-                    activeDuringHook,
-                    Is.False,
-                    label + ": lease stays inactive during its deactivation hook"
-                );
-                Assert.That(
-                    liveDuringHook,
-                    Is.Zero,
-                    label + ": hook cannot publish a new registration"
-                );
-                Assert.That(
-                    deliveriesAfterDeactivation,
-                    Is.EqualTo(1),
-                    label + ": hook cannot trigger a new delivery"
-                );
-                CollectionAssert.AreEqual(
-                    new[] { "activate", "deactivate", "activate", "deactivate", "dispose" },
-                    hooks,
-                    label + ": lifecycle hook order"
-                );
+                Assert.That(activeDuringHook, Is.False, label + ": lease stays inactive during its deactivation hook");
+                Assert.That(liveDuringHook, Is.Zero, label + ": hook cannot publish a new registration");
+                Assert.That(deliveriesAfterDeactivation, Is.EqualTo(1), label + ": hook cannot trigger a new delivery");
+                CollectionAssert.AreEqual(new[] { "activate", "deactivate", "activate", "deactivate", "dispose" }, hooks, label + ": lifecycle hook order");
             };
 #if UNITY_2021_3_OR_NEWER
             assertions();
@@ -735,20 +447,13 @@ namespace DxMessaging.Tests.Runtime.Core
             foreach (bool before in new[] { false, true })
             foreach (string phase in new[] { "Configure", "OnBuild" })
             {
-                yield return new TestCaseData(scenario, carrier, before, phase).SetName(
-                    $"LeaseBuildRecovery_{scenario}_carrier{carrier}_before{before}_{phase}"
-                );
+                yield return new TestCaseData(scenario, carrier, before, phase).SetName($"LeaseBuildRecovery_{scenario}_carrier{carrier}_before{before}_{phase}");
             }
         }
 
         /// <summary>Retains a builder recovery lease when callbacks accept cleanup without throwing.</summary>
         [TestCaseSource(nameof(BuildRecoveryCases))]
-        public void FailedBuildTransfersDeferredCleanupToRetryableLease(
-            MessageScenario scenario,
-            int carrier,
-            bool before,
-            string phase
-        )
+        public void FailedBuildTransfersDeferredCleanupToRetryableLease(MessageScenario scenario, int carrier, bool before, string phase)
         {
             string label = $"{scenario},carrier={carrier},before={before},{phase}";
             using Scope scope = new Scope(label);
@@ -762,111 +467,51 @@ namespace DxMessaging.Tests.Runtime.Core
                 token.Enable();
                 throw marker;
             }
-            MessageRegistrationBuildException failure =
-                Assert.Throws<MessageRegistrationBuildException>(
-                    () =>
-                        scope.Builder.Build(
-                            new MessageRegistrationBuildOptions
+            MessageRegistrationBuildException failure = Assert.Throws<MessageRegistrationBuildException>(
+                () =>
+                    scope.Builder.Build(
+                        new MessageRegistrationBuildOptions
+                        {
+                            Owner = new InstanceId(971),
+                            Configure = token =>
                             {
-                                Owner = new InstanceId(971),
-                                Configure = token =>
-                                {
-                                    scope.Token = token;
-                                    Register(token, scenario, carrier, () => ++originalCalls);
-                                    if (phase == "Configure")
-                                        Selected(token);
-                                },
-                                Lifecycle = new MessageRegistrationLifecycle(
-                                    phase == "OnBuild"
-                                        ? (Action<MessageRegistrationToken>)Selected
-                                        : null,
-                                    null,
-                                    null,
-                                    token =>
-                                    {
-                                        ++disposals;
-                                        token.Enable();
-                                        scope.Bus.OnDeregister = () =>
-                                            Register(token, scenario, carrier, () =>
-                                                ++replacementCalls
-                                            );
-                                    }
-                                ),
-                            }
-                        ),
-                    label + ": deferred cleanup transfers an owning lease"
-                );
+                                scope.Token = token;
+                                Register(token, scenario, carrier, () => ++originalCalls);
+                                if (phase == "Configure")
+                                    Selected(token);
+                            },
+                            Lifecycle = new MessageRegistrationLifecycle(phase == "OnBuild" ? (Action<MessageRegistrationToken>)Selected : null, null, null, token =>
+                            {
+                                ++disposals;
+                                token.Enable();
+                                scope.Bus.OnDeregister = () => Register(token, scenario, carrier, () => ++replacementCalls);
+                            }),
+                        }
+                    ),
+                label + ": deferred cleanup transfers an owning lease"
+            );
             scope.Lease = failure.Lease;
             Assert.That(scope.Lease, Is.Not.Null, label + ": the recovery lease is reachable");
-            Assert.That(
-                failure.ActivationException,
-                Is.SameAs(marker),
-                label + ": original setup failure identity is retained"
-            );
-            Assert.That(
-                failure.InnerException,
-                Is.SameAs(marker),
-                label + ": inner failure identity is retained"
-            );
-            Assert.That(
-                failure.CleanupException,
-                Is.Null,
-                label + ": newly accepted cleanup need not throw"
-            );
-            Assert.That(
-                scope.Bus.Callbacks,
-                Is.EqualTo(1),
-                label + ": final cleanup callback is one-shot"
-            );
-            Assert.That(
-                scope.Lease.IsActive,
-                Is.True,
-                label + ": recovery reports its accepted cleanup"
-            );
+            Assert.That(failure.ActivationException, Is.SameAs(marker), label + ": original setup failure identity is retained");
+            Assert.That(failure.InnerException, Is.SameAs(marker), label + ": inner failure identity is retained");
+            Assert.That(failure.CleanupException, Is.Null, label + ": newly accepted cleanup need not throw");
+            Assert.That(scope.Bus.Callbacks, Is.EqualTo(1), label + ": final cleanup callback is one-shot");
+            Assert.That(scope.Lease.IsActive, Is.True, label + ": recovery reports its accepted cleanup");
             Assert.That(scope.Token.Enabled, Is.True, label + ": accepted cleanup remains enabled");
-            Assert.That(
-                Total(scope.Inner),
-                Is.EqualTo(1),
-                label + ": exactly the replacement remains live"
-            );
+            Assert.That(Total(scope.Inner), Is.EqualTo(1), label + ": exactly the replacement remains live");
             Emit(scope.Inner, scenario);
             Assert.That(originalCalls, Is.Zero, label + ": original callback is retired");
-            Assert.That(
-                replacementCalls,
-                Is.EqualTo(1),
-                label + ": the replacement has reachable ownership"
-            );
+            Assert.That(replacementCalls, Is.EqualTo(1), label + ": the replacement has reachable ownership");
             scope.Lease.Dispose();
             scope.Lease.Dispose();
-            Assert.That(
-                Total(scope.Inner),
-                Is.Zero,
-                label + ": recovery lease cleanup consumes accepted work"
-            );
-            Assert.That(
-                scope.Token.Enabled,
-                Is.False,
-                label + ": recovery cleanup disables the token"
-            );
-            Assert.That(
-                scope.Token._metadata,
-                Is.Empty,
-                label + ": recovery cleanup releases staging"
-            );
-            Assert.That(
-                disposals,
-                Is.EqualTo(1),
-                label + ": cleanup retry does not repeat the disposal hook"
-            );
+            Assert.That(Total(scope.Inner), Is.Zero, label + ": recovery lease cleanup consumes accepted work");
+            Assert.That(scope.Token.Enabled, Is.False, label + ": recovery cleanup disables the token");
+            Assert.That(scope.Token._metadata, Is.Empty, label + ": recovery cleanup releases staging");
+            Assert.That(disposals, Is.EqualTo(1), label + ": cleanup retry does not repeat the disposal hook");
             AssertRecovery(scope, scenario, carrier, label);
         }
 
-        private static void AssertRecovery(
-            Scope scope,
-            MessageScenario scenario,
-            int carrier,
-            string label
-        )
+        private static void AssertRecovery(Scope scope, MessageScenario scenario, int carrier, string label)
         {
             int calls = 0;
             using (
@@ -881,25 +526,12 @@ namespace DxMessaging.Tests.Runtime.Core
             )
             {
                 Emit(scope.Inner, scenario);
-                Assert.That(
-                    calls,
-                    Is.EqualTo(1),
-                    label + ": independent recovery lease dispatches once"
-                );
+                Assert.That(calls, Is.EqualTo(1), label + ": independent recovery lease dispatches once");
             }
-            Assert.That(
-                Total(scope.Inner),
-                Is.Zero,
-                label + ": independent recovery cleanup is valid"
-            );
+            Assert.That(Total(scope.Inner), Is.Zero, label + ": independent recovery cleanup is valid");
         }
 
-        private static MessageRegistrationHandle Register(
-            MessageRegistrationToken token,
-            MessageScenario scenario,
-            int carrier,
-            Action callback
-        )
+        private static MessageRegistrationHandle Register(MessageRegistrationToken token, MessageScenario scenario, int carrier, Action callback)
         {
             Action<ProbeMessage> action = _ => callback();
             MessageHandler.FastHandler<ProbeMessage> fast = (in ProbeMessage _) => callback();
@@ -907,15 +539,9 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 return scenario.Kind switch
                 {
-                    MessageKind.Untargeted => carrier == 0
-                        ? token.RegisterUntargeted(action)
-                        : ScenarioHarness.RegisterUntargeted(scenario, token, fast),
-                    MessageKind.Targeted => carrier == 0
-                        ? token.RegisterTargeted(Context, action)
-                        : ScenarioHarness.RegisterTargeted(scenario, token, Context, fast),
-                    MessageKind.Broadcast => carrier == 0
-                        ? token.RegisterBroadcast(Context, action)
-                        : ScenarioHarness.RegisterBroadcast(scenario, token, Context, fast),
+                    MessageKind.Untargeted => carrier == 0 ? token.RegisterUntargeted(action) : ScenarioHarness.RegisterUntargeted(scenario, token, fast),
+                    MessageKind.Targeted => carrier == 0 ? token.RegisterTargeted(Context, action) : ScenarioHarness.RegisterTargeted(scenario, token, Context, fast),
+                    MessageKind.Broadcast => carrier == 0 ? token.RegisterBroadcast(Context, action) : ScenarioHarness.RegisterBroadcast(scenario, token, Context, fast),
                     _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
                 };
             }
@@ -923,23 +549,9 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 return scenario.Kind switch
                 {
-                    MessageKind.Untargeted => ScenarioHarness.RegisterUntargetedPostProcessor(
-                        scenario,
-                        token,
-                        fast
-                    ),
-                    MessageKind.Targeted => ScenarioHarness.RegisterTargetedPostProcessor(
-                        scenario,
-                        token,
-                        Context,
-                        fast
-                    ),
-                    MessageKind.Broadcast => ScenarioHarness.RegisterBroadcastPostProcessor(
-                        scenario,
-                        token,
-                        Context,
-                        fast
-                    ),
+                    MessageKind.Untargeted => ScenarioHarness.RegisterUntargetedPostProcessor(scenario, token, fast),
+                    MessageKind.Targeted => ScenarioHarness.RegisterTargetedPostProcessor(scenario, token, Context, fast),
+                    MessageKind.Broadcast => ScenarioHarness.RegisterBroadcastPostProcessor(scenario, token, Context, fast),
                     _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
                 };
             }
@@ -957,15 +569,9 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 return scenario.Kind switch
                 {
-                    MessageKind.Untargeted => token.RegisterUntargetedInterceptor<ProbeMessage>(
-                        Scalar
-                    ),
-                    MessageKind.Targeted => token.RegisterTargetedInterceptor<ProbeMessage>(
-                        Contextual
-                    ),
-                    MessageKind.Broadcast => token.RegisterBroadcastInterceptor<ProbeMessage>(
-                        Contextual
-                    ),
+                    MessageKind.Untargeted => token.RegisterUntargetedInterceptor<ProbeMessage>(Scalar),
+                    MessageKind.Targeted => token.RegisterTargetedInterceptor<ProbeMessage>(Contextual),
+                    MessageKind.Broadcast => token.RegisterBroadcastInterceptor<ProbeMessage>(Contextual),
                     _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
                 };
             }
@@ -1012,17 +618,9 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         private static int Total(BusType bus) =>
-            bus.RegisteredUntargeted
-            + bus.RegisteredTargeted
-            + bus.RegisteredBroadcast
-            + bus.RegisteredPostProcessors
-            + bus.RegisteredInterceptors
-            + bus.RegisteredGlobalAcceptAll;
+            bus.RegisteredUntargeted + bus.RegisteredTargeted + bus.RegisteredBroadcast + bus.RegisteredPostProcessors + bus.RegisteredInterceptors + bus.RegisteredGlobalAcceptAll;
 
-        private readonly struct ProbeMessage
-            : IUntargetedMessage<ProbeMessage>,
-                ITargetedMessage<ProbeMessage>,
-                IBroadcastMessage<ProbeMessage>
+        private readonly struct ProbeMessage : IUntargetedMessage<ProbeMessage>, ITargetedMessage<ProbeMessage>, IBroadcastMessage<ProbeMessage>
         {
             public Type MessageType => typeof(ProbeMessage);
         }
@@ -1034,9 +632,7 @@ namespace DxMessaging.Tests.Runtime.Core
             internal int Callbacks;
             internal Action OnRegister;
             internal Action OnDeregister;
-            internal readonly Exception CleanupMarker = new InvalidOperationException(
-                "lease cleanup marker"
-            );
+            internal readonly Exception CleanupMarker = new InvalidOperationException("lease cleanup marker");
 
             internal ReentrantBus(BusType inner)
                 : base(inner) { }
@@ -1059,58 +655,33 @@ namespace DxMessaging.Tests.Runtime.Core
                 return registration;
             }
 
-            public override MessageBusRegistration RegisterUntargeted<T>(
-                MessageHandler handler,
-                int priority = 0
-            ) => Register(() => base.RegisterUntargeted<T>(handler, priority));
+            public override MessageBusRegistration RegisterUntargeted<T>(MessageHandler handler, int priority = 0) => Register(() => base.RegisterUntargeted<T>(handler, priority));
 
-            public override MessageBusRegistration RegisterTargeted<T>(
-                InstanceId context,
-                MessageHandler handler,
-                int priority = 0
-            ) => Register(() => base.RegisterTargeted<T>(context, handler, priority));
+            public override MessageBusRegistration RegisterTargeted<T>(InstanceId context, MessageHandler handler, int priority = 0) =>
+                Register(() => base.RegisterTargeted<T>(context, handler, priority));
 
-            public override MessageBusRegistration RegisterSourcedBroadcast<T>(
-                InstanceId context,
-                MessageHandler handler,
-                int priority = 0
-            ) => Register(() => base.RegisterSourcedBroadcast<T>(context, handler, priority));
+            public override MessageBusRegistration RegisterSourcedBroadcast<T>(InstanceId context, MessageHandler handler, int priority = 0) =>
+                Register(() => base.RegisterSourcedBroadcast<T>(context, handler, priority));
 
-            public override MessageBusRegistration RegisterUntargetedPostProcessor<T>(
-                MessageHandler handler,
-                int priority = 0
-            ) => Register(() => base.RegisterUntargetedPostProcessor<T>(handler, priority));
+            public override MessageBusRegistration RegisterUntargetedPostProcessor<T>(MessageHandler handler, int priority = 0) =>
+                Register(() => base.RegisterUntargetedPostProcessor<T>(handler, priority));
 
-            public override MessageBusRegistration RegisterTargetedPostProcessor<T>(
-                InstanceId context,
-                MessageHandler handler,
-                int priority = 0
-            ) => Register(() => base.RegisterTargetedPostProcessor<T>(context, handler, priority));
+            public override MessageBusRegistration RegisterTargetedPostProcessor<T>(InstanceId context, MessageHandler handler, int priority = 0) =>
+                Register(() => base.RegisterTargetedPostProcessor<T>(context, handler, priority));
 
-            public override MessageBusRegistration RegisterBroadcastPostProcessor<T>(
-                InstanceId context,
-                MessageHandler handler,
-                int priority = 0
-            ) => Register(() => base.RegisterBroadcastPostProcessor<T>(context, handler, priority));
+            public override MessageBusRegistration RegisterBroadcastPostProcessor<T>(InstanceId context, MessageHandler handler, int priority = 0) =>
+                Register(() => base.RegisterBroadcastPostProcessor<T>(context, handler, priority));
 
-            public override MessageBusRegistration RegisterUntargetedInterceptor<T>(
-                IMessageBus.UntargetedInterceptor<T> callback,
-                int priority = 0
-            ) => Register(() => base.RegisterUntargetedInterceptor(callback, priority));
+            public override MessageBusRegistration RegisterUntargetedInterceptor<T>(IMessageBus.UntargetedInterceptor<T> callback, int priority = 0) =>
+                Register(() => base.RegisterUntargetedInterceptor(callback, priority));
 
-            public override MessageBusRegistration RegisterTargetedInterceptor<T>(
-                IMessageBus.TargetedInterceptor<T> callback,
-                int priority = 0
-            ) => Register(() => base.RegisterTargetedInterceptor(callback, priority));
+            public override MessageBusRegistration RegisterTargetedInterceptor<T>(IMessageBus.TargetedInterceptor<T> callback, int priority = 0) =>
+                Register(() => base.RegisterTargetedInterceptor(callback, priority));
 
-            public override MessageBusRegistration RegisterBroadcastInterceptor<T>(
-                IMessageBus.BroadcastInterceptor<T> callback,
-                int priority = 0
-            ) => Register(() => base.RegisterBroadcastInterceptor(callback, priority));
+            public override MessageBusRegistration RegisterBroadcastInterceptor<T>(IMessageBus.BroadcastInterceptor<T> callback, int priority = 0) =>
+                Register(() => base.RegisterBroadcastInterceptor(callback, priority));
 
-            public override MessageBusRegistration RegisterGlobalAcceptAll(
-                MessageHandler handler
-            ) => Register(() => base.RegisterGlobalAcceptAll(handler));
+            public override MessageBusRegistration RegisterGlobalAcceptAll(MessageHandler handler) => Register(() => base.RegisterGlobalAcceptAll(handler));
 
             public override void Deregister<T>(in MessageBusRegistration registration)
             {

@@ -126,12 +126,7 @@ namespace DxMessaging.Core.MessageBus
         /// <param name="type">Type of Message.</param>
         /// <param name="registrationType">Register? Deregister?</param>
         /// <param name="registrationMethod">How the Message was chosen to be listened for.</param>
-        public MessagingRegistration(
-            InstanceId id,
-            Type type,
-            RegistrationType registrationType,
-            RegistrationMethod registrationMethod
-        )
+        public MessagingRegistration(InstanceId id, Type type, RegistrationType registrationType, RegistrationMethod registrationMethod)
         {
             this.id = new InstanceId(id.Id);
             this.type = type;

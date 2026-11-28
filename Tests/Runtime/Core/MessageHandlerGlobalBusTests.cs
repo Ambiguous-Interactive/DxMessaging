@@ -78,42 +78,21 @@ namespace DxMessaging.Tests.Runtime.Core
                 AppDomain-scoped static pools (DxPools / ContextHandlerByTargetDicts) shared with
                 other test fixtures, so its value is non-deterministic across test orderings.
             */
-            Assert.AreEqual(
-                0,
-                result.TypeSlotsEvicted,
-                "TypeSlotsEvicted should be 0 on a fresh bus."
-            );
-            Assert.AreEqual(
-                0,
-                result.TargetSlotsEvicted,
-                "TargetSlotsEvicted should be 0 on a fresh bus."
-            );
-            Assert.AreEqual(
-                0,
-                result.LiveTypeSlotsRemaining,
-                "LiveTypeSlotsRemaining should be 0 on a fresh bus."
-            );
+            Assert.AreEqual(0, result.TypeSlotsEvicted, "TypeSlotsEvicted should be 0 on a fresh bus.");
+            Assert.AreEqual(0, result.TargetSlotsEvicted, "TargetSlotsEvicted should be 0 on a fresh bus.");
+            Assert.AreEqual(0, result.LiveTypeSlotsRemaining, "LiveTypeSlotsRemaining should be 0 on a fresh bus.");
         }
 
         [Test]
         public void TrimAllPropagatesInnerBusResultUnchanged()
         {
             IMessageBus.TrimResult sentinel = new IMessageBus.TrimResult(7, 11, 13, 17);
-            SentinelTrimMessageBus wrapper = new SentinelTrimMessageBus(
-                new GlobalMessageBus(),
-                sentinel
-            );
+            SentinelTrimMessageBus wrapper = new SentinelTrimMessageBus(new GlobalMessageBus(), sentinel);
             MessageHandler.SetGlobalMessageBus(wrapper);
 
             IMessageBus.TrimResult result = MessageHandler.TrimAll(force: false);
 
-            Assert.AreEqual(
-                sentinel,
-                result,
-                "MessageHandler.TrimAll must return the inner bus's TrimResult unchanged. expected={0}, actual={1}",
-                sentinel,
-                result
-            );
+            Assert.AreEqual(sentinel, result, "MessageHandler.TrimAll must return the inner bus's TrimResult unchanged. expected={0}, actual={1}", sentinel, result);
         }
 
         [Test]
@@ -138,15 +117,8 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageHandler.SetGlobalMessageBus(current);
 
             MessageHandler.GlobalMessageBusScope scope = default;
-            Assert.DoesNotThrow(
-                scope.Dispose,
-                "Disposing a default global-bus scope must be a harmless no-op."
-            );
-            Assert.AreSame(
-                current,
-                MessageHandler.MessageBus,
-                "A default scope must not reset or replace the current global bus."
-            );
+            Assert.DoesNotThrow(scope.Dispose, "Disposing a default global-bus scope must be a harmless no-op.");
+            Assert.AreSame(current, MessageHandler.MessageBus, "A default scope must not reset or replace the current global bus.");
         }
 
         [TestCase(true)]
@@ -156,9 +128,7 @@ namespace DxMessaging.Tests.Runtime.Core
             GlobalMessageBus original = new GlobalMessageBus();
             MessageHandler.SetGlobalMessageBus(original);
             GlobalMessageBus overrideBus = new GlobalMessageBus();
-            MessageHandler.GlobalMessageBusScope scope = MessageHandler.OverrideGlobalMessageBus(
-                overrideBus
-            );
+            MessageHandler.GlobalMessageBusScope scope = MessageHandler.OverrideGlobalMessageBus(overrideBus);
             MessageHandler.GlobalMessageBusScope copy = scope;
 
             if (disposeCopyFirst)
@@ -170,12 +140,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 scope.Dispose();
             }
 
-            Assert.AreSame(
-                original,
-                MessageHandler.MessageBus,
-                "The first disposal of either copy must restore the original bus. copyFirst={0}",
-                disposeCopyFirst
-            );
+            Assert.AreSame(original, MessageHandler.MessageBus, "The first disposal of either copy must restore the original bus. copyFirst={0}", disposeCopyFirst);
 
             GlobalMessageBus intervening = new GlobalMessageBus();
             MessageHandler.SetGlobalMessageBus(intervening);
@@ -188,12 +153,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 copy.Dispose();
             }
 
-            Assert.AreSame(
-                intervening,
-                MessageHandler.MessageBus,
-                "The stale copy must not restore over a newer global-bus change. copyFirst={0}",
-                disposeCopyFirst
-            );
+            Assert.AreSame(intervening, MessageHandler.MessageBus, "The stale copy must not restore over a newer global-bus change. copyFirst={0}", disposeCopyFirst);
         }
 
         [Test]
@@ -201,57 +161,39 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             GlobalMessageBus original = new GlobalMessageBus();
             MessageHandler.SetGlobalMessageBus(original);
-            MessageHandler.GlobalMessageBusScope scope = MessageHandler.OverrideGlobalMessageBus(
-                new GlobalMessageBus()
-            );
+            MessageHandler.GlobalMessageBusScope scope = MessageHandler.OverrideGlobalMessageBus(new GlobalMessageBus());
             GlobalMessageBus intervening = new GlobalMessageBus();
 
             MessageHandler.SetGlobalMessageBus(intervening);
             scope.Dispose();
 
-            Assert.AreSame(
-                intervening,
-                MessageHandler.MessageBus,
-                "Disposal must not restore a snapshot over a newer explicit global-bus change."
-            );
+            Assert.AreSame(intervening, MessageHandler.MessageBus, "Disposal must not restore a snapshot over a newer explicit global-bus change.");
         }
 
         [Test]
         public void ResetGlobalMessageBusInvalidatesActiveScopeRestore()
         {
             MessageHandler.SetGlobalMessageBus(new GlobalMessageBus());
-            MessageHandler.GlobalMessageBusScope scope = MessageHandler.OverrideGlobalMessageBus(
-                new GlobalMessageBus()
-            );
+            MessageHandler.GlobalMessageBusScope scope = MessageHandler.OverrideGlobalMessageBus(new GlobalMessageBus());
 
             MessageHandler.ResetGlobalMessageBus();
             IMessageBus resetBus = MessageHandler.MessageBus;
             scope.Dispose();
 
-            Assert.AreSame(
-                resetBus,
-                MessageHandler.MessageBus,
-                "A scope created before ResetGlobalMessageBus must not restore stale state."
-            );
+            Assert.AreSame(resetBus, MessageHandler.MessageBus, "A scope created before ResetGlobalMessageBus must not restore stale state.");
         }
 
         [Test]
         public void StaticResetInvalidatesActiveScopeRestore()
         {
             MessageHandler.SetGlobalMessageBus(new GlobalMessageBus());
-            MessageHandler.GlobalMessageBusScope scope = MessageHandler.OverrideGlobalMessageBus(
-                new GlobalMessageBus()
-            );
+            MessageHandler.GlobalMessageBusScope scope = MessageHandler.OverrideGlobalMessageBus(new GlobalMessageBus());
 
             DxMessagingStaticState.Reset();
             IMessageBus resetBus = MessageHandler.MessageBus;
             scope.Dispose();
 
-            Assert.AreSame(
-                resetBus,
-                MessageHandler.MessageBus,
-                "A scope created before DxMessagingStaticState.Reset must not restore stale state."
-            );
+            Assert.AreSame(resetBus, MessageHandler.MessageBus, "A scope created before DxMessagingStaticState.Reset must not restore stale state.");
         }
 
         [Test]
@@ -269,9 +211,7 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             GlobalMessageBus original = new GlobalMessageBus();
             MessageHandler.SetGlobalMessageBus(original);
-            MessageHandler.GlobalMessageBusScope stale = MessageHandler.OverrideGlobalMessageBus(
-                new GlobalMessageBus()
-            );
+            MessageHandler.GlobalMessageBusScope stale = MessageHandler.OverrideGlobalMessageBus(new GlobalMessageBus());
 
             if (useStaticReset)
             {
@@ -284,24 +224,13 @@ namespace DxMessaging.Tests.Runtime.Core
 
             IMessageBus baseline = MessageHandler.MessageBus;
             GlobalMessageBus current = new GlobalMessageBus();
-            MessageHandler.GlobalMessageBusScope currentScope =
-                MessageHandler.OverrideGlobalMessageBus(current);
+            MessageHandler.GlobalMessageBusScope currentScope = MessageHandler.OverrideGlobalMessageBus(current);
 
             stale.Dispose();
-            Assert.AreSame(
-                current,
-                MessageHandler.MessageBus,
-                "A stale generation must not end the scope that recycled its slot. staticReset={0}",
-                useStaticReset
-            );
+            Assert.AreSame(current, MessageHandler.MessageBus, "A stale generation must not end the scope that recycled its slot. staticReset={0}", useStaticReset);
 
             currentScope.Dispose();
-            Assert.AreSame(
-                baseline,
-                MessageHandler.MessageBus,
-                "The recycled slot's live scope must still restore its own baseline. staticReset={0}",
-                useStaticReset
-            );
+            Assert.AreSame(baseline, MessageHandler.MessageBus, "The recycled slot's live scope must still restore its own baseline. staticReset={0}", useStaticReset);
         }
 
         [Test]
@@ -311,51 +240,30 @@ namespace DxMessaging.Tests.Runtime.Core
             GlobalMessageBus original = new GlobalMessageBus();
             GlobalMessageBus overrideBus = new GlobalMessageBus();
             MessageHandler.SetGlobalMessageBus(original);
-            MessageHandler.GlobalMessageBusScope[] scopes =
-                new MessageHandler.GlobalMessageBusScope[scopeCount];
+            MessageHandler.GlobalMessageBusScope[] scopes = new MessageHandler.GlobalMessageBusScope[scopeCount];
 
             for (int i = 0; i < scopes.Length; ++i)
             {
                 scopes[i] = MessageHandler.OverrideGlobalMessageBus(overrideBus);
             }
 
-            Assert.AreSame(
-                overrideBus,
-                MessageHandler.MessageBus,
-                "The first scope in a third block must become active without a fixed-block cap."
-            );
+            Assert.AreSame(overrideBus, MessageHandler.MessageBus, "The first scope in a third block must become active without a fixed-block cap.");
 
             for (int i = 0; i < scopes.Length - 1; ++i)
             {
                 scopes[i].Dispose();
             }
 
-            Assert.AreSame(
-                overrideBus,
-                MessageHandler.MessageBus,
-                "Out-of-order-disposed ancestors must leave the newest scope active."
-            );
+            Assert.AreSame(overrideBus, MessageHandler.MessageBus, "Out-of-order-disposed ancestors must leave the newest scope active.");
             scopes[scopes.Length - 1].Dispose();
-            Assert.AreSame(
-                original,
-                MessageHandler.MessageBus,
-                "Ending the newest scope must unwind every disposed ancestor."
-            );
+            Assert.AreSame(original, MessageHandler.MessageBus, "Ending the newest scope must unwind every disposed ancestor.");
 
             using (MessageHandler.OverrideGlobalMessageBus(overrideBus))
             {
-                Assert.AreSame(
-                    overrideBus,
-                    MessageHandler.MessageBus,
-                    "Unwound slots must be reusable after multi-block recovery."
-                );
+                Assert.AreSame(overrideBus, MessageHandler.MessageBus, "Unwound slots must be reusable after multi-block recovery.");
             }
 
-            Assert.AreSame(
-                original,
-                MessageHandler.MessageBus,
-                "The recovered scope must restore the pre-growth-test bus."
-            );
+            Assert.AreSame(original, MessageHandler.MessageBus, "The recovered scope must restore the pre-growth-test bus.");
         }
 
         [Test]
@@ -364,33 +272,18 @@ namespace DxMessaging.Tests.Runtime.Core
             const int expectedBlockSize = 1024;
             const int scopeCount = (expectedBlockSize * 2) + 1;
             const BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Static;
-            FieldInfo blocksField = typeof(MessageHandler).GetField(
-                "_globalMessageBusOverrideBlocks",
-                flags
-            );
-            FieldInfo blockSizeField = typeof(MessageHandler).GetField(
-                "GlobalMessageBusOverrideBlockSize",
-                flags
-            );
+            FieldInfo blocksField = typeof(MessageHandler).GetField("_globalMessageBusOverrideBlocks", flags);
+            FieldInfo blockSizeField = typeof(MessageHandler).GetField("GlobalMessageBusOverrideBlockSize", flags);
 
-            Assert.IsNotNull(
-                blocksField,
-                "Override state must use a segmented directory instead of a fixed monolithic arena."
-            );
+            Assert.IsNotNull(blocksField, "Override state must use a segmented directory instead of a fixed monolithic arena.");
             Assert.IsNotNull(blockSizeField, "The fixed segment size must remain explicit.");
             Assert.IsTrue(
-                blocksField.FieldType.IsArray
-                    && blocksField.FieldType.GetElementType()?.IsArray == true,
+                blocksField.FieldType.IsArray && blocksField.FieldType.GetElementType()?.IsArray == true,
                 "Override storage must be a jagged array so existing state blocks never move when capacity grows."
             );
-            Assert.AreEqual(
-                expectedBlockSize,
-                (int)blockSizeField.GetRawConstantValue(),
-                "Override storage must grow in bounded fixed-size segments."
-            );
+            Assert.AreEqual(expectedBlockSize, (int)blockSizeField.GetRawConstantValue(), "Override storage must grow in bounded fixed-size segments.");
 
-            MessageHandler.GlobalMessageBusScope[] scopes =
-                new MessageHandler.GlobalMessageBusScope[scopeCount];
+            MessageHandler.GlobalMessageBusScope[] scopes = new MessageHandler.GlobalMessageBusScope[scopeCount];
             GlobalMessageBus overrideBus = new GlobalMessageBus();
             using CleanupScope cleanup = new(() =>
             {
@@ -415,32 +308,18 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
 
                 ++realizedBlockCount;
-                Assert.AreEqual(
-                    expectedBlockSize,
-                    block.Length,
-                    "Every realized override-state segment must use the fixed block size."
-                );
+                Assert.AreEqual(expectedBlockSize, block.Length, "Every realized override-state segment must use the fixed block size.");
             }
 
-            Assert.GreaterOrEqual(
-                realizedBlockCount,
-                3,
-                "Crossing two boundaries must realize at least three fixed-size blocks."
-            );
+            Assert.GreaterOrEqual(realizedBlockCount, 3, "Crossing two boundaries must realize at least three fixed-size blocks.");
         }
 
         [Test]
         public void OverrideSlotIndexExhaustionFailsWithoutChangingTheGlobalBus()
         {
             const BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Static;
-            FieldInfo slotCountField = typeof(MessageHandler).GetField(
-                "_globalMessageBusOverrideSlotCount",
-                flags
-            );
-            FieldInfo freeHeadField = typeof(MessageHandler).GetField(
-                "_globalMessageBusOverrideFreeHead",
-                flags
-            );
+            FieldInfo slotCountField = typeof(MessageHandler).GetField("_globalMessageBusOverrideSlotCount", flags);
+            FieldInfo freeHeadField = typeof(MessageHandler).GetField("_globalMessageBusOverrideFreeHead", flags);
             GlobalMessageBus current = new GlobalMessageBus();
             MessageHandler.SetGlobalMessageBus(current);
             int originalSlotCount = (int)slotCountField.GetValue(null);
@@ -459,25 +338,18 @@ namespace DxMessaging.Tests.Runtime.Core
                 () => MessageHandler.OverrideGlobalMessageBus(new GlobalMessageBus()),
                 "A fresh slot outside the representable range must fail closed."
             );
-            Assert.AreSame(
-                current,
-                MessageHandler.MessageBus,
-                "Slot-index exhaustion must not change the active global bus."
-            );
+            Assert.AreSame(current, MessageHandler.MessageBus, "Slot-index exhaustion must not change the active global bus.");
         }
 
         [TestCase(0L)]
         [TestCase(long.MaxValue)]
         [TestCase(-2L)]
-        public void OverrideGenerationBoundariesPreserveStaleCopiesAndRetireExhaustedSlots(
-            long generation
-        )
+        public void OverrideGenerationBoundariesPreserveStaleCopiesAndRetireExhaustedSlots(long generation)
         {
             GlobalMessageBus original = new GlobalMessageBus();
             GlobalMessageBus replacementBus = new GlobalMessageBus();
             MessageHandler.SetGlobalMessageBus(original);
-            MessageHandler.GlobalMessageBusScope bootstrap =
-                MessageHandler.OverrideGlobalMessageBus(new GlobalMessageBus());
+            MessageHandler.GlobalMessageBusScope bootstrap = MessageHandler.OverrideGlobalMessageBus(new GlobalMessageBus());
             int exhaustedSlot = GetScopeSlot(bootstrap);
             bootstrap.Dispose();
             long originalGeneration = GetOverrideStateGeneration(exhaustedSlot);
@@ -501,11 +373,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             SetOverrideStateGeneration(exhaustedSlot, generation);
             exhaustedScope = MessageHandler.OverrideGlobalMessageBus(new GlobalMessageBus());
-            Assert.AreEqual(
-                exhaustedSlot,
-                GetScopeSlot(exhaustedScope),
-                $"generation={generation}: the prepared slot must issue the next generation."
-            );
+            Assert.AreEqual(exhaustedSlot, GetScopeSlot(exhaustedScope), $"generation={generation}: the prepared slot must issue the next generation.");
             Assert.AreEqual(
                 unchecked(generation + 1),
                 GetOverrideStateGeneration(exhaustedSlot),
@@ -522,54 +390,31 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             staleCopy.Dispose();
-            Assert.AreSame(
-                replacementBus,
-                MessageHandler.MessageBus,
-                $"generation={generation}: the stale scope must not end the replacement scope."
-            );
+            Assert.AreSame(replacementBus, MessageHandler.MessageBus, $"generation={generation}: the stale scope must not end the replacement scope.");
 
             replacement.Dispose();
-            Assert.AreSame(
-                original,
-                MessageHandler.MessageBus,
-                $"generation={generation}: the replacement scope must restore the original bus."
-            );
+            Assert.AreSame(original, MessageHandler.MessageBus, $"generation={generation}: the replacement scope must restore the original bus.");
         }
 
         [TestCase(false, false)]
         [TestCase(false, true)]
         [TestCase(true, false)]
         [TestCase(true, true)]
-        public void NestedGlobalMessageBusScopeCopiesRestoreNearestActiveBus(
-            bool disposeOuterFirst,
-            bool disposeCopies
-        )
+        public void NestedGlobalMessageBusScopeCopiesRestoreNearestActiveBus(bool disposeOuterFirst, bool disposeCopies)
         {
             GlobalMessageBus original = new GlobalMessageBus();
             MessageHandler.SetGlobalMessageBus(original);
             GlobalMessageBus outerBus = new GlobalMessageBus();
             GlobalMessageBus innerBus = new GlobalMessageBus();
 
-            MessageHandler.GlobalMessageBusScope outerScope =
-                MessageHandler.OverrideGlobalMessageBus(outerBus);
-            MessageHandler.GlobalMessageBusScope innerScope =
-                MessageHandler.OverrideGlobalMessageBus(innerBus);
+            MessageHandler.GlobalMessageBusScope outerScope = MessageHandler.OverrideGlobalMessageBus(outerBus);
+            MessageHandler.GlobalMessageBusScope innerScope = MessageHandler.OverrideGlobalMessageBus(innerBus);
             MessageHandler.GlobalMessageBusScope outerCopy = outerScope;
             MessageHandler.GlobalMessageBusScope innerCopy = innerScope;
-            Assert.AreSame(
-                innerBus,
-                MessageHandler.MessageBus,
-                "The inner override must be active before disposal. outerFirst={0}, copies={1}",
-                disposeOuterFirst,
-                disposeCopies
-            );
+            Assert.AreSame(innerBus, MessageHandler.MessageBus, "The inner override must be active before disposal. outerFirst={0}, copies={1}", disposeOuterFirst, disposeCopies);
 
-            MessageHandler.GlobalMessageBusScope first = disposeOuterFirst
-                ? (disposeCopies ? outerCopy : outerScope)
-                : (disposeCopies ? innerCopy : innerScope);
-            MessageHandler.GlobalMessageBusScope second = disposeOuterFirst
-                ? (disposeCopies ? innerCopy : innerScope)
-                : (disposeCopies ? outerCopy : outerScope);
+            MessageHandler.GlobalMessageBusScope first = disposeOuterFirst ? (disposeCopies ? outerCopy : outerScope) : (disposeCopies ? innerCopy : innerScope);
+            MessageHandler.GlobalMessageBusScope second = disposeOuterFirst ? (disposeCopies ? innerCopy : innerScope) : (disposeCopies ? outerCopy : outerScope);
             first.Dispose();
 
             IMessageBus expectedAfterFirst = disposeOuterFirst ? innerBus : outerBus;
@@ -582,22 +427,13 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             second.Dispose();
-            Assert.AreSame(
-                original,
-                MessageHandler.MessageBus,
-                "The second disposal must restore the original bus. outerFirst={0}, copies={1}",
-                disposeOuterFirst,
-                disposeCopies
-            );
+            Assert.AreSame(original, MessageHandler.MessageBus, "The second disposal must restore the original bus. outerFirst={0}, copies={1}", disposeOuterFirst, disposeCopies);
         }
 
         private static int GetScopeSlot(MessageHandler.GlobalMessageBusScope scope)
         {
             const BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Instance;
-            FieldInfo slotField = typeof(MessageHandler.GlobalMessageBusScope).GetField(
-                "_slot",
-                flags
-            );
+            FieldInfo slotField = typeof(MessageHandler.GlobalMessageBusScope).GetField("_slot", flags);
             return (int)slotField.GetValue(scope) - 1;
         }
 
@@ -617,10 +453,7 @@ namespace DxMessaging.Tests.Runtime.Core
         private static void RestoreBurnedOverrideSlot(int slot, long generation)
         {
             const BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Static;
-            FieldInfo freeHeadField = typeof(MessageHandler).GetField(
-                "_globalMessageBusOverrideFreeHead",
-                flags
-            );
+            FieldInfo freeHeadField = typeof(MessageHandler).GetField("_globalMessageBusOverrideFreeHead", flags);
             int freeHead = (int)freeHeadField.GetValue(null);
             object state = GetOverrideState(slot, out Array block, out int offset);
             GetOverrideStateField(state, "PreviousBus").SetValue(state, null);
@@ -634,8 +467,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
         private static FieldInfo GetOverrideStateField(object state, string fieldName)
         {
-            const BindingFlags flags =
-                BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance;
+            const BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance;
             return state.GetType().GetField(fieldName, flags);
         }
 
@@ -644,10 +476,7 @@ namespace DxMessaging.Tests.Runtime.Core
             const int blockShift = 10;
             const int blockMask = (1 << blockShift) - 1;
             const BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Static;
-            FieldInfo blocksField = typeof(MessageHandler).GetField(
-                "_globalMessageBusOverrideBlocks",
-                flags
-            );
+            FieldInfo blocksField = typeof(MessageHandler).GetField("_globalMessageBusOverrideBlocks", flags);
             Array blocks = (Array)blocksField.GetValue(null);
             block = (Array)blocks.GetValue(slot >> blockShift);
             offset = slot & blockMask;
@@ -665,32 +494,19 @@ namespace DxMessaging.Tests.Runtime.Core
         /// </summary>
         [Test]
         public void SetGlobalMessageBusFromInsideHandlerAffectsOnlySubsequentEmissions(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario
         )
         {
             GlobalMessageBus oldBus = new GlobalMessageBus();
             GlobalMessageBus newBus = new GlobalMessageBus();
             MessageHandler.SetGlobalMessageBus(oldBus);
 
-            MessageHandler oldBusHandler = new MessageHandler(new InstanceId(101))
-            {
-                active = true,
-            };
-            MessageRegistrationToken oldBusToken = MessageRegistrationToken.Create(
-                oldBusHandler,
-                oldBus
-            );
+            MessageHandler oldBusHandler = new MessageHandler(new InstanceId(101)) { active = true };
+            MessageRegistrationToken oldBusToken = MessageRegistrationToken.Create(oldBusHandler, oldBus);
             oldBusToken.Enable();
 
-            MessageHandler newBusHandler = new MessageHandler(new InstanceId(102))
-            {
-                active = true,
-            };
-            MessageRegistrationToken newBusToken = MessageRegistrationToken.Create(
-                newBusHandler,
-                newBus
-            );
+            MessageHandler newBusHandler = new MessageHandler(new InstanceId(102)) { active = true };
+            MessageRegistrationToken newBusToken = MessageRegistrationToken.Create(newBusHandler, newBus);
             newBusToken.Enable();
 
             InstanceId context = new InstanceId(103);
@@ -716,20 +532,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 },
                 priority: 0
             );
-            _ = ScenarioCallbacks.RegisterCountingHandler(
-                scenario,
-                oldBusToken,
-                context,
-                () => ++trailingCount,
-                priority: 1
-            );
-            _ = ScenarioCallbacks.RegisterCountingHandler(
-                scenario,
-                newBusToken,
-                context,
-                () => ++newBusCount,
-                priority: 0
-            );
+            _ = ScenarioCallbacks.RegisterCountingHandler(scenario, oldBusToken, context, () => ++trailingCount, priority: 1);
+            _ = ScenarioCallbacks.RegisterCountingHandler(scenario, newBusToken, context, () => ++newBusCount, priority: 0);
 
             // First global-routed emission resolves the old bus at emit time.
             Assert.DoesNotThrow(
@@ -737,12 +541,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 "[{0}] Swapping the global bus from inside a handler must not throw mid-dispatch.",
                 scenario.Kind
             );
-            Assert.AreEqual(
-                1,
-                swappingCount,
-                "[{0}] The swapping handler must run on the in-flight emission.",
-                scenario.Kind
-            );
+            Assert.AreEqual(1, swappingCount, "[{0}] The swapping handler must run on the in-flight emission.", scenario.Kind);
             Assert.AreEqual(
                 1,
                 trailingCount,
@@ -752,12 +551,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 trailingCount,
                 newBusCount
             );
-            Assert.AreEqual(
-                0,
-                newBusCount,
-                "[{0}] The in-flight emission must NOT leak onto the new bus.",
-                scenario.Kind
-            );
+            Assert.AreEqual(0, newBusCount, "[{0}] The in-flight emission must NOT leak onto the new bus.", scenario.Kind);
 
             // The next global-routed emission resolves the NEW bus.
             ScenarioCallbacks.EmitForKind(scenario, context);
@@ -770,18 +564,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 trailingCount,
                 newBusCount
             );
-            Assert.AreEqual(
-                1,
-                swappingCount,
-                "[{0}] Old-bus handlers must not receive global-routed emissions after the swap.",
-                scenario.Kind
-            );
-            Assert.AreEqual(
-                1,
-                trailingCount,
-                "[{0}] Old-bus trailing handler must not receive global-routed emissions after the swap.",
-                scenario.Kind
-            );
+            Assert.AreEqual(1, swappingCount, "[{0}] Old-bus handlers must not receive global-routed emissions after the swap.", scenario.Kind);
+            Assert.AreEqual(1, trailingCount, "[{0}] Old-bus trailing handler must not receive global-routed emissions after the swap.", scenario.Kind);
 
             oldBusToken.UnregisterAll();
             newBusToken.UnregisterAll();

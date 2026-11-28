@@ -58,20 +58,13 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
 
             string directory = System.IO.Path.GetDirectoryName(output);
             System.IO.Directory.CreateDirectory(directory);
-            string project = System.IO.Path.GetFullPath(
-                System.IO.Path.Combine(UnityEngine.Application.dataPath, "..")
-            );
+            string project = System.IO.Path.GetFullPath(System.IO.Path.Combine(UnityEngine.Application.dataPath, ".."));
             foreach (string name in new[] { "manifest.json", "packages-lock.json" })
             {
-                System.IO.File.Copy(
-                    System.IO.Path.Combine(project, "Packages", name),
-                    System.IO.Path.Combine(directory, name),
-                    false
-                );
+                System.IO.File.Copy(System.IO.Path.Combine(project, "Packages", name), System.IO.Path.Combine(directory, name), false);
             }
 
-            UnityEditor.PackageManager.PackageInfo[] registered =
-                UnityEditor.PackageManager.PackageInfo.GetAllRegisteredPackages();
+            UnityEditor.PackageManager.PackageInfo[] registered = UnityEditor.PackageManager.PackageInfo.GetAllRegisteredPackages();
             KeyValuePair<string, string>[] expected =
             {
                 new("com.unity.burst", "1.6.6"),
@@ -79,10 +72,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                 new("com.unity.mathematics", "1.2.6"),
                 new("com.unity.jobs", "0.50.0-preview.9"),
             };
-            UnityEditor.PackageManager.PackageInfo batchPackage =
-                UnityEditor.PackageManager.PackageInfo.FindForAssembly(
-                    typeof(IJobParallelForBatch).Assembly
-                );
+            UnityEditor.PackageManager.PackageInfo batchPackage = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(IJobParallelForBatch).Assembly);
             AdmissionEvidence evidence = new()
             {
                 packages = new PackageEvidence[expected.Length],
@@ -93,18 +83,12 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
             for (int index = 0; index < expected.Length; index++)
             {
                 KeyValuePair<string, string> pin = expected[index];
-                UnityEditor.PackageManager.PackageInfo package = Array.Find(registered, item =>
-                    item.name == pin.Key
-                );
+                UnityEditor.PackageManager.PackageInfo package = Array.Find(registered, item => item.name == pin.Key);
                 List<SourceFile> sources = new();
                 if (package != null)
                 {
                     string root = package.resolvedPath;
-                    string[] paths = System.IO.Directory.GetFiles(
-                        root,
-                        "*",
-                        System.IO.SearchOption.AllDirectories
-                    );
+                    string[] paths = System.IO.Directory.GetFiles(root, "*", System.IO.SearchOption.AllDirectories);
                     Array.Sort(paths, StringComparer.Ordinal);
                     foreach (string path in paths)
                     {
@@ -116,17 +100,13 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                         {
                             continue;
                         }
-                        using System.Security.Cryptography.SHA256 hash =
-                            System.Security.Cryptography.SHA256.Create();
+                        using System.Security.Cryptography.SHA256 hash = System.Security.Cryptography.SHA256.Create();
                         using System.IO.FileStream stream = System.IO.File.OpenRead(path);
                         sources.Add(
                             new SourceFile
                             {
                                 path = path.Substring(root.Length + 1).Replace('\\', '/'),
-                                sha256 = BitConverter
-                                    .ToString(hash.ComputeHash(stream))
-                                    .Replace("-", "")
-                                    .ToLowerInvariant(),
+                                sha256 = BitConverter.ToString(hash.ComputeHash(stream)).Replace("-", "").ToLowerInvariant(),
                             }
                         );
                     }
@@ -248,10 +228,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                 {
                     return record;
                 }
-                if (
-                    (System.IO.File.GetAttributes(path) & System.IO.FileAttributes.ReparsePoint)
-                    != 0
-                )
+                if ((System.IO.File.GetAttributes(path) & System.IO.FileAttributes.ReparsePoint) != 0)
                 {
                     throw new System.IO.IOException("Refusing a linked compiler log.");
                 }
@@ -269,31 +246,18 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                 byte[] bytes = new byte[(int)Math.Min(record.sourceLengthBytes, maximumBytes)];
                 while (record.capturedBytes < bytes.Length)
                 {
-                    int count = input.Read(
-                        bytes,
-                        record.capturedBytes,
-                        bytes.Length - record.capturedBytes
-                    );
+                    int count = input.Read(bytes, record.capturedBytes, bytes.Length - record.capturedBytes);
                     if (count == 0)
                     {
-                        throw new System.IO.EndOfStreamException(
-                            "Compiler log shortened during capture."
-                        );
+                        throw new System.IO.EndOfStreamException("Compiler log shortened during capture.");
                     }
                     record.capturedBytes += count;
                 }
-                using System.Security.Cryptography.SHA256 hash =
-                    System.Security.Cryptography.SHA256.Create();
-                record.sha256 = BitConverter
-                    .ToString(hash.ComputeHash(bytes))
-                    .Replace("-", "")
-                    .ToLowerInvariant();
+                using System.Security.Cryptography.SHA256 hash = System.Security.Cryptography.SHA256.Create();
+                record.sha256 = BitConverter.ToString(hash.ComputeHash(bytes)).Replace("-", "").ToLowerInvariant();
                 record.content = new System.Text.UTF8Encoding(false, true).GetString(bytes);
                 record.status = record.sourceLengthBytes <= maximumBytes ? "ok" : "truncated";
-                if (
-                    input.Length != record.sourceLengthBytes
-                    || System.IO.File.GetLastWriteTimeUtc(path) != before
-                )
+                if (input.Length != record.sourceLengthBytes || System.IO.File.GetLastWriteTimeUtc(path) != before)
                 {
                     record.status = "changed";
                 }
@@ -308,13 +272,9 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
 
         private static string HashRuntimeFile(string path)
         {
-            using System.Security.Cryptography.SHA256 hash =
-                System.Security.Cryptography.SHA256.Create();
+            using System.Security.Cryptography.SHA256 hash = System.Security.Cryptography.SHA256.Create();
             using System.IO.FileStream input = System.IO.File.OpenRead(path);
-            return BitConverter
-                .ToString(hash.ComputeHash(input))
-                .Replace("-", "")
-                .ToLowerInvariant();
+            return BitConverter.ToString(hash.ComputeHash(input)).Replace("-", "").ToLowerInvariant();
         }
 
         private static void CaptureCompilerTrace()
@@ -336,33 +296,21 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
             {
                 capturedUtc = DateTime.UtcNow.ToString("O"),
                 currentDirectory = Environment.CurrentDirectory,
-                runtimeOverridePresent = !string.IsNullOrEmpty(
-                    Environment.GetEnvironmentVariable("UNITY_BURST_RUNTIME_PATH")
-                ),
+                runtimeOverridePresent = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("UNITY_BURST_RUNTIME_PATH")),
                 debugLevel = Environment.GetEnvironmentVariable("UNITY_BURST_DEBUG"),
             };
             try
             {
-                Type loader = typeof(BurstCompiler).Assembly.GetType(
-                    "Unity.Burst.Editor.BurstLoader",
-                    true
-                );
+                Type loader = typeof(BurstCompiler).Assembly.GetType("Unity.Burst.Editor.BurstLoader", true);
                 trace.runtimePath = (string)loader.GetProperty("RuntimePath").GetValue(null);
                 foreach (string name in new[] { "Burst.Compiler.IL.dll", "Burst.Backend.dll" })
                 {
-                    RuntimeFile file = new()
-                    {
-                        name = name,
-                        path = System.IO.Path.Combine(trace.runtimePath, name),
-                    };
+                    RuntimeFile file = new() { name = name, path = System.IO.Path.Combine(trace.runtimePath, name) };
                     runtime.Add(file);
                     file.sha256 = HashRuntimeFile(file.path);
                     System.Reflection.Assembly loaded = AppDomain
                         .CurrentDomain.GetAssemblies()
-                        .SingleOrDefault(assembly =>
-                            assembly.GetName().Name
-                            == System.IO.Path.GetFileNameWithoutExtension(name)
-                        );
+                        .SingleOrDefault(assembly => assembly.GetName().Name == System.IO.Path.GetFileNameWithoutExtension(name));
                     if (loaded != null)
                     {
                         file.loadedAssemblyObserved = true;
@@ -378,23 +326,13 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
             try
             {
                 string directory = System.IO.Path.Combine(trace.currentDirectory, "Logs");
-                if (
-                    (
-                        System.IO.File.GetAttributes(directory)
-                        & System.IO.FileAttributes.ReparsePoint
-                    ) != 0
-                )
+                if ((System.IO.File.GetAttributes(directory) & System.IO.FileAttributes.ReparsePoint) != 0)
                 {
                     throw new System.IO.IOException("Refusing a linked compiler log directory.");
                 }
                 string[] paths = System
                     .IO.Directory.GetFiles(directory, "burst*.log")
-                    .Where(path =>
-                        System.Text.RegularExpressions.Regex.IsMatch(
-                            System.IO.Path.GetFileName(path),
-                            @"^burst(?:-thread-\d+)?\.log$"
-                        )
-                    )
+                    .Where(path => System.Text.RegularExpressions.Regex.IsMatch(System.IO.Path.GetFileName(path), @"^burst(?:-thread-\d+)?\.log$"))
                     .OrderBy(path => path, StringComparer.Ordinal)
                     .ToArray();
                 if (64 < paths.Length)
@@ -418,12 +356,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                         errors.Add(log.name + ": " + log.status);
                     }
                 }
-                if (
-                    !logs.Any(log => log.name == "burst.log")
-                    || !logs.Any(log =>
-                        log.name.StartsWith("burst-thread-", StringComparison.Ordinal)
-                    )
-                )
+                if (!logs.Any(log => log.name == "burst.log") || !logs.Any(log => log.name.StartsWith("burst-thread-", StringComparison.Ordinal)))
                 {
                     errors.Add("Compiler trace requires main and thread log observations.");
                 }
@@ -444,13 +377,8 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
             byte[] il = method.GetMethodBody()?.GetILAsByteArray() ?? Array.Empty<byte>();
             int callOffset = il.Length - 6;
             bool tailCall = 0 <= callOffset && il[callOffset] == 0x28 && il[il.Length - 1] == 0x2a;
-            System.Reflection.MethodBase target = tailCall
-                ? method.Module.ResolveMethod(BitConverter.ToInt32(il, callOffset + 1))
-                : null;
-            BurstCompileAttribute attribute = method
-                .GetCustomAttributes(typeof(BurstCompileAttribute), false)
-                .Cast<BurstCompileAttribute>()
-                .SingleOrDefault();
+            System.Reflection.MethodBase target = tailCall ? method.Module.ResolveMethod(BitConverter.ToInt32(il, callOffset + 1)) : null;
+            BurstCompileAttribute attribute = method.GetCustomAttributes(typeof(BurstCompileAttribute), false).Cast<BurstCompileAttribute>().SingleOrDefault();
             return new DirectCallMethod
             {
                 declaringType = method.DeclaringType.FullName,
@@ -459,8 +387,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                 ilHex = BitConverter.ToString(il).Replace("-", "").ToLowerInvariant(),
                 compileSynchronously = attribute?.CompileSynchronously ?? false,
                 tailCallMatched = tailCall,
-                tailCallTarget =
-                    target == null ? "" : target.DeclaringType.FullName + "." + target.Name,
+                tailCallTarget = target == null ? "" : target.DeclaringType.FullName + "." + target.Name,
                 generatedTypes = Array.Empty<DirectCallType>(),
             };
         }
@@ -495,20 +422,12 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
             {
                 try
                 {
-                    DirectCallMethod record = ReadDirectCallMethod(
-                        wrapper.Key.GetMethod(wrapper.Value, flags)
-                    );
+                    DirectCallMethod record = ReadDirectCallMethod(wrapper.Key.GetMethod(wrapper.Value, flags));
                     List<DirectCallType> generated = new();
                     foreach (
                         Type type in wrapper
-                            .Key.GetNestedTypes(
-                                System.Reflection.BindingFlags.Public
-                                    | System.Reflection.BindingFlags.NonPublic
-                            )
-                            .Where(type =>
-                                type.Name.StartsWith(wrapper.Value, StringComparison.Ordinal)
-                                && type.Name.EndsWith("$BurstDirectCall", StringComparison.Ordinal)
-                            )
+                            .Key.GetNestedTypes(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)
+                            .Where(type => type.Name.StartsWith(wrapper.Value, StringComparison.Ordinal) && type.Name.EndsWith("$BurstDirectCall", StringComparison.Ordinal))
                     )
                     {
                         List<DirectCallField> fields = new();
@@ -521,8 +440,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                                     name = field.Name,
                                     fieldType = field.FieldType.FullName,
                                     stateObserved = observe,
-                                    nonZero =
-                                        observe && (IntPtr)field.GetValue(null) != IntPtr.Zero,
+                                    nonZero = observe && (IntPtr)field.GetValue(null) != IntPtr.Zero,
                                 }
                             );
                         }
@@ -530,9 +448,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                             new DirectCallType
                             {
                                 name = type.FullName,
-                                methods = type.GetMethods(flags)
-                                    .Select(ReadDirectCallMethod)
-                                    .ToArray(),
+                                methods = type.GetMethods(flags).Select(ReadDirectCallMethod).ToArray(),
                                 fields = fields.ToArray(),
                             }
                         );
@@ -551,8 +467,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                 stateCaptured = captureState,
                 compilerEnabled = captureState && BurstCompiler.IsEnabled,
                 optionEnabled = captureState && BurstCompiler.Options.EnableBurstCompilation,
-                optionSynchronous =
-                    captureState && BurstCompiler.Options.EnableBurstCompileSynchronously,
+                optionSynchronous = captureState && BurstCompiler.Options.EnableBurstCompileSynchronously,
                 methods = methods.ToArray(),
                 errors = errors.ToArray(),
             };
@@ -568,18 +483,10 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
             Assert.That(evidence.batchVersion, Is.EqualTo("0.50.0-preview.9"));
             foreach (PackageEvidence package in evidence.packages)
             {
-                Assert.That(
-                    package.actualVersion,
-                    Is.EqualTo(package.expectedVersion),
-                    package.name
-                );
+                Assert.That(package.actualVersion, Is.EqualTo(package.expectedVersion), package.name);
                 Assert.That(package.source, Is.EqualTo("Registry"), package.name);
                 Assert.That(package.compilerSources.Length, Is.GreaterThan(0), package.name);
-                Assert.That(
-                    package.compilerSources.Any(file => file.path == "package.json"),
-                    Is.True,
-                    package.name
-                );
+                Assert.That(package.compilerSources.Any(file => file.path == "package.json"), Is.True, package.name);
             }
         }
     }
@@ -595,11 +502,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
         public void SetUp()
         {
             _owned.Clear();
-            _diagnostics = new DiagnosticsScope(
-                DiagnosticsTarget.Off,
-                messageBufferSize: 16,
-                diagnosticsStackTraces: false
-            );
+            _diagnostics = new DiagnosticsScope(DiagnosticsTarget.Off, messageBufferSize: 16, diagnosticsStackTraces: false);
         }
 
         [TearDown]
@@ -626,9 +529,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                         failures.Add(failure);
                     }
                 }
-                TestContext.WriteLine(
-                    $"Native cleanup: owners={_owned.Count}; three container owners released once each after job completion."
-                );
+                TestContext.WriteLine($"Native cleanup: owners={_owned.Count}; three container owners released once each after job completion.");
                 if (failures.Count != 0)
                 {
                     throw new AggregateException(failures);
@@ -642,9 +543,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
         }
 
         [Test]
-        public void QueueGrowsAndPreservesSingleProducerFifoAcrossClearAndReuse(
-            [Values(1, 4096, 8192)] int items
-        )
+        public void QueueGrowsAndPreservesSingleProducerFifoAcrossClearAndReuse([Values(1, 4096, 8192)] int items)
         {
             using NativeOwner owner = Create(false, 1);
             for (int repeat = 0; repeat < 3; ++repeat)
@@ -757,15 +656,10 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
             List<NativeNumericPayload> first = ReadPartitions(owner.Stream);
             List<NativeNumericPayload> second = ReadPartitions(owner.Stream);
             CollectionAssert.AreEqual(new[] { 1, 3, 2 }, first.Select(p => p.Sequence).ToArray());
-            CollectionAssert.AreNotEqual(
-                new[] { 2, 1, 3 },
-                first.Select(p => p.Sequence).ToArray()
-            );
+            CollectionAssert.AreNotEqual(new[] { 2, 1, 3 }, first.Select(p => p.Sequence).ToArray());
             CollectionAssert.AreEqual(first, second);
             Assert.That(owner.Stream.Count(), Is.EqualTo(3));
-            TestContext.WriteLine(
-                "Stream RED: completion B2,A1,A3 -> partition replay A1,A3,B2; a new reader repeats all three."
-            );
+            TestContext.WriteLine("Stream RED: completion B2,A1,A3 -> partition replay A1,A3,B2; a new reader repeats all three.");
         }
 
         [Test]
@@ -789,10 +683,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                 }
             });
             Assert.That(actual, Is.SameAs(expected));
-            CollectionAssert.AreEqual(
-                new[] { 0, 1 },
-                ReadPartitions(owner.Stream).Select(p => p.Sequence)
-            );
+            CollectionAssert.AreEqual(new[] { 0, 1 }, ReadPartitions(owner.Stream).Select(p => p.Sequence));
         }
 
         [Test]
@@ -825,19 +716,13 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
         }
 
         [Test]
-        public void BurstProducerJobsPublishExactSetAndPerProducerOrder(
-            [Values(false, true)] bool stream,
-            [Values(1, 4, 32)] int producers,
-            [Values(1, 1024)] int items
-        )
+        public void BurstProducerJobsPublishExactSetAndPerProducerOrder([Values(false, true)] bool stream, [Values(1, 4, 32)] int producers, [Values(1, 1024)] int items)
         {
             using NativeOwner owner = Create(stream, producers);
             owner.Schedule(items);
             owner.Complete();
             AssertBurst(owner);
-            List<NativeNumericPayload> actual = stream
-                ? ReadPartitions(owner.Stream)
-                : ReadQueue(owner);
+            List<NativeNumericPayload> actual = stream ? ReadPartitions(owner.Stream) : ReadQueue(owner);
             Assert.That(actual.Count, Is.EqualTo(producers * items));
             HashSet<long> membership = new();
             int[] next = new int[producers];
@@ -853,10 +738,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
             {
                 Assert.That(count, Is.EqualTo(items));
             }
-            long expected = checked(
-                (long)items * producers * (producers - 1) / 2 * (1L << 32)
-                + (long)producers * items * (items - 1) / 2
-            );
+            long expected = checked((long)items * producers * (producers - 1) / 2 * (1L << 32) + (long)producers * items * (items - 1) / 2);
             Assert.That(checksum, Is.EqualTo(expected));
             if (stream)
             {
@@ -879,10 +761,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
         }
 
         [Test]
-        public void DisposeCompletesOutstandingProducerBeforeReleasingUniqueOwners(
-            [Values(false, true)] bool stream,
-            [Values(1, 4096)] int items
-        )
+        public void DisposeCompletesOutstandingProducerBeforeReleasingUniqueOwners([Values(false, true)] bool stream, [Values(1, 4096)] int items)
         {
             NativeOwner owner = Create(stream, 4);
             owner.Schedule(items);
@@ -896,25 +775,18 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
         [Test]
         public void CompletedBurstProducerReplaysPublicBusOnMainThread(
             [Values(false, true)] bool stream,
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
             [Values("None", "Mutate", "Throw")] string boundary
         )
         {
             int mainThread = Thread.CurrentThread.ManagedThreadId;
             MessageBus bus = new() { DiagnosticsMode = false };
             bus.Trim(force: true);
-            using LeakWatcher leaks = new(
-                bus,
-                label: $"Native SDK public replay {scenario.Kind}/{boundary}"
-            );
+            using LeakWatcher leaks = new(bus, label: $"Native SDK public replay {scenario.Kind}/{boundary}");
             try
             {
                 MessageHandler handler = new(new InstanceId(505_379), bus) { active = true };
-                using MessageRegistrationToken token = MessageRegistrationToken.Create(
-                    handler,
-                    bus
-                );
+                using MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
                 token.DiagnosticMode = false;
                 token.Enable();
                 List<int> seen = new();
@@ -977,21 +849,13 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                 }
                 for (int index = 0; index < 3; ++index)
                 {
-                    NativeNumericPayload payload = stream
-                        ? reader.Read<NativeNumericPayload>()
-                        : owner.Queue.Dequeue();
+                    NativeNumericPayload payload = stream ? reader.Read<NativeNumericPayload>() : owner.Queue.Dequeue();
                     if (index == 1 && boundary == "Throw")
                     {
-                        InvalidOperationException actual = Assert.Throws<InvalidOperationException>(
-                            () =>
-                                Dispatch(payload)
-                        );
+                        InvalidOperationException actual = Assert.Throws<InvalidOperationException>(() => Dispatch(payload));
                         Assert.That(actual, Is.SameAs(expected));
                         CollectionAssert.AreEqual(new[] { 0, 1 }, seen);
-                        Assert.That(
-                            stream ? reader.RemainingItemCount : owner.Queue.Count,
-                            Is.EqualTo(1)
-                        );
+                        Assert.That(stream ? reader.RemainingItemCount : owner.Queue.Count, Is.EqualTo(1));
                     }
                     else
                     {
@@ -1001,20 +865,13 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                 if (stream)
                 {
                     reader.EndForEachIndex();
-                    Assert.That(
-                        owner.Stream.Count(),
-                        Is.EqualTo(3),
-                        "Reader cursor consumption leaves backing data for replay."
-                    );
+                    Assert.That(owner.Stream.Count(), Is.EqualTo(3), "Reader cursor consumption leaves backing data for replay.");
                 }
                 else
                 {
                     Assert.That(owner.Queue.Count, Is.Zero);
                 }
-                CollectionAssert.AreEqual(
-                    boundary == "Mutate" ? new[] { 0, 1, 20 } : new[] { 0, 1, 2 },
-                    seen
-                );
+                CollectionAssert.AreEqual(boundary == "Mutate" ? new[] { 0, 1, 20 } : new[] { 0, 1, 2 }, seen);
             }
             finally
             {
@@ -1121,9 +978,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
             {
                 if (_disposed || HasPending || CompletedScheduledJob)
                 {
-                    throw new InvalidOperationException(
-                        "Test owner permits one live producer schedule."
-                    );
+                    throw new InvalidOperationException("Test owner permits one live producer schedule.");
                 }
                 _pending = _stream
                     ? new StreamProducerJob

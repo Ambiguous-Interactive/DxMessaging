@@ -42,39 +42,24 @@ namespace DxMessaging.Tests.Editor
             Assert.That(Application.isPlaying, Is.False, "Editor reset controls require EditMode.");
             Assert.That(Cache, Is.Not.Null, "The actual provider cache must be available.");
             Assert.That(
-                Resources.Load<DxMessagingRuntimeSettings>(DxMessagingRuntimeSettings.ResourceName)
-                    == null,
+                Resources.Load<DxMessagingRuntimeSettings>(DxMessagingRuntimeSettings.ResourceName) == null,
                 Is.True,
                 "Fallback creation requires the isolated test host's absent resource asset."
             );
             _savedCache = Cache.GetValue(null);
             _savedOwned = Owned?.GetValue(null);
-            Type ownershipType = Provider.Assembly.GetType(
-                "DxMessaging.Core.Configuration.DxMessagingRuntimeSettingsOwnership"
-            );
+            Type ownershipType = Provider.Assembly.GetType("DxMessaging.Core.Configuration.DxMessagingRuntimeSettingsOwnership");
             if (ownershipType != null)
             {
-                _ownership = ownershipType
-                    .GetProperty(
-                        "instance",
-                        BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy
-                    )
-                    .GetValue(null);
-                _retainedFallback = ownershipType.GetField(
-                    "_fallback",
-                    BindingFlags.Instance | BindingFlags.NonPublic
-                );
+                _ownership = ownershipType.GetProperty("instance", BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy).GetValue(null);
+                _retainedFallback = ownershipType.GetField("_fallback", BindingFlags.Instance | BindingFlags.NonPublic);
                 _savedRetained = _retainedFallback.GetValue(_ownership);
             }
             _stateCaptured = true;
             Cache.SetValue(null, null);
             Owned?.SetValue(null, null);
             _retainedFallback?.SetValue(_ownership, null);
-            _pending =
-                (ConcurrentQueue<DxMessagingRuntimeSettings>)
-                    typeof(DxMessagingRuntimeSettings)
-                        .GetField("PendingValidations", StaticFields)
-                        .GetValue(null);
+            _pending = (ConcurrentQueue<DxMessagingRuntimeSettings>)typeof(DxMessagingRuntimeSettings).GetField("PendingValidations", StaticFields).GetValue(null);
             while (_pending.TryDequeue(out DxMessagingRuntimeSettings settings))
             {
                 _savedPending.Add(settings);
@@ -144,21 +129,12 @@ namespace DxMessaging.Tests.Editor
             AssetDatabase.CreateFolder("Assets", folder);
             AssetDatabase.CreateFolder(_assetRoot, "Resources");
             DxMessagingRuntimeSettings asset = CreateSettings();
-            string path =
-                _assetRoot + "/Resources/" + DxMessagingRuntimeSettings.ResourceName + ".asset";
+            string path = _assetRoot + "/Resources/" + DxMessagingRuntimeSettings.ResourceName + ".asset";
             AssetDatabase.CreateAsset(asset, path);
-            Assert.That(
-                DxMessagingRuntimeSettingsProvider.Current,
-                Is.SameAs(asset),
-                "The actual Resources path must return the persistent settings asset."
-            );
+            Assert.That(DxMessagingRuntimeSettingsProvider.Current, Is.SameAs(asset), "The actual Resources path must return the persistent settings asset.");
             DxMessagingRuntimeSettingsProvider.ResetCachedSettings();
             Assert.That(asset != null, Is.True, "Reset must preserve the borrowed resource asset.");
-            Assert.That(
-                AssetDatabase.LoadAssetAtPath<DxMessagingRuntimeSettings>(path),
-                Is.SameAs(asset),
-                "The resource asset must remain stored and loadable after reset."
-            );
+            Assert.That(AssetDatabase.LoadAssetAtPath<DxMessagingRuntimeSettings>(path), Is.SameAs(asset), "The resource asset must remain stored and loadable after reset.");
         }
 
         /// <summary>Every reset destroys its own fallback, including repeated reset/read cycles.</summary>
@@ -171,21 +147,13 @@ namespace DxMessaging.Tests.Editor
                 DxMessagingRuntimeSettings settings = ReadFallback();
                 int id = InstanceId.StableId(settings);
                 DxMessagingRuntimeSettingsProvider.ResetCachedSettings();
-                Assert.That(
-                    Cache.GetValue(null),
-                    Is.Null,
-                    "Reset must detach the cached reference."
-                );
+                Assert.That(Cache.GetValue(null), Is.Null, "Reset must detach the cached reference.");
                 if (settings != null)
                 {
                     survivors.Add(id);
                 }
             }
-            Assert.That(
-                survivors,
-                Is.Empty,
-                "Each provider-created fallback must be destroyed after its EditMode reset."
-            );
+            Assert.That(survivors, Is.Empty, "Each provider-created fallback must be destroyed after its EditMode reset.");
         }
 
         /// <summary>A marker on a caller-created object does not transfer native ownership.</summary>
@@ -200,16 +168,8 @@ namespace DxMessaging.Tests.Editor
             }
             Cache.SetValue(null, external);
             DxMessagingRuntimeSettingsProvider.ResetCachedSettings();
-            Assert.That(
-                external != null,
-                Is.True,
-                "Reset must preserve caller-owned native settings."
-            );
-            Assert.That(
-                Cache.GetValue(null),
-                Is.Null,
-                "External cache entries must still be invalidated."
-            );
+            Assert.That(external != null, Is.True, "Reset must preserve caller-owned native settings.");
+            Assert.That(Cache.GetValue(null), Is.Null, "External cache entries must still be invalidated.");
         }
 
         /// <summary>Replacing the cache cannot hide a provider-owned object from its cleanup.</summary>
@@ -220,16 +180,8 @@ namespace DxMessaging.Tests.Editor
             DxMessagingRuntimeSettings external = CreateSettings();
             Cache.SetValue(null, external);
             DxMessagingRuntimeSettingsProvider.ResetCachedSettings();
-            Assert.That(
-                fallback == null,
-                Is.True,
-                "The detached provider-owned fallback must be destroyed."
-            );
-            Assert.That(
-                external != null,
-                Is.True,
-                "An external cache replacement must remain alive."
-            );
+            Assert.That(fallback == null, Is.True, "The detached provider-owned fallback must be destroyed.");
+            Assert.That(external != null, Is.True, "An external cache replacement must remain alive.");
         }
 
         /// <summary>A destroyed owned fallback can be reset and replaced without consuming another object.</summary>
@@ -238,22 +190,11 @@ namespace DxMessaging.Tests.Editor
         {
             DxMessagingRuntimeSettings first = ReadFallback();
             Object.DestroyImmediate(first);
-            Assert.DoesNotThrow(
-                DxMessagingRuntimeSettingsProvider.ResetCachedSettings,
-                "An already destroyed owned object must not cause a second-destroy failure."
-            );
+            Assert.DoesNotThrow(DxMessagingRuntimeSettingsProvider.ResetCachedSettings, "An already destroyed owned object must not cause a second-destroy failure.");
             DxMessagingRuntimeSettings replacement = ReadFallback();
-            Assert.That(
-                replacement,
-                Is.Not.SameAs(first),
-                "The next read must create a new live fallback."
-            );
+            Assert.That(replacement, Is.Not.SameAs(first), "The next read must create a new live fallback.");
             DxMessagingRuntimeSettingsProvider.ResetCachedSettings();
-            Assert.That(
-                replacement == null,
-                Is.True,
-                "The replacement must obey the same reset lifetime."
-            );
+            Assert.That(replacement == null, Is.True, "The replacement must obey the same reset lifetime.");
         }
 
         /// <summary>Empty resets are safe before creation and after successful cleanup.</summary>
@@ -262,15 +203,8 @@ namespace DxMessaging.Tests.Editor
         {
             for (int cycle = 0; cycle < 3; ++cycle)
             {
-                Assert.DoesNotThrow(
-                    DxMessagingRuntimeSettingsProvider.ResetCachedSettings,
-                    "Repeated empty reset must remain a no-op."
-                );
-                Assert.That(
-                    Cache.GetValue(null),
-                    Is.Null,
-                    "An empty reset must not create settings."
-                );
+                Assert.DoesNotThrow(DxMessagingRuntimeSettingsProvider.ResetCachedSettings, "Repeated empty reset must remain a no-op.");
+                Assert.That(Cache.GetValue(null), Is.Null, "An empty reset must not create settings.");
             }
         }
 
@@ -282,29 +216,13 @@ namespace DxMessaging.Tests.Editor
             DxMessagingRuntimeSettings external = CreateSettings();
             Cache.SetValue(null, external);
             MethodInfo cleanup = Provider.GetMethod("ReleaseBeforeAssemblyReload", StaticFields);
-            Assert.That(
-                cleanup,
-                Is.Not.Null,
-                "The provider needs an Editor reload cleanup boundary."
-            );
+            Assert.That(cleanup, Is.Not.Null, "The provider needs an Editor reload cleanup boundary.");
             MethodInfo register = Provider.GetMethod("RegisterReloadCleanup", StaticFields);
             Assert.That(register, Is.Not.Null, "The provider must register its reload cleanup.");
-            Assert.That(
-                register.IsDefined(typeof(InitializeOnLoadMethodAttribute), false),
-                Is.True,
-                "Reload cleanup must be registered after every domain load."
-            );
+            Assert.That(register.IsDefined(typeof(InitializeOnLoadMethodAttribute), false), Is.True, "Reload cleanup must be registered after every domain load.");
             cleanup.Invoke(null, null);
-            Assert.That(
-                fallback == null,
-                Is.True,
-                "Reload cleanup must release its own native fallback."
-            );
-            Assert.That(
-                external != null,
-                Is.True,
-                "Reload cleanup must preserve the borrowed replacement."
-            );
+            Assert.That(fallback == null, Is.True, "Reload cleanup must release its own native fallback.");
+            Assert.That(external != null, Is.True, "Reload cleanup must preserve the borrowed replacement.");
             Assert.That(Cache.GetValue(null), Is.Null, "Reload cleanup must detach cached state.");
         }
 
@@ -316,17 +234,9 @@ namespace DxMessaging.Tests.Editor
             Cache.SetValue(null, null);
             Owned?.SetValue(null, null);
             DxMessagingRuntimeSettings recovered = ReadFallback();
-            Assert.That(
-                recovered,
-                Is.SameAs(retained),
-                "Static loss must not abandon a retained owned fallback."
-            );
+            Assert.That(recovered, Is.SameAs(retained), "Static loss must not abandon a retained owned fallback.");
             DxMessagingRuntimeSettingsProvider.ResetCachedSettings();
-            Assert.That(
-                retained == null,
-                Is.True,
-                "The recovered fallback must remain releasable by reset."
-            );
+            Assert.That(retained == null, Is.True, "The recovered fallback must remain releasable by reset.");
         }
 
         /// <summary>Loading a real resource after static loss does not abandon retained fallback ownership.</summary>
@@ -337,17 +247,9 @@ namespace DxMessaging.Tests.Editor
             Cache.SetValue(null, null);
             Owned?.SetValue(null, null);
             DxMessagingRuntimeSettings asset = CreateResourceAsset();
-            Assert.That(
-                DxMessagingRuntimeSettingsProvider.Current,
-                Is.SameAs(asset),
-                "Resources must take precedence."
-            );
+            Assert.That(DxMessagingRuntimeSettingsProvider.Current, Is.SameAs(asset), "Resources must take precedence.");
             DxMessagingRuntimeSettingsProvider.ResetCachedSettings();
-            Assert.That(
-                retained == null,
-                Is.True,
-                "Reset must release retained ownership after resource adoption."
-            );
+            Assert.That(retained == null, Is.True, "Reset must release retained ownership after resource adoption.");
             Assert.That(asset != null, Is.True, "Reset must preserve the borrowed resource asset.");
         }
 
@@ -355,11 +257,7 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void ResetReleasesDistinctStaticAndRetainedOwnedFallbacks()
         {
-            Assert.That(
-                _retainedFallback,
-                Is.Not.Null,
-                "Editor ownership must survive static loss."
-            );
+            Assert.That(_retainedFallback, Is.Not.Null, "Editor ownership must survive static loss.");
             DxMessagingRuntimeSettings first = ReadFallback();
             Cache.SetValue(null, null);
             Owned.SetValue(null, null);
@@ -370,21 +268,9 @@ namespace DxMessaging.Tests.Editor
             Cache.SetValue(null, external);
             DxMessagingRuntimeSettingsProvider.ResetCachedSettings();
             Assert.That(first == null, Is.True, "Reset must release the retained owned object.");
-            Assert.That(
-                second == null,
-                Is.True,
-                "Reset must release the distinct static owned object."
-            );
-            Assert.That(
-                external != null,
-                Is.True,
-                "Reset must preserve the external cached object."
-            );
-            Assert.That(
-                _retainedFallback.GetValue(_ownership),
-                Is.Null,
-                "Reset must detach retained ownership."
-            );
+            Assert.That(second == null, Is.True, "Reset must release the distinct static owned object.");
+            Assert.That(external != null, Is.True, "Reset must preserve the external cached object.");
+            Assert.That(_retainedFallback.GetValue(_ownership), Is.Null, "Reset must detach retained ownership.");
         }
 
         private DxMessagingRuntimeSettings CreateResourceAsset()
@@ -394,10 +280,7 @@ namespace DxMessaging.Tests.Editor
             AssetDatabase.CreateFolder("Assets", folder);
             AssetDatabase.CreateFolder(_assetRoot, "Resources");
             DxMessagingRuntimeSettings asset = CreateSettings();
-            AssetDatabase.CreateAsset(
-                asset,
-                _assetRoot + "/Resources/" + DxMessagingRuntimeSettings.ResourceName + ".asset"
-            );
+            AssetDatabase.CreateAsset(asset, _assetRoot + "/Resources/" + DxMessagingRuntimeSettings.ResourceName + ".asset");
             return asset;
         }
 
@@ -405,28 +288,15 @@ namespace DxMessaging.Tests.Editor
         {
             DxMessagingRuntimeSettings settings = DxMessagingRuntimeSettingsProvider.Current;
             _created.Add(settings);
-            Assert.That(
-                settings != null,
-                Is.True,
-                "The actual provider must create a live fallback."
-            );
-            Assert.That(
-                settings.IsFallbackInstance,
-                Is.True,
-                "The created object must carry fallback identity."
-            );
-            Assert.That(
-                settings.hideFlags,
-                Is.EqualTo(HideFlags.HideAndDontSave),
-                "Fallback visibility and persistence flags must remain unchanged."
-            );
+            Assert.That(settings != null, Is.True, "The actual provider must create a live fallback.");
+            Assert.That(settings.IsFallbackInstance, Is.True, "The created object must carry fallback identity.");
+            Assert.That(settings.hideFlags, Is.EqualTo(HideFlags.HideAndDontSave), "Fallback visibility and persistence flags must remain unchanged.");
             return settings;
         }
 
         private DxMessagingRuntimeSettings CreateSettings()
         {
-            DxMessagingRuntimeSettings settings =
-                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            DxMessagingRuntimeSettings settings = ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
             _created.Add(settings);
             return settings;
         }

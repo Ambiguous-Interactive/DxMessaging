@@ -18,10 +18,7 @@ namespace DxMessaging.Unity
     /// messagingComponentInstaller.SetProvider(CurrentGlobalMessageBusProviderHandle);
     /// </code>
     /// </example>
-    [CreateAssetMenu(
-        fileName = "CurrentGlobalMessageBusProvider",
-        menuName = "Wallstop Studios/DxMessaging/Message Bus Providers/Current Global Message Bus"
-    )]
+    [CreateAssetMenu(fileName = "CurrentGlobalMessageBusProvider", menuName = "Wallstop Studios/DxMessaging/Message Bus Providers/Current Global Message Bus")]
     public sealed class CurrentGlobalMessageBusProvider : ScriptableMessageBusProvider
     {
         /// <summary>

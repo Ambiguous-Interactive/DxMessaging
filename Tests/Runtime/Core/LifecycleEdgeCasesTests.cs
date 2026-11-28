@@ -62,11 +62,7 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 yield return _sceneUnload;
             }
-            Assert.That(
-                !_ownedScene.IsValid() || !_ownedScene.isLoaded,
-                Is.True,
-                "The fixture's owned scene must finish unloading during cleanup."
-            );
+            Assert.That(!_ownedScene.IsValid() || !_ownedScene.isLoaded, Is.True, "The fixture's owned scene must finish unloading during cleanup.");
             _sceneUnload = null;
             _ownedScene = default;
         }
@@ -75,86 +71,41 @@ namespace DxMessaging.Tests.Runtime.Core
         [TestCase("DispatchLease", "_dispatchDepth", false)]
         [TestCase("ReflexiveDispatchLease", "_reflexiveDispatchDepth", true)]
         [TestCase("ReflexiveDispatchLease", "_reflexiveDispatchDepth", false)]
-        public void CopiedMessageBusLeasesDisposeExactlyOnce(
-            string leaseTypeName,
-            string depthFieldName,
-            bool disposeCopyFirst
-        )
+        public void CopiedMessageBusLeasesDisposeExactlyOnce(string leaseTypeName, string depthFieldName, bool disposeCopyFirst)
         {
             MessageBus bus = new();
             object original = CreatePrivateLease(bus, leaseTypeName);
             object copy = RuntimeHelpers.GetObjectValue(original);
 
-            Assert.AreNotSame(
-                original,
-                copy,
-                "[{0}] The test must exercise two independent boxes of the value-type lease.",
-                leaseTypeName
-            );
-            Assert.AreEqual(
-                1,
-                GetPrivateLeaseDepth(bus, depthFieldName),
-                "[{0}] Constructing the original lease must enter exactly one scope.",
-                leaseTypeName
-            );
+            Assert.AreNotSame(original, copy, "[{0}] The test must exercise two independent boxes of the value-type lease.", leaseTypeName);
+            Assert.AreEqual(1, GetPrivateLeaseDepth(bus, depthFieldName), "[{0}] Constructing the original lease must enter exactly one scope.", leaseTypeName);
 
             object first = disposeCopyFirst ? copy : original;
             object stale = disposeCopyFirst ? original : copy;
             DisposePrivateLease(first);
-            Assert.AreEqual(
-                0,
-                GetPrivateLeaseDepth(bus, depthFieldName),
-                "[{0}] Disposing either copy must end the logical lease once.",
-                leaseTypeName
-            );
+            Assert.AreEqual(0, GetPrivateLeaseDepth(bus, depthFieldName), "[{0}] Disposing either copy must end the logical lease once.", leaseTypeName);
 
             DisposePrivateLease(stale);
-            Assert.AreEqual(
-                0,
-                GetPrivateLeaseDepth(bus, depthFieldName),
-                "[{0}] Disposing the second copy must not decrement the depth twice.",
-                leaseTypeName
-            );
+            Assert.AreEqual(0, GetPrivateLeaseDepth(bus, depthFieldName), "[{0}] Disposing the second copy must not decrement the depth twice.", leaseTypeName);
 
             object replacement = CreatePrivateLease(bus, leaseTypeName);
             DisposePrivateLease(stale);
-            Assert.AreEqual(
-                1,
-                GetPrivateLeaseDepth(bus, depthFieldName),
-                "[{0}] A stale copy must not dispose a later lease at the same depth.",
-                leaseTypeName
-            );
+            Assert.AreEqual(1, GetPrivateLeaseDepth(bus, depthFieldName), "[{0}] A stale copy must not dispose a later lease at the same depth.", leaseTypeName);
 
             object replacementCopy = RuntimeHelpers.GetObjectValue(replacement);
             object nested = CreatePrivateLease(bus, leaseTypeName);
             DisposePrivateLease(replacementCopy);
-            Assert.AreEqual(
-                2,
-                GetPrivateLeaseDepth(bus, depthFieldName),
-                "[{0}] Out-of-order disposal must not unwind through the active nested lease.",
-                leaseTypeName
-            );
+            Assert.AreEqual(2, GetPrivateLeaseDepth(bus, depthFieldName), "[{0}] Out-of-order disposal must not unwind through the active nested lease.", leaseTypeName);
 
             DisposePrivateLease(nested);
             DisposePrivateLease(replacement);
-            Assert.AreEqual(
-                0,
-                GetPrivateLeaseDepth(bus, depthFieldName),
-                "[{0}] Valid LIFO disposal after an ignored stale copy must restore idle depth.",
-                leaseTypeName
-            );
+            Assert.AreEqual(0, GetPrivateLeaseDepth(bus, depthFieldName), "[{0}] Valid LIFO disposal after an ignored stale copy must restore idle depth.", leaseTypeName);
         }
 
         [Test]
-        public void PrefabPoolingEnableDisableCycles(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void PrefabPoolingEnableDisableCycles([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(PrefabPoolingEnableDisableCycles) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(PrefabPoolingEnableDisableCycles) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -163,12 +114,7 @@ namespace DxMessaging.Tests.Runtime.Core
             int handlerCount = 0;
             using (LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName))
             {
-                MessageRegistrationHandle handle = ScenarioCallbacks.RegisterCountingHandler(
-                    scenario,
-                    token,
-                    hostId,
-                    () => ++handlerCount
-                );
+                MessageRegistrationHandle handle = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () => ++handlerCount);
 
                 for (int i = 0; i < PrefabPoolingCycleCount; ++i)
                 {
@@ -177,28 +123,16 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
 
                 ScenarioCallbacks.EmitForKind(scenario, hostId);
-                Assert.AreEqual(
-                    1,
-                    handlerCount,
-                    "[{0}] Handler must still receive messages after enable/disable churn (cycles={1}).",
-                    scenario.Kind,
-                    PrefabPoolingCycleCount
-                );
+                Assert.AreEqual(1, handlerCount, "[{0}] Handler must still receive messages after enable/disable churn (cycles={1}).", scenario.Kind, PrefabPoolingCycleCount);
 
                 token.RemoveRegistration(handle);
             }
         }
 
         [Test]
-        public void TokenDisableMidDispatch(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void TokenDisableMidDispatch([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(TokenDisableMidDispatch) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(TokenDisableMidDispatch) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -222,23 +156,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 },
                 priority: 0
             );
-            MessageRegistrationHandle bHandle = ScenarioCallbacks.RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                () => ++bCount,
-                priority: 1
-            );
+            MessageRegistrationHandle bHandle = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () => ++bCount, priority: 1);
 
             ScenarioCallbacks.EmitForKind(scenario, hostId);
-            Assert.AreEqual(
-                1,
-                aCount,
-                "[{0}] Handler A must run on the in-flight emission. aCount={1}, bCount={2}.",
-                scenario.Kind,
-                aCount,
-                bCount
-            );
+            Assert.AreEqual(1, aCount, "[{0}] Handler A must run on the in-flight emission. aCount={1}, bCount={2}.", scenario.Kind, aCount, bCount);
             Assert.AreEqual(
                 1,
                 bCount,
@@ -249,22 +170,8 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             ScenarioCallbacks.EmitForKind(scenario, hostId);
-            Assert.AreEqual(
-                1,
-                aCount,
-                "[{0}] After Disable, the next emission must NOT invoke A. aCount={1}, bCount={2}.",
-                scenario.Kind,
-                aCount,
-                bCount
-            );
-            Assert.AreEqual(
-                1,
-                bCount,
-                "[{0}] After Disable, the next emission must NOT invoke B. aCount={1}, bCount={2}.",
-                scenario.Kind,
-                aCount,
-                bCount
-            );
+            Assert.AreEqual(1, aCount, "[{0}] After Disable, the next emission must NOT invoke A. aCount={1}, bCount={2}.", scenario.Kind, aCount, bCount);
+            Assert.AreEqual(1, bCount, "[{0}] After Disable, the next emission must NOT invoke B. aCount={1}, bCount={2}.", scenario.Kind, aCount, bCount);
 
             token.Enable();
             token.RemoveRegistration(aHandle);
@@ -272,15 +179,9 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void TokenReEnableMidDispatch(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void TokenReEnableMidDispatch([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(TokenReEnableMidDispatch) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(TokenReEnableMidDispatch) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -290,13 +191,9 @@ namespace DxMessaging.Tests.Runtime.Core
                 Use a dedicated component so we can disable its token without
                 affecting the dispatch loop on the host's token.
             */
-            GameObject auxHost = new(
-                nameof(TokenReEnableMidDispatch) + "Aux" + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject auxHost = new(nameof(TokenReEnableMidDispatch) + "Aux" + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(auxHost);
-            EmptyMessageAwareComponent auxComponent =
-                auxHost.GetComponent<EmptyMessageAwareComponent>();
+            EmptyMessageAwareComponent auxComponent = auxHost.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken auxToken = GetToken(auxComponent);
 
             int hostHandlerCount = 0;
@@ -307,34 +204,17 @@ namespace DxMessaging.Tests.Runtime.Core
                 first emission, simulating a previously-disabled handler that
                 gets re-enabled mid-dispatch on a different bus client.
             */
-            MessageRegistrationHandle auxHandle = ScenarioCallbacks.RegisterCountingHandler(
-                scenario,
-                auxToken,
-                hostId,
-                () => ++auxHandlerCount
-            );
+            MessageRegistrationHandle auxHandle = ScenarioCallbacks.RegisterCountingHandler(scenario, auxToken, hostId, () => ++auxHandlerCount);
             auxToken.Disable();
 
-            MessageRegistrationHandle hostHandle = ScenarioCallbacks.RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                () =>
-                {
-                    ++hostHandlerCount;
-                    auxToken.Enable();
-                }
-            );
+            MessageRegistrationHandle hostHandle = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () =>
+            {
+                ++hostHandlerCount;
+                auxToken.Enable();
+            });
 
             ScenarioCallbacks.EmitForKind(scenario, hostId);
-            Assert.AreEqual(
-                1,
-                hostHandlerCount,
-                "[{0}] Host handler must run on the first emission. host={1}, aux={2}.",
-                scenario.Kind,
-                hostHandlerCount,
-                auxHandlerCount
-            );
+            Assert.AreEqual(1, hostHandlerCount, "[{0}] Host handler must run on the first emission. host={1}, aux={2}.", scenario.Kind, hostHandlerCount, auxHandlerCount);
             Assert.AreEqual(
                 0,
                 auxHandlerCount,
@@ -345,14 +225,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             ScenarioCallbacks.EmitForKind(scenario, hostId);
-            Assert.AreEqual(
-                2,
-                hostHandlerCount,
-                "[{0}] Host handler must run on the second emission. host={1}, aux={2}.",
-                scenario.Kind,
-                hostHandlerCount,
-                auxHandlerCount
-            );
+            Assert.AreEqual(2, hostHandlerCount, "[{0}] Host handler must run on the second emission. host={1}, aux={2}.", scenario.Kind, hostHandlerCount, auxHandlerCount);
             Assert.AreEqual(
                 1,
                 auxHandlerCount,
@@ -379,10 +252,7 @@ namespace DxMessaging.Tests.Runtime.Core
         /// usable for fresh registrations afterwards.
         /// </summary>
         [Test]
-        public void UnregisterAllMidDispatch(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void UnregisterAllMidDispatch([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             /*
                 A standalone token (not a MessageAwareComponent token) keeps this
@@ -423,27 +293,10 @@ namespace DxMessaging.Tests.Runtime.Core
                     },
                     priority: 0
                 );
-                _ = ScenarioCallbacks.RegisterCountingHandler(
-                    scenario,
-                    token,
-                    hostId,
-                    () => ++bCount,
-                    priority: 1
-                );
+                _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () => ++bCount, priority: 1);
 
-                Assert.DoesNotThrow(
-                    () => ScenarioCallbacks.EmitForKind(scenario, hostId),
-                    "[{0}] UnregisterAll from inside a handler must not throw mid-dispatch.",
-                    scenario.Kind
-                );
-                Assert.AreEqual(
-                    1,
-                    aCount,
-                    "[{0}] Handler A must run on the in-flight emission. aCount={1}, bCount={2}.",
-                    scenario.Kind,
-                    aCount,
-                    bCount
-                );
+                Assert.DoesNotThrow(() => ScenarioCallbacks.EmitForKind(scenario, hostId), "[{0}] UnregisterAll from inside a handler must not throw mid-dispatch.", scenario.Kind);
+                Assert.AreEqual(1, aCount, "[{0}] Handler A must run on the in-flight emission. aCount={1}, bCount={2}.", scenario.Kind, aCount, bCount);
                 Assert.AreEqual(
                     1,
                     bCount,
@@ -454,38 +307,13 @@ namespace DxMessaging.Tests.Runtime.Core
                 );
 
                 // The registrations must be gone from the bus immediately.
-                Assert.AreEqual(
-                    initialUntargeted,
-                    bus.RegisteredUntargeted,
-                    "[{0}] Untargeted counter must return to baseline after UnregisterAll.",
-                    scenario.Kind
-                );
-                Assert.AreEqual(
-                    initialTargeted,
-                    bus.RegisteredTargeted,
-                    "[{0}] Targeted counter must return to baseline after UnregisterAll.",
-                    scenario.Kind
-                );
-                Assert.AreEqual(
-                    initialBroadcast,
-                    bus.RegisteredBroadcast,
-                    "[{0}] Broadcast counter must return to baseline after UnregisterAll.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(initialUntargeted, bus.RegisteredUntargeted, "[{0}] Untargeted counter must return to baseline after UnregisterAll.", scenario.Kind);
+                Assert.AreEqual(initialTargeted, bus.RegisteredTargeted, "[{0}] Targeted counter must return to baseline after UnregisterAll.", scenario.Kind);
+                Assert.AreEqual(initialBroadcast, bus.RegisteredBroadcast, "[{0}] Broadcast counter must return to baseline after UnregisterAll.", scenario.Kind);
 
                 ScenarioCallbacks.EmitForKind(scenario, hostId);
-                Assert.AreEqual(
-                    1,
-                    aCount,
-                    "[{0}] After UnregisterAll, the next emission must NOT invoke A.",
-                    scenario.Kind
-                );
-                Assert.AreEqual(
-                    1,
-                    bCount,
-                    "[{0}] After UnregisterAll, the next emission must NOT invoke B.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(1, aCount, "[{0}] After UnregisterAll, the next emission must NOT invoke A.", scenario.Kind);
+                Assert.AreEqual(1, bCount, "[{0}] After UnregisterAll, the next emission must NOT invoke B.", scenario.Kind);
 
                 /*
                     KEY difference from Disable(): the staged registrations were
@@ -493,60 +321,20 @@ namespace DxMessaging.Tests.Runtime.Core
                 */
                 token.Enable();
                 ScenarioCallbacks.EmitForKind(scenario, hostId);
-                Assert.AreEqual(
-                    1,
-                    aCount,
-                    "[{0}] Enable() after UnregisterAll must NOT resurrect A (staged state was cleared).",
-                    scenario.Kind
-                );
-                Assert.AreEqual(
-                    1,
-                    bCount,
-                    "[{0}] Enable() after UnregisterAll must NOT resurrect B (staged state was cleared).",
-                    scenario.Kind
-                );
-                Assert.AreEqual(
-                    initialUntargeted,
-                    bus.RegisteredUntargeted,
-                    "[{0}] Untargeted counter must stay at baseline after Enable() post-UnregisterAll.",
-                    scenario.Kind
-                );
-                Assert.AreEqual(
-                    initialTargeted,
-                    bus.RegisteredTargeted,
-                    "[{0}] Targeted counter must stay at baseline after Enable() post-UnregisterAll.",
-                    scenario.Kind
-                );
-                Assert.AreEqual(
-                    initialBroadcast,
-                    bus.RegisteredBroadcast,
-                    "[{0}] Broadcast counter must stay at baseline after Enable() post-UnregisterAll.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(1, aCount, "[{0}] Enable() after UnregisterAll must NOT resurrect A (staged state was cleared).", scenario.Kind);
+                Assert.AreEqual(1, bCount, "[{0}] Enable() after UnregisterAll must NOT resurrect B (staged state was cleared).", scenario.Kind);
+                Assert.AreEqual(initialUntargeted, bus.RegisteredUntargeted, "[{0}] Untargeted counter must stay at baseline after Enable() post-UnregisterAll.", scenario.Kind);
+                Assert.AreEqual(initialTargeted, bus.RegisteredTargeted, "[{0}] Targeted counter must stay at baseline after Enable() post-UnregisterAll.", scenario.Kind);
+                Assert.AreEqual(initialBroadcast, bus.RegisteredBroadcast, "[{0}] Broadcast counter must stay at baseline after Enable() post-UnregisterAll.", scenario.Kind);
 
                 /*
                     The token (and the bus) must remain fully usable: a fresh
                     registration on the re-enabled token dispatches normally.
                 */
-                MessageRegistrationHandle freshHandle = ScenarioCallbacks.RegisterCountingHandler(
-                    scenario,
-                    token,
-                    hostId,
-                    () => ++freshCount
-                );
+                MessageRegistrationHandle freshHandle = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () => ++freshCount);
                 ScenarioCallbacks.EmitForKind(scenario, hostId);
-                Assert.AreEqual(
-                    1,
-                    freshCount,
-                    "[{0}] A registration made after UnregisterAll must receive emissions (bus must not be corrupted).",
-                    scenario.Kind
-                );
-                Assert.AreEqual(
-                    1,
-                    aCount,
-                    "[{0}] Old handler A must stay dead after the fresh registration's emission.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(1, freshCount, "[{0}] A registration made after UnregisterAll must receive emissions (bus must not be corrupted).", scenario.Kind);
+                Assert.AreEqual(1, aCount, "[{0}] Old handler A must stay dead after the fresh registration's emission.", scenario.Kind);
 
                 token.RemoveRegistration(freshHandle);
             }
@@ -566,15 +354,9 @@ namespace DxMessaging.Tests.Runtime.Core
         /// including the counter for the selected message kind.
         /// </remarks>
         [Test]
-        public void EmitOnEmptyBusIsSilentNoOp(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void EmitOnEmptyBusIsSilentNoOp([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(EmitOnEmptyBusIsSilentNoOp) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(EmitOnEmptyBusIsSilentNoOp) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -603,47 +385,20 @@ namespace DxMessaging.Tests.Runtime.Core
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
-                    Assert.AreEqual(
-                        initialUntargeted,
-                        bus.RegisteredUntargeted,
-                        "[Untargeted] Empty-bus emit must leave RegisteredUntargeted unchanged."
-                    );
+                    Assert.AreEqual(initialUntargeted, bus.RegisteredUntargeted, "[Untargeted] Empty-bus emit must leave RegisteredUntargeted unchanged.");
                     break;
                 case MessageKind.Targeted:
-                    Assert.AreEqual(
-                        initialTargeted,
-                        bus.RegisteredTargeted,
-                        "[Targeted] Empty-bus emit must leave RegisteredTargeted unchanged."
-                    );
+                    Assert.AreEqual(initialTargeted, bus.RegisteredTargeted, "[Targeted] Empty-bus emit must leave RegisteredTargeted unchanged.");
                     break;
                 case MessageKind.Broadcast:
-                    Assert.AreEqual(
-                        initialBroadcast,
-                        bus.RegisteredBroadcast,
-                        "[Broadcast] Empty-bus emit must leave RegisteredBroadcast unchanged."
-                    );
+                    Assert.AreEqual(initialBroadcast, bus.RegisteredBroadcast, "[Broadcast] Empty-bus emit must leave RegisteredBroadcast unchanged.");
                     break;
             }
 
             // No-leak invariants for the other counters.
-            Assert.AreEqual(
-                initialUntargeted,
-                bus.RegisteredUntargeted,
-                "[{0}] Untargeted counter must not move after empty-bus emit.",
-                scenario.Kind
-            );
-            Assert.AreEqual(
-                initialTargeted,
-                bus.RegisteredTargeted,
-                "[{0}] Targeted counter must not move after empty-bus emit.",
-                scenario.Kind
-            );
-            Assert.AreEqual(
-                initialBroadcast,
-                bus.RegisteredBroadcast,
-                "[{0}] Broadcast counter must not move after empty-bus emit.",
-                scenario.Kind
-            );
+            Assert.AreEqual(initialUntargeted, bus.RegisteredUntargeted, "[{0}] Untargeted counter must not move after empty-bus emit.", scenario.Kind);
+            Assert.AreEqual(initialTargeted, bus.RegisteredTargeted, "[{0}] Targeted counter must not move after empty-bus emit.", scenario.Kind);
+            Assert.AreEqual(initialBroadcast, bus.RegisteredBroadcast, "[{0}] Broadcast counter must not move after empty-bus emit.", scenario.Kind);
 
             token.Enable();
         }
@@ -657,15 +412,9 @@ namespace DxMessaging.Tests.Runtime.Core
         /// post-reset emit must therefore find no handlers to dispatch to.
         /// </summary>
         [Test]
-        public void EmitImmediatelyAfterResetIsSilentNoOp(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void EmitImmediatelyAfterResetIsSilentNoOp([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(EmitImmediatelyAfterResetIsSilentNoOp) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(EmitImmediatelyAfterResetIsSilentNoOp) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -676,9 +425,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Register a handler whose callback would bump handlerCount; we
                 never want to see it fire after the reset.
             */
-            _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () =>
-                ++handlerCount
-            );
+            _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () => ++handlerCount);
 
             /*
                 Reset wipes every registration AND bumps the reset generation
@@ -688,60 +435,20 @@ namespace DxMessaging.Tests.Runtime.Core
             */
             DxMessagingStaticState.Reset();
 
-            Assert.DoesNotThrow(
-                () => ScenarioCallbacks.EmitForKind(scenario, hostId),
-                "[{0}] Emitting after Reset must not throw.",
-                scenario.Kind
-            );
-            Assert.AreEqual(
-                0,
-                handlerCount,
-                "[{0}] Pre-reset handler must NOT fire after Reset (handlerCount={1}).",
-                scenario.Kind,
-                handlerCount
-            );
+            Assert.DoesNotThrow(() => ScenarioCallbacks.EmitForKind(scenario, hostId), "[{0}] Emitting after Reset must not throw.", scenario.Kind);
+            Assert.AreEqual(0, handlerCount, "[{0}] Pre-reset handler must NOT fire after Reset (handlerCount={1}).", scenario.Kind, handlerCount);
 
             /*
                 Defensive sanity: the bus must report zero registrations on
                 every counter after Reset, regardless of what the test ran.
             */
             IMessageBus bus = MessageHandler.MessageBus;
-            Assert.AreEqual(
-                0,
-                bus.RegisteredUntargeted,
-                "[{0}] Untargeted counter must be zero after Reset.",
-                scenario.Kind
-            );
-            Assert.AreEqual(
-                0,
-                bus.RegisteredTargeted,
-                "[{0}] Targeted counter must be zero after Reset.",
-                scenario.Kind
-            );
-            Assert.AreEqual(
-                0,
-                bus.RegisteredBroadcast,
-                "[{0}] Broadcast counter must be zero after Reset.",
-                scenario.Kind
-            );
-            Assert.AreEqual(
-                0,
-                bus.RegisteredInterceptors,
-                "[{0}] Interceptor counter must be zero after Reset.",
-                scenario.Kind
-            );
-            Assert.AreEqual(
-                0,
-                bus.RegisteredPostProcessors,
-                "[{0}] Post-processor counter must be zero after Reset.",
-                scenario.Kind
-            );
-            Assert.AreEqual(
-                0,
-                bus.RegisteredGlobalAcceptAll,
-                "[{0}] GlobalAcceptAll counter must be zero after Reset.",
-                scenario.Kind
-            );
+            Assert.AreEqual(0, bus.RegisteredUntargeted, "[{0}] Untargeted counter must be zero after Reset.", scenario.Kind);
+            Assert.AreEqual(0, bus.RegisteredTargeted, "[{0}] Targeted counter must be zero after Reset.", scenario.Kind);
+            Assert.AreEqual(0, bus.RegisteredBroadcast, "[{0}] Broadcast counter must be zero after Reset.", scenario.Kind);
+            Assert.AreEqual(0, bus.RegisteredInterceptors, "[{0}] Interceptor counter must be zero after Reset.", scenario.Kind);
+            Assert.AreEqual(0, bus.RegisteredPostProcessors, "[{0}] Post-processor counter must be zero after Reset.", scenario.Kind);
+            Assert.AreEqual(0, bus.RegisteredGlobalAcceptAll, "[{0}] GlobalAcceptAll counter must be zero after Reset.", scenario.Kind);
         }
 
         /// <summary>Only a host moved out of its owning scene by persistence survives that scene's unload.</summary>
@@ -751,114 +458,46 @@ namespace DxMessaging.Tests.Runtime.Core
         /// </remarks>
         [UnityTest]
         [Category("UnityRuntime")]
-        public IEnumerator SceneTransitionWithDontDestroyOnLoad(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public IEnumerator SceneTransitionWithDontDestroyOnLoad([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             using LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName);
             MessageRegistrationToken persistentToken = null;
             MessageRegistrationToken ordinaryToken = null;
             try
             {
-                Scene transient = _ownedScene = SceneManager.CreateScene(
-                    nameof(SceneTransitionWithDontDestroyOnLoad) + scenario.Kind + "-Transient"
-                );
+                Scene transient = _ownedScene = SceneManager.CreateScene(nameof(SceneTransitionWithDontDestroyOnLoad) + scenario.Kind + "-Transient");
                 yield return null;
 
-                GameObject persistent = new(
-                    nameof(SceneTransitionWithDontDestroyOnLoad) + scenario.Kind + "-Persistent",
-                    typeof(EmptyMessageAwareComponent)
-                );
+                GameObject persistent = new(nameof(SceneTransitionWithDontDestroyOnLoad) + scenario.Kind + "-Persistent", typeof(EmptyMessageAwareComponent));
                 _spawned.Add(persistent);
                 persistentToken = GetToken(persistent.GetComponent<EmptyMessageAwareComponent>());
                 SceneManager.MoveGameObjectToScene(persistent, transient);
-                GameObject ordinary = new(
-                    nameof(SceneTransitionWithDontDestroyOnLoad) + scenario.Kind + "-Ordinary",
-                    typeof(EmptyMessageAwareComponent)
-                );
+                GameObject ordinary = new(nameof(SceneTransitionWithDontDestroyOnLoad) + scenario.Kind + "-Ordinary", typeof(EmptyMessageAwareComponent));
                 _spawned.Add(ordinary);
                 ordinaryToken = GetToken(ordinary.GetComponent<EmptyMessageAwareComponent>());
                 SceneManager.MoveGameObjectToScene(ordinary, transient);
-                Assert.That(
-                    persistent.scene,
-                    Is.EqualTo(transient),
-                    "[{0}] Persistent host must start in the scene being unloaded.",
-                    scenario.Kind
-                );
-                Assert.That(
-                    ordinary.scene,
-                    Is.EqualTo(transient),
-                    "[{0}] Ordinary control must start in the scene being unloaded.",
-                    scenario.Kind
-                );
+                Assert.That(persistent.scene, Is.EqualTo(transient), "[{0}] Persistent host must start in the scene being unloaded.", scenario.Kind);
+                Assert.That(ordinary.scene, Is.EqualTo(transient), "[{0}] Ordinary control must start in the scene being unloaded.", scenario.Kind);
                 UnityEngine.Object.DontDestroyOnLoad(persistent);
 
                 InstanceId route = persistent;
                 int persistentCalls = 0;
                 int ordinaryCalls = 0;
-                _ = ScenarioCallbacks.RegisterCountingHandler(
-                    scenario,
-                    persistentToken,
-                    route,
-                    () => ++persistentCalls
-                );
-                _ = ScenarioCallbacks.RegisterCountingHandler(scenario, ordinaryToken, route, () =>
-                    ++ordinaryCalls
-                );
+                _ = ScenarioCallbacks.RegisterCountingHandler(scenario, persistentToken, route, () => ++persistentCalls);
+                _ = ScenarioCallbacks.RegisterCountingHandler(scenario, ordinaryToken, route, () => ++ordinaryCalls);
                 ScenarioCallbacks.EmitForKind(scenario, route);
-                Assert.That(
-                    persistentCalls,
-                    Is.EqualTo(1),
-                    "[{0}] Persistent host must receive the initial emission.",
-                    scenario.Kind
-                );
-                Assert.That(
-                    ordinaryCalls,
-                    Is.EqualTo(1),
-                    "[{0}] Ordinary control must receive the same initial emission.",
-                    scenario.Kind
-                );
+                Assert.That(persistentCalls, Is.EqualTo(1), "[{0}] Persistent host must receive the initial emission.", scenario.Kind);
+                Assert.That(ordinaryCalls, Is.EqualTo(1), "[{0}] Ordinary control must receive the same initial emission.", scenario.Kind);
 
                 _sceneUnload = SceneManager.UnloadSceneAsync(transient);
-                Assert.That(
-                    _sceneUnload,
-                    Is.Not.Null,
-                    "[{0}] The owned scene must start unloading.",
-                    scenario.Kind
-                );
+                Assert.That(_sceneUnload, Is.Not.Null, "[{0}] The owned scene must start unloading.", scenario.Kind);
                 yield return _sceneUnload;
-                Assert.That(
-                    transient.isLoaded,
-                    Is.False,
-                    "[{0}] The hosts' scene must actually finish unloading.",
-                    scenario.Kind
-                );
-                Assert.That(
-                    ordinary == null,
-                    Is.True,
-                    "[{0}] Unloading the owning scene must destroy the ordinary control.",
-                    scenario.Kind
-                );
-                Assert.That(
-                    persistent != null,
-                    Is.True,
-                    "[{0}] Persistence must preserve the host after its owning scene unloads.",
-                    scenario.Kind
-                );
+                Assert.That(transient.isLoaded, Is.False, "[{0}] The hosts' scene must actually finish unloading.", scenario.Kind);
+                Assert.That(ordinary == null, Is.True, "[{0}] Unloading the owning scene must destroy the ordinary control.", scenario.Kind);
+                Assert.That(persistent != null, Is.True, "[{0}] Persistence must preserve the host after its owning scene unloads.", scenario.Kind);
                 ScenarioCallbacks.EmitForKind(scenario, route);
-                Assert.That(
-                    persistentCalls,
-                    Is.EqualTo(2),
-                    "[{0}] The persistent host must remain registered after unload.",
-                    scenario.Kind
-                );
-                Assert.That(
-                    ordinaryCalls,
-                    Is.EqualTo(1),
-                    "[{0}] The destroyed control must not receive later emissions.",
-                    scenario.Kind
-                );
+                Assert.That(persistentCalls, Is.EqualTo(2), "[{0}] The persistent host must remain registered after unload.", scenario.Kind);
+                Assert.That(ordinaryCalls, Is.EqualTo(1), "[{0}] The destroyed control must not receive later emissions.", scenario.Kind);
             }
             finally
             {
@@ -891,15 +530,10 @@ namespace DxMessaging.Tests.Runtime.Core
         /// </remarks>
         [Test]
         public void RegisterFromInsideSceneLoadedClosureBecomesImmediatelyEffective(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario
         )
         {
-            GameObject host = new(
-                nameof(RegisterFromInsideSceneLoadedClosureBecomesImmediatelyEffective)
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(RegisterFromInsideSceneLoadedClosureBecomesImmediatelyEffective) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -920,17 +554,9 @@ namespace DxMessaging.Tests.Runtime.Core
                 convention; local functions cannot reuse `_` as a parameter
                 name across slots.
             */
-            UnityEngine.Events.UnityAction<Scene, LoadSceneMode> onSceneLoaded = (
-                Scene _,
-                LoadSceneMode _
-            ) =>
+            UnityEngine.Events.UnityAction<Scene, LoadSceneMode> onSceneLoaded = (Scene _, LoadSceneMode _) =>
             {
-                deferredHandle ??= ScenarioCallbacks.RegisterCountingHandler(
-                    scenario,
-                    token,
-                    hostId,
-                    () => ++handlerCount
-                );
+                deferredHandle ??= ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () => ++handlerCount);
             };
 
             /*
@@ -949,11 +575,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Scene activeScene = SceneManager.GetActiveScene();
                 onSceneLoaded(activeScene, LoadSceneMode.Additive);
 
-                Assert.IsTrue(
-                    deferredHandle.HasValue,
-                    "[{0}] sceneLoaded closure must have installed the handler.",
-                    scenario.Kind
-                );
+                Assert.IsTrue(deferredHandle.HasValue, "[{0}] sceneLoaded closure must have installed the handler.", scenario.Kind);
 
                 /*
                     Defensive: assert the bus's per-kind counter actually moved
@@ -1012,39 +634,23 @@ namespace DxMessaging.Tests.Runtime.Core
         /// for the destroy to flush) must skip the destroyed handler.
         /// </summary>
         [UnityTest]
-        public IEnumerator HostDestroyMidDispatchDoesNotCrash(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public IEnumerator HostDestroyMidDispatchDoesNotCrash([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(HostDestroyMidDispatchDoesNotCrash) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(HostDestroyMidDispatchDoesNotCrash) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
             InstanceId hostId = host;
 
             // A peer host so we can keep dispatching after host destruction.
-            GameObject peer = new(
-                nameof(HostDestroyMidDispatchDoesNotCrash) + scenario.Kind + "-Peer",
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject peer = new(nameof(HostDestroyMidDispatchDoesNotCrash) + scenario.Kind + "-Peer", typeof(EmptyMessageAwareComponent));
             _spawned.Add(peer);
-            EmptyMessageAwareComponent peerComponent =
-                peer.GetComponent<EmptyMessageAwareComponent>();
+            EmptyMessageAwareComponent peerComponent = peer.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken peerToken = GetToken(peerComponent);
 
             int peerCount = 0;
             int destroyedCount = 0;
-            MessageRegistrationHandle peerHandle = ScenarioCallbacks.RegisterCountingHandler(
-                scenario,
-                peerToken,
-                hostId,
-                () => ++peerCount,
-                priority: 1
-            );
+            MessageRegistrationHandle peerHandle = ScenarioCallbacks.RegisterCountingHandler(scenario, peerToken, hostId, () => ++peerCount, priority: 1);
             _ = ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 token,
@@ -1058,19 +664,8 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             Assert.DoesNotThrow(() => ScenarioCallbacks.EmitForKind(scenario, hostId));
-            Assert.AreEqual(
-                1,
-                destroyedCount,
-                "[{0}] Self-destroying handler must run exactly once.",
-                scenario.Kind
-            );
-            Assert.AreEqual(
-                1,
-                peerCount,
-                "[{0}] Peer handler must complete on the in-flight snapshot. peerCount={1}.",
-                scenario.Kind,
-                peerCount
-            );
+            Assert.AreEqual(1, destroyedCount, "[{0}] Self-destroying handler must run exactly once.", scenario.Kind);
+            Assert.AreEqual(1, peerCount, "[{0}] Peer handler must complete on the in-flight snapshot. peerCount={1}.", scenario.Kind, peerCount);
 
             /*
                 Yield a frame so Object.Destroy is processed and the
@@ -1079,12 +674,7 @@ namespace DxMessaging.Tests.Runtime.Core
             yield return null;
 
             ScenarioCallbacks.EmitForKind(scenario, hostId);
-            Assert.AreEqual(
-                1,
-                destroyedCount,
-                "[{0}] Destroyed host's handler must NOT fire on subsequent emits.",
-                scenario.Kind
-            );
+            Assert.AreEqual(1, destroyedCount, "[{0}] Destroyed host's handler must NOT fire on subsequent emits.", scenario.Kind);
 
             peerToken.RemoveRegistration(peerHandle);
             yield break;
@@ -1101,21 +691,13 @@ namespace DxMessaging.Tests.Runtime.Core
         /// </summary>
         [UnityTest]
         [Category("UnityRuntime")]
-        public IEnumerator SceneUnloadMidDispatchDrainsInFlightEmission(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public IEnumerator SceneUnloadMidDispatchDrainsInFlightEmission([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             // Create a transient scene; the handler-host lives there.
-            Scene transient = _ownedScene = SceneManager.CreateScene(
-                nameof(SceneUnloadMidDispatchDrainsInFlightEmission) + scenario.Kind + "-Transient"
-            );
+            Scene transient = _ownedScene = SceneManager.CreateScene(nameof(SceneUnloadMidDispatchDrainsInFlightEmission) + scenario.Kind + "-Transient");
             yield return null;
 
-            GameObject host = new(
-                nameof(SceneUnloadMidDispatchDrainsInFlightEmission) + scenario.Kind + "-Host",
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(SceneUnloadMidDispatchDrainsInFlightEmission) + scenario.Kind + "-Host", typeof(EmptyMessageAwareComponent));
             SceneManager.MoveGameObjectToScene(host, transient);
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
@@ -1126,13 +708,9 @@ namespace DxMessaging.Tests.Runtime.Core
                 Peer host in the test runner's active scene so we can keep
                 dispatching after the transient scene unloads.
             */
-            GameObject peer = new(
-                nameof(SceneUnloadMidDispatchDrainsInFlightEmission) + scenario.Kind + "-Peer",
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject peer = new(nameof(SceneUnloadMidDispatchDrainsInFlightEmission) + scenario.Kind + "-Peer", typeof(EmptyMessageAwareComponent));
             _spawned.Add(peer);
-            EmptyMessageAwareComponent peerComponent =
-                peer.GetComponent<EmptyMessageAwareComponent>();
+            EmptyMessageAwareComponent peerComponent = peer.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken peerToken = GetToken(peerComponent);
 
             int peerCount = 0;
@@ -1145,13 +723,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 emission AFTER the host's priority-0 handler triggers an
                 unload.
             */
-            MessageRegistrationHandle peerHandle = ScenarioCallbacks.RegisterCountingHandler(
-                scenario,
-                peerToken,
-                hostId,
-                () => ++peerCount,
-                priority: 1
-            );
+            MessageRegistrationHandle peerHandle = ScenarioCallbacks.RegisterCountingHandler(scenario, peerToken, hostId, () => ++peerCount, priority: 1);
             _ = ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 token,
@@ -1173,60 +745,17 @@ namespace DxMessaging.Tests.Runtime.Core
                 "[{0}] Bus must not throw when a handler triggers UnloadSceneAsync mid-dispatch.",
                 scenario.Kind
             );
-            Assert.AreEqual(
-                1,
-                hostCount,
-                "[{0}] Host handler must run on the in-flight emission. host={1}, peer={2}.",
-                scenario.Kind,
-                hostCount,
-                peerCount
-            );
-            Assert.AreEqual(
-                1,
-                peerCount,
-                "[{0}] Peer handler must complete the in-flight emission's snapshot. host={1}, peer={2}.",
-                scenario.Kind,
-                hostCount,
-                peerCount
-            );
+            Assert.AreEqual(1, hostCount, "[{0}] Host handler must run on the in-flight emission. host={1}, peer={2}.", scenario.Kind, hostCount, peerCount);
+            Assert.AreEqual(1, peerCount, "[{0}] Peer handler must complete the in-flight emission's snapshot. host={1}, peer={2}.", scenario.Kind, hostCount, peerCount);
 
-            Assert.That(
-                unloadOp,
-                Is.Not.Null,
-                "[{0}] The host callback must request an actual scene unload.",
-                scenario.Kind
-            );
+            Assert.That(unloadOp, Is.Not.Null, "[{0}] The host callback must request an actual scene unload.", scenario.Kind);
             yield return unloadOp;
-            Assert.That(
-                transient.isLoaded,
-                Is.False,
-                "[{0}] The host's scene must finish unloading before re-emission.",
-                scenario.Kind
-            );
-            Assert.That(
-                host == null,
-                Is.True,
-                "[{0}] The unloaded scene's host must be destroyed.",
-                scenario.Kind
-            );
+            Assert.That(transient.isLoaded, Is.False, "[{0}] The host's scene must finish unloading before re-emission.", scenario.Kind);
+            Assert.That(host == null, Is.True, "[{0}] The unloaded scene's host must be destroyed.", scenario.Kind);
 
             ScenarioCallbacks.EmitForKind(scenario, hostId);
-            Assert.AreEqual(
-                1,
-                hostCount,
-                "[{0}] After scene unload, the unloaded handler must NOT fire. host={1}, peer={2}.",
-                scenario.Kind,
-                hostCount,
-                peerCount
-            );
-            Assert.AreEqual(
-                2,
-                peerCount,
-                "[{0}] Peer handler must continue receiving emissions after the unload. host={1}, peer={2}.",
-                scenario.Kind,
-                hostCount,
-                peerCount
-            );
+            Assert.AreEqual(1, hostCount, "[{0}] After scene unload, the unloaded handler must NOT fire. host={1}, peer={2}.", scenario.Kind, hostCount, peerCount);
+            Assert.AreEqual(2, peerCount, "[{0}] Peer handler must continue receiving emissions after the unload. host={1}, peer={2}.", scenario.Kind, hostCount, peerCount);
 
             peerToken.RemoveRegistration(peerHandle);
             yield break;
@@ -1241,53 +770,27 @@ namespace DxMessaging.Tests.Runtime.Core
         /// </summary>
         [Test]
         [Category("UnityRuntime")]
-        public void OnApplicationQuitDrainsCleanly(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void OnApplicationQuitDrainsCleanly([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(OnApplicationQuitDrainsCleanly) + scenario.Kind,
-                typeof(QuitOnDemandMessageAwareComponent)
-            );
+            GameObject host = new(nameof(OnApplicationQuitDrainsCleanly) + scenario.Kind, typeof(QuitOnDemandMessageAwareComponent));
             _spawned.Add(host);
-            QuitOnDemandMessageAwareComponent component =
-                host.GetComponent<QuitOnDemandMessageAwareComponent>();
+            QuitOnDemandMessageAwareComponent component = host.GetComponent<QuitOnDemandMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
             InstanceId hostId = host;
 
             int handlerCount = 0;
             using (LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName))
             {
-                MessageRegistrationHandle handle = ScenarioCallbacks.RegisterCountingHandler(
-                    scenario,
-                    token,
-                    hostId,
-                    () => ++handlerCount
-                );
+                MessageRegistrationHandle handle = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () => ++handlerCount);
 
                 ScenarioCallbacks.EmitForKind(scenario, hostId);
-                Assert.AreEqual(
-                    1,
-                    handlerCount,
-                    "[{0}] Handler must run before quit.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(1, handlerCount, "[{0}] Handler must run before quit.", scenario.Kind);
 
                 // Drive OnApplicationQuit explicitly.
-                Assert.DoesNotThrow(
-                    () => component.RaiseOnApplicationQuit(),
-                    "[{0}] OnApplicationQuit must not throw.",
-                    scenario.Kind
-                );
+                Assert.DoesNotThrow(() => component.RaiseOnApplicationQuit(), "[{0}] OnApplicationQuit must not throw.", scenario.Kind);
 
                 ScenarioCallbacks.EmitForKind(scenario, hostId);
-                Assert.AreEqual(
-                    2,
-                    handlerCount,
-                    "[{0}] The no-op quit hook must leave the registered handler usable before explicit removal.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(2, handlerCount, "[{0}] The no-op quit hook must leave the registered handler usable before explicit removal.", scenario.Kind);
 
                 token.RemoveRegistration(handle);
             }
@@ -1295,52 +798,25 @@ namespace DxMessaging.Tests.Runtime.Core
 
         private static object CreatePrivateLease(MessageBus bus, string leaseTypeName)
         {
-            Type leaseType = typeof(MessageBus).GetNestedType(
-                leaseTypeName,
-                BindingFlags.NonPublic
-            );
-            Assert.IsNotNull(
-                leaseType,
-                "[{0}] MessageBus must retain the private lease type under test.",
-                leaseTypeName
-            );
+            Type leaseType = typeof(MessageBus).GetNestedType(leaseTypeName, BindingFlags.NonPublic);
+            Assert.IsNotNull(leaseType, "[{0}] MessageBus must retain the private lease type under test.", leaseTypeName);
 
             object lease = Activator.CreateInstance(leaseType, bus);
-            Assert.IsNotNull(
-                lease,
-                "[{0}] The private lease constructor must produce a boxed value.",
-                leaseTypeName
-            );
+            Assert.IsNotNull(lease, "[{0}] The private lease constructor must produce a boxed value.", leaseTypeName);
             return lease;
         }
 
         private static int GetPrivateLeaseDepth(MessageBus bus, string depthFieldName)
         {
-            FieldInfo depthField = typeof(MessageBus).GetField(
-                depthFieldName,
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
-            Assert.IsNotNull(
-                depthField,
-                "MessageBus must retain the private depth field {0}.",
-                depthFieldName
-            );
+            FieldInfo depthField = typeof(MessageBus).GetField(depthFieldName, BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.IsNotNull(depthField, "MessageBus must retain the private depth field {0}.", depthFieldName);
             return (int)depthField.GetValue(bus);
         }
 
         private static void DisposePrivateLease(object lease)
         {
-            MethodInfo dispose = lease
-                .GetType()
-                .GetMethod(
-                    nameof(IDisposable.Dispose),
-                    BindingFlags.Instance | BindingFlags.Public
-                );
-            Assert.IsNotNull(
-                dispose,
-                "[{0}] The private lease must expose IDisposable.Dispose.",
-                lease.GetType().Name
-            );
+            MethodInfo dispose = lease.GetType().GetMethod(nameof(IDisposable.Dispose), BindingFlags.Instance | BindingFlags.Public);
+            Assert.IsNotNull(dispose, "[{0}] The private lease must expose IDisposable.Dispose.", lease.GetType().Name);
             dispose.Invoke(lease, null);
         }
     }

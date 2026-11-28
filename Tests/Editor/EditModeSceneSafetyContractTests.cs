@@ -18,10 +18,7 @@ namespace DxMessaging.Tests.Editor
     {
         private const string PackageName = "com.wallstop-studios.dxmessaging";
 
-        private static readonly IReadOnlyDictionary<
-            string,
-            SceneResidentExemption
-        > SceneResidentExemptions = new Dictionary<string, SceneResidentExemption>(
+        private static readonly IReadOnlyDictionary<string, SceneResidentExemption> SceneResidentExemptions = new Dictionary<string, SceneResidentExemption>(
             StringComparer.Ordinal
         );
 
@@ -30,114 +27,45 @@ namespace DxMessaging.Tests.Editor
         private static IEnumerable<TestCaseData> ConstructionCases()
         {
             yield return Case("classic", "GameObject host = new GameObject(\"classic\");", 1);
-            yield return Case(
-                "object initializer",
-                "GameObject host = new GameObject { name = \"initializer\" };",
-                1
-            );
-            yield return Case(
-                "qualified",
-                "UnityEngine.GameObject host = new UnityEngine.GameObject(\"qualified\");",
-                1
-            );
+            yield return Case("object initializer", "GameObject host = new GameObject { name = \"initializer\" };", 1);
+            yield return Case("qualified", "UnityEngine.GameObject host = new UnityEngine.GameObject(\"qualified\");", 1);
             yield return Case("target typed", "GameObject host = new(\"target typed\");", 1);
             yield return Case("parenthesized", "GameObject host = (new(\"parenthesized\"));", 1);
             yield return Case("deferred", "GameObject host;\nhost = new(\"deferred\");", 1);
-            yield return Case(
-                "parenthesized deferred",
-                "GameObject host;\nhost = (new(\"parenthesized deferred\"));",
-                1
-            );
+            yield return Case("parenthesized deferred", "GameObject host;\nhost = (new(\"parenthesized deferred\"));", 1);
             yield return Case(
                 "shadowed local in a sibling method",
-                "void First() { GameObject receiver = new(\"unsafe\"); }\n"
-                    + "void Second() { FlowGraphComponentNode receiver = new(); }",
+                "void First() { GameObject receiver = new(\"unsafe\"); }\n" + "void Second() { FlowGraphComponentNode receiver = new(); }",
                 1
             );
             yield return Case("comment", "// GameObject host = new(\"comment\");", 0);
-            yield return Case(
-                "string literal",
-                "string sample = \"GameObject host = new(\\\"text\\\");\";",
-                0
-            );
-            yield return Case(
-                "hide flag factory",
-                "GameObject host = EditorUtility.CreateGameObjectWithHideFlags(\"safe\", HideFlags.HideAndDontSave);",
-                0
-            );
-            yield return Case(
-                "property initializer",
-                "GameObject Host { get; } = new(\"property\");",
-                1
-            );
+            yield return Case("string literal", "string sample = \"GameObject host = new(\\\"text\\\");\";", 0);
+            yield return Case("hide flag factory", "GameObject host = EditorUtility.CreateGameObjectWithHideFlags(\"safe\", HideFlags.HideAndDontSave);", 0);
+            yield return Case("property initializer", "GameObject Host { get; } = new(\"property\");", 1);
             yield return Case("expression bodied", "GameObject CreateHost() => new(\"arrow\");", 1);
             yield return Case("return", "GameObject CreateHost() { return new(\"return\"); }", 1);
-            yield return Case(
-                "conditional return",
-                "GameObject CreateHost() { return condition ? new(\"return\") : null; }",
-                1
-            );
+            yield return Case("conditional return", "GameObject CreateHost() { return condition ? new(\"return\") : null; }", 1);
             yield return Case("getter", "GameObject Host { get { return new(\"getter\"); } }", 1);
-            yield return Case(
-                "lambda factory",
-                "Func<GameObject> factory = () => new(\"lambda\");",
-                1
-            );
-            yield return Case(
-                "ternary branch",
-                "GameObject host = condition ? new(\"branch\") : null;",
-                1
-            );
+            yield return Case("lambda factory", "Func<GameObject> factory = () => new(\"lambda\");", 1);
+            yield return Case("ternary branch", "GameObject host = condition ? new(\"branch\") : null;", 1);
             yield return Case("array initializer", "GameObject[] hosts = { new(\"array\") };", 1);
-            yield return Case(
-                "explicit array initializer",
-                "GameObject[] hosts = new GameObject[] { new(\"explicit array\") };",
-                1
-            );
+            yield return Case("explicit array initializer", "GameObject[] hosts = new GameObject[] { new(\"explicit array\") };", 1);
             yield return Case("member target", "GameObject host; this.host = new(\"member\");", 1);
-            yield return Case(
-                "null coalescing assignment",
-                "GameObject host; host ??= new(\"coalesce\");",
-                1
-            );
-            yield return Case(
-                "using alias",
-                "using GO = UnityEngine.GameObject; GO host = new GO(\"alias\");",
-                1
-            );
-            yield return Case(
-                "create primitive",
-                "GameObject.CreatePrimitive(PrimitiveType.Cube);",
-                1
-            );
+            yield return Case("null coalescing assignment", "GameObject host; host ??= new(\"coalesce\");", 1);
+            yield return Case("using alias", "using GO = UnityEngine.GameObject; GO host = new GO(\"alias\");", 1);
+            yield return Case("create primitive", "GameObject.CreatePrimitive(PrimitiveType.Cube);", 1);
             yield return Case("instantiate", "Object.Instantiate(prefab);", 1);
             yield return Case("generic instantiate", "Object.Instantiate<GameObject>(prefab);", 1);
             yield return Case("instantiate prefab", "PrefabUtility.InstantiatePrefab(prefab);", 1);
-            yield return Case(
-                "hide flag factory without hide and dont save",
-                "EditorUtility.CreateGameObjectWithHideFlags(\"unsafe\", HideFlags.None);",
-                1
-            );
+            yield return Case("hide flag factory without hide and dont save", "EditorUtility.CreateGameObjectWithHideFlags(\"unsafe\", HideFlags.None);", 1);
             yield return Case(
                 "hide flag factory with a conditional flag",
                 "EditorUtility.CreateGameObjectWithHideFlags(\"unsafe\", condition ? HideFlags.HideAndDontSave : HideFlags.None);",
                 1
             );
-            yield return Case(
-                "interpolation hole",
-                "string value = $\"{new GameObject(\"unsafe\")}\";",
-                1
-            );
-            yield return Case(
-                "shadowed local in a nested scope",
-                "GameObject receiver; void Probe() { FlowGraphComponentNode receiver; receiver = new(); }",
-                0
-            );
-            yield return Case(
-                "nested call argument",
-                "GameObject host = condition ? Make() : Wrap(new());",
-                0
-            );
+            yield return Case("interpolation hole", "string value = $\"{new GameObject(\"unsafe\")}\";", 1);
+            yield return Case("shadowed local in a nested scope", "GameObject receiver; void Probe() { FlowGraphComponentNode receiver; receiver = new(); }", 0);
+            yield return Case("nested call argument", "GameObject host = condition ? Make() : Wrap(new());", 0);
         }
 
         private static TestCaseData Case(string name, string source, int expectedCount)
@@ -146,13 +74,9 @@ namespace DxMessaging.Tests.Editor
         }
 
         [TestCaseSource(nameof(ConstructionCases))]
-        public void ScannerFindsOnlyActiveSceneGameObjectConstruction(
-            string source,
-            int expectedCount
-        )
+        public void ScannerFindsOnlyActiveSceneGameObjectConstruction(string source, int expectedCount)
         {
-            IReadOnlyList<EditModeGameObjectConstruction> actual =
-                EditModeGameObjectConstructionScanner.Find("Tests/Editor/Probe.cs", source);
+            IReadOnlyList<EditModeGameObjectConstruction> actual = EditModeGameObjectConstructionScanner.Find("Tests/Editor/Probe.cs", source);
 
             Assert.That(
                 actual.Count,
@@ -177,13 +101,8 @@ namespace DxMessaging.Tests.Editor
         {
             int fillerLines = ScanFiller.Count(character => character == '\n');
 
-            IReadOnlyList<EditModeGameObjectConstruction> isolated =
-                EditModeGameObjectConstructionScanner.Find("Tests/Editor/Probe.cs", source);
-            IReadOnlyList<EditModeGameObjectConstruction> embedded =
-                EditModeGameObjectConstructionScanner.Find(
-                    "Tests/Editor/Probe.cs",
-                    ScanFiller + source
-                );
+            IReadOnlyList<EditModeGameObjectConstruction> isolated = EditModeGameObjectConstructionScanner.Find("Tests/Editor/Probe.cs", source);
+            IReadOnlyList<EditModeGameObjectConstruction> embedded = EditModeGameObjectConstructionScanner.Find("Tests/Editor/Probe.cs", ScanFiller + source);
 
             Assert.That(
                 embedded.Count,
@@ -200,8 +119,7 @@ namespace DxMessaging.Tests.Editor
             Assert.That(
                 embedded.Select(item => item.LineNumber).ToArray(),
                 Is.EqualTo(isolated.Select(item => item.LineNumber + fillerLines).ToArray()),
-                $"Source '{source}' should report line numbers offset by exactly the "
-                    + $"{fillerLines} filler lines that precede it."
+                $"Source '{source}' should report line numbers offset by exactly the " + $"{fillerLines} filler lines that precede it."
             );
         }
 
@@ -211,35 +129,19 @@ namespace DxMessaging.Tests.Editor
             string packageRoot = GetPackageRoot();
             string editorTestsRoot = Path.Combine(packageRoot, "Tests", "Editor");
             List<string> offenders = new();
-            Dictionary<string, int> exemptionUses = SceneResidentExemptions.ToDictionary(
-                pair => pair.Key,
-                _ => 0,
-                StringComparer.Ordinal
-            );
+            Dictionary<string, int> exemptionUses = SceneResidentExemptions.ToDictionary(pair => pair.Key, _ => 0, StringComparer.Ordinal);
             int scannedFiles = 0;
 
-            foreach (
-                string file in Directory
-                    .EnumerateFiles(editorTestsRoot, "*.cs", SearchOption.AllDirectories)
-                    .OrderBy(path => path, StringComparer.Ordinal)
-            )
+            foreach (string file in Directory.EnumerateFiles(editorTestsRoot, "*.cs", SearchOption.AllDirectories).OrderBy(path => path, StringComparer.Ordinal))
             {
                 scannedFiles++;
                 string relativePath = NormalizeRelativePath(packageRoot, file);
                 string source = File.ReadAllText(file);
-                foreach (
-                    EditModeGameObjectConstruction construction in EditModeGameObjectConstructionScanner.Find(
-                        relativePath,
-                        source
-                    )
-                )
+                foreach (EditModeGameObjectConstruction construction in EditModeGameObjectConstructionScanner.Find(relativePath, source))
                 {
                     if (
                         !string.IsNullOrEmpty(construction.ExemptionId)
-                        && SceneResidentExemptions.TryGetValue(
-                            construction.ExemptionId,
-                            out SceneResidentExemption exemption
-                        )
+                        && SceneResidentExemptions.TryGetValue(construction.ExemptionId, out SceneResidentExemption exemption)
                         && exemption.Matches(construction)
                     )
                     {
@@ -251,11 +153,7 @@ namespace DxMessaging.Tests.Editor
                 }
             }
 
-            Assert.That(
-                scannedFiles,
-                Is.GreaterThan(0),
-                $"Expected to scan EditMode fixtures under '{editorTestsRoot}', but found none."
-            );
+            Assert.That(scannedFiles, Is.GreaterThan(0), $"Expected to scan EditMode fixtures under '{editorTestsRoot}', but found none.");
             Assert.That(
                 offenders,
                 Is.Empty,
@@ -270,9 +168,7 @@ namespace DxMessaging.Tests.Editor
             string[] invalidExemptions = exemptionUses
                 .Where(pair => pair.Value != 1)
                 .OrderBy(pair => pair.Key, StringComparer.Ordinal)
-                .Select(pair =>
-                    $"{pair.Key}: used {pair.Value} times; reason: {SceneResidentExemptions[pair.Key].Reason}"
-                )
+                .Select(pair => $"{pair.Key}: used {pair.Value} times; reason: {SceneResidentExemptions[pair.Key].Reason}")
                 .ToArray();
             Assert.That(
                 invalidExemptions,
@@ -286,8 +182,7 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void OwnedSceneRefusesToClaimAnAlreadyLoadedPath()
         {
-            string scenePath =
-                "Packages/com.wallstop-studios.dxmessaging/Tests/Editor/Fixtures/EditModeSceneSafety.unity";
+            string scenePath = "Packages/com.wallstop-studios.dxmessaging/Tests/Editor/Fixtures/EditModeSceneSafety.unity";
             using OwnedEditModeScene first = OwnedEditModeScene.OpenAuthored(scenePath);
             int sceneCount = SceneManager.sceneCount;
 
@@ -304,8 +199,7 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void OwnedSceneRestoresEditorStateWhenTheBodyThrows()
         {
-            string scenePath =
-                "Packages/com.wallstop-studios.dxmessaging/Tests/Editor/Fixtures/EditModeSceneSafety.unity";
+            string scenePath = "Packages/com.wallstop-studios.dxmessaging/Tests/Editor/Fixtures/EditModeSceneSafety.unity";
             Scene originalActive = SceneManager.GetActiveScene();
             int originalSceneCount = SceneManager.sceneCount;
             bool originalDirty = originalActive.isDirty;
@@ -326,8 +220,7 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void OwnedSceneCreationNeverDirtiesTheDeveloperScene()
         {
-            string scenePath =
-                "Packages/com.wallstop-studios.dxmessaging/Tests/Editor/Fixtures/EditModeSceneSafety.unity";
+            string scenePath = "Packages/com.wallstop-studios.dxmessaging/Tests/Editor/Fixtures/EditModeSceneSafety.unity";
             Scene originalActive = SceneManager.GetActiveScene();
             bool originalDirty = originalActive.isDirty;
 
@@ -375,9 +268,7 @@ namespace DxMessaging.Tests.Editor
 
         private static string GetPackageRoot()
         {
-            return Path.GetFullPath(
-                Path.Combine(Application.dataPath, "..", "Packages", PackageName)
-            );
+            return Path.GetFullPath(Path.Combine(Application.dataPath, "..", "Packages", PackageName));
         }
 
         private static string NormalizeRelativePath(string packageRoot, string file)
@@ -389,11 +280,7 @@ namespace DxMessaging.Tests.Editor
 
     internal readonly struct SceneResidentExemption
     {
-        internal SceneResidentExemption(
-            string expectedRelativePath,
-            string expectedSourceFragment,
-            string reason
-        )
+        internal SceneResidentExemption(string expectedRelativePath, string expectedSourceFragment, string reason)
         {
             ExpectedRelativePath = expectedRelativePath;
             ExpectedSourceFragment = expectedSourceFragment;
@@ -406,16 +293,8 @@ namespace DxMessaging.Tests.Editor
 
         internal bool Matches(EditModeGameObjectConstruction construction)
         {
-            return string.Equals(
-                    construction.RelativePath,
-                    ExpectedRelativePath,
-                    StringComparison.Ordinal
-                )
-                && 0
-                    <= construction.SourceLine.IndexOf(
-                        ExpectedSourceFragment,
-                        StringComparison.Ordinal
-                    );
+            return string.Equals(construction.RelativePath, ExpectedRelativePath, StringComparison.Ordinal)
+                && 0 <= construction.SourceLine.IndexOf(ExpectedSourceFragment, StringComparison.Ordinal);
         }
     }
 
@@ -423,72 +302,39 @@ namespace DxMessaging.Tests.Editor
     {
         private const string ExemptionPrefix = "// DXM-SCENE-RESIDENCY:";
 
-        private static readonly Regex AliasDeclaration = new(
-            @"\busing\s+(?<alias>[A-Za-z_]\w*)\s*=\s*(?:global::)?UnityEngine\.GameObject\s*;",
-            RegexOptions.Compiled
-        );
+        private static readonly Regex AliasDeclaration = new(@"\busing\s+(?<alias>[A-Za-z_]\w*)\s*=\s*(?:global::)?UnityEngine\.GameObject\s*;", RegexOptions.Compiled);
 
-        private static readonly Regex ExplicitConstruction = new(
-            @"\bnew\s+(?<type>(?:(?:global::)?UnityEngine\.)?GameObject|[A-Za-z_]\w*)\s*(?:\(|\{)",
-            RegexOptions.Compiled
-        );
+        private static readonly Regex ExplicitConstruction = new(@"\bnew\s+(?<type>(?:(?:global::)?UnityEngine\.)?GameObject|[A-Za-z_]\w*)\s*(?:\(|\{)", RegexOptions.Compiled);
 
-        private static readonly Regex ImplicitConstruction = new(
-            @"\bnew\s*\(",
-            RegexOptions.Compiled
-        );
+        private static readonly Regex ImplicitConstruction = new(@"\bnew\s*\(", RegexOptions.Compiled);
 
-        private static readonly Regex AssignedTarget = new(
-            @"(?:(?:this|base)\.)?(?<name>[A-Za-z_]\w*)\s*(?:=|\?\?=)\s*\(*\s*$",
-            RegexOptions.Compiled
-        );
+        private static readonly Regex AssignedTarget = new(@"(?:(?:this|base)\.)?(?<name>[A-Za-z_]\w*)\s*(?:=|\?\?=)\s*\(*\s*$", RegexOptions.Compiled);
 
         private static readonly Regex DangerousFactory = new(
             @"\b(?:GameObject\.CreatePrimitive|(?:Object|UnityEngine\.Object)\.Instantiate(?:\s*<[^>]+>)?|PrefabUtility\.InstantiatePrefab)\s*\(",
             RegexOptions.Compiled
         );
 
-        private static readonly Regex HideFlagFactory = new(
-            @"\bEditorUtility\.CreateGameObjectWithHideFlags\s*\(",
-            RegexOptions.Compiled
-        );
+        private static readonly Regex HideFlagFactory = new(@"\bEditorUtility\.CreateGameObjectWithHideFlags\s*\(", RegexOptions.Compiled);
 
-        private static readonly Regex ArrayInitializerTarget = new(
-            @"\b(?:(?:global::)?UnityEngine\.)?GameObject\s*\[\]\s+[A-Za-z_]\w*\s*=\s*{[^}]*$",
-            RegexOptions.Compiled
-        );
+        private static readonly Regex ArrayInitializerTarget = new(@"\b(?:(?:global::)?UnityEngine\.)?GameObject\s*\[\]\s+[A-Za-z_]\w*\s*=\s*{[^}]*$", RegexOptions.Compiled);
 
         private static readonly Regex ReturnKeyword = new(@"\breturn\b", RegexOptions.Compiled);
 
-        private static readonly Regex GameObjectFactoryLambda = new(
-            @"\bFunc\s*<\s*(?:(?:global::)?UnityEngine\.)?GameObject\s*>[^;]*=>[^;]*$",
-            RegexOptions.Compiled
-        );
+        private static readonly Regex GameObjectFactoryLambda = new(@"\bFunc\s*<\s*(?:(?:global::)?UnityEngine\.)?GameObject\s*>[^;]*=>[^;]*$", RegexOptions.Compiled);
 
-        private static readonly Regex GetterReturn = new(
-            @"\bget\s*{[^{}]*\breturn\b",
-            RegexOptions.Compiled
-        );
+        private static readonly Regex GetterReturn = new(@"\bget\s*{[^{}]*\breturn\b", RegexOptions.Compiled);
 
-        private static readonly Regex EmptyTargetPrefix = new(
-            @"^\s*\(*\s*$",
-            RegexOptions.Compiled
-        );
+        private static readonly Regex EmptyTargetPrefix = new(@"^\s*\(*\s*$", RegexOptions.Compiled);
 
-        private static readonly Regex ExemptionIdFormat = new(
-            @"^[a-z0-9]+(?:-[a-z0-9]+)*$",
-            RegexOptions.Compiled
-        );
+        private static readonly Regex ExemptionIdFormat = new(@"^[a-z0-9]+(?:-[a-z0-9]+)*$", RegexOptions.Compiled);
 
         /// <summary>
         /// Name-agnostic form of the per-name declaration probe. Matching it once per file and
         /// grouping by name replaces one whole-prefix scan per construction, which is what made
         /// the scan superlinear in file length.
         /// </summary>
-        private static readonly Regex Declaration = new(
-            @"(?<type>[A-Za-z_][\w.:<>?\[\]]*)\s+(?<name>[A-Za-z_]\w*)\s*(?:[;=,\){])",
-            RegexOptions.Compiled
-        );
+        private static readonly Regex Declaration = new(@"(?<type>[A-Za-z_][\w.:<>?\[\]]*)\s+(?<name>[A-Za-z_]\w*)\s*(?:[;=,\){])", RegexOptions.Compiled);
 
         /// <summary>
         /// Patterns interpolated from a GameObject type name. Building them inline recompiles on
@@ -498,16 +344,10 @@ namespace DxMessaging.Tests.Editor
 
         private static Regex ForPattern(string pattern)
         {
-            return InterpolatedPatterns.GetOrAdd(pattern, key => new Regex(
-                key,
-                RegexOptions.Compiled
-            ));
+            return InterpolatedPatterns.GetOrAdd(pattern, key => new Regex(key, RegexOptions.Compiled));
         }
 
-        internal static IReadOnlyList<EditModeGameObjectConstruction> Find(
-            string relativePath,
-            string source
-        )
+        internal static IReadOnlyList<EditModeGameObjectConstruction> Find(string relativePath, string source)
         {
             if (relativePath == null)
             {
@@ -520,12 +360,7 @@ namespace DxMessaging.Tests.Editor
 
             LexedSource lexed = Lex(source);
             string sanitized = lexed.Sanitized;
-            HashSet<string> gameObjectTypes = new(StringComparer.Ordinal)
-            {
-                "GameObject",
-                "UnityEngine.GameObject",
-                "global::UnityEngine.GameObject",
-            };
+            HashSet<string> gameObjectTypes = new(StringComparer.Ordinal) { "GameObject", "UnityEngine.GameObject", "global::UnityEngine.GameObject" };
             foreach (Match alias in AliasDeclaration.Matches(sanitized))
             {
                 gameObjectTypes.Add(alias.Groups["alias"].Value);
@@ -549,32 +384,15 @@ namespace DxMessaging.Tests.Editor
                 }
             }
 
-            constructionIndexes.AddRange(
-                DangerousFactory.Matches(sanitized).Cast<Match>().Select(match => match.Index)
-            );
+            constructionIndexes.AddRange(DangerousFactory.Matches(sanitized).Cast<Match>().Select(match => match.Index));
             foreach (Match factory in HideFlagFactory.Matches(sanitized))
             {
                 int close = FindMatchingParenthesis(sanitized, factory.Index + factory.Length - 1);
-                string invocation = sanitized.Substring(
-                    factory.Index,
-                    Math.Max(0, close - factory.Index + 1)
-                );
+                string invocation = sanitized.Substring(factory.Index, Math.Max(0, close - factory.Index + 1));
                 int open = invocation.IndexOf('(');
                 IReadOnlyList<string> arguments =
-                    0 <= open && open + 1 < invocation.Length
-                        ? SplitTopLevelArguments(
-                            invocation.Substring(open + 1, invocation.Length - open - 2)
-                        )
-                        : Array.Empty<string>();
-                if (
-                    close < 0
-                    || arguments.Count < 2
-                    || !string.Equals(
-                        arguments[1].Trim(),
-                        "HideFlags.HideAndDontSave",
-                        StringComparison.Ordinal
-                    )
-                )
+                    0 <= open && open + 1 < invocation.Length ? SplitTopLevelArguments(invocation.Substring(open + 1, invocation.Length - open - 2)) : Array.Empty<string>();
+                if (close < 0 || arguments.Count < 2 || !string.Equals(arguments[1].Trim(), "HideFlags.HideAndDontSave", StringComparison.Ordinal))
                 {
                     constructionIndexes.Add(factory.Index);
                 }
@@ -587,14 +405,7 @@ namespace DxMessaging.Tests.Editor
                 int lineNumber = scan.LineNumberAt(index);
                 string sourceLine = sourceLines[lineNumber - 1].Trim();
                 string exemptionId = ParseExemptionId(lexed.LineComments, lineNumber);
-                results.Add(
-                    new EditModeGameObjectConstruction(
-                        relativePath,
-                        lineNumber,
-                        sourceLine,
-                        exemptionId
-                    )
-                );
+                results.Add(new EditModeGameObjectConstruction(relativePath, lineNumber, sourceLine, exemptionId));
             }
 
             return results;
@@ -605,10 +416,7 @@ namespace DxMessaging.Tests.Editor
             string source = scan.Source;
             ISet<string> gameObjectTypes = scan.GameObjectTypes;
             int statementStart = source.LastIndexOf(';', Math.Max(0, constructionIndex - 1));
-            string statement = source.Substring(
-                statementStart + 1,
-                constructionIndex - statementStart - 1
-            );
+            string statement = source.Substring(statementStart + 1, constructionIndex - statementStart - 1);
             if (
                 ContainsGameObjectDeclaration(statement, gameObjectTypes)
                 && (
@@ -624,14 +432,7 @@ namespace DxMessaging.Tests.Editor
 
             int windowStart = Math.Max(0, constructionIndex - 500);
             string window = source.Substring(windowStart, constructionIndex - windowStart);
-            if (
-                gameObjectTypes.Any(type =>
-                    ForPattern(
-                            $@"(?:^|[^\w.]){Regex.Escape(type)}\s+[A-Za-z_]\w*\s*{{[^{{}}]*}}\s*=\s*$"
-                        )
-                        .IsMatch(window)
-                )
-            )
+            if (gameObjectTypes.Any(type => ForPattern($@"(?:^|[^\w.]){Regex.Escape(type)}\s+[A-Za-z_]\w*\s*{{[^{{}}]*}}\s*=\s*$").IsMatch(window)))
             {
                 return true;
             }
@@ -642,10 +443,7 @@ namespace DxMessaging.Tests.Editor
                 return scan.ResolvesToGameObject(assigned.Groups["name"].Value, constructionIndex);
             }
 
-            if (
-                ReturnKeyword.IsMatch(statement)
-                && scan.IsInsideGameObjectReturningMethod(constructionIndex)
-            )
+            if (ReturnKeyword.IsMatch(statement) && scan.IsInsideGameObjectReturningMethod(constructionIndex))
             {
                 return true;
             }
@@ -660,11 +458,7 @@ namespace DxMessaging.Tests.Editor
                 return scan.IsInsideGameObjectProperty(constructionIndex);
             }
 
-            return IsInsideExpressionBodiedGameObjectMethod(
-                source,
-                constructionIndex,
-                gameObjectTypes
-            );
+            return IsInsideExpressionBodiedGameObjectMethod(source, constructionIndex, gameObjectTypes);
         }
 
         private static bool ContainsGameObjectDeclaration(string text, ISet<string> gameObjectTypes)
@@ -672,10 +466,7 @@ namespace DxMessaging.Tests.Editor
             foreach (string type in gameObjectTypes)
             {
                 string escaped = Regex.Escape(type);
-                if (
-                    ForPattern($@"(?:^|[^\w.]){escaped}\s*(?:\[\])?\s*\??\s+[A-Za-z_]\w*[^;]*=")
-                        .IsMatch(text)
-                )
+                if (ForPattern($@"(?:^|[^\w.]){escaped}\s*(?:\[\])?\s*\??\s+[A-Za-z_]\w*[^;]*=").IsMatch(text))
                 {
                     return true;
                 }
@@ -695,10 +486,7 @@ namespace DxMessaging.Tests.Editor
             return EmptyTargetPrefix.IsMatch(targetPrefix);
         }
 
-        private static bool IsExplicitGameObjectArrayInitializer(
-            string statement,
-            IEnumerable<string> gameObjectTypes
-        )
+        private static bool IsExplicitGameObjectArrayInitializer(string statement, IEnumerable<string> gameObjectTypes)
         {
             int assignment = statement.IndexOf('=');
             if (assignment < 0)
@@ -707,17 +495,10 @@ namespace DxMessaging.Tests.Editor
             }
 
             string targetPrefix = statement.Substring(assignment + 1);
-            return gameObjectTypes.Any(type =>
-                ForPattern($@"^\s*new\s+{Regex.Escape(type)}\s*\[\s*\]\s*\{{[^{{}}]*$")
-                    .IsMatch(targetPrefix)
-            );
+            return gameObjectTypes.Any(type => ForPattern($@"^\s*new\s+{Regex.Escape(type)}\s*\[\s*\]\s*\{{[^{{}}]*$").IsMatch(targetPrefix));
         }
 
-        private static bool IsInsideExpressionBodiedGameObjectMethod(
-            string source,
-            int constructionIndex,
-            ISet<string> gameObjectTypes
-        )
+        private static bool IsInsideExpressionBodiedGameObjectMethod(string source, int constructionIndex, ISet<string> gameObjectTypes)
         {
             int arrow = source.LastIndexOf("=>", constructionIndex, StringComparison.Ordinal);
             int semicolon = source.LastIndexOf(';', Math.Max(0, constructionIndex - 1));
@@ -727,10 +508,7 @@ namespace DxMessaging.Tests.Editor
             }
 
             string signature = source.Substring(semicolon + 1, arrow - semicolon - 1);
-            return gameObjectTypes.Any(type =>
-                ForPattern($@"(?:^|[^\w.]){Regex.Escape(type)}\s+[A-Za-z_]\w*\s*\([^)]*\)\s*$")
-                    .IsMatch(signature)
-            );
+            return gameObjectTypes.Any(type => ForPattern($@"(?:^|[^\w.]){Regex.Escape(type)}\s+[A-Za-z_]\w*\s*\([^)]*\)\s*$").IsMatch(signature));
         }
 
         private static int FindMatchingParenthesis(string source, int openParenthesis)
@@ -800,10 +578,7 @@ namespace DxMessaging.Tests.Editor
             return result;
         }
 
-        private static string ParseExemptionId(
-            IReadOnlyDictionary<int, string> lineComments,
-            int lineNumber
-        )
+        private static string ParseExemptionId(IReadOnlyDictionary<int, string> lineComments, int lineNumber)
         {
             if (!lineComments.TryGetValue(lineNumber, out string comment))
             {
@@ -878,18 +653,8 @@ namespace DxMessaging.Tests.Editor
                 else if (
                     isCode
                     && (
-                        (
-                            current == '$'
-                            && next == '@'
-                            && index + 2 < source.Length
-                            && source[index + 2] == '"'
-                        )
-                        || (
-                            current == '@'
-                            && next == '$'
-                            && index + 2 < source.Length
-                            && source[index + 2] == '"'
-                        )
+                        (current == '$' && next == '@' && index + 2 < source.Length && source[index + 2] == '"')
+                        || (current == '@' && next == '$' && index + 2 < source.Length && source[index + 2] == '"')
                     )
                 )
                 {
@@ -937,29 +702,16 @@ namespace DxMessaging.Tests.Editor
                     index++;
                     frames.Pop();
                 }
-                else if (
-                    (state == LexerState.String || state == LexerState.Character)
-                    && current == '\\'
-                    && next != '\0'
-                )
+                else if ((state == LexerState.String || state == LexerState.Character) && current == '\\' && next != '\0')
                 {
                     sanitized[index + 1] = ' ';
                     index++;
                 }
-                else if (
-                    (state == LexerState.String && current == '"')
-                    || (state == LexerState.Character && current == '\'')
-                )
+                else if ((state == LexerState.String && current == '"') || (state == LexerState.Character && current == '\''))
                 {
                     frames.Pop();
                 }
-                else if (
-                    (
-                        state == LexerState.VerbatimString
-                        || state == LexerState.InterpolatedVerbatimString
-                    )
-                    && current == '"'
-                )
+                else if ((state == LexerState.VerbatimString || state == LexerState.InterpolatedVerbatimString) && current == '"')
                 {
                     if (next == '"')
                     {
@@ -980,13 +732,7 @@ namespace DxMessaging.Tests.Editor
                 {
                     frames.Pop();
                 }
-                else if (
-                    (
-                        state == LexerState.InterpolatedString
-                        || state == LexerState.InterpolatedVerbatimString
-                    )
-                    && current == '{'
-                )
+                else if ((state == LexerState.InterpolatedString || state == LexerState.InterpolatedVerbatimString) && current == '{')
                 {
                     if (next == '{')
                     {
@@ -1180,25 +926,19 @@ namespace DxMessaging.Tests.Editor
 
             internal bool IsInsideGameObjectReturningMethod(int constructionIndex)
             {
-                _gameObjectMethodBodies ??= FindBodies(type =>
-                    $@"(?:^|[^\w.]){Regex.Escape(type)}\s+[A-Za-z_]\w*\s*\([^;{{}}]*\)\s*{{"
-                );
+                _gameObjectMethodBodies ??= FindBodies(type => $@"(?:^|[^\w.]){Regex.Escape(type)}\s+[A-Za-z_]\w*\s*\([^;{{}}]*\)\s*{{");
                 return IsInsideAny(_gameObjectMethodBodies, constructionIndex);
             }
 
             internal bool IsInsideGameObjectProperty(int constructionIndex)
             {
-                _gameObjectPropertyBodies ??= FindBodies(type =>
-                    $@"(?:^|[^\w.]){Regex.Escape(type)}\s+[A-Za-z_]\w*\s*{{"
-                );
+                _gameObjectPropertyBodies ??= FindBodies(type => $@"(?:^|[^\w.]){Regex.Escape(type)}\s+[A-Za-z_]\w*\s*{{");
                 return IsInsideAny(_gameObjectPropertyBodies, constructionIndex);
             }
 
             private int MatchingBrace(int openBrace)
             {
-                return 0 <= openBrace && _closeByOpenBrace.TryGetValue(openBrace, out int close)
-                    ? close
-                    : Source.Length;
+                return 0 <= openBrace && _closeByOpenBrace.TryGetValue(openBrace, out int close) ? close : Source.Length;
             }
 
             private void EnsureDeclarations()
@@ -1208,29 +948,16 @@ namespace DxMessaging.Tests.Editor
                     return;
                 }
 
-                _declarationsByName = new Dictionary<string, List<TypedDeclaration>>(
-                    StringComparer.Ordinal
-                );
+                _declarationsByName = new Dictionary<string, List<TypedDeclaration>>(StringComparer.Ordinal);
                 foreach (Match match in Declaration.Matches(Source))
                 {
                     string name = match.Groups["name"].Value;
-                    if (
-                        !_declarationsByName.TryGetValue(
-                            name,
-                            out List<TypedDeclaration> declarations
-                        )
-                    )
+                    if (!_declarationsByName.TryGetValue(name, out List<TypedDeclaration> declarations))
                     {
                         declarations = new List<TypedDeclaration>();
                         _declarationsByName[name] = declarations;
                     }
-                    declarations.Add(
-                        new TypedDeclaration(
-                            match.Index,
-                            match.Index + match.Length,
-                            match.Groups["type"].Value
-                        )
-                    );
+                    declarations.Add(new TypedDeclaration(match.Index, match.Index + match.Length, match.Groups["type"].Value));
                 }
             }
 
@@ -1277,12 +1004,7 @@ namespace DxMessaging.Tests.Editor
 
     internal readonly struct EditModeGameObjectConstruction
     {
-        internal EditModeGameObjectConstruction(
-            string relativePath,
-            int lineNumber,
-            string sourceLine,
-            string exemptionId
-        )
+        internal EditModeGameObjectConstruction(string relativePath, int lineNumber, string sourceLine, string exemptionId)
         {
             RelativePath = relativePath;
             LineNumber = lineNumber;

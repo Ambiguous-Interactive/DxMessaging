@@ -42,8 +42,7 @@ namespace DxMessaging.Tests.Runtime.Unity
         public IEnumerator ConfigureWithProviderHandleRoutesThroughProviderBus()
         {
             MessageBus messageBus = new();
-            TestScriptableMessageBusProvider provider =
-                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
+            TestScriptableMessageBusProvider provider = ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
             provider.Configure(messageBus);
             Track(provider);
             MessageBusProviderHandle handle = new(provider);
@@ -67,15 +66,13 @@ namespace DxMessaging.Tests.Runtime.Unity
         public IEnumerator InstallerAppliesConfigurationToChildren()
         {
             MessageBus messageBus = new();
-            TestScriptableMessageBusProvider provider =
-                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
+            TestScriptableMessageBusProvider provider = ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
             provider.Configure(messageBus);
             Track(provider);
             MessageBusProviderHandle handle = new(provider);
 
             GameObject root = Track(new GameObject("InstallerRoot"));
-            MessagingComponentInstaller installer =
-                root.AddComponent<MessagingComponentInstaller>();
+            MessagingComponentInstaller installer = root.AddComponent<MessagingComponentInstaller>();
             installer.SetProvider(handle);
 
             GameObject child = Track(new GameObject("InstallerListener"));
@@ -103,8 +100,7 @@ namespace DxMessaging.Tests.Runtime.Unity
             TestProvider provider = new(providerBus);
 
             GameObject root = Track(new GameObject("InstallerPrecedenceRoot"));
-            MessagingComponentInstaller installer =
-                root.AddComponent<MessagingComponentInstaller>();
+            MessagingComponentInstaller installer = root.AddComponent<MessagingComponentInstaller>();
             installer.SetProvider(MessageBusProviderHandle.FromProvider(provider));
             installer.SetExplicitMessageBus(explicitBus);
 
@@ -115,17 +111,9 @@ namespace DxMessaging.Tests.Runtime.Unity
             installer.ApplyConfiguration();
 
             IMessageRegistrationBuilder builder = messagingComponent.CreateRegistrationBuilder();
-            using (
-                MessageRegistrationLease lease = builder.Build(
-                    new MessageRegistrationBuildOptions()
-                )
-            )
+            using (MessageRegistrationLease lease = builder.Build(new MessageRegistrationBuildOptions()))
             {
-                Assert.AreSame(
-                    explicitBus,
-                    lease.MessageBus,
-                    "The explicit installer bus should override its configured provider."
-                );
+                Assert.AreSame(explicitBus, lease.MessageBus, "The explicit installer bus should override its configured provider.");
             }
         }
 
@@ -137,23 +125,14 @@ namespace DxMessaging.Tests.Runtime.Unity
             TestProvider provider = new(providerBus);
 
             GameObject owner = Track(new GameObject("InstallerBuilderPrecedenceOwner"));
-            MessagingComponentInstaller installer =
-                owner.AddComponent<MessagingComponentInstaller>();
+            MessagingComponentInstaller installer = owner.AddComponent<MessagingComponentInstaller>();
             installer.SetProvider(MessageBusProviderHandle.FromProvider(provider));
             installer.SetExplicitMessageBus(explicitBus);
 
             IMessageRegistrationBuilder builder = installer.CreateRegistrationBuilder();
-            using (
-                MessageRegistrationLease lease = builder.Build(
-                    new MessageRegistrationBuildOptions()
-                )
-            )
+            using (MessageRegistrationLease lease = builder.Build(new MessageRegistrationBuildOptions()))
             {
-                Assert.AreSame(
-                    explicitBus,
-                    lease.MessageBus,
-                    "The installer builder should use the explicit bus before its provider."
-                );
+                Assert.AreSame(explicitBus, lease.MessageBus, "The installer builder should use the explicit bus before its provider.");
             }
         }
 
@@ -164,18 +143,13 @@ namespace DxMessaging.Tests.Runtime.Unity
             TestProvider provider = new(providerBus);
 
             GameObject owner = Track(new GameObject("InstallerBuilderFallbackOwner"));
-            MessagingComponentInstaller installer =
-                owner.AddComponent<MessagingComponentInstaller>();
+            MessagingComponentInstaller installer = owner.AddComponent<MessagingComponentInstaller>();
             installer.SetProvider(MessageBusProviderHandle.FromProvider(provider));
             installer.SetExplicitMessageBus(new MessageBus());
             installer.SetExplicitMessageBus(null);
 
             IMessageRegistrationBuilder builder = installer.CreateRegistrationBuilder();
-            using (
-                MessageRegistrationLease lease = builder.Build(
-                    new MessageRegistrationBuildOptions()
-                )
-            )
+            using (MessageRegistrationLease lease = builder.Build(new MessageRegistrationBuildOptions()))
             {
                 Assert.AreSame(providerBus, lease.MessageBus);
             }
@@ -185,77 +159,42 @@ namespace DxMessaging.Tests.Runtime.Unity
         public void CreateRegistrationBuilderTracksConfiguredProviderAvailability()
         {
             MessageBus providerBus = new();
-            TestScriptableMessageBusProvider provider = Track(
-                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>()
-            );
+            TestScriptableMessageBusProvider provider = Track(ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>());
             provider.Configure(providerBus);
 
             GameObject owner = Track(new GameObject("BuilderOwner"));
             MessagingComponent messagingComponent = owner.AddComponent<MessagingComponent>();
             messagingComponent.Configure(provider, MessageBusRebindMode.RebindActive);
 
-            AssertRegistrationBuilderUsesBus(
-                messagingComponent,
-                providerBus,
-                "A live configured provider should supply the registration bus."
-            );
+            AssertRegistrationBuilderUsesBus(messagingComponent, providerBus, "A live configured provider should supply the registration bus.");
 
             Object.DestroyImmediate(provider);
 
-            AssertRegistrationBuilderUsesBus(
-                messagingComponent,
-                null,
-                "A destroyed configured provider should use the builder's global-bus fallback."
-            );
+            AssertRegistrationBuilderUsesBus(messagingComponent, null, "A destroyed configured provider should use the builder's global-bus fallback.");
 
             MessageBus serializedBus = new();
-            TestScriptableMessageBusProvider serializedProvider = Track(
-                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>()
-            );
+            TestScriptableMessageBusProvider serializedProvider = Track(ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>());
             serializedProvider.Configure(serializedBus);
             MessageBus runtimeBus = new();
-            TestScriptableMessageBusProvider runtimeProvider = Track(
-                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>()
-            );
+            TestScriptableMessageBusProvider runtimeProvider = Track(ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>());
             runtimeProvider.Configure(runtimeBus);
-            MessageBusProviderHandle handle = new MessageBusProviderHandle(
-                serializedProvider
-            ).WithRuntimeProvider(runtimeProvider);
+            MessageBusProviderHandle handle = new MessageBusProviderHandle(serializedProvider).WithRuntimeProvider(runtimeProvider);
             messagingComponent.Configure(handle, MessageBusRebindMode.RebindActive);
 
-            AssertRegistrationBuilderUsesBus(
-                messagingComponent,
-                runtimeBus,
-                "A live runtime provider should override the serialized provider."
-            );
+            AssertRegistrationBuilderUsesBus(messagingComponent, runtimeBus, "A live runtime provider should override the serialized provider.");
 
             Object.DestroyImmediate(runtimeProvider);
 
-            AssertRegistrationBuilderUsesBus(
-                messagingComponent,
-                serializedBus,
-                "Destroying the runtime override should reveal the serialized provider."
-            );
+            AssertRegistrationBuilderUsesBus(messagingComponent, serializedBus, "Destroying the runtime override should reveal the serialized provider.");
         }
 
-        private static void AssertRegistrationBuilderUsesBus(
-            MessagingComponent messagingComponent,
-            IMessageBus expectedBus,
-            string message
-        )
+        private static void AssertRegistrationBuilderUsesBus(MessagingComponent messagingComponent, IMessageBus expectedBus, string message)
         {
             IMessageRegistrationBuilder builder = messagingComponent.CreateRegistrationBuilder();
-            using (
-                MessageRegistrationLease lease = builder.Build(
-                    new MessageRegistrationBuildOptions()
-                )
-            )
+            using (MessageRegistrationLease lease = builder.Build(new MessageRegistrationBuildOptions()))
             {
                 Assert.AreSame(expectedBus, lease.MessageBus, message);
-                Assert.IsFalse(
-                    lease.Token.Enabled,
-                    "A newly built registration token should remain disabled by default."
-                );
+                Assert.IsFalse(lease.Token.Enabled, "A newly built registration token should remain disabled by default.");
             }
         }
 
@@ -269,26 +208,16 @@ namespace DxMessaging.Tests.Runtime.Unity
             messagingComponent.Configure(messageBus, MessageBusRebindMode.RebindActive);
 
             IMessageRegistrationBuilder builder = messagingComponent.CreateRegistrationBuilder();
-            using (
-                MessageRegistrationLease lease = builder.Build(
-                    new MessageRegistrationBuildOptions()
-                )
-            )
+            using (MessageRegistrationLease lease = builder.Build(new MessageRegistrationBuildOptions()))
             {
                 Assert.AreSame(messageBus, lease.MessageBus);
             }
 
-            AssertClearingProviderConfigurationRevertsToGlobalBus(
-                ProviderConfigurationClearKind.NullProvider
-            );
-            AssertClearingProviderConfigurationRevertsToGlobalBus(
-                ProviderConfigurationClearKind.EmptyHandle
-            );
+            AssertClearingProviderConfigurationRevertsToGlobalBus(ProviderConfigurationClearKind.NullProvider);
+            AssertClearingProviderConfigurationRevertsToGlobalBus(ProviderConfigurationClearKind.EmptyHandle);
         }
 
-        private void AssertClearingProviderConfigurationRevertsToGlobalBus(
-            ProviderConfigurationClearKind clearKind
-        )
+        private void AssertClearingProviderConfigurationRevertsToGlobalBus(ProviderConfigurationClearKind clearKind)
         {
             MessageBus previousExplicitBus = new();
             IMessageBus globalBus = MessageHandler.MessageBus;
@@ -303,18 +232,8 @@ namespace DxMessaging.Tests.Runtime.Unity
 
             ClearProviderConfiguration(messagingComponent, clearKind);
 
-            using (
-                LeakWatcher globalWatcher = new(
-                    globalBus,
-                    label: $"MessagingComponentClear-{clearKind}-global"
-                )
-            )
-            using (
-                LeakWatcher previousWatcher = new(
-                    previousExplicitBus,
-                    label: $"MessagingComponentClear-{clearKind}-previous"
-                )
-            )
+            using (LeakWatcher globalWatcher = new(globalBus, label: $"MessagingComponentClear-{clearKind}-global"))
+            using (LeakWatcher previousWatcher = new(previousExplicitBus, label: $"MessagingComponentClear-{clearKind}-previous"))
             using (
                 MessageRegistrationLease lease = messagingComponent
                     .CreateRegistrationBuilder()
@@ -322,10 +241,7 @@ namespace DxMessaging.Tests.Runtime.Unity
                         new MessageRegistrationBuildOptions
                         {
                             ActivateOnBuild = true,
-                            Configure = token =>
-                                _ = token.RegisterUntargeted<TestUntargetedMessage>(
-                                    (in TestUntargetedMessage _) => ++received
-                                ),
+                            Configure = token => _ = token.RegisterUntargeted<TestUntargetedMessage>((in TestUntargetedMessage _) => ++received),
                         }
                     )
             )
@@ -339,35 +255,21 @@ namespace DxMessaging.Tests.Runtime.Unity
                 receivedAfterGlobalBus = received;
             }
 
-            Assert.AreEqual(
-                0,
-                receivedFromPreviousBus,
-                $"Clearing with {clearKind} should detach the prior explicit bus."
-            );
-            Assert.AreEqual(
-                1,
-                receivedAfterGlobalBus,
-                $"Clearing with {clearKind} should restore the global bus."
-            );
+            Assert.AreEqual(0, receivedFromPreviousBus, $"Clearing with {clearKind} should detach the prior explicit bus.");
+            Assert.AreEqual(1, receivedAfterGlobalBus, $"Clearing with {clearKind} should restore the global bus.");
         }
 
         [UnityTest]
         public IEnumerator InstallerWithoutConfigurationLogsWarning()
         {
             GameObject root = Track(new GameObject("InstallerWarningRoot"));
-            MessagingComponentInstaller installer =
-                root.AddComponent<MessagingComponentInstaller>();
+            MessagingComponentInstaller installer = root.AddComponent<MessagingComponentInstaller>();
 
             GameObject child = Track(new GameObject("InstallerWarningChild"));
             child.transform.SetParent(root.transform);
             _ = child.AddComponent<MessagingComponent>();
 
-            LogAssert.Expect(
-                LogType.Warning,
-                new Regex(
-                    "MessagingComponentInstaller.+has no provider or explicit message bus configured"
-                )
-            );
+            LogAssert.Expect(LogType.Warning, new Regex("MessagingComponentInstaller.+has no provider or explicit message bus configured"));
 
             installer.ApplyConfiguration();
             yield return null;
@@ -390,29 +292,17 @@ namespace DxMessaging.Tests.Runtime.Unity
 
             TestUntargetedMessage message = new(1);
             originalBus.UntargetedBroadcast(ref message);
-            Assert.AreEqual(
-                1,
-                originalListener.ReceivedCount,
-                "Original listener should observe messages on the initial bus."
-            );
+            Assert.AreEqual(1, originalListener.ReceivedCount, "Original listener should observe messages on the initial bus.");
 
             messagingComponent.Configure(newBus, MessageBusRebindMode.PreserveRegistrations);
 
             message = new TestUntargetedMessage(2);
             originalBus.UntargetedBroadcast(ref message);
-            Assert.AreEqual(
-                2,
-                originalListener.ReceivedCount,
-                "Existing listener should remain bound to the original bus when preserving registrations."
-            );
+            Assert.AreEqual(2, originalListener.ReceivedCount, "Existing listener should remain bound to the original bus when preserving registrations.");
 
             message = new TestUntargetedMessage(3);
             newBus.UntargetedBroadcast(ref message);
-            Assert.AreEqual(
-                2,
-                originalListener.ReceivedCount,
-                "Existing listener should not observe messages on the new bus when preserving registrations."
-            );
+            Assert.AreEqual(2, originalListener.ReceivedCount, "Existing listener should not observe messages on the new bus when preserving registrations.");
 
             TestListener newListener = owner.AddComponent<TestListener>();
             newListener.Initialize(messagingComponent);
@@ -421,20 +311,12 @@ namespace DxMessaging.Tests.Runtime.Unity
 
             message = new TestUntargetedMessage(4);
             newBus.UntargetedBroadcast(ref message);
-            Assert.AreEqual(
-                1,
-                newListener.ReceivedCount,
-                "New listener should bind to the new bus after preservation."
-            );
+            Assert.AreEqual(1, newListener.ReceivedCount, "New listener should bind to the new bus after preservation.");
             Assert.AreEqual(2, originalListener.ReceivedCount);
 
             message = new TestUntargetedMessage(5);
             originalBus.UntargetedBroadcast(ref message);
-            Assert.AreEqual(
-                1,
-                newListener.ReceivedCount,
-                "New listener should not observe messages sent on the original bus."
-            );
+            Assert.AreEqual(1, newListener.ReceivedCount, "New listener should not observe messages sent on the original bus.");
             Assert.AreEqual(3, originalListener.ReceivedCount);
 
             yield break;
@@ -457,29 +339,17 @@ namespace DxMessaging.Tests.Runtime.Unity
 
             TestUntargetedMessage message = new(1);
             originalBus.UntargetedBroadcast(ref message);
-            Assert.AreEqual(
-                1,
-                listener.ReceivedCount,
-                "Listener should observe messages on the initial bus prior to rebind."
-            );
+            Assert.AreEqual(1, listener.ReceivedCount, "Listener should observe messages on the initial bus prior to rebind.");
 
             messagingComponent.Configure(newBus, MessageBusRebindMode.RebindActive);
 
             message = new TestUntargetedMessage(2);
             originalBus.UntargetedBroadcast(ref message);
-            Assert.AreEqual(
-                1,
-                listener.ReceivedCount,
-                "Listener should no longer receive messages on the original bus after rebinding."
-            );
+            Assert.AreEqual(1, listener.ReceivedCount, "Listener should no longer receive messages on the original bus after rebinding.");
 
             message = new TestUntargetedMessage(3);
             newBus.UntargetedBroadcast(ref message);
-            Assert.AreEqual(
-                2,
-                listener.ReceivedCount,
-                "Listener should observe messages on the new bus after rebinding."
-            );
+            Assert.AreEqual(2, listener.ReceivedCount, "Listener should observe messages on the new bus after rebinding.");
 
             yield break;
         }
@@ -495,24 +365,15 @@ namespace DxMessaging.Tests.Runtime.Unity
             return unityObject;
         }
 
-        private static void ClearProviderConfiguration(
-            MessagingComponent messagingComponent,
-            ProviderConfigurationClearKind clearKind
-        )
+        private static void ClearProviderConfiguration(MessagingComponent messagingComponent, ProviderConfigurationClearKind clearKind)
         {
             switch (clearKind)
             {
                 case ProviderConfigurationClearKind.NullProvider:
-                    messagingComponent.Configure(
-                        (IMessageBusProvider)null,
-                        MessageBusRebindMode.RebindActive
-                    );
+                    messagingComponent.Configure((IMessageBusProvider)null, MessageBusRebindMode.RebindActive);
                     return;
                 case ProviderConfigurationClearKind.EmptyHandle:
-                    messagingComponent.Configure(
-                        MessageBusProviderHandle.Empty,
-                        MessageBusRebindMode.RebindActive
-                    );
+                    messagingComponent.Configure(MessageBusProviderHandle.Empty, MessageBusRebindMode.RebindActive);
                     return;
                 default:
                     Assert.Fail($"Unsupported provider configuration clear kind: {clearKind}.");

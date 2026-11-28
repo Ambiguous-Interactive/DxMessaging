@@ -47,12 +47,7 @@ namespace DxMessaging.Tests.Editor
                 FileStream reader = null;
                 try
                 {
-                    reader = new FileStream(
-                        path,
-                        FileMode.Open,
-                        FileAccess.Read,
-                        FileShare.ReadWrite
-                    );
+                    reader = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
                     scope = new();
                     scope.Dispose();
                     CollectionAssert.AreEqual(expected, File.ReadAllBytes(path), context);
@@ -61,16 +56,8 @@ namespace DxMessaging.Tests.Editor
                     scope.Dispose();
                     File.WriteAllBytes(path, changed);
                     byte[] observed = new byte[changed.Length];
-                    Assert.That(
-                        reader.Read(observed, 0, observed.Length),
-                        Is.EqualTo(observed.Length),
-                        context
-                    );
-                    CollectionAssert.AreEqual(
-                        changed,
-                        observed,
-                        $"{context} An unchanged input must retain the file behind its open reader."
-                    );
+                    Assert.That(reader.Read(observed, 0, observed.Length), Is.EqualTo(observed.Length), context);
+                    CollectionAssert.AreEqual(changed, observed, $"{context} An unchanged input must retain the file behind its open reader.");
                 }
                 finally
                 {
@@ -80,10 +67,7 @@ namespace DxMessaging.Tests.Editor
             }
         }
 
-        private static IEnumerable<TestCaseData> UnchangedInputCases() =>
-            InputPaths.Select(path =>
-                new TestCaseData(path).SetName($"CompilerInputUnchanged_{path}")
-            );
+        private static IEnumerable<TestCaseData> UnchangedInputCases() => InputPaths.Select(path => new TestCaseData(path).SetName($"CompilerInputUnchanged_{path}"));
 
         [TestCaseSource(nameof(RestoredInputCases))]
         public void ChangedCompilerInputRestoresOriginal(string relativePath, string mutation)
@@ -115,12 +99,7 @@ namespace DxMessaging.Tests.Editor
                 }
                 else
                 {
-                    File.WriteAllBytes(
-                        path,
-                        mutation == "same-length"
-                            ? new byte[] { 19, 23, 29, 31 }
-                            : new byte[] { 19, 23, 29 }
-                    );
+                    File.WriteAllBytes(path, mutation == "same-length" ? new byte[] { 19, 23, 29, 31 } : new byte[] { 19, 23, 29 });
                 }
                 scope.Dispose();
                 Assert.That(File.Exists(path), Is.EqualTo(mutation != "created"), context);
@@ -137,20 +116,9 @@ namespace DxMessaging.Tests.Editor
         {
             foreach (string path in InputPaths)
             {
-                foreach (
-                    string mutation in new[]
-                    {
-                        "modified",
-                        "same-length",
-                        "removed",
-                        "created",
-                        "retouched",
-                    }
-                )
+                foreach (string mutation in new[] { "modified", "same-length", "removed", "created", "retouched" })
                 {
-                    yield return new TestCaseData(path, mutation).SetName(
-                        $"CompilerInputRestored_{path}_{mutation}"
-                    );
+                    yield return new TestCaseData(path, mutation).SetName($"CompilerInputRestored_{path}_{mutation}");
                 }
             }
         }
@@ -165,17 +133,11 @@ namespace DxMessaging.Tests.Editor
         [TestCase("Assets/csc.rsp", true, TestName = "CompilerInputPartialBackup_assetsTrue")]
         [TestCase("csc.rsp", false, TestName = "CompilerInputPartialBackup_rootFalse")]
         [TestCase("csc.rsp", true, TestName = "CompilerInputPartialBackup_rootTrue")]
-        public void FailedConstructionPreservesOriginals(
-            string failedRelativePath,
-            bool injectFailure
-        )
+        public void FailedConstructionPreservesOriginals(string failedRelativePath, bool injectFailure)
         {
             Type mono = typeof(object).Assembly.GetType("Mono.Runtime");
             Assert.That(mono, Is.Not.Null, "This is an Editor Mono observation.");
-            MethodInfo displayName = mono.GetMethod(
-                "GetDisplayName",
-                BindingFlags.Static | BindingFlags.NonPublic
-            );
+            MethodInfo displayName = mono.GetMethod("GetDisplayName", BindingFlags.Static | BindingFlags.NonPublic);
             Assert.That(displayName, Is.Not.Null);
             string coreLocation = LoadedAssemblyUtility.GetAssemblyPath(typeof(object).Assembly);
             TestContext.Out.WriteLine(
@@ -185,15 +147,8 @@ namespace DxMessaging.Tests.Editor
             using EditorCompilerInputScope originals = new();
             string root = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
             string target = Path.Combine(root, failedRelativePath);
-            string[] paths = new[]
-            {
-                "Assets/csc.rsp",
-                "csc.rsp",
-                DxMessagingBaseCallIgnoreSync.SidecarAssetPath,
-            }
-                .SelectMany(path =>
-                    new[] { Path.Combine(root, path), Path.Combine(root, path + ".meta") }
-                )
+            string[] paths = new[] { "Assets/csc.rsp", "csc.rsp", DxMessagingBaseCallIgnoreSync.SidecarAssetPath }
+                .SelectMany(path => new[] { Path.Combine(root, path), Path.Combine(root, path + ".meta") })
                 .ToArray();
             byte[] expected = new byte[8192];
             for (int index = 0; index < expected.Length; ++index)
@@ -202,10 +157,7 @@ namespace DxMessaging.Tests.Editor
             }
             File.WriteAllBytes(paths[0], expected);
             File.WriteAllBytes(paths[2], expected);
-            Dictionary<string, byte[]> baseline = paths.ToDictionary(
-                path => path,
-                path => File.Exists(path) ? File.ReadAllBytes(path) : null
-            );
+            Dictionary<string, byte[]> baseline = paths.ToDictionary(path => path, path => File.Exists(path) ? File.ReadAllBytes(path) : null);
             List<string> failures = new();
             for (int cycle = 0; cycle < 10; ++cycle)
             {
@@ -216,16 +168,9 @@ namespace DxMessaging.Tests.Editor
                         File.WriteAllBytes(saved.Key, saved.Value);
                     }
                 }
-                Delegate[] callbacks = EditorApplication.delayCall?.GetInvocationList()
-                    ?? Array.Empty<Delegate>();
-                object sidecarPending = MessageBusInspection.ReadField(
-                    typeof(DxMessagingBaseCallIgnoreSync),
-                    "SidecarImportPending"
-                );
-                object responsePending = MessageBusInspection.ReadField(
-                    typeof(DxMessaging.Editor.SetupCscRsp),
-                    "responseFileImportPending"
-                );
+                Delegate[] callbacks = EditorApplication.delayCall?.GetInvocationList() ?? Array.Empty<Delegate>();
+                object sidecarPending = MessageBusInspection.ReadField(typeof(DxMessagingBaseCallIgnoreSync), "SidecarImportPending");
+                object responsePending = MessageBusInspection.ReadField(typeof(DxMessaging.Editor.SetupCscRsp), "responseFileImportPending");
                 string[] backups = BackupFiles(paths);
                 IOException injected = new("Owned partial compiler-input backup failure.");
                 Exception constructorError = null;
@@ -241,18 +186,11 @@ namespace DxMessaging.Tests.Editor
                         {
                             if (injectFailure && source == target)
                             {
-                                using (
-                                    FileStream partial = new(
-                                        destination,
-                                        FileMode.CreateNew,
-                                        FileAccess.Write
-                                    )
-                                )
+                                using (FileStream partial = new(destination, FileMode.CreateNew, FileAccess.Write))
                                 {
                                     partial.Write(expected, 0, 4096);
                                 }
-                                partialWritten = File.ReadAllBytes(destination)
-                                    .SequenceEqual(expected.Take(4096));
+                                partialWritten = File.ReadAllBytes(destination).SequenceEqual(expected.Take(4096));
                                 throw injected;
                             }
                             File.Copy(source, destination);
@@ -279,34 +217,14 @@ namespace DxMessaging.Tests.Editor
                     }
                 }
                 bool originalsExact = baseline.All(saved =>
-                    saved.Value == null
-                        ? !File.Exists(saved.Key)
-                        : File.Exists(saved.Key)
-                            && saved.Value.SequenceEqual(File.ReadAllBytes(saved.Key))
+                    saved.Value == null ? !File.Exists(saved.Key) : File.Exists(saved.Key) && saved.Value.SequenceEqual(File.ReadAllBytes(saved.Key))
                 );
-                bool callbacksExact = callbacks.SequenceEqual(
-                    EditorApplication.delayCall?.GetInvocationList() ?? Array.Empty<Delegate>()
-                );
+                bool callbacksExact = callbacks.SequenceEqual(EditorApplication.delayCall?.GetInvocationList() ?? Array.Empty<Delegate>());
                 bool pendingExact =
-                    Equals(
-                        sidecarPending,
-                        MessageBusInspection.ReadField(
-                            typeof(DxMessagingBaseCallIgnoreSync),
-                            "SidecarImportPending"
-                        )
-                    )
-                    && Equals(
-                        responsePending,
-                        MessageBusInspection.ReadField(
-                            typeof(DxMessaging.Editor.SetupCscRsp),
-                            "responseFileImportPending"
-                        )
-                    );
+                    Equals(sidecarPending, MessageBusInspection.ReadField(typeof(DxMessagingBaseCallIgnoreSync), "SidecarImportPending"))
+                    && Equals(responsePending, MessageBusInspection.ReadField(typeof(DxMessaging.Editor.SetupCscRsp), "responseFileImportPending"));
                 bool backupsExact = backups.SequenceEqual(BackupFiles(paths));
-                bool exceptionExact = injectFailure
-                    ? constructorError is IOException
-                        && ReferenceEquals(constructorError.InnerException, injected)
-                    : constructorError == null;
+                bool exceptionExact = injectFailure ? constructorError is IOException && ReferenceEquals(constructorError.InnerException, injected) : constructorError == null;
                 bool orderExact = failedRelativePath == "Assets/csc.rsp" || 0 < completedCopies;
                 bool passed =
                     originalsExact
@@ -341,10 +259,7 @@ namespace DxMessaging.Tests.Editor
             paths
                 .SelectMany(path =>
                     Directory.Exists(Path.GetDirectoryName(path))
-                        ? Directory.GetFiles(
-                            Path.GetDirectoryName(path),
-                            "." + Path.GetFileName(path) + ".dxm-fixture-*"
-                        )
+                        ? Directory.GetFiles(Path.GetDirectoryName(path), "." + Path.GetFileName(path) + ".dxm-fixture-*")
                         : Array.Empty<string>()
                 )
                 .OrderBy(path => path, StringComparer.Ordinal)

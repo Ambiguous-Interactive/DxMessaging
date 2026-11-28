@@ -19,11 +19,7 @@ internal sealed class GeneratedStructInitializationTests
     public void GeneratedConstructorsInitializeExcludedStorage(string target, string storage)
     {
         string context = $"target={target}, storage={storage}, language=CSharp9";
-        AssertCallerExecutes(
-            CreateCompilation(CreateSource(target, storage, manual: true)),
-            storage,
-            "Handwritten oracle: " + context
-        );
+        AssertCallerExecutes(CreateCompilation(CreateSource(target, storage, manual: true)), storage, "Handwritten oracle: " + context);
 
         GeneratorDriver driver = CSharpGeneratorDriver.Create(
             new ISourceGenerator[] { new DxAutoConstructorGenerator() },
@@ -34,11 +30,7 @@ internal sealed class GeneratedStructInitializationTests
             out Compilation generated,
             out ImmutableArray<Diagnostic> diagnostics
         );
-        Assert.That(
-            driver.GetRunResult().Results.Select(result => result.Exception),
-            Has.All.Null,
-            context
-        );
+        Assert.That(driver.GetRunResult().Results.Select(result => result.Exception), Has.All.Null, context);
         Assert.That(driver.GetRunResult().GeneratedTrees, Has.Length.EqualTo(1), context);
         Assert.That(diagnostics, Is.Empty, context + "\n" + string.Join("\n", diagnostics));
         AssertCallerExecutes(generated, storage, "Generated caller: " + context);
@@ -48,19 +40,9 @@ internal sealed class GeneratedStructInitializationTests
     {
         foreach (string target in new[] { "struct", "readonly struct", "class" })
         {
-            foreach (
-                string storage in new[]
-                {
-                    "PrivateField",
-                    "InternalField",
-                    "AutoProperty",
-                    "PublicOnly",
-                }
-            )
+            foreach (string storage in new[] { "PrivateField", "InternalField", "AutoProperty", "PublicOnly" })
             {
-                yield return new TestCaseData(target, storage).SetName(
-                    $"GeneratedConstructorsInitializeExcludedStorage({target},{storage})"
-                );
+                yield return new TestCaseData(target, storage).SetName($"GeneratedConstructorsInitializeExcludedStorage({target},{storage})");
             }
         }
     }
@@ -69,29 +51,14 @@ internal sealed class GeneratedStructInitializationTests
     {
         (string members, string initial, string seeded) = storage switch
         {
-            "PrivateField" => (
-                "private readonly int _state; public int Hidden => _state;",
-                "_state = 0;",
-                "_state = 73;"
-            ),
-            "InternalField" => (
-                "internal readonly int State; public int Hidden => State;",
-                "State = 0;",
-                "State = 73;"
-            ),
+            "PrivateField" => ("private readonly int _state; public int Hidden => _state;", "_state = 0;", "_state = 73;"),
+            "InternalField" => ("internal readonly int State; public int Hidden => State;", "State = 0;", "State = 73;"),
             "AutoProperty" => ("public int Hidden { get; }", "Hidden = 0;", "Hidden = 73;"),
             "PublicOnly" => ("public int Hidden => 0;", "", ""),
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(storage),
-                storage,
-                "Unknown storage shape"
-            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(storage), storage, "Unknown storage shape"),
         };
-        string declaration =
-            target == "readonly struct" ? "readonly partial struct" : "partial " + target;
-        string constructor = manual
-            ? $"public Packet(int Value) {{ this.Value = Value; {initial} }}"
-            : "";
+        string declaration = target == "readonly struct" ? "readonly partial struct" : "partial " + target;
+        string constructor = manual ? $"public Packet(int Value) {{ this.Value = Value; {initial} }}" : "";
         return $$"""
             using DxMessaging.Core.Attributes;
             {{(manual ? "" : "[DxAutoConstructor]")}}
@@ -114,22 +81,13 @@ internal sealed class GeneratedStructInitializationTests
             """;
     }
 
-    private static CSharpCompilation CreateCompilation(string source) =>
-        GeneratorTestUtilities.CreateAutoConstructorCompilationFromShippedAttributes(source);
+    private static CSharpCompilation CreateCompilation(string source) => GeneratorTestUtilities.CreateAutoConstructorCompilationFromShippedAttributes(source);
 
-    private static void AssertCallerExecutes(
-        Compilation compilation,
-        string storage,
-        string context
-    )
+    private static void AssertCallerExecutes(Compilation compilation, string storage, string context)
     {
         using MemoryStream image = new();
         EmitResult emitted = compilation.Emit(image);
-        Assert.That(
-            emitted.Success,
-            Is.True,
-            context + "\n" + string.Join("\n", emitted.Diagnostics)
-        );
+        Assert.That(emitted.Success, Is.True, context + "\n" + string.Join("\n", emitted.Diagnostics));
         image.Position = 0;
         AssemblyLoadContext load = new("StructInitializationConsumer", isCollectible: true);
         try
@@ -140,8 +98,7 @@ internal sealed class GeneratedStructInitializationTests
             Assert.That(
                 read!.Invoke(null, null),
                 Is.EqualTo(new[] { 42, 0, -1, storage == "PublicOnly" ? 0 : 73 }),
-                context
-                    + ": generated public payload and excluded storage match ordinary construction"
+                context + ": generated public payload and excluded storage match ordinary construction"
             );
         }
         finally

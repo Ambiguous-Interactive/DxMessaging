@@ -30,12 +30,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     foreach (bool previouslyObserved in new[] { false, true })
                     {
-                        yield return new TestCaseData(
-                            category,
-                            level,
-                            previouslyObserved,
-                            previouslyObserved || gated
-                        );
+                        yield return new TestCaseData(category, level, previouslyObserved, previouslyObserved || gated);
                     }
                 }
             }
@@ -47,23 +42,13 @@ namespace DxMessaging.Tests.Runtime.Core
         /// unselected gated sibling must not exempt the default suite budget.
         /// </summary>
         [TestCaseSource(nameof(SelectedCategoryCases))]
-        public void CategoryObservationUsesSelectedAncestors(
-            string category,
-            int level,
-            bool previouslyObserved,
-            bool expected
-        )
+        public void CategoryObservationUsesSelectedAncestors(string category, int level, bool previouslyObserved, bool expected)
         {
             ObserveSelectedAncestors(category, level, previouslyObserved, expected, false);
         }
 
         [TestCaseSource(nameof(SelectedCategoryCases))]
-        public void UnityCallbackObservesSelectedAncestors(
-            string category,
-            int level,
-            bool previouslyObserved,
-            bool expected
-        )
+        public void UnityCallbackObservesSelectedAncestors(string category, int level, bool previouslyObserved, bool expected)
         {
             ObserveSelectedAncestors(category, level, previouslyObserved, expected, true);
         }
@@ -71,15 +56,8 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void AssemblyRegistersUnityCallback()
         {
-            object[] callbacks = typeof(SuiteWallClockBudgetTest).Assembly.GetCustomAttributes(
-                typeof(TestRunCallbackAttribute),
-                false
-            );
-            Assert.That(
-                callbacks.Length,
-                Is.EqualTo(1),
-                "The assembly must register its Unity observer."
-            );
+            object[] callbacks = typeof(SuiteWallClockBudgetTest).Assembly.GetCustomAttributes(typeof(TestRunCallbackAttribute), false);
+            Assert.That(callbacks.Length, Is.EqualTo(1), "The assembly must register its Unity observer.");
 #if UNITY_EDITOR || UNITY_STANDALONE
             Assert.That(
                 NoteGatedCategoryAttribute.LastStartedTestIdForTesting,
@@ -95,13 +73,7 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             TestSuite suite = new("unselected gated tree");
             suite.Properties.Add("Category", "MemoryReclaim");
-            AssertObservation(
-                suite,
-                previouslyObserved,
-                previouslyObserved,
-                "suite notification",
-                true
-            );
+            AssertObservation(suite, previouslyObserved, previouslyObserved, "suite notification", true);
         }
 
         [TestCase(false)]
@@ -110,29 +82,12 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             TestMethod foreign = new(new MethodWrapper(typeof(TestSuite), nameof(TestSuite.Add)));
             foreign.Properties.Add("Category", "MemoryReclaim");
-            AssertObservation(
-                foreign,
-                previouslyObserved,
-                previouslyObserved,
-                $"foreign assembly, previous={previouslyObserved}",
-                true
-            );
+            AssertObservation(foreign, previouslyObserved, previouslyObserved, $"foreign assembly, previous={previouslyObserved}", true);
         }
 
-        private static void ObserveSelectedAncestors(
-            string category,
-            int level,
-            bool previouslyObserved,
-            bool expected,
-            bool unityCallback
-        )
+        private static void ObserveSelectedAncestors(string category, int level, bool previouslyObserved, bool expected, bool unityCallback)
         {
-            TestMethod leaf = new(
-                new MethodWrapper(
-                    typeof(SuiteCategoryObservationTests),
-                    nameof(CategoryObservationUsesSelectedAncestors)
-                )
-            );
+            TestMethod leaf = new(new MethodWrapper(typeof(SuiteCategoryObservationTests), nameof(CategoryObservationUsesSelectedAncestors)));
             TestSuite method = new("parameterized method");
             TestSuite fixture = new("fixture");
             TestSuite assembly = new("assembly");
@@ -161,25 +116,14 @@ namespace DxMessaging.Tests.Runtime.Core
         [TestCase(true)]
         public void NullTestPreservesPreviouslyObservedCategory(bool previouslyObserved)
         {
-            AssertObservation(
-                null,
-                previouslyObserved,
-                previouslyObserved,
-                $"null test, previous={previouslyObserved}"
-            );
+            AssertObservation(null, previouslyObserved, previouslyObserved, $"null test, previous={previouslyObserved}");
         }
 
         [TestCase(false)]
         [TestCase(true)]
         public void UnityCallbackIgnoresNullTest(bool previouslyObserved)
         {
-            AssertObservation(
-                null,
-                previouslyObserved,
-                previouslyObserved,
-                $"null callback test, previous={previouslyObserved}",
-                true
-            );
+            AssertObservation(null, previouslyObserved, previouslyObserved, $"null callback test, previous={previouslyObserved}", true);
         }
 
         [TestCase(false)]
@@ -193,24 +137,10 @@ namespace DxMessaging.Tests.Runtime.Core
             AssertObservation(selected, false, gated, $"mixed category bag, gated={gated}");
         }
 
-        private static void AssertObservation(
-            NUnit.Framework.Interfaces.ITest selected,
-            bool previouslyObserved,
-            bool expected,
-            string context,
-            bool unityCallback = false
-        )
+        private static void AssertObservation(NUnit.Framework.Interfaces.ITest selected, bool previouslyObserved, bool expected, string context, bool unityCallback = false)
         {
-            FieldInfo detected = typeof(SuiteWallClockBudgetTest).GetField(
-                "_gatedCategoryDetected",
-                BindingFlags.NonPublic | BindingFlags.Static
-            );
-            Assert.That(
-                detected,
-                Is.Not.Null,
-                "[{0}] The suite observation field must exist.",
-                context
-            );
+            FieldInfo detected = typeof(SuiteWallClockBudgetTest).GetField("_gatedCategoryDetected", BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.That(detected, Is.Not.Null, "[{0}] The suite observation field must exist.", context);
             bool original = (bool)detected.GetValue(null);
             try
             {
@@ -219,32 +149,16 @@ namespace DxMessaging.Tests.Runtime.Core
                 if (unityCallback)
                 {
                     ITestRunCallback callback = (object)observer as ITestRunCallback;
-                    Assert.That(
-                        callback,
-                        Is.Not.Null,
-                        "[{0}] The observer implements Unity callbacks.",
-                        context
-                    );
+                    Assert.That(callback, Is.Not.Null, "[{0}] The observer implements Unity callbacks.", context);
                     callback.RunStarted(selected);
-                    Assert.That(
-                        (bool)detected.GetValue(null),
-                        Is.EqualTo(previouslyObserved),
-                        "[{0}] Whole-run discovery must preserve the previous gate state.",
-                        context
-                    );
+                    Assert.That((bool)detected.GetValue(null), Is.EqualTo(previouslyObserved), "[{0}] Whole-run discovery must preserve the previous gate state.", context);
                     callback.TestStarted(selected);
                 }
                 else
                 {
                     observer.BeforeTest(selected);
                 }
-                Assert.That(
-                    (bool)detected.GetValue(null),
-                    Is.EqualTo(expected),
-                    "[{0}] Selected ancestry must produce gated={1} without observing siblings.",
-                    context,
-                    expected
-                );
+                Assert.That((bool)detected.GetValue(null), Is.EqualTo(expected), "[{0}] Selected ancestry must produce gated={1} without observing siblings.", context, expected);
             }
             finally
             {

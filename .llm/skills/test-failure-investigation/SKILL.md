@@ -1,6 +1,10 @@
 ---
 name: test-failure-investigation
-description: "The zero-flaky policy and the eight-step procedure for a failing or intermittent test: reproduce it in a loop, state the expected behavior, capture actual state, read the production code path, categorize the root cause (production bug, test bug, setup bug, order dependency, timing, environment), fix the cause, re-run repeatedly, and document the finding. Includes the banned fixes - Thread.Sleep, WaitForSeconds, [Ignore], retry loops, swallowed try/catch, raised timeouts, deleting the test. Use when a test fails, is flaky, passes locally but fails in CI, or passes alone but fails with the suite."
+description:
+  "The zero-flaky policy and the eight-step procedure for a failing or intermittent test: reproduce it in a loop, state the expected behavior, capture actual state, read the
+  production code path, categorize the root cause (production bug, test bug, setup bug, order dependency, timing, environment), fix the cause, re-run repeatedly, and document the
+  finding. Includes the banned fixes - Thread.Sleep, WaitForSeconds, [Ignore], retry loops, swallowed try/catch, raised timeouts, deleting the test. Use when a test fails, is
+  flaky, passes locally but fails in CI, or passes alone but fails with the suite."
 metadata:
   category: "testing"
   tags: "testing, investigation, debugging, quality, zero-flaky, root-cause-analysis"
@@ -30,7 +34,8 @@ This project has a zero-flaky-test policy. Every failure is treated as a product
 
 1. **Reproduce.** Run the single test in a loop (50-100 iterations) and confirm the failure is real and its rate is known.
 1. **State the expected behavior.** Write down the production behavior under test, its preconditions, the expected outcome, and why it matters to a user.
-1. **Capture actual state.** Add diagnostic output at the failure point covering the values on both sides of the assertion plus surrounding bus/registration state. See the `test-diagnostics` skill.
+1. **Capture actual state.** Add diagnostic output at the failure point covering the values on both sides of the assertion plus surrounding bus/registration state. See the
+   `test-diagnostics` skill.
 1. **Read the production path.** Walk the code the test exercises: initialization order and assumptions, shared and static state, edge cases the test triggers.
 1. **Categorize the root cause** as production bug, test bug, test setup bug, order dependency, timing issue, or environment issue. The category determines the fix.
 1. **Fix the cause, not the symptom.** A wrong expectation gets a corrected assertion with a message stating the contract; a real defect gets a production fix.
@@ -48,11 +53,13 @@ This project has a zero-flaky-test policy. Every failure is treated as a product
 
 ### Banned "fixes"
 
-`Thread.Sleep` or `WaitForSeconds` to paper over a race; `[Ignore]` on a failing test; a retry loop around the assertion; `try`/`catch` that swallows the exception; raising a timeout; "works on my machine"; deleting the test. Each masks the defect and slows or weakens the suite. Fix the race, the shared state, or the expectation instead.
+`Thread.Sleep` or `WaitForSeconds` to paper over a race; `[Ignore]` on a failing test; a retry loop around the assertion; `try`/`catch` that swallows the exception; raising a
+timeout; "works on my machine"; deleting the test. Each masks the defect and slows or weakens the suite. Fix the race, the shared state, or the expectation instead.
 
 ### Checklist before opening the PR
 
-Can I reproduce it reliably? Do I know what behavior the test verifies? Have I inspected actual versus expected? Have I read the production path? Is this a production bug or a test bug? Is shared state or ordering involved? Is there a timing issue? Does the fix address the cause? Have I re-run it repeatedly?
+Can I reproduce it reliably? Do I know what behavior the test verifies? Have I inspected actual versus expected? Have I read the production path? Is this a production bug or a test
+bug? Is shared state or ordering involved? Is there a timing issue? Does the fix address the cause? Have I re-run it repeatedly?
 
 ## References
 

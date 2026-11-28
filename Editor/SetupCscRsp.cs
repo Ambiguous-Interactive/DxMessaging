@@ -25,26 +25,17 @@ namespace DxMessaging.Editor
             assembly and its direct referrers, including the runtime and predefined Assembly-CSharp),
             so this in-project copy is redundant and is removed on upgrade.
         */
-        internal const string LegacyAnalyzerCopyFolder =
-            "Assets/Plugins/Editor/WallstopStudios.DxMessaging";
+        internal const string LegacyAnalyzerCopyFolder = "Assets/Plugins/Editor/WallstopStudios.DxMessaging";
 
-        private const string LegacySourceGeneratorDllName =
-            "WallstopStudios.DxMessaging.SourceGenerators.dll";
+        private const string LegacySourceGeneratorDllName = "WallstopStudios.DxMessaging.SourceGenerators.dll";
 
         /*
             Released 2.x legacy folders predate the companion analyzer DLL, so the source generator
             is the required package-owned marker. Unknown DLLs still make the folder unsafe.
         */
-        private static readonly HashSet<string> RequiredLegacyAnalyzerCopyDlls = new(
-            StringComparer.OrdinalIgnoreCase
-        )
-        {
-            LegacySourceGeneratorDllName,
-        };
+        private static readonly HashSet<string> RequiredLegacyAnalyzerCopyDlls = new(StringComparer.OrdinalIgnoreCase) { LegacySourceGeneratorDllName };
 
-        private static readonly HashSet<string> KnownLegacyAnalyzerCopyDlls = new(
-            StringComparer.OrdinalIgnoreCase
-        )
+        private static readonly HashSet<string> KnownLegacyAnalyzerCopyDlls = new(StringComparer.OrdinalIgnoreCase)
         {
             LegacySourceGeneratorDllName,
             "WallstopStudios.DxMessaging.Analyzer.dll",
@@ -69,10 +60,7 @@ namespace DxMessaging.Editor
                 Backstop only: the primary removal happens pre-compile in LegacyAnalyzerCopyCleanup.
                 This catches projects whose legacy copy predates the upgrade and triggers no import.
             */
-            ScheduleSetupStep(
-                () => TryRemoveLegacyAnalyzerCopy(),
-                "remove redundant in-project analyzer copy"
-            );
+            ScheduleSetupStep(() => TryRemoveLegacyAnalyzerCopy(), "remove redundant in-project analyzer copy");
             ScheduleAdditionalFileForIgnoreListSync();
         }
 
@@ -132,9 +120,7 @@ namespace DxMessaging.Editor
         {
             if (!canPrepare)
             {
-                throw new InvalidOperationException(
-                    "PrepareCompilerInputs requires an idle main-thread editor configuration phase."
-                );
+                throw new InvalidOperationException("PrepareCompilerInputs requires an idle main-thread editor configuration phase.");
             }
             try
             {
@@ -160,11 +146,7 @@ namespace DxMessaging.Editor
                     {
                         if (preparationFailure != null)
                         {
-                            throw new AggregateException(
-                                "Compiler input preparation and asset import completion both failed.",
-                                preparationFailure,
-                                stopFailure
-                            );
+                            throw new AggregateException("Compiler input preparation and asset import completion both failed.", preparationFailure, stopFailure);
                         }
                         throw;
                     }
@@ -189,9 +171,7 @@ namespace DxMessaging.Editor
 
         private static void ScheduleSetupStep(Action work, string description)
         {
-            DxMessagingEditorIdle.ScheduleAssetDatabaseMutation(() =>
-                RunSetupStep(work, description)
-            );
+            DxMessagingEditorIdle.ScheduleAssetDatabaseMutation(() => RunSetupStep(work, description));
         }
 
         private static void RunSetupStep(Action work, string description)
@@ -235,9 +215,7 @@ namespace DxMessaging.Editor
                 DLLs plus their auto-generated .meta sidecars. Inspect the on-disk folder and bail
                 out if a consumer repurposed it for anything else.
             */
-            string absoluteFolder = Path.GetFullPath(
-                Path.Combine(Application.dataPath, "..", LegacyAnalyzerCopyFolder)
-            );
+            string absoluteFolder = Path.GetFullPath(Path.Combine(Application.dataPath, "..", LegacyAnalyzerCopyFolder));
             if (!Directory.Exists(absoluteFolder))
             {
                 return false;
@@ -278,10 +256,7 @@ namespace DxMessaging.Editor
 
         private static void LogSkippedLegacyAnalyzerCopyCleanupIfNeeded(IEnumerable<string> files)
         {
-            if (
-                loggedSkippedLegacyAnalyzerCopyCleanup
-                || !ContainsKnownLegacyAnalyzerCopyEntry(files)
-            )
+            if (loggedSkippedLegacyAnalyzerCopyCleanup || !ContainsKnownLegacyAnalyzerCopyEntry(files))
             {
                 return;
             }
@@ -357,9 +332,7 @@ namespace DxMessaging.Editor
         {
             string normalizedEntry = entry.Replace("\\", "/");
             int lastSeparator = normalizedEntry.LastIndexOf('/');
-            return 0 <= lastSeparator
-                ? normalizedEntry.Substring(lastSeparator + 1)
-                : normalizedEntry;
+            return 0 <= lastSeparator ? normalizedEntry.Substring(lastSeparator + 1) : normalizedEntry;
         }
 
         private static bool ContainsKnownLegacyAnalyzerCopyEntry(IEnumerable<string> folderEntries)
@@ -406,11 +379,7 @@ namespace DxMessaging.Editor
         /// </remarks>
         private static void EnsureCscRsp()
         {
-            SynchronizeResponseFiles(
-                Application.dataPath,
-                path => AssetDatabase.ImportAsset(path),
-                ref responseFileImportPending
-            );
+            SynchronizeResponseFiles(Application.dataPath, path => AssetDatabase.ImportAsset(path), ref responseFileImportPending);
         }
 
         internal static string GetRspFilePath(string assetsDirectory)
@@ -418,11 +387,7 @@ namespace DxMessaging.Editor
             return Path.Combine(assetsDirectory, "csc.rsp").Replace("\\", "/");
         }
 
-        internal static void SynchronizeResponseFiles(
-            string assetsDirectory,
-            Action<string> importAsset,
-            ref bool importPending
-        )
+        internal static void SynchronizeResponseFiles(string assetsDirectory, Action<string> importAsset, ref bool importPending)
         {
             string rspPath = GetRspFilePath(assetsDirectory);
             string projectRoot = Path.GetFullPath(Path.Combine(assetsDirectory, ".."));
@@ -433,29 +398,15 @@ namespace DxMessaging.Editor
             string[] assetLines = ReadResponseFile(rspPath, out Encoding assetEncoding);
             string newline = FindNewline(assetLines);
             assetLines = CleanDxMessagingAnalyzerLines(assetLines, out bool removedAnalyzers);
-            assetLines = SynchronizeAdditionalFileForIgnoreListLines(
-                assetLines,
-                sidecarPath,
-                sidecarExists,
-                out bool changedSidecar,
-                newline
-            );
+            assetLines = SynchronizeAdditionalFileForIgnoreListLines(assetLines, sidecarPath, sidecarExists, out bool changedSidecar, newline);
 
             /*
                 Only remove package-managed options from the old root file. Moving unrelated
                 options to Assets would activate compiler settings Unity previously ignored.
             */
             string[] legacyLines = ReadResponseFile(legacyRspPath, out Encoding legacyEncoding);
-            legacyLines = CleanDxMessagingAnalyzerLines(
-                legacyLines,
-                out bool removedLegacyAnalyzers
-            );
-            legacyLines = SynchronizeAdditionalFileForIgnoreListLines(
-                legacyLines,
-                sidecarPath,
-                false,
-                out bool removedLegacySidecar
-            );
+            legacyLines = CleanDxMessagingAnalyzerLines(legacyLines, out bool removedLegacyAnalyzers);
+            legacyLines = SynchronizeAdditionalFileForIgnoreListLines(legacyLines, sidecarPath, false, out bool removedLegacySidecar);
 
             if (removedAnalyzers || changedSidecar)
             {
@@ -547,10 +498,7 @@ namespace DxMessaging.Editor
 
         internal static void WriteTextFileAtomically(string path, string content, Encoding encoding)
         {
-            string temporaryPath = Path.Combine(
-                Path.GetDirectoryName(path),
-                $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp"
-            );
+            string temporaryPath = Path.Combine(Path.GetDirectoryName(path), $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
             try
             {
                 File.WriteAllText(temporaryPath, content, encoding);
@@ -572,10 +520,7 @@ namespace DxMessaging.Editor
             }
         }
 
-        internal static string[] CleanDxMessagingAnalyzerLines(
-            IEnumerable<string> lines,
-            out bool foundStaleEntries
-        )
+        internal static string[] CleanDxMessagingAnalyzerLines(IEnumerable<string> lines, out bool foundStaleEntries)
         {
             List<string> result = new();
             foundStaleEntries = false;
@@ -583,16 +528,11 @@ namespace DxMessaging.Editor
             {
                 string rewritten = RewriteResponseFileLine(line, argument =>
                 {
-                    if (
-                        !TryGetCompilerOptionValue(argument, "a", out string value)
-                        && !TryGetCompilerOptionValue(argument, "analyzer", out value)
-                    )
+                    if (!TryGetCompilerOptionValue(argument, "a", out string value) && !TryGetCompilerOptionValue(argument, "analyzer", out value))
                     {
                         return argument;
                     }
-                    return FilterCompilerPaths(argument, value, path =>
-                        !IsDxMessagingAnalyzerPath(DecodeCompilerPath(path))
-                    );
+                    return FilterCompilerPaths(argument, value, path => !IsDxMessagingAnalyzerPath(DecodeCompilerPath(path)));
                 });
                 foundStaleEntries |= !string.Equals(line, rewritten, StringComparison.Ordinal);
                 if (rewritten != null)
@@ -629,38 +569,20 @@ namespace DxMessaging.Editor
                         string decoded = DecodeCompilerPath(path).Replace("\\", "/");
                         string fileName = GetLegacyAnalyzerCopyEntryName(decoded);
                         if (
-                            !string.Equals(
-                                fileName,
-                                "DxMessaging.BaseCallIgnore.txt",
-                                StringComparison.OrdinalIgnoreCase
-                            )
-                            && !string.Equals(
-                                fileName,
-                                "DxMessaging.BaseCallIgnore.generated.txt",
-                                StringComparison.OrdinalIgnoreCase
-                            )
+                            !string.Equals(fileName, "DxMessaging.BaseCallIgnore.txt", StringComparison.OrdinalIgnoreCase)
+                            && !string.Equals(fileName, "DxMessaging.BaseCallIgnore.generated.txt", StringComparison.OrdinalIgnoreCase)
                         )
                         {
                             return true;
                         }
-                        if (
-                            sidecarExists
-                            && !foundDesired
-                            && string.Equals(
-                                decoded,
-                                sidecarRelativePath,
-                                StringComparison.OrdinalIgnoreCase
-                            )
-                        )
+                        if (sidecarExists && !foundDesired && string.Equals(decoded, sidecarRelativePath, StringComparison.OrdinalIgnoreCase))
                         {
                             foundDesired = true;
                             insertDesired = true;
                         }
                         return false;
                     });
-                    return insertDesired
-                        ? (retained == null ? desired : retained + " " + desired)
-                        : retained;
+                    return insertDesired ? (retained == null ? desired : retained + " " + desired) : retained;
                 });
                 modified |= !string.Equals(line, rewritten, StringComparison.Ordinal);
                 if (rewritten != null)
@@ -673,10 +595,7 @@ namespace DxMessaging.Editor
                 if (newline != null && 0 < result.Count)
                 {
                     string last = result[result.Count - 1];
-                    if (
-                        !last.EndsWith("\n", StringComparison.Ordinal)
-                        && !last.EndsWith("\r", StringComparison.Ordinal)
-                    )
+                    if (!last.EndsWith("\n", StringComparison.Ordinal) && !last.EndsWith("\r", StringComparison.Ordinal))
                     {
                         result[result.Count - 1] += newline;
                     }
@@ -692,16 +611,8 @@ namespace DxMessaging.Editor
             string normalized = path.Replace("\\", "/");
             string fileName = GetLegacyAnalyzerCopyEntryName(normalized);
             if (
-                string.Equals(
-                    fileName,
-                    LegacySourceGeneratorDllName,
-                    StringComparison.OrdinalIgnoreCase
-                )
-                || string.Equals(
-                    fileName,
-                    "WallstopStudios.DxMessaging.Analyzer.dll",
-                    StringComparison.OrdinalIgnoreCase
-                )
+                string.Equals(fileName, LegacySourceGeneratorDllName, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fileName, "WallstopStudios.DxMessaging.Analyzer.dll", StringComparison.OrdinalIgnoreCase)
             )
             {
                 return true;
@@ -713,28 +624,15 @@ namespace DxMessaging.Editor
             foreach (string segment in normalized.Split('/'))
             {
                 if (
-                    string.Equals(
-                        segment,
-                        "com.wallstop-studios.dxmessaging",
-                        StringComparison.OrdinalIgnoreCase
-                    )
-                    || segment.StartsWith(
-                        "com.wallstop-studios.dxmessaging@",
-                        StringComparison.OrdinalIgnoreCase
-                    )
+                    string.Equals(segment, "com.wallstop-studios.dxmessaging", StringComparison.OrdinalIgnoreCase)
+                    || segment.StartsWith("com.wallstop-studios.dxmessaging@", StringComparison.OrdinalIgnoreCase)
                 )
                 {
                     return true;
                 }
             }
-            return normalized.StartsWith(
-                    LegacyAnalyzerCopyFolder + "/",
-                    StringComparison.OrdinalIgnoreCase
-                )
-                || normalized.Contains(
-                    "/" + LegacyAnalyzerCopyFolder + "/",
-                    StringComparison.OrdinalIgnoreCase
-                );
+            return normalized.StartsWith(LegacyAnalyzerCopyFolder + "/", StringComparison.OrdinalIgnoreCase)
+                || normalized.Contains("/" + LegacyAnalyzerCopyFolder + "/", StringComparison.OrdinalIgnoreCase);
         }
 
         private static string FormatAdditionalFileArgument(string sidecarRelativePath)
@@ -742,11 +640,7 @@ namespace DxMessaging.Editor
             return $"-additionalfile:\"{sidecarRelativePath}\"";
         }
 
-        private static string FilterCompilerPaths(
-            string argument,
-            string value,
-            Func<string, bool> retain
-        )
+        private static string FilterCompilerPaths(string argument, string value, Func<string, bool> retain)
         {
             StringBuilder kept = new();
             bool changed = false;
@@ -762,10 +656,7 @@ namespace DxMessaging.Editor
                 {
                     inQuotes = !inQuotes;
                 }
-                if (
-                    index < value.Length
-                    && (inQuotes || (value[index] != ',' && value[index] != ';'))
-                )
+                if (index < value.Length && (inQuotes || (value[index] != ',' && value[index] != ';')))
                 {
                     continue;
                 }
@@ -902,11 +793,7 @@ namespace DxMessaging.Editor
             return decoded.ToString();
         }
 
-        private static bool TryGetCompilerOptionValue(
-            string argument,
-            string optionName,
-            out string value
-        )
+        private static bool TryGetCompilerOptionValue(string argument, string optionName, out string value)
         {
             value = string.Empty;
             if (string.IsNullOrEmpty(argument) || string.IsNullOrEmpty(optionName))
@@ -930,16 +817,7 @@ namespace DxMessaging.Editor
                 return false;
             }
 
-            if (
-                string.Compare(
-                    unquotedArgument,
-                    1,
-                    optionName,
-                    0,
-                    optionName.Length,
-                    StringComparison.OrdinalIgnoreCase
-                ) != 0
-            )
+            if (string.Compare(unquotedArgument, 1, optionName, 0, optionName.Length, StringComparison.OrdinalIgnoreCase) != 0)
             {
                 return false;
             }
@@ -980,12 +858,7 @@ namespace DxMessaging.Editor
     internal sealed class LegacyAnalyzerCopyCleanup : AssetPostprocessor
     {
         // Classic four-argument signature so this compiles on every supported Unity (2021.3+).
-        private static void OnPostprocessAllAssets(
-            string[] importedAssets,
-            string[] deletedAssets,
-            string[] movedAssets,
-            string[] movedFromAssetPaths
-        )
+        private static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths)
         {
             SetupCscRsp.TryRemoveLegacyAnalyzerCopy();
         }

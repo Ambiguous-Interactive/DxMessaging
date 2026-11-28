@@ -5,17 +5,13 @@ description: Manual onboarding checklist for Unity Asset Store UPM publishing
 
 # Unity Asset Store UPM
 
-Unity Asset Store UPM publishing is separate from npm and OpenUPM. npm
-provenance and GitHub artifact attestations do not replace Unity-controlled
-package signing or Asset Store review.
+Unity Asset Store UPM publishing is separate from npm and OpenUPM. npm provenance and GitHub artifact attestations do not replace Unity-controlled package signing or Asset Store
+review.
 
-Unity's [UPM publishing page](https://assetstore.unity.com/publishing/upm-publishing)
-makes the workflow available for tools, extensions, and SDKs. The official
-[publishing-tool listing](https://assetstore.unity.com/packages/tools/asset-store-upm-publishing-tools-5368745)
-now lists v0.3.3, released 2026-09-28, with Unity 2022.3 as its oldest supported
-editor. The [enrollment instructions](https://docs.unity.com/en-us/asset-store/publishing/upm-packages/apply)
-still require the publisher account to reach `Active` UPM admittance before the
-UPM Publisher Portal appears. Verify that account state before choosing UPM.
+Unity's [UPM publishing page](https://assetstore.unity.com/publishing/upm-publishing) makes the workflow available for tools, extensions, and SDKs. The official
+[publishing-tool listing](https://assetstore.unity.com/packages/tools/asset-store-upm-publishing-tools-5368745) now lists v0.3.3, released 2026-09-28, with Unity 2022.3 as its
+oldest supported editor. The [enrollment instructions](https://docs.unity.com/en-us/asset-store/publishing/upm-packages/apply) still require the publisher account to reach `Active`
+UPM admittance before the UPM Publisher Portal appears. Verify that account state before choosing UPM.
 
 ## Publisher Account Setup
 
@@ -27,33 +23,24 @@ Verify in the Unity publisher account:
 1. UPM enrollment has `Active` admittance and the UPM Publisher Portal appears.
 1. Maintainers who submit packages have the needed role.
 
-Do not commit publisher account IDs, screenshots, tax details, DUNS numbers, or
-private review messages.
+Do not commit publisher account IDs, screenshots, tax details, DUNS numbers, or private review messages.
 
 ## Package Preparation
 
-DxMessaging is a UPM package with package ID
-`com.wallstop-studios.dxmessaging`. Before submission, verify:
+DxMessaging is a UPM package with package ID `com.wallstop-studios.dxmessaging`. Before submission, verify:
 
 - `package.json` metadata is current.
-- `README.md`, `CHANGELOG.md`, `LICENSE.md`, and third-party notices are
-  included in the npm/UPM package.
+- `README.md`, `CHANGELOG.md`, `LICENSE.md`, and third-party notices are included in the npm/UPM package.
 - Samples under `Samples~/` import correctly.
 - Unity versions match the supported matrix.
 - Dependencies are documented and minimal.
-- No build artifacts, IDE files, local runbooks, `.llm`, `.github`, scripts,
-  tests, devcontainer files, or Unity test harness files ship in the package.
+- No build artifacts, IDE files, local runbooks, `.llm`, `.github`, scripts, tests, devcontainer files, or Unity test harness files ship in the package.
 - Every shipped Unity-relevant path has a paired `.meta` file.
-- Image assets in `package.json` `files` are limited to assets referenced by
-  shipped package docs. Today that means the README banner at
-  `docs/images/DxMessaging-banner.svg` and its `.meta`; the MkDocs
-  `dxmessaging-mark.svg` logo, favicon, Open Graph image, and store media are
-  tracked for GitHub Pages and release staging only, because the generated
+- Image assets in `package.json` `files` are limited to assets referenced by shipped package docs. Today that means the README banner at `docs/images/DxMessaging-banner.svg` and
+  its `.meta`; the MkDocs `dxmessaging-mark.svg` logo, favicon, Open Graph image, and store media are tracked for GitHub Pages and release staging only, because the generated
   documentation site is not part of the npm/UPM payload.
-- The ignored `design-system/` source tree, design scraps, and exploration PNGs
-  are not release assets. If a future package-shipped document references another
-  brand image, add that image and its `.meta` to `package.json` `files` in the
-  same change and re-run package validation.
+- The ignored `design-system/` source tree, design scraps, and exploration PNGs are not release assets. If a future package-shipped document references another brand image, add
+  that image and its `.meta` to `package.json` `files` in the same change and re-run package validation.
 
 Run:
 
@@ -63,12 +50,9 @@ npm pack --dry-run
 
 ## Brand and Key Image Sources
 
-The Open Graph card and Asset Store key images ship as PNG, because social
-scrapers and the Asset Store submission form do not accept SVG. The three store
-outputs match Unity's current
-[publisher image template](https://assetstore.unity.com/publishing/image-template):
-160x160 icon, 420x280 card, and 1950x1300 cover. Each output is rendered from
-the SVG beside it:
+The Open Graph card and Asset Store key images ship as PNG, because social scrapers and the Asset Store submission form do not accept SVG. The three store outputs match Unity's
+current [publisher image template](https://assetstore.unity.com/publishing/image-template): 160x160 icon, 420x280 card, and 1950x1300 cover. Each output is rendered from the SVG
+beside it:
 
 | Source                                              | Output                                              | Size      |
 | --------------------------------------------------- | --------------------------------------------------- | --------- |
@@ -85,117 +69,75 @@ python3 -m venv .artifacts/docs-venv
 .artifacts/docs-venv/bin/python scripts/render-brand-cards.py
 ```
 
-The render needs `requirements-brand.txt` (the compiled lock holding
-`cairosvg`), the system cairo library (`libcairo2`), and the three brand
-faces installed for fontconfig: Space Grotesk, IBM Plex Sans, and JetBrains
-Mono. All three are SIL Open Font License 1.1. The script prints the exact
-download commands and stops before writing anything when a face is missing,
-because cairo substitutes a default face instead of failing.
+The render needs `requirements-brand.txt` (the compiled lock holding `cairosvg`), the system cairo library (`libcairo2`), and the three brand faces installed for fontconfig: Space
+Grotesk, IBM Plex Sans, and JetBrains Mono. All three are SIL Open Font License 1.1. The script prints the exact download commands and stops before writing anything when a face is
+missing, because cairo substitutes a default face instead of failing.
 
-The script also checks that every SVG drawing the mark inline still matches
-`dxmessaging-mark.svg`, and refuses to render when one has drifted. There is no
-portable way to reference an external SVG that both a browser and cairo honor,
-so the geometry is duplicated in `dxmessaging-icon-tile.svg` and in the cards.
-The duplication is checked rather than hidden. The store card and cover include
-the tracked Flow Graph product screenshot. Release staging locks that dependency
-hash with each rendered output, so a screenshot update cannot leave stale key
-images unnoticed.
+The script also checks that every SVG drawing the mark inline still matches `dxmessaging-mark.svg`, and refuses to render when one has drifted. There is no portable way to
+reference an external SVG that both a browser and cairo honor, so the geometry is duplicated in `dxmessaging-icon-tile.svg` and in the cards. The duplication is checked rather than
+hidden. The store card and cover include the tracked Flow Graph product screenshot. Release staging locks that dependency hash with each rendered output, so a screenshot update
+cannot leave stale key images unnoticed.
 
-The other brand PNGs are direct renders of a single SVG and are not produced by
-this script: `icon-256.png` and `dxmessaging-store-icon-320.png` come from
-`dxmessaging-icon-tile.svg`, and the favicons come from `dxmessaging-mark.svg`.
-The release staging generator pins the SHA-256 of every Asset Store SVG source
-and PNG output. After an intentional render change, update the matching
-`STORE_MEDIA` source/output hashes in `scripts/release/asset-store-submission.js`;
-otherwise release staging fails before publication.
+The other brand PNGs are direct renders of a single SVG and are not produced by this script: `icon-256.png` and `dxmessaging-store-icon-320.png` come from
+`dxmessaging-icon-tile.svg`, and the favicons come from `dxmessaging-mark.svg`. The release staging generator pins the SHA-256 of every Asset Store SVG source and PNG output. After
+an intentional render change, update the matching `STORE_MEDIA` source/output hashes in `scripts/release/asset-store-submission.js`; otherwise release staging fails before
+publication.
 
 ## Release Staging Artifact
 
-Every tagged release stages the Asset Store submission inputs automatically.
-The `release.yml` publish job uploads an `asset-store-submission` workflow
-artifact containing:
+Every tagged release stages the Asset Store submission inputs automatically. The `release.yml` publish job uploads an `asset-store-submission` workflow artifact containing:
 
-- the `.unitypackage` created without opening Unity by
-  `scripts/unity/create_unitypackage.py`
+- the `.unitypackage` created without opening Unity by `scripts/unity/create_unitypackage.py`
 - the npm `.tgz` (the exact UPM payload, for reference and diffing)
 - `.sha256` checksums for both
 - tracked store media under `media/`
 - ordered product screenshots under `screenshots/`
-- generated `CLASSIC-UPLOAD-CHECKLIST.md`, `UPM-UPLOAD-CHECKLIST.md`,
-  `ASSET-STORE-LISTING.json`, `EXPECTED-UPM-FIELDS.json`, and `MANIFEST.json`
+- generated `CLASSIC-UPLOAD-CHECKLIST.md`, `UPM-UPLOAD-CHECKLIST.md`, `ASSET-STORE-LISTING.json`, `EXPECTED-UPM-FIELDS.json`, and `MANIFEST.json`
 
-`.github/asset-store-listing.json` is the canonical listing source. Schema 2 adds the nonempty
-`aiDescription` and numeric `priceUsd`, which must be zero. These are operator inputs, not an
-upload API. Both upload checklists require the free price, dedicated AI field, human copy review,
-and live-listing verification. Release staging validates its exact schema, portable screenshot paths, whitespace-separated
-keywords, HTTPS links, three required key-image roles, and a 1200-pixel minimum
-screenshot width. It then adds the package version, minimum Unity version, and
-matching changelog section and writes the reviewed portal inputs and media order to
-`ASSET-STORE-LISTING.json`. Unity still decides whether a submission passes review.
+`.github/asset-store-listing.json` is the canonical listing source. Schema 2 adds the nonempty `aiDescription` and numeric `priceUsd`, which must be zero. These are operator
+inputs, not an upload API. Both upload checklists require the free price, dedicated AI field, human copy review, and live-listing verification. Release staging validates its exact
+schema, portable screenshot paths, whitespace-separated keywords, HTTPS links, three required key-image roles, and a 1200-pixel minimum screenshot width. It then adds the package
+version, minimum Unity version, and matching changelog section and writes the reviewed portal inputs and media order to `ASSET-STORE-LISTING.json`. Unity still decides whether a
+submission passes review.
 
-The portable writer stages the `npm pack` payload under
-`Assets/WallstopStudios/DxMessaging/` with two Assets-form changes:
-`SourceGenerators/**` is excluded (the loose generator sources would compile
-into `Assembly-CSharp` under `Assets/` and fail; consumers get the source
-generator and analyzer from the RoslynAnalyzer-labeled DLLs shipped under
-`Runtime/Analyzers/`), and `Samples~` is renamed to `Samples` so samples
-import visibly.
+The portable writer stages the `npm pack` payload under `Assets/WallstopStudios/DxMessaging/` with two Assets-form changes: `SourceGenerators/**` is excluded (the loose generator
+sources would compile into `Assembly-CSharp` under `Assets/` and fail; consumers get the source generator and analyzer from the RoslynAnalyzer-labeled DLLs shipped under
+`Runtime/Analyzers/`), and `Samples~` is renamed to `Samples` so samples import visibly.
 
-The official classic and UPM upload instructions inspected on 2026-11-04 describe
-interactive Editor workflows. That documentation check did not identify a supported
-non-interactive upload entry point or service credential. The pipeline therefore
-stops at staging; the upload below is manual. Recheck the official instructions
-when preparing a release. The release-time
-procedure -- and the full automation determination with its re-evaluation
-trigger -- lives in the
+The official classic and UPM upload instructions inspected on 2026-11-04 describe interactive Editor workflows. That documentation check did not identify a supported
+non-interactive upload entry point or service credential. The pipeline therefore stops at staging; the upload below is manual. Recheck the official instructions when preparing a
+release. The release-time procedure -- and the full automation determination with its re-evaluation trigger -- lives in the
 [Asset Store Publishing runbook](../runbooks/asset-store-publishing.md).
 
 ## Submission Path
 
-The per-release classic `.unitypackage` upload procedure -- download the staged
-`asset-store-submission` artifact, drive the in-Editor uploader, fill the
-metadata, and submit for review -- lives in the
-[Asset Store Publishing runbook](../runbooks/asset-store-publishing.md). This
-page stays focused on the account-onboarding context and the conditional UPM
+The per-release classic `.unitypackage` upload procedure -- download the staged `asset-store-submission` artifact, drive the in-Editor uploader, fill the metadata, and submit for
+review -- lives in the [Asset Store Publishing runbook](../runbooks/asset-store-publishing.md). This page stays focused on the account-onboarding context and the conditional UPM
 variant below.
 
-If Ambiguous has `Active` UPM admittance, the UPM submission flow can replace
-the `.unitypackage` upload:
+If Ambiguous has `Active` UPM admittance, the UPM submission flow can replace the `.unitypackage` upload:
 
-1. Open an editor version listed as compatible with the installed UPM publishing
-   tool, then install the tool from Unity's official channel.
-1. Add the staged `.tgz` through
-   `Window > Package Manager > Add package from tarball...`.
-1. Open `Window > Tools > Asset Store > Validator`, select the UPM validation
-   type, and validate the installed package.
-1. Open `Window > Tools > Asset Store > Uploader`, select the `UPM Packages`
-   tab, and upload the exact package version.
-1. Apply every listing field and ordered screenshot from
-   `ASSET-STORE-LISTING.json`, then complete the remaining review fields.
+1. Open an editor version listed as compatible with the installed UPM publishing tool, then install the tool from Unity's official channel.
+1. Add the staged `.tgz` through `Window > Package Manager > Add package from tarball...`.
+1. Open `Window > Tools > Asset Store > Validator`, select the UPM validation type, and validate the installed package.
+1. Open `Window > Tools > Asset Store > Uploader`, select the `UPM Packages` tab, and upload the exact package version.
+1. Apply every listing field and ordered screenshot from `ASSET-STORE-LISTING.json`, then complete the remaining review fields.
 1. Submit for review.
-1. Repeat for two versions. In a clean Unity project where neither version is
-   installed, open Package Manager Version History, expand both versions, and
-   verify that each non-installed row displays its own expected release notes.
-   This UI result is the acceptance proof.
-1. If the Publisher Portal or supported Unity tooling exposes a version
-   manifest, also compare its `name`, `version`, and `_upm.changelog` values
-   with `EXPECTED-UPM-FIELDS.json`. This file records expected field values; it
-   is not a complete response schema. Do not query undocumented endpoints to
-   obtain the manifest.
+1. Repeat for two versions. In a clean Unity project where neither version is installed, open Package Manager Version History, expand both versions, and verify that each
+   non-installed row displays its own expected release notes. This UI result is the acceptance proof.
+1. If the Publisher Portal or supported Unity tooling exposes a version manifest, also compare its `name`, `version`, and `_upm.changelog` values with `EXPECTED-UPM-FIELDS.json`.
+   This file records expected field values; it is not a complete response schema. Do not query undocumented endpoints to obtain the manifest.
 
 If Ambiguous does not have `Active` UPM admittance:
 
 1. Do not claim Asset Store UPM availability in package docs.
 1. Continue publishing through npm and OpenUPM.
-1. Track Unity approval status in Unity Publisher Portal or the approved
-   organization password manager.
-1. Use the staged `.unitypackage` from the release pipeline as the classic
-   submission format.
+1. Track Unity approval status in Unity Publisher Portal or the approved organization password manager.
+1. Use the staged `.unitypackage` from the release pipeline as the classic submission format.
 
 ## Signing and Provenance
 
-Unity package signing is controlled by Unity's publishing pipeline. It is
-independent from:
+Unity package signing is controlled by Unity's publishing pipeline. It is independent from:
 
 - npm Trusted Publishing provenance
 - GitHub artifact attestations
@@ -207,13 +149,10 @@ Do not describe npm or GitHub provenance as Unity Asset Store signing.
 
 - The publisher account is not approved for UPM publishing.
 - Package metadata links point to the old GitHub organization.
-- Asset Store submission asks for documentation included offline. The npm
-  package includes only the README banner image under `docs/images/`, not the
-  full generated documentation site.
-- The `.unitypackage` export job failed. The release is atomic, so the whole
-  release (including the npm publish) is blocked rather than shipping without
-  the `.unitypackage`; fix the export and re-run the release workflow.
-- Someone scripts an Asset Store upload against an unsanctioned endpoint; no
-  supported CLI exists, so the upload must stay manual.
+- Asset Store submission asks for documentation included offline. The npm package includes only the README banner image under `docs/images/`, not the full generated documentation
+  site.
+- The `.unitypackage` export job failed. The release is atomic, so the whole release (including the npm publish) is blocked rather than shipping without the `.unitypackage`; fix
+  the export and re-run the release workflow.
+- Someone scripts an Asset Store upload against an unsanctioned endpoint; no supported CLI exists, so the upload must stay manual.
 - Unity rejects unnecessary dependencies or files.
 - Private publisher identifiers leak into tracked docs.

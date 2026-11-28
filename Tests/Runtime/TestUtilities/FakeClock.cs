@@ -37,10 +37,7 @@ namespace DxMessaging.Tests.Runtime
         {
             if (seconds < 0d)
             {
-                throw new System.ArgumentOutOfRangeException(
-                    nameof(seconds),
-                    "FakeClock.Advance does not accept negative deltas."
-                );
+                throw new System.ArgumentOutOfRangeException(nameof(seconds), "FakeClock.Advance does not accept negative deltas.");
             }
             _now += seconds;
         }
@@ -50,10 +47,7 @@ namespace DxMessaging.Tests.Runtime
         {
             if (seconds < _now)
             {
-                throw new System.ArgumentOutOfRangeException(
-                    nameof(seconds),
-                    "FakeClock is monotonic; cannot rewind."
-                );
+                throw new System.ArgumentOutOfRangeException(nameof(seconds), "FakeClock is monotonic; cannot rewind.");
             }
             _now = seconds;
         }

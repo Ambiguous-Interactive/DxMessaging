@@ -3,8 +3,8 @@
 ## Unity Helpers collection pool
 
 DxMessaging's `Runtime/Core/Pooling/CollectionPool.cs` adapts code from
-[Unity Helpers' `Buffers.cs`](https://github.com/Ambiguous-Interactive/unity-helpers/blob/de22dcd22fd98d4fe8c7aa8e70814496698681f7/Runtime/Utils/Buffers.cs).
-The upstream code is distributed under the MIT License.
+[Unity Helpers' `Buffers.cs`](https://github.com/Ambiguous-Interactive/unity-helpers/blob/de22dcd22fd98d4fe8c7aa8e70814496698681f7/Runtime/Utils/Buffers.cs). The upstream code is
+distributed under the MIT License.
 
 ```text
 MIT License

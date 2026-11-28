@@ -76,11 +76,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 TailRun run = new(injectStall, frequency, traceId);
                 TestContext.Out.WriteLine("DXM_OPEN_LOOP_SCHEDULE_V1 " + run.Schedule);
-                Assert.That(
-                    Stopwatch.GetTimestamp(),
-                    Is.LessThan(run.Arrivals[0]),
-                    "schedule missed offer"
-                );
+                Assert.That(Stopwatch.GetTimestamp(), Is.LessThan(run.Arrivals[0]), "schedule missed offer");
                 current = run;
                 for (int burst = 0; burst < BurstCount; ++burst)
                 {
@@ -119,10 +115,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 Assert.That(baseline.Completions[burst], Is.LessThan(baseline.HorizonEnd));
             }
-            Assert.That(
-                stalled.Completions[StallBurst],
-                Is.GreaterThanOrEqualTo(stalled.HorizonEnd)
-            );
+            Assert.That(stalled.Completions[StallBurst], Is.GreaterThanOrEqualTo(stalled.HorizonEnd));
 
             long baselineP99 = 0;
             long stalledP99 = 0;
@@ -154,12 +147,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         private static void Report(TailRun run)
         {
-            string observations = OpenLoopBurstTraceTests.BuildObservations(
-                BurstCount,
-                run.Digest,
-                run.Starts,
-                run.Completions
-            );
+            string observations = OpenLoopBurstTraceTests.BuildObservations(BurstCount, run.Digest, run.Starts, run.Completions);
             TestContext.Out.WriteLine("DXM_OPEN_LOOP_OBSERVATIONS_V1 " + observations);
         }
 
@@ -180,13 +168,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     Arrivals[burst] = checked(first + burst * spacing);
                 }
                 HorizonEnd = checked(first + BurstCount * spacing);
-                Schedule = OpenLoopBurstTraceTests.BuildSchedule(
-                    traceId,
-                    frequency,
-                    first,
-                    HorizonEnd,
-                    Arrivals
-                );
+                Schedule = OpenLoopBurstTraceTests.BuildSchedule(traceId, frequency, first, HorizonEnd, Arrivals);
                 Digest = OpenLoopBurstTraceTests.Digest(Schedule);
             }
 

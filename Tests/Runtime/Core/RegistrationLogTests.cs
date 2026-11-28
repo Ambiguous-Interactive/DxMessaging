@@ -32,46 +32,22 @@ namespace DxMessaging.Tests.Runtime.Core
             RegistrationLog log = new RegistrationLog(false, 3);
             IReadOnlyList<MessagingRegistration> view = log.Registrations;
             Assert.That(view, Is.Empty, "A newly captured view must start empty.");
-            Assert.That(
-                log.Registrations,
-                Is.SameAs(view),
-                "Repeated reads must return the same live view."
-            );
+            Assert.That(log.Registrations, Is.SameAs(view), "Repeated reads must return the same live view.");
             log.Enabled = true;
             for (int index = 0; index < 4; index++)
             {
                 log.Log(CreateRegistration(new InstanceId(index), typeof(SimpleUntargetedMessage)));
             }
-            CollectionAssert.AreEqual(
-                new[] { 1, 2, 3 },
-                view.Select(entry => entry.id.Id),
-                "A view captured before the first entry must observe the wrapped history."
-            );
-            Assert.That(
-                view[0].id.Id,
-                Is.EqualTo(1),
-                "Index zero must return the oldest retained entry."
-            );
-            Assert.That(
-                view[2].id.Id,
-                Is.EqualTo(3),
-                "The final index must return the newest retained entry."
-            );
+            CollectionAssert.AreEqual(new[] { 1, 2, 3 }, view.Select(entry => entry.id.Id), "A view captured before the first entry must observe the wrapped history.");
+            Assert.That(view[0].id.Id, Is.EqualTo(1), "Index zero must return the oldest retained entry.");
+            Assert.That(view[2].id.Id, Is.EqualTo(3), "The final index must return the newest retained entry.");
             log.Resize(2);
-            CollectionAssert.AreEqual(
-                new[] { 2, 3 },
-                view.Select(entry => entry.id.Id),
-                "The captured view must observe the newest entries after shrinking."
-            );
+            CollectionAssert.AreEqual(new[] { 2, 3 }, view.Select(entry => entry.id.Id), "The captured view must observe the newest entries after shrinking.");
             log.Resize(0);
             Assert.That(view, Is.Empty, "The captured view must observe zero capacity.");
             log.Resize(3);
             log.Log(CreateRegistration(FirstOwner, typeof(SimpleUntargetedMessage)));
-            Assert.That(
-                view.Single().id,
-                Is.EqualTo(FirstOwner),
-                "The captured view must observe recording after capacity grows."
-            );
+            Assert.That(view.Single().id, Is.EqualTo(FirstOwner), "The captured view must observe recording after capacity grows.");
             log.Clear();
             Assert.That(view, Is.Empty, "The captured view must observe clearing.");
         }
@@ -106,11 +82,7 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 log.Log(CreateRegistration(new InstanceId(i), typeof(SimpleUntargetedMessage)));
             }
-            Assert.That(
-                log.Registrations.Count,
-                Is.EqualTo(capacity),
-                $"capacity={capacity}: history must remain bounded."
-            );
+            Assert.That(log.Registrations.Count, Is.EqualTo(capacity), $"capacity={capacity}: history must remain bounded.");
             CollectionAssert.AreEqual(
                 Enumerable.Range(10 - capacity, capacity),
                 log.Registrations.Select(entry => entry.id.Id),
@@ -127,32 +99,16 @@ namespace DxMessaging.Tests.Runtime.Core
                 log.Log(CreateRegistration(new InstanceId(i), typeof(SimpleUntargetedMessage)));
             }
             log.Resize(2);
-            Assert.That(
-                log.ToString(entry => entry.id.Id.ToString()),
-                Is.EqualTo("[4, 5]"),
-                "Shrinking must keep the newest entries."
-            );
-            Assert.That(
-                log.Clear(entry => entry.id.Id % 2 == 0),
-                Is.EqualTo(1),
-                "Filtering must remove only the matching retained entry."
-            );
-            Assert.That(
-                log.Registrations.Single().id.Id,
-                Is.EqualTo(5),
-                "Filtering a wrapped log must preserve its survivor."
-            );
+            Assert.That(log.ToString(entry => entry.id.Id.ToString()), Is.EqualTo("[4, 5]"), "Shrinking must keep the newest entries.");
+            Assert.That(log.Clear(entry => entry.id.Id % 2 == 0), Is.EqualTo(1), "Filtering must remove only the matching retained entry.");
+            Assert.That(log.Registrations.Single().id.Id, Is.EqualTo(5), "Filtering a wrapped log must preserve its survivor.");
             Assert.That(log.Clear(), Is.EqualTo(1), "Full clear must report the retained count.");
             log.Resize(0);
             log.Log(CreateRegistration(FirstOwner, typeof(SimpleUntargetedMessage)));
             Assert.That(log.Registrations, Is.Empty, "Zero capacity must discard history.");
             log.Resize(2);
             log.Log(CreateRegistration(SecondOwner, typeof(SimpleUntargetedMessage)));
-            Assert.That(
-                log.Registrations.Single().id,
-                Is.EqualTo(SecondOwner),
-                "Growing from zero must resume recording without restoring discarded entries."
-            );
+            Assert.That(log.Registrations.Single().id, Is.EqualTo(SecondOwner), "Growing from zero must resume recording without restoring discarded entries.");
         }
 
 #if UNITY_2021_3_OR_NEWER
@@ -160,30 +116,16 @@ namespace DxMessaging.Tests.Runtime.Core
         public void RegistrationMetadataKeepsIdentityWithoutRetainingUnityObject()
         {
 #if UNITY_EDITOR
-            UnityEngine.GameObject owner = UnityEditor.EditorUtility.CreateGameObjectWithHideFlags(
-                "RegistrationHistoryOwner",
-                UnityEngine.HideFlags.HideAndDontSave
-            );
+            UnityEngine.GameObject owner = UnityEditor.EditorUtility.CreateGameObjectWithHideFlags("RegistrationHistoryOwner", UnityEngine.HideFlags.HideAndDontSave);
 #else
             UnityEngine.GameObject owner = new UnityEngine.GameObject("RegistrationHistoryOwner");
 #endif
             try
             {
                 InstanceId id = owner;
-                MessagingRegistration entry = CreateRegistration(
-                    id,
-                    typeof(SimpleUntargetedMessage)
-                );
-                Assert.That(
-                    entry.id,
-                    Is.EqualTo(id),
-                    "Removing the object reference must preserve numeric identity."
-                );
-                Assert.That(
-                    ReferenceEquals(entry.id.Object, null),
-                    Is.True,
-                    "Diagnostic history must not root a Unity object wrapper."
-                );
+                MessagingRegistration entry = CreateRegistration(id, typeof(SimpleUntargetedMessage));
+                Assert.That(entry.id, Is.EqualTo(id), "Removing the object reference must preserve numeric identity.");
+                Assert.That(ReferenceEquals(entry.id.Object, null), Is.True, "Diagnostic history must not root a Unity object wrapper.");
             }
             finally
             {
@@ -209,27 +151,15 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     for (int i = 0; i < 4; ++i)
                     {
-                        bus.Log.Log(
-                            CreateRegistration(new InstanceId(i), typeof(SimpleUntargetedMessage))
-                        );
+                        bus.Log.Log(CreateRegistration(new InstanceId(i), typeof(SimpleUntargetedMessage)));
                     }
-                    Assert.That(
-                        bus.Log.Registrations.Count,
-                        Is.EqualTo(2),
-                        "Both existing and newly created buses must use the configured bound."
-                    );
+                    Assert.That(bus.Log.Registrations.Count, Is.EqualTo(2), "Both existing and newly created buses must use the configured bound.");
                 }
                 settings._registrationLogCapacity = 1;
-                DxMessaging.Core.Configuration.DxMessagingRuntimeSettings.RaiseSettingsChanged(
-                    settings
-                );
+                DxMessaging.Core.Configuration.DxMessagingRuntimeSettings.RaiseSettingsChanged(settings);
                 foreach (MessageBus bus in new[] { existing, later })
                 {
-                    Assert.That(
-                        bus.Log.Registrations.Single().id.Id,
-                        Is.EqualTo(3),
-                        "A live capacity reduction must preserve only the newest entry."
-                    );
+                    Assert.That(bus.Log.Registrations.Single().id.Id, Is.EqualTo(3), "A live capacity reduction must preserve only the newest entry.");
                 }
             }
             finally
@@ -261,11 +191,7 @@ namespace DxMessaging.Tests.Runtime.Core
             log.Log(CreateRegistration(FirstOwner, typeof(SimpleUntargetedMessage)));
 
             Assert.AreEqual(1, log.Registrations.Count, "An enabled log must record entries.");
-            Assert.AreEqual(
-                FirstOwner,
-                log.Registrations[0].id,
-                "The recorded entry must carry the logged owner id."
-            );
+            Assert.AreEqual(FirstOwner, log.Registrations[0].id, "The recorded entry must carry the logged owner id.");
         }
 
         [Test]
@@ -276,30 +202,14 @@ namespace DxMessaging.Tests.Runtime.Core
 
             log.Enabled = false;
             log.Log(CreateRegistration(SecondOwner, typeof(SimpleTargetedMessage)));
-            Assert.AreEqual(
-                1,
-                log.Registrations.Count,
-                "Entries logged while disabled must be dropped."
-            );
+            Assert.AreEqual(1, log.Registrations.Count, "Entries logged while disabled must be dropped.");
 
             log.Enabled = true;
             log.Log(CreateRegistration(FirstOwner, typeof(SimpleBroadcastMessage)));
 
-            Assert.AreEqual(
-                2,
-                log.Registrations.Count,
-                "Re-enabling must resume recording without resurrecting dropped entries."
-            );
-            Assert.AreEqual(
-                typeof(SimpleUntargetedMessage),
-                log.Registrations[0].type,
-                "The first recorded entry must be the pre-disable one."
-            );
-            Assert.AreEqual(
-                typeof(SimpleBroadcastMessage),
-                log.Registrations[1].type,
-                "The second recorded entry must be the post-re-enable one."
-            );
+            Assert.AreEqual(2, log.Registrations.Count, "Re-enabling must resume recording without resurrecting dropped entries.");
+            Assert.AreEqual(typeof(SimpleUntargetedMessage), log.Registrations[0].type, "The first recorded entry must be the pre-disable one.");
+            Assert.AreEqual(typeof(SimpleBroadcastMessage), log.Registrations[1].type, "The second recorded entry must be the post-re-enable one.");
         }
 
         [Test]
@@ -308,46 +218,17 @@ namespace DxMessaging.Tests.Runtime.Core
             RegistrationLog log = new(enabled: true);
             log.Log(CreateRegistration(FirstOwner, typeof(SimpleUntargetedMessage)));
             log.Log(CreateRegistration(SecondOwner, typeof(SimpleTargetedMessage)));
-            log.Log(
-                CreateRegistration(
-                    FirstOwner,
-                    typeof(SimpleBroadcastMessage),
-                    RegistrationType.Deregister
-                )
-            );
+            log.Log(CreateRegistration(FirstOwner, typeof(SimpleBroadcastMessage), RegistrationType.Deregister));
 
-            List<MessagingRegistration> firstOwnerEntries = log.GetRegistrations(FirstOwner)
-                .ToList();
+            List<MessagingRegistration> firstOwnerEntries = log.GetRegistrations(FirstOwner).ToList();
 
-            Assert.AreEqual(
-                2,
-                firstOwnerEntries.Count,
-                "GetRegistrations must return only the entries for the requested id."
-            );
-            Assert.AreEqual(
-                typeof(SimpleUntargetedMessage),
-                firstOwnerEntries[0].type,
-                "Filtered entries must preserve insertion order (first entry)."
-            );
-            Assert.AreEqual(
-                typeof(SimpleBroadcastMessage),
-                firstOwnerEntries[1].type,
-                "Filtered entries must preserve insertion order (second entry)."
-            );
-            Assert.AreEqual(
-                RegistrationType.Deregister,
-                firstOwnerEntries[1].registrationType,
-                "Filtered entries must carry their original registration type."
-            );
-            Assert.IsTrue(
-                firstOwnerEntries.All(entry => entry.id == FirstOwner),
-                "Every filtered entry must match the requested id."
-            );
+            Assert.AreEqual(2, firstOwnerEntries.Count, "GetRegistrations must return only the entries for the requested id.");
+            Assert.AreEqual(typeof(SimpleUntargetedMessage), firstOwnerEntries[0].type, "Filtered entries must preserve insertion order (first entry).");
+            Assert.AreEqual(typeof(SimpleBroadcastMessage), firstOwnerEntries[1].type, "Filtered entries must preserve insertion order (second entry).");
+            Assert.AreEqual(RegistrationType.Deregister, firstOwnerEntries[1].registrationType, "Filtered entries must carry their original registration type.");
+            Assert.IsTrue(firstOwnerEntries.All(entry => entry.id == FirstOwner), "Every filtered entry must match the requested id.");
 
-            Assert.IsFalse(
-                log.GetRegistrations(UnknownOwner).Any(),
-                "GetRegistrations for an id that never registered must be empty."
-            );
+            Assert.IsFalse(log.GetRegistrations(UnknownOwner).Any(), "GetRegistrations for an id that never registered must be empty.");
         }
 
         [Test]
@@ -362,8 +243,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(
                 "[SimpleUntargetedMessage, SimpleTargetedMessage]",
                 formatted,
-                "The custom serializer must be applied to every entry, joined with "
-                    + "comma-space inside brackets."
+                "The custom serializer must be applied to every entry, joined with " + "comma-space inside brackets."
             );
         }
 
@@ -399,9 +279,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     switch (mutation)
                     {
                         case "Append":
-                            log.Log(
-                                CreateRegistration(new InstanceId(9), typeof(SimpleTargetedMessage))
-                            );
+                            log.Log(CreateRegistration(new InstanceId(9), typeof(SimpleTargetedMessage)));
                             break;
                         case "Clear":
                             log.Clear();
@@ -411,9 +289,7 @@ namespace DxMessaging.Tests.Runtime.Core
                             break;
                         case "GrowAndAppend":
                             log.Resize(4);
-                            log.Log(
-                                CreateRegistration(new InstanceId(9), typeof(SimpleTargetedMessage))
-                            );
+                            log.Log(CreateRegistration(new InstanceId(9), typeof(SimpleTargetedMessage)));
                             break;
                         case "FilteredClear":
                             log.Clear(entry => entry.id.Id == start + 1);
@@ -454,16 +330,8 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             int[] original = { start, start + 1, start + 2 };
-            CollectionAssert.AreEqual(
-                original,
-                visited,
-                $"{mutation}, wrap={wrap}: every original entry must reach the serializer once."
-            );
-            Assert.AreEqual(
-                $"[{start}, {start + 1}, {start + 2}]",
-                formatted,
-                $"{mutation}, wrap={wrap}: callback writes must not replace the formatted history."
-            );
+            CollectionAssert.AreEqual(original, visited, $"{mutation}, wrap={wrap}: every original entry must reach the serializer once.");
+            Assert.AreEqual($"[{start}, {start + 1}, {start + 2}]", formatted, $"{mutation}, wrap={wrap}: callback writes must not replace the formatted history.");
         }
 
         [TestCase(1)]
@@ -482,16 +350,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 log.Clear();
                 return entry.id.Id.ToString();
             });
-            CollectionAssert.AreEqual(
-                Enumerable.Range(0, count),
-                visited,
-                $"count={count}: a partially occupied ring must serialize only its original entries."
-            );
-            Assert.AreEqual(
-                count == 1 ? "[0]" : "[0, 1]",
-                formatted,
-                $"count={count}: formatting must not include unused ring capacity."
-            );
+            CollectionAssert.AreEqual(Enumerable.Range(0, count), visited, $"count={count}: a partially occupied ring must serialize only its original entries.");
+            Assert.AreEqual(count == 1 ? "[0]" : "[0, 1]", formatted, $"count={count}: formatting must not include unused ring capacity.");
             Assert.That(log.Registrations, Is.Empty, "Callback clearing must remain applied.");
         }
 
@@ -519,22 +379,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 return entry.id.Id.ToString();
             });
-            Assert.AreEqual(
-                "[9]",
-                nested,
-                "Nested formatting must use history from its own invocation."
-            );
-            Assert.AreEqual(
-                "[0, 1, 2]",
-                outer,
-                "Nested clearing must not corrupt the outer snapshot."
-            );
+            Assert.AreEqual("[9]", nested, "Nested formatting must use history from its own invocation.");
+            Assert.AreEqual("[0, 1, 2]", outer, "Nested clearing must not corrupt the outer snapshot.");
             Assert.AreEqual(3, calls, "Each original entry must be formatted exactly once.");
-            Assert.That(
-                log.Registrations,
-                Is.Empty,
-                "Nested callback clearing must remain applied."
-            );
+            Assert.That(log.Registrations, Is.Empty, "Nested callback clearing must remain applied.");
         }
 
         [Test]
@@ -543,43 +391,28 @@ namespace DxMessaging.Tests.Runtime.Core
             RegistrationLog log = new RegistrationLog(true, 3);
             log.Log(CreateRegistration(FirstOwner, typeof(SimpleUntargetedMessage)));
             log.Log(CreateRegistration(SecondOwner, typeof(SimpleTargetedMessage)));
-            System.InvalidOperationException failure = new System.InvalidOperationException(
-                "serializer failed"
-            );
+            System.InvalidOperationException failure = new System.InvalidOperationException("serializer failed");
             int calls = 0;
-            System.InvalidOperationException actual =
-                Assert.Throws<System.InvalidOperationException>(
-                    () =>
-                        log.ToString(entry =>
-                        {
-                            calls++;
-                            log.Clear();
-                            log.Log(
-                                CreateRegistration(UnknownOwner, typeof(SimpleBroadcastMessage))
-                            );
-                            throw failure;
-                        }),
-                    "The original serializer failure must propagate."
-                );
+            System.InvalidOperationException actual = Assert.Throws<System.InvalidOperationException>(
+                () =>
+                    log.ToString(entry =>
+                    {
+                        calls++;
+                        log.Clear();
+                        log.Log(CreateRegistration(UnknownOwner, typeof(SimpleBroadcastMessage)));
+                        throw failure;
+                    }),
+                "The original serializer failure must propagate."
+            );
             Assert.That(actual, Is.SameAs(failure), "Formatting must preserve exception identity.");
             Assert.AreEqual(1, calls, "Formatting must stop at the throwing callback.");
-            Assert.That(
-                log.Registrations.Single().id,
-                Is.EqualTo(UnknownOwner),
-                "Completed callback changes must survive a serializer failure."
-            );
-            Assert.AreEqual(
-                "[303]",
-                log.ToString(entry => entry.id.Id.ToString()),
-                "A later formatting call must use current history without stale snapshot entries."
-            );
+            Assert.That(log.Registrations.Single().id, Is.EqualTo(UnknownOwner), "Completed callback changes must survive a serializer failure.");
+            Assert.AreEqual("[303]", log.ToString(entry => entry.id.Id.ToString()), "A later formatting call must use current history without stale snapshot entries.");
         }
 
         [TestCase(false)]
         [TestCase(true)]
-        public void DefaultFormattingRetainsSnapshotWhenTypeFormattingChangesHistory(
-            bool explicitNull
-        )
+        public void DefaultFormattingRetainsSnapshotWhenTypeFormattingChangesHistory(bool explicitNull)
         {
             RegistrationLog log = new RegistrationLog(true, 3);
             ReentrantDiagnosticType type = new ReentrantDiagnosticType();
@@ -596,17 +429,9 @@ namespace DxMessaging.Tests.Runtime.Core
 
             string actual = explicitNull ? log.ToString(null) : log.ToString();
 
-            Assert.AreEqual(
-                expected,
-                actual,
-                "Both default formatter entry points must preserve original history."
-            );
+            Assert.AreEqual(expected, actual, "Both default formatter entry points must preserve original history.");
             Assert.AreEqual(1, calls, "The original Type formatter must run once.");
-            Assert.That(
-                log.Registrations.Single().id,
-                Is.EqualTo(UnknownOwner),
-                "Default formatting must preserve completed Type formatter changes."
-            );
+            Assert.That(log.Registrations.Single().id, Is.EqualTo(UnknownOwner), "Default formatting must preserve completed Type formatter changes.");
         }
 
         private sealed class ReentrantDiagnosticType : System.Reflection.TypeDelegator
@@ -629,17 +454,8 @@ namespace DxMessaging.Tests.Runtime.Core
             RegistrationLog log = new(enabled: true);
             log.Log(CreateRegistration(FirstOwner, typeof(SimpleUntargetedMessage)));
 
-            Assert.AreEqual(
-                log.ToString(),
-                log.ToString(null),
-                "A null serializer must fall back to the default MessagingRegistration "
-                    + "formatting."
-            );
-            StringAssert.Contains(
-                typeof(SimpleUntargetedMessage).FullName,
-                log.ToString(),
-                "Default formatting must include the registered message type."
-            );
+            Assert.AreEqual(log.ToString(), log.ToString(null), "A null serializer must fall back to the default MessagingRegistration " + "formatting.");
+            StringAssert.Contains(typeof(SimpleUntargetedMessage).FullName, log.ToString(), "Default formatting must include the registered message type.");
         }
 
         [Test]
@@ -647,12 +463,7 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             RegistrationLog log = new(enabled: true);
             Assert.AreEqual("[]", log.ToString(), "Default ToString of an empty log must be [].");
-            Assert.AreEqual(
-                "[]",
-                log.ToString(registration => "never-invoked"),
-                "Custom-serializer ToString of an empty log must be [] without invoking "
-                    + "the serializer."
-            );
+            Assert.AreEqual("[]", log.ToString(registration => "never-invoked"), "Custom-serializer ToString of an empty log must be [] without invoking " + "the serializer.");
         }
 
         [Test]
@@ -666,34 +477,17 @@ namespace DxMessaging.Tests.Runtime.Core
             int removed = log.Clear(registration => registration.id == FirstOwner);
 
             Assert.AreEqual(2, removed, "Predicate Clear must report the removed count.");
-            Assert.AreEqual(
-                1,
-                log.Registrations.Count,
-                "Predicate Clear must keep non-matching entries."
-            );
-            Assert.AreEqual(
-                SecondOwner,
-                log.Registrations[0].id,
-                "The surviving entry must be the non-matching one."
-            );
+            Assert.AreEqual(1, log.Registrations.Count, "Predicate Clear must keep non-matching entries.");
+            Assert.AreEqual(SecondOwner, log.Registrations[0].id, "The surviving entry must be the non-matching one.");
 
             int removedAll = log.Clear();
             Assert.AreEqual(1, removedAll, "Parameterless Clear must report the removed count.");
             Assert.AreEqual(0, log.Registrations.Count, "Parameterless Clear must empty the log.");
         }
 
-        private static MessagingRegistration CreateRegistration(
-            InstanceId id,
-            System.Type messageType,
-            RegistrationType registrationType = RegistrationType.Register
-        )
+        private static MessagingRegistration CreateRegistration(InstanceId id, System.Type messageType, RegistrationType registrationType = RegistrationType.Register)
         {
-            return new MessagingRegistration(
-                id,
-                messageType,
-                registrationType,
-                RegistrationMethod.Untargeted
-            );
+            return new MessagingRegistration(id, messageType, registrationType, RegistrationMethod.Untargeted);
         }
     }
 }

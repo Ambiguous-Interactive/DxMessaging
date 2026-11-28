@@ -158,15 +158,9 @@ namespace DxMessaging.Tests.Editor.Allocations
 
         private static void NoOpGlobalUntargeted(in IUntargetedMessage message) { }
 
-        private static void NoOpGlobalTargeted(
-            in InstanceId target,
-            in ITargetedMessage message
-        ) { }
+        private static void NoOpGlobalTargeted(in InstanceId target, in ITargetedMessage message) { }
 
-        private static void NoOpGlobalBroadcast(
-            in InstanceId source,
-            in IBroadcastMessage message
-        ) { }
+        private static void NoOpGlobalBroadcast(in InstanceId source, in IBroadcastMessage message) { }
 
         private static MessageBus NewBus()
         {
@@ -207,18 +201,12 @@ namespace DxMessaging.Tests.Editor.Allocations
         {
             MessageBus actionBus = NewBus();
             MessageHandler actionHandler = new MessageHandler(Owner, actionBus) { active = true };
-            MessageRegistrationToken actionToken = MessageRegistrationToken.Create(
-                actionHandler,
-                actionBus
-            );
+            MessageRegistrationToken actionToken = MessageRegistrationToken.Create(actionHandler, actionBus);
             actionToken.Enable();
 
             MessageBus fastBus = NewBus();
             MessageHandler fastHandler = new MessageHandler(Owner, fastBus) { active = true };
-            MessageRegistrationToken fastToken = MessageRegistrationToken.Create(
-                fastHandler,
-                fastBus
-            );
+            MessageRegistrationToken fastToken = MessageRegistrationToken.Create(fastHandler, fastBus);
             fastToken.Enable();
 
             /*
@@ -253,10 +241,7 @@ namespace DxMessaging.Tests.Editor.Allocations
                         _ = actionToken.RegisterUntargeted<SimpleUntargetedMessage>(NoOpAction);
                     }
                 });
-                if (
-                    fastCount == AllocationProbe.Unmeasured
-                    || actionCount == AllocationProbe.Unmeasured
-                )
+                if (fastCount == AllocationProbe.Unmeasured || actionCount == AllocationProbe.Unmeasured)
                 {
                     Assert.Ignore("GC.Alloc allocation probe is non-functional on this backend.");
                 }
@@ -303,18 +288,12 @@ namespace DxMessaging.Tests.Editor.Allocations
         {
             MessageBus actionBus = NewBus();
             MessageHandler actionHandler = new MessageHandler(Owner, actionBus) { active = true };
-            MessageRegistrationToken actionToken = MessageRegistrationToken.Create(
-                actionHandler,
-                actionBus
-            );
+            MessageRegistrationToken actionToken = MessageRegistrationToken.Create(actionHandler, actionBus);
             actionToken.Enable();
 
             MessageBus fastBus = NewBus();
             MessageHandler fastHandler = new MessageHandler(Owner, fastBus) { active = true };
-            MessageRegistrationToken fastToken = MessageRegistrationToken.Create(
-                fastHandler,
-                fastBus
-            );
+            MessageRegistrationToken fastToken = MessageRegistrationToken.Create(fastHandler, fastBus);
             fastToken.Enable();
 
             /*
@@ -323,14 +302,8 @@ namespace DxMessaging.Tests.Editor.Allocations
             */
             for (int i = 0; i < WarmupRegistrations + SettleRegistrations; ++i)
             {
-                _ = actionToken.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
-                    PostProcessorTarget,
-                    NoOpTargetedActionPostProcessor
-                );
-                _ = fastToken.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
-                    PostProcessorTarget,
-                    NoOpTargetedPostProcessor
-                );
+                _ = actionToken.RegisterTargetedPostProcessor<SimpleTargetedMessage>(PostProcessorTarget, NoOpTargetedActionPostProcessor);
+                _ = fastToken.RegisterTargetedPostProcessor<SimpleTargetedMessage>(PostProcessorTarget, NoOpTargetedPostProcessor);
             }
 
             if (!AllocationProbe.IsFunctional)
@@ -345,26 +318,17 @@ namespace DxMessaging.Tests.Editor.Allocations
                 {
                     for (int i = 0; i < MeasuredRegistrations; ++i)
                     {
-                        _ = fastToken.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
-                            PostProcessorTarget,
-                            NoOpTargetedPostProcessor
-                        );
+                        _ = fastToken.RegisterTargetedPostProcessor<SimpleTargetedMessage>(PostProcessorTarget, NoOpTargetedPostProcessor);
                     }
                 });
                 long actionCount = AllocationProbe.Measure(() =>
                 {
                     for (int i = 0; i < MeasuredRegistrations; ++i)
                     {
-                        _ = actionToken.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
-                            PostProcessorTarget,
-                            NoOpTargetedActionPostProcessor
-                        );
+                        _ = actionToken.RegisterTargetedPostProcessor<SimpleTargetedMessage>(PostProcessorTarget, NoOpTargetedActionPostProcessor);
                     }
                 });
-                if (
-                    fastCount == AllocationProbe.Unmeasured
-                    || actionCount == AllocationProbe.Unmeasured
-                )
+                if (fastCount == AllocationProbe.Unmeasured || actionCount == AllocationProbe.Unmeasured)
                 {
                     Assert.Ignore("GC.Alloc allocation probe is non-functional on this backend.");
                 }
@@ -403,17 +367,13 @@ namespace DxMessaging.Tests.Editor.Allocations
                 accumulate); the minimum skips the attempts where a bus-array resize lands
                 in the window, leaving the steady per-registration floor.
             */
-            long registrationCount = AllocationProbe.MeasureMin(
-                MinAttempts,
-                prepare: null,
-                operation: () =>
+            long registrationCount = AllocationProbe.MeasureMin(MinAttempts, prepare: null, operation: () =>
+            {
+                for (int i = 0; i < MeasuredRegistrations; ++i)
                 {
-                    for (int i = 0; i < MeasuredRegistrations; ++i)
-                    {
-                        _ = token.RegisterUntargeted<SimpleUntargetedMessage>(NoOp);
-                    }
+                    _ = token.RegisterUntargeted<SimpleUntargetedMessage>(NoOp);
                 }
-            );
+            });
 
             if (registrationCount == AllocationProbe.Unmeasured)
             {
@@ -438,25 +398,17 @@ namespace DxMessaging.Tests.Editor.Allocations
         {
             MessageBus bus = NewBus();
             MessageHandler handler = new MessageHandler(Owner, bus) { active = true };
-            MessageBusRegistration warm = bus.RegisterUntargeted<SimpleUntargetedMessage>(
-                handler,
-                priority: 0
-            );
+            MessageBusRegistration warm = bus.RegisterUntargeted<SimpleUntargetedMessage>(handler, priority: 0);
             bus.Deregister<SimpleUntargetedMessage>(in warm);
 
-            long allocationCount = AllocationProbe.MeasureMin(
-                MinAttempts,
-                prepare: null,
-                operation: () =>
+            long allocationCount = AllocationProbe.MeasureMin(MinAttempts, prepare: null, operation: () =>
+            {
+                for (int i = 0; i < MeasuredDirectBusChurnCycles; ++i)
                 {
-                    for (int i = 0; i < MeasuredDirectBusChurnCycles; ++i)
-                    {
-                        MessageBusRegistration registration =
-                            bus.RegisterUntargeted<SimpleUntargetedMessage>(handler, priority: 0);
-                        bus.Deregister<SimpleUntargetedMessage>(in registration);
-                    }
+                    MessageBusRegistration registration = bus.RegisterUntargeted<SimpleUntargetedMessage>(handler, priority: 0);
+                    bus.Deregister<SimpleUntargetedMessage>(in registration);
                 }
-            );
+            });
 
             if (allocationCount == AllocationProbe.Unmeasured)
             {
@@ -466,8 +418,7 @@ namespace DxMessaging.Tests.Editor.Allocations
             Assert.AreEqual(
                 0,
                 allocationCount,
-                $"{MeasuredDirectBusChurnCycles} warmed direct-bus register/remove cycles must "
-                    + "reuse the detached priority leaf without managed allocation calls."
+                $"{MeasuredDirectBusChurnCycles} warmed direct-bus register/remove cycles must " + "reuse the detached priority leaf without managed allocation calls."
             );
             handler.active = false;
         }
@@ -478,90 +429,67 @@ namespace DxMessaging.Tests.Editor.Allocations
         {
             MessageHandler.FastHandler<SimpleUntargetedMessage> typedHandlerDelegate = NoOp;
             MessageHandler.FastHandler<IUntargetedMessage> globalUntargeted = NoOpGlobalUntargeted;
-            MessageHandler.FastHandlerWithContext<ITargetedMessage> globalTargeted =
-                NoOpGlobalTargeted;
-            MessageHandler.FastHandlerWithContext<IBroadcastMessage> globalBroadcast =
-                NoOpGlobalBroadcast;
+            MessageHandler.FastHandlerWithContext<ITargetedMessage> globalTargeted = NoOpGlobalTargeted;
+            MessageHandler.FastHandlerWithContext<IBroadcastMessage> globalBroadcast = NoOpGlobalBroadcast;
 
             MessageBus typedBus = NewBus();
             MessageHandler typedHandler = new MessageHandler(Owner, typedBus) { active = true };
             using LeakWatcher typedLeaks = new(typedBus, label: "typed materiality baseline");
-            using MessageRegistrationToken typedToken = MessageRegistrationToken.Create(
-                typedHandler,
-                typedBus
-            );
+            using MessageRegistrationToken typedToken = MessageRegistrationToken.Create(typedHandler, typedBus);
             typedToken.Enable();
 
             MessageBus globalBus = NewBus();
             MessageHandler globalHandler = new MessageHandler(Owner, globalBus) { active = true };
             using LeakWatcher globalLeaks = new(globalBus, label: "global materiality baseline");
-            using MessageRegistrationToken globalToken = MessageRegistrationToken.Create(
-                globalHandler,
-                globalBus
-            );
+            using MessageRegistrationToken globalToken = MessageRegistrationToken.Create(globalHandler, globalBus);
             globalToken.Enable();
 
             for (int i = 0; i < WarmupRegistrations + SettleRegistrations; ++i)
             {
                 _ = typedToken.RegisterUntargeted(typedHandlerDelegate);
-                _ = globalToken.RegisterGlobalAcceptAll(
-                    globalUntargeted,
-                    globalTargeted,
-                    globalBroadcast
-                );
+                _ = globalToken.RegisterGlobalAcceptAll(globalUntargeted, globalTargeted, globalBroadcast);
             }
 
             int typedRegistrationCountBeforeAttempt = 0;
-            AllocationProbe.MinimumMeasurement<int> typedMeasurement =
-                AllocationProbe.MeasureMinWithDiagnostics(
-                    MinAttempts,
-                    prepare: () => typedRegistrationCountBeforeAttempt = typedToken._metadata.Count,
-                    operation: () =>
+            AllocationProbe.MinimumMeasurement<int> typedMeasurement = AllocationProbe.MeasureMinWithDiagnostics(
+                MinAttempts,
+                prepare: () => typedRegistrationCountBeforeAttempt = typedToken._metadata.Count,
+                operation: () =>
+                {
+                    for (int i = 0; i < MeasuredRegistrations; ++i)
                     {
-                        for (int i = 0; i < MeasuredRegistrations; ++i)
-                        {
-                            _ = typedToken.RegisterUntargeted(typedHandlerDelegate);
-                        }
-
-                        return typedToken._metadata.Count - typedRegistrationCountBeforeAttempt;
+                        _ = typedToken.RegisterUntargeted(typedHandlerDelegate);
                     }
-                );
+
+                    return typedToken._metadata.Count - typedRegistrationCountBeforeAttempt;
+                }
+            );
             int globalRegistrationCountBeforeAttempt = 0;
-            AllocationProbe.MinimumMeasurement<int> globalMeasurement =
-                AllocationProbe.MeasureMinWithDiagnostics(
-                    MinAttempts,
-                    prepare: () =>
-                        globalRegistrationCountBeforeAttempt = globalToken._metadata.Count,
-                    operation: () =>
+            AllocationProbe.MinimumMeasurement<int> globalMeasurement = AllocationProbe.MeasureMinWithDiagnostics(
+                MinAttempts,
+                prepare: () => globalRegistrationCountBeforeAttempt = globalToken._metadata.Count,
+                operation: () =>
+                {
+                    for (int i = 0; i < MeasuredRegistrations; ++i)
                     {
-                        for (int i = 0; i < MeasuredRegistrations; ++i)
-                        {
-                            _ = globalToken.RegisterGlobalAcceptAll(
-                                globalUntargeted,
-                                globalTargeted,
-                                globalBroadcast
-                            );
-                        }
-
-                        return globalToken._metadata.Count - globalRegistrationCountBeforeAttempt;
+                        _ = globalToken.RegisterGlobalAcceptAll(globalUntargeted, globalTargeted, globalBroadcast);
                     }
-                );
+
+                    return globalToken._metadata.Count - globalRegistrationCountBeforeAttempt;
+                }
+            );
 
             long typedCount = typedMeasurement.GcAllocations;
             long globalCount = globalMeasurement.GcAllocations;
 
-            if (
-                typedCount == AllocationProbe.Unmeasured
-                || globalCount == AllocationProbe.Unmeasured
-            )
+            if (typedCount == AllocationProbe.Unmeasured || globalCount == AllocationProbe.Unmeasured)
             {
                 Assert.Ignore("GC.Alloc allocation probe is non-functional on this backend.");
             }
 
             Assert.AreEqual(MeasuredRegistrations, typedMeasurement.Diagnostics);
             Assert.AreEqual(MeasuredRegistrations, globalMeasurement.Diagnostics);
-            int expectedRegistrationCount =
-                WarmupRegistrations + SettleRegistrations + MinAttempts * MeasuredRegistrations;
+            int expectedRegistrationCount = WarmupRegistrations + SettleRegistrations + MinAttempts * MeasuredRegistrations;
             Assert.AreEqual(expectedRegistrationCount, typedToken._metadata.Count);
             Assert.AreEqual(expectedRegistrationCount, globalToken._metadata.Count);
             Assert.AreEqual(1, typedBus.RegisteredUntargeted);

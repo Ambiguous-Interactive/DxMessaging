@@ -1,6 +1,10 @@
 ---
 name: package-publishing
-description: "Controlling what ships in the com.wallstop-studios.dxmessaging npm/UPM package: the package.json files allowlist versus .npmignore exclusions, Unity .meta pairing rules for every shipped file and directory, the issue #204 tarball invariants verified against npm pack --json --dry-run, and where RoslynAnalyzer-labeled DLLs must live (Runtime/Analyzers/, never an editor-only asmdef) so the source generator reaches Assembly-CSharp. Use when adding or excluding files from the package, adding a new output directory, seeing CS0315/CS0452 on consumer [Dx*Message] types, or building and verifying the analyzer payload."
+description:
+  "Controlling what ships in the com.wallstop-studios.dxmessaging npm/UPM package: the package.json files allowlist versus .npmignore exclusions, Unity .meta pairing rules for
+  every shipped file and directory, the issue #204 tarball invariants verified against npm pack --json --dry-run, and where RoslynAnalyzer-labeled DLLs must live
+  (Runtime/Analyzers/, never an editor-only asmdef) so the source generator reaches Assembly-CSharp. Use when adding or excluding files from the package, adding a new output
+  directory, seeing CS0315/CS0452 on consumer [Dx*Message] types, or building and verifying the analyzer payload."
 metadata:
   category: "packaging"
   tags: "npm, packaging, configuration, files, npmignore, unity"
@@ -8,93 +12,69 @@ metadata:
 
 # Package Publishing
 
-The package ships to npm and is consumed as a Unity UPM package. Two things decide whether a
-consumer's project works: which files land in the tarball (with their `.meta` companions), and
-where the `RoslynAnalyzer`-labeled DLLs sit inside it.
+The package ships to npm and is consumed as a Unity UPM package. Two things decide whether a consumer's project works: which files land in the tarball (with their `.meta`
+companions), and where the `RoslynAnalyzer`-labeled DLLs sit inside it.
 
 ## When to use
 
 - Adding, moving, or excluding files from the published package.
 - A script starts writing to a new top-level output directory.
 - Build artifacts or orphaned `.meta` files show up in the tarball.
-- Consumer `[DxTargetedMessage]` / `[DxUntargetedMessage]` / `[DxBroadcastMessage]` /
-  `[DxAutoConstructor]` types fail with `CS0315` or `CS0452`.
+- Consumer `[DxTargetedMessage]` / `[DxUntargetedMessage]` / `[DxBroadcastMessage]` / `[DxAutoConstructor]` types fail with `CS0315` or `CS0452`.
 - Building, refreshing, or verifying the committed analyzer DLLs.
 
 ## Rules
 
 ### Release hold
 
-- Do not publish this package while any open issue in the 4.0.0 milestone remains or while
-  #575's technical/human gates are incomplete. Close #575 last, after wallstop records the
-  exact-candidate approval marker and before the release PR merges. `release-tag.yml` and
-  `release.yml` fail closed unless the milestone is empty, #575 is closed as completed, and the
-  marker matches the exact version, tree and package bytes; never bypass those checks.
+- Do not publish this package while any open issue in the 4.0.0 milestone remains or while #575's technical/human gates are incomplete. Close #575 last, after wallstop records the
+  exact-candidate approval marker and before the release PR merges. `release-tag.yml` and `release.yml` fail closed unless the milestone is empty, #575 is closed as completed, and
+  the marker matches the exact version, tree and package bytes; never bypass those checks.
 
 ### files versus .npmignore
 
-- `package.json` `"files"` is a pure ALLOWLIST of what to include. `.npmignore` is an
-  EXCLUSION list applied to what the allowlist already admitted. The pipeline is
-  repository files, then the allowlist, then the exclusions.
+- `package.json` `"files"` is a pure ALLOWLIST of what to include. `.npmignore` is an EXCLUSION list applied to what the allowlist already admitted. The pipeline is repository
+  files, then the allowlist, then the exclusions.
 - Never use negated (`!`) patterns in `"files"`. Put the exclusion in `.npmignore` instead.
 - Prefer specific glob patterns over broad wildcards for complex trees.
-- Ship only the compiled first-party analyzer DLLs under `Runtime/Analyzers/`. Do not include the
-  `SourceGenerators/` development projects, source, build props, or SDK pin in the consumer package.
-- npm always includes `package.json`, `README`, `LICENSE`, and `CHANGELOG` regardless of
-  configuration.
-- `.npmignore` still earns its place for subdirectories inside broadly included paths, for
-  build artifacts (`**/bin/`, `**/obj/`, `**/.vs/`, `**/*.pdb`), and as defense in depth if the
-  allowlist changes. It is NOT a copy of `.gitignore`. Give it a header explaining the
-  allowlist/exclusion split and organize it into commented sections.
+- Ship only the compiled first-party analyzer DLLs under `Runtime/Analyzers/`. Do not include the `SourceGenerators/` development projects, source, build props, or SDK pin in the
+  consumer package.
+- npm always includes `package.json`, `README`, `LICENSE`, and `CHANGELOG` regardless of configuration.
+- `.npmignore` still earns its place for subdirectories inside broadly included paths, for build artifacts (`**/bin/`, `**/obj/`, `**/.vs/`, `**/*.pdb`), and as defense in depth if
+  the allowlist changes. It is NOT a copy of `.gitignore`. Give it a header explaining the allowlist/exclusion split and organize it into commented sections.
 
 ### Unity .meta pairing
 
-- Every included file and directory needs its `.meta` in the allowlist: `Editor.meta`,
-  `Runtime.meta`, `package.json.meta`, `README.md.meta`, and so on.
-- Every excluded directory must have its `.meta` excluded too, or the tarball ships orphaned
-  metadata. Always pair them: `Tests/` with `Tests.meta` and `scripts/` with `scripts.meta`.
+- Every included file and directory needs its `.meta` in the allowlist: `Editor.meta`, `Runtime.meta`, `package.json.meta`, `README.md.meta`, and so on.
+- Every excluded directory must have its `.meta` excluded too, or the tarball ships orphaned metadata. Always pair them: `Tests/` with `Tests.meta` and `scripts/` with
+  `scripts.meta`.
 
 ### Tarball invariants (issue #204)
 
-Verify these against real `npm pack --json --dry-run` output, never a config-string proxy,
-whenever packaging metadata changes:
+Verify these against real `npm pack --json --dry-run` output, never a config-string proxy, whenever packaging metadata changes:
 
-1. No `bin/`, `obj/`, `*.pdb`, `*.tmp`, `*.csproj.user`, `.vs/`, `.idea/`, `*.suo`, or
-   `*.DotSettings.user` paths appear in the tarball.
-1. Every shipped Unity-relevant path has its `.meta` neighbour (`Foo.cs` with `Foo.cs.meta`,
-   `Foo.asmdef` with `Foo.asmdef.meta`).
-1. Every shipped directory has its directory `.meta`. If `Runtime/Core/Foo.cs` ships, so must
-   `Runtime/Core.meta` and `Runtime.meta`.
+1. No `bin/`, `obj/`, `*.pdb`, `*.tmp`, `*.csproj.user`, `.vs/`, `.idea/`, `*.suo`, or `*.DotSettings.user` paths appear in the tarball.
+1. Every shipped Unity-relevant path has its `.meta` neighbour (`Foo.cs` with `Foo.cs.meta`, `Foo.asmdef` with `Foo.asmdef.meta`).
+1. Every shipped directory has its directory `.meta`. If `Runtime/Core/Foo.cs` ships, so must `Runtime/Core.meta` and `Runtime.meta`.
 
-When a script writes to a new top-level directory (`.artifacts/`, `.profiler-output/`,
-`.unity-test-project/`), add it to BOTH `.gitignore` and `.npmignore` in the same change.
+When a script writes to a new top-level directory (`.artifacts/`, `.profiler-output/`, `.unity-test-project/`), add it to BOTH `.gitignore` and `.npmignore` in the same change.
 
 ### Shipping the Roslyn analyzer
 
-- Unity scopes a folder-resident analyzer DLL (one labeled `RoslynAnalyzer` in its `.meta`
-  `labels:` sequence) by the nearest enclosing asmdef: the analyzer applies to that assembly
-  AND every assembly that references it. With no enclosing asmdef it applies to all predefined
-  assemblies.
-- The DLLs must ship under `Runtime/Analyzers/`, governed by the all-platforms engine-free asmdef
-  `WallstopStudios.DxMessaging.Attributes`. Runtime and attribute-using assemblies reference this scope,
-  including the predefined `Assembly-CSharp`, so consumers who never adopted asmdefs are
-  covered, without polluting unrelated compilations. Keep direct attributes references in each
-  attribute-using asmdef; runtime type forwarding does not add compile references.
-- Never ship them under an editor-only asmdef. That was issue #229: `Editor/Analyzers/` under
-  `WallstopStudios.DxMessaging.Editor` meant no consumer RUNTIME assembly could reference it,
-  so `Assembly-CSharp` never got the generator and `[Dx*Message]` types failed with `CS0315` /
-  `CS0452`.
-- Without the `RoslynAnalyzer` label Unity loads the DLL as a plain managed plugin. With it,
-  Unity treats the DLL as a compiler input and excludes it from player builds, so
+- Unity scopes a folder-resident analyzer DLL (one labeled `RoslynAnalyzer` in its `.meta` `labels:` sequence) by the nearest enclosing asmdef: the analyzer applies to that
+  assembly AND every assembly that references it. With no enclosing asmdef it applies to all predefined assemblies.
+- The DLLs must ship under `Runtime/Analyzers/`, governed by the all-platforms engine-free asmdef `WallstopStudios.DxMessaging.Attributes`. Runtime and attribute-using assemblies
+  reference this scope, including the predefined `Assembly-CSharp`, so consumers who never adopted asmdefs are covered, without polluting unrelated compilations. Keep direct
+  attributes references in each attribute-using asmdef; runtime type forwarding does not add compile references.
+- Never ship them under an editor-only asmdef. That was issue #229: `Editor/Analyzers/` under `WallstopStudios.DxMessaging.Editor` meant no consumer RUNTIME assembly could
+  reference it, so `Assembly-CSharp` never got the generator and `[Dx*Message]` types failed with `CS0315` / `CS0452`.
+- Without the `RoslynAnalyzer` label Unity loads the DLL as a plain managed plugin. With it, Unity treats the DLL as a compiler input and excludes it from player builds, so
   `Runtime/Analyzers/` adds zero bytes to a consumer's build output.
-- Do not copy analyzer DLLs into the consumer's `Assets/Plugins/Editor/`; that mechanism is
-  retired and a vendored copy double-applies the generator. The automatic upgrade cleanup
-  deletes the retired folder only when it holds the first-party source-generator DLL plus exact
-  known legacy analyzer/dependency DLL names with optional `.dll.meta` sidecars; any foreign
-  file, subfolder, or duplicate name preserves the folder and logs one warning.
-- `scripts/__tests__/analyzer-runtime-placement.test.js` pins the placement: both first-party
-  DLLs plus `.meta` sidecars exist under `Runtime/Analyzers/`, and no `RoslynAnalyzer`-labeled
-  DLL under `Runtime/` or `Editor/` resolves to an editor-only asmdef.
+- Do not copy analyzer DLLs into the consumer's `Assets/Plugins/Editor/`; that mechanism is retired and a vendored copy double-applies the generator. The automatic upgrade cleanup
+  deletes the retired folder only when it holds the first-party source-generator DLL plus exact known legacy analyzer/dependency DLL names with optional `.dll.meta` sidecars; any
+  foreign file, subfolder, or duplicate name preserves the folder and logs one warning.
+- `scripts/__tests__/analyzer-runtime-placement.test.js` pins the placement: both first-party DLLs plus `.meta` sidecars exist under `Runtime/Analyzers/`, and no
+  `RoslynAnalyzer`-labeled DLL under `Runtime/` or `Editor/` resolves to an editor-only asmdef.
 
 ### Verification commands
 

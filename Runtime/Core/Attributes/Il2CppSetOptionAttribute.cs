@@ -38,11 +38,7 @@ namespace Unity.IL2CPP.CompilerServices
     /// a violated invariant is memory corruption instead of a managed
     /// exception.
     /// </remarks>
-    [AttributeUsage(
-        AttributeTargets.Class | AttributeTargets.Method | AttributeTargets.Property,
-        Inherited = false,
-        AllowMultiple = true
-    )]
+    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method | AttributeTargets.Property, Inherited = false, AllowMultiple = true)]
     internal sealed class Il2CppSetOptionAttribute : Attribute
     {
         public Option Option { get; private set; }

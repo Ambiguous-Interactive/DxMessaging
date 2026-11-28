@@ -93,9 +93,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
             {
                 return null;
             }
-            return scenario == ComparisonScenario.StructMessageNoBoxing
-                ? typeof(ComparisonStructPayload)
-                : typeof(int);
+            return scenario == ComparisonScenario.StructMessageNoBoxing ? typeof(ComparisonStructPayload) : typeof(int);
         }
 
         public void Prepare(ComparisonScenario scenario)
@@ -158,9 +156,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                     builder.AddMessageBroker<int>();
                     BuildProvider(builder);
                     ResolveKeylessBroker();
-                    _subscriptions.Add(
-                        _subscriber.Subscribe(Handle, Allow, new PostProcessingFilter())
-                    );
+                    _subscriptions.Add(_subscriber.Subscribe(Handle, Allow, new PostProcessingFilter()));
                     return;
                 case ComparisonScenario.SubscribeUnsubscribeChurn:
                     builder.AddMessageBroker<int>();
@@ -171,12 +167,8 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                 case ComparisonScenario.StructMessageNoBoxing:
                     builder.AddMessageBroker<ComparisonStructPayload>();
                     BuildProvider(builder);
-                    _structPublisher = _provider.GetRequiredService<
-                        IPublisher<ComparisonStructPayload>
-                    >();
-                    _structSubscriber = _provider.GetRequiredService<
-                        ISubscriber<ComparisonStructPayload>
-                    >();
+                    _structPublisher = _provider.GetRequiredService<IPublisher<ComparisonStructPayload>>();
+                    _structSubscriber = _provider.GetRequiredService<ISubscriber<ComparisonStructPayload>>();
                     _subscriptions.Add(_structSubscriber.Subscribe(HandleStruct));
                     return;
                 default:

@@ -55,8 +55,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.IsFalse(lease.Token.Enabled);
 
             MessageBus providerBus = new MessageBus();
-            TestScriptableMessageBusProvider provider =
-                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
+            TestScriptableMessageBusProvider provider = ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
             try
             {
                 provider.Configure(providerBus);
@@ -69,10 +68,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 UnityEngine.Object.DestroyImmediate(provider);
 
                 using MessageRegistrationLease destroyedLease = builder.Build(options);
-                Assert.IsNull(
-                    destroyedLease.MessageBus,
-                    "A destroyed constructor provider should use the global-bus sentinel."
-                );
+                Assert.IsNull(destroyedLease.MessageBus, "A destroyed constructor provider should use the global-bus sentinel.");
             }
             finally
             {
@@ -136,10 +132,7 @@ namespace DxMessaging.Tests.Runtime.Core
         public void PreferredMessageBusOverridesProvider()
         {
             MessageBus preferredBus = new MessageBus();
-            MessageRegistrationBuildOptions options = new MessageRegistrationBuildOptions
-            {
-                PreferredMessageBus = preferredBus,
-            };
+            MessageRegistrationBuildOptions options = new MessageRegistrationBuildOptions { PreferredMessageBus = preferredBus };
 
             using MessageRegistrationLease lease = _builder.Build(options);
             Assert.AreSame(preferredBus, lease.MessageBus);
@@ -149,17 +142,12 @@ namespace DxMessaging.Tests.Runtime.Core
         public void MessageBusProviderOptionOverridesBuilderDefault()
         {
             MessageBus providerBus = new MessageBus();
-            TestScriptableMessageBusProvider provider =
-                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
-            TestScriptableMessageBusProvider deferringProvider =
-                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
+            TestScriptableMessageBusProvider provider = ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
+            TestScriptableMessageBusProvider deferringProvider = ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
             try
             {
                 provider.Configure(providerBus);
-                MessageRegistrationBuildOptions options = new MessageRegistrationBuildOptions
-                {
-                    MessageBusProvider = provider,
-                };
+                MessageRegistrationBuildOptions options = new MessageRegistrationBuildOptions { MessageBusProvider = provider };
 
                 using (MessageRegistrationLease lease = _builder.Build(options))
                 {
@@ -169,32 +157,16 @@ namespace DxMessaging.Tests.Runtime.Core
                 UnityEngine.Object.DestroyImmediate(provider);
 
                 using MessageRegistrationLease fallbackLease = _builder.Build(options);
-                Assert.AreSame(
-                    _defaultBus,
-                    fallbackLease.MessageBus,
-                    "A destroyed per-build provider should reveal the live builder default."
-                );
+                Assert.AreSame(_defaultBus, fallbackLease.MessageBus, "A destroyed per-build provider should reveal the live builder default.");
 
                 options.MessageBusProvider = deferringProvider;
                 using MessageRegistrationLease deferredLease = _builder.Build(options);
-                Assert.AreSame(
-                    _defaultBus,
-                    deferredLease.MessageBus,
-                    "A live per-build provider that defers should use the builder default."
-                );
+                Assert.AreSame(_defaultBus, deferredLease.MessageBus, "A live per-build provider that defers should use the builder default.");
 
-                MessageRegistrationBuilder sameProviderBuilder = new MessageRegistrationBuilder(
-                    deferringProvider
-                );
-                using MessageRegistrationLease sameProviderLease = sameProviderBuilder.Build(
-                    options
-                );
+                MessageRegistrationBuilder sameProviderBuilder = new MessageRegistrationBuilder(deferringProvider);
+                using MessageRegistrationLease sameProviderLease = sameProviderBuilder.Build(options);
                 Assert.IsNull(sameProviderLease.MessageBus);
-                Assert.AreEqual(
-                    2,
-                    deferringProvider.ResolveCount,
-                    "The same deferring provider should resolve only once per build."
-                );
+                Assert.AreEqual(2, deferringProvider.ResolveCount, "The same deferring provider should resolve only once per build.");
             }
             finally
             {
@@ -236,10 +208,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void HandlerStartsInactiveWhenConfigured()
         {
-            MessageRegistrationBuildOptions options = new MessageRegistrationBuildOptions
-            {
-                HandlerStartsActive = false,
-            };
+            MessageRegistrationBuildOptions options = new MessageRegistrationBuildOptions { HandlerStartsActive = false };
 
             using MessageRegistrationLease lease = _builder.Build(options);
 
@@ -262,10 +231,7 @@ namespace DxMessaging.Tests.Runtime.Core
             };
 
             using MessageRegistrationLease lease = _builder.Build(options);
-            Assert.IsTrue(
-                lease.Token.DiagnosticMode,
-                "Diagnostics flag should propagate to the token."
-            );
+            Assert.IsTrue(lease.Token.DiagnosticMode, "Diagnostics flag should propagate to the token.");
         }
 
         [Test]
@@ -277,12 +243,7 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationBuildOptions options = new MessageRegistrationBuildOptions
             {
                 ActivateOnBuild = true,
-                Lifecycle = new MessageRegistrationLifecycle(
-                    null,
-                    null,
-                    token => deactivateInvoked = true,
-                    token => disposeInvoked = true
-                ),
+                Lifecycle = new MessageRegistrationLifecycle(null, null, token => deactivateInvoked = true, token => disposeInvoked = true),
             };
 
             using (MessageRegistrationLease lease = _builder.Build(options))
@@ -290,10 +251,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 // No-op
             }
 
-            Assert.IsTrue(
-                deactivateInvoked,
-                "Disposing an active lease should trigger OnDeactivate before tear-down."
-            );
+            Assert.IsTrue(deactivateInvoked, "Disposing an active lease should trigger OnDeactivate before tear-down.");
             Assert.IsTrue(disposeInvoked, "Disposing a lease should trigger OnDispose callbacks.");
         }
 

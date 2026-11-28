@@ -63,8 +63,7 @@ void OnTextToMe(in StringMessage m)       => Debug.Log($"To me: {m.message}");
 Tips
 
 - Strings are great for glue and debugging; convert hot paths to typed messages for performance and clarity.
-- Use interceptors to filter or normalize messages before handlers. Use post-processors
-  for logging or metrics after handlers finish.
+- Use interceptors to filter or normalize messages before handlers. Use post-processors for logging or metrics after handlers finish.
 
 Related
 

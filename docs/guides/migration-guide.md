@@ -6,196 +6,152 @@ This guide helps you introduce DxMessaging into an existing Unity project **grad
 
 ### Replace a classic 3.3.0 import
 
-If you imported DxMessaging 3.3.0 as a `.unitypackage`, replace its package folder before
-importing 4.0.0. The runtime assembly definition and six attribute scripts moved with their
-existing asset IDs. Leaving the old files in place can introduce duplicate assets and obsolete
-scripts.
+If you imported DxMessaging 3.3.0 as a `.unitypackage`, replace its package folder before importing 4.0.0. The runtime assembly definition and six attribute scripts moved with
+their existing asset IDs. Leaving the old files in place can introduce duplicate assets and obsolete scripts.
 
-1. Commit or back up your Unity project. If the project also has DxMessaging installed through
-   Package Manager, [remove that installation](https://docs.unity3d.com/2021.3/Documentation/Manual/upm-ui-remove.html)
-   before importing the classic package.
-1. Close the Unity Editor. Move `Assets/WallstopStudios/DxMessaging` and the adjacent
-   `Assets/WallstopStudios/DxMessaging.meta` file to a backup outside the project. Keep the
+1. Commit or back up your Unity project. If the project also has DxMessaging installed through Package Manager,
+   [remove that installation](https://docs.unity3d.com/2021.3/Documentation/Manual/upm-ui-remove.html) before importing the classic package.
+1. Close the Unity Editor. Move `Assets/WallstopStudios/DxMessaging` and the adjacent `Assets/WallstopStudios/DxMessaging.meta` file to a backup outside the project. Keep the
    folder and its metadata together so you can restore your original import.
 1. Reopen Unity and [import the 4.0.0 classic archive](../getting-started/install.md#from-releases).
-1. Restore project-owned assets from the backup with their original `.meta` files. If you
-   customized a shipped script, scene, or sample, compare your backup with the 4.0.0 asset and
-   reapply your changes to the new copy. Keep the new package layout.
-1. Apply the assembly reference changes below. Check the Console for compilation errors and
-   open the scenes and prefabs that use DxMessaging to check their references.
+1. Restore project-owned assets from the backup with their original `.meta` files. If you customized a shipped script, scene, or sample, compare your backup with the 4.0.0 asset
+   and reapply your changes to the new copy. Keep the new package layout.
+1. Apply the assembly reference changes below. Check the Console for compilation errors and open the scenes and prefabs that use DxMessaging to check their references.
 
-For a Package Manager upgrade, update the installed package and review any
-[samples you previously copied into Assets](#update-samples-copied-into-assets).
+For a Package Manager upgrade, update the installed package and review any [samples you previously copied into Assets](#update-samples-copied-into-assets).
 
 ### Find the compiler warning setting
 
-**Use Console Bridge** is now **Include Compiler Warnings**. Your existing setting carries
-forward. The Inspector still runs its IL scan and can add messages from new compilations.
+**Use Console Bridge** is now **Include Compiler Warnings**. Your existing setting carries forward. The Inspector still runs its IL scan and can add messages from new compilations.
 Warnings already in Unity's Console history are no longer imported by the Inspector.
 
 ### Reference the dedicated attributes assembly
 
-The six public attributes from 3.3.0 move to `WallstopStudios.DxMessaging.Attributes` with unchanged namespaces and names. The attributes assembly also contains the new `DxAotMessageAttribute`. Add that assembly reference to each Unity assembly definition that uses a DxMessaging attribute. Keep the `WallstopStudios.DxMessaging` reference when the same assembly also uses message interfaces or runtime APIs. Predefined assemblies receive both references automatically.
+The six public attributes from 3.3.0 move to `WallstopStudios.DxMessaging.Attributes` with unchanged namespaces and names. The attributes assembly also contains the new
+`DxAotMessageAttribute`. Add that assembly reference to each Unity assembly definition that uses a DxMessaging attribute. Keep the `WallstopStudios.DxMessaging` reference when the
+same assembly also uses message interfaces or runtime APIs. Predefined assemblies receive both references automatically.
 
-A shared rules assembly that only uses `[DxAutoConstructor]` and `[DxOptionalParameter]` can reference just the attributes and set `noEngineReferences` to `true`. The generator applies to the attributes assembly and assemblies that reference it. Type forwarding preserves legacy attribute lookups. Add the direct assembly reference to compile code that uses the attributes.
+A shared rules assembly that only uses `[DxAutoConstructor]` and `[DxOptionalParameter]` can reference just the attributes and set `noEngineReferences` to `true`. The generator
+applies to the attributes assembly and assemblies that reference it. Type forwarding preserves legacy attribute lookups. Add the direct assembly reference to compile code that uses
+the attributes.
 
-The `.net-attributes` project prepares a matching NuGet package with compiler inputs included. Local package qualification is not a public feed release; use its package README for the current release status.
+The `.net-attributes` project prepares a matching NuGet package with compiler inputs included. Local package qualification is not a public feed release; use its package README for
+the current release status.
 
-If your project still has DxMessaging compiler assemblies under `Assets/`, check
-[which copies to remove when upgrading](../reference/analyzers.md#remove-legacy-analyzer-copies).
+If your project still has DxMessaging compiler assemblies under `Assets/`, check [which copies to remove when upgrading](../reference/analyzers.md#remove-legacy-analyzer-copies).
 
 ### Update samples copied into Assets
 
-Unity copies imported samples into `Assets`. Updating DxMessaging leaves those copies at their
-previous version. Older copies of Mini Combat and UI Buttons + Inspector can report missing
-attributes. Older copies of Diagnostics Tooling Exerciser can report obsolete Unity APIs or
-incompatible handler signatures.
+Unity copies imported samples into `Assets`. Updating DxMessaging leaves those copies at their previous version. Older copies of Mini Combat and UI Buttons + Inspector can report
+missing attributes. Older copies of Diagnostics Tooling Exerciser can report obsolete Unity APIs or incompatible handler signatures.
 
-If your copy is unmodified and your project has no references to its assets, remove its old
-folder from `Assets`. Import the updated sample from the **Samples** tab in Package Manager.
-If you edited the sample or your project references its assets, back up the copy and import the
-updated sample in a separate project for comparison. Update the scripts and assembly references
-in your existing copy. Keep its `.meta` files so scene and prefab references keep their asset IDs.
+If your copy is unmodified and your project has no references to its assets, remove its old folder from `Assets`. Import the updated sample from the **Samples** tab in Package
+Manager. If you edited the sample or your project references its assets, back up the copy and import the updated sample in a separate project for comparison. Update the scripts and
+assembly references in your existing copy. Keep its `.meta` files so scene and prefab references keep their asset IDs.
 
 ### Replace selected subscription sets
 
-Use [registration groups, source changes, and explicit state handlers](subscription-ownership.md)
-to replace application-owned handle lists and capturing registration callbacks. Existing token lifecycle
-calls still control activation. Finish a group's pending cleanup before replacing it.
+Use [registration groups, source changes, and explicit state handlers](subscription-ownership.md) to replace application-owned handle lists and capturing registration callbacks.
+Existing token lifecycle calls still control activation. Finish a group's pending cleanup before replacing it.
 
 ### Replace readiness branches with explicit current state
 
-Use [sticky messages](sticky-messages.md) when a listener needs the latest readiness or settings
-value. Change the publisher to `EmitSticky`, stage the callback once with `replayLatest: true`,
-and keep the existing token lifecycle owner. Preserve pending user edits in the callback.
-Clear retained service and scene references when their owner ends. Ordinary emission stays uncached.
+Use [sticky messages](sticky-messages.md) when a listener needs the latest readiness or settings value. Change the publisher to `EmitSticky`, stage the callback once with
+`replayLatest: true`, and keep the existing token lifecycle owner. Preserve pending user edits in the callback. Clear retained service and scene references when their owner ends.
+Ordinary emission stays uncached.
 
 ### Generate serialized-field constructors without renaming storage
 
-For structs or classes that repeat private `[SerializeField]` fields in a constructor and getters,
-use the [serialized-field options](../reference/helpers.md#serialized-fields-and-read-only-properties-400).
-Make the type and any containing type partial. Keep the original field names and attributes, remove
-the handwritten constructor, and enable `IncludeSerializedFields`. Keep existing getters, or remove
-them and enable `GenerateSerializedProperties` to generate both the constructor and getters.
+For structs or classes that repeat private `[SerializeField]` fields in a constructor and getters, use the
+[serialized-field options](../reference/helpers.md#serialized-fields-and-read-only-properties-400). Make the type and any containing type partial. Keep the original field names and
+attributes, remove the handwritten constructor, and enable `IncludeSerializedFields`. Keep existing getters, or remove them and enable `GenerateSerializedProperties` to generate
+both the constructor and getters.
 
-These options are off by default. Check named constructor arguments: opted-in serialized fields
-omit leading underscores in parameter names. `DXMSG016` identifies names that would collide. `DXMSG017` identifies field types that cannot
-appear in the generated public signatures; make the types accessible or retain explicit members.
+These options are off by default. Check named constructor arguments: opted-in serialized fields omit leading underscores in parameter names. `DXMSG016` identifies names that would
+collide. `DXMSG017` identifies field types that cannot appear in the generated public signatures; make the types accessible or retain explicit members.
 
 ### Choose primary constructor arguments explicitly
 
-When `[DxAutoConstructor]` is applied to a type with primary constructor parameters and selected
-instance fields, 4.0 reports
-[`DXMSG012`](../reference/analyzers.md#dxmsg012-cannot-infer-primary-constructor-arguments).
-Earlier versions generated a secondary constructor that failed to compile.
-Remove the attribute and write the field constructor with a `this(...)` initializer
-that passes the primary constructor arguments your type needs. Non-positional records
-and types without selected instance fields need no change. Empty primary parameter lists
-are chained automatically with `this()`.
+When `[DxAutoConstructor]` is applied to a type with primary constructor parameters and selected instance fields, 4.0 reports
+[`DXMSG012`](../reference/analyzers.md#dxmsg012-cannot-infer-primary-constructor-arguments). Earlier versions generated a secondary constructor that failed to compile. Remove the
+attribute and write the field constructor with a `this(...)` initializer that passes the primary constructor arguments your type needs. Non-positional records and types without
+selected instance fields need no change. Empty primary parameter lists are chained automatically with `this()`.
 
 ### Preserve record copy behavior
 
-A record class with exactly one selected field of its own record type can no longer
-use `[DxAutoConstructor]`. The field constructor's signature would replace the
-record copy constructor and could silently change `with` results. Version 4.0 reports
-[`DXMSG013`](../reference/analyzers.md#dxmsg013-field-constructor-conflicts-with-record-copy-constructor)
+A record class with exactly one selected field of its own record type can no longer use `[DxAutoConstructor]`. The field constructor's signature would replace the record copy
+constructor and could silently change `with` results. Version 4.0 reports [`DXMSG013`](../reference/analyzers.md#dxmsg013-field-constructor-conflicts-with-record-copy-constructor)
 and emits no constructor.
 
-Remove the attribute and use an init-only property with an object initializer, or
-write a construction API with a different signature. The diagnostic reference
-includes a complete property example that preserves `with` copying.
+Remove the attribute and use an init-only property with an object initializer, or write a construction API with a different signature. The diagnostic reference includes a complete
+property example that preserves `with` copying.
 
 ### Check constructors for split partial types
 
-Generated constructor parameters now follow source-file compilation order, then field
-declaration order within each file. Earlier versions compared file-local offsets across
-partial files, so padding one file could change positional argument meaning or place an
-optional parameter before a required parameter.
+Generated constructor parameters now follow source-file compilation order, then field declaration order within each file. Earlier versions compared file-local offsets across
+partial files, so padding one file could change positional argument meaning or place an optional parameter before a required parameter.
 
-Check positional calls for types whose public fields span partial files. Keep those fields
-in one declaration for a positional signature that does not depend on file order, or use
-named arguments. Optional fields must follow required fields in the resulting order.
-Each optional default now resolves imports and aliases in its own field's source file.
+Check positional calls for types whose public fields span partial files. Keep those fields in one declaration for a positional signature that does not depend on file order, or use
+named arguments. Optional fields must follow required fields in the resulting order. Each optional default now resolves imports and aliases in its own field's source file.
 
-Rebuild every assembly that calls an affected constructor, including callers that use named
-arguments. Argument names are resolved when the caller is compiled; they do not protect an
-existing DLL from a changed parameter order. Old binaries can assign same-typed arguments to
-different fields or fail to find the constructor when parameter types move. Obtain rebuilt
-versions of precompiled caller assemblies when their sources are unavailable.
+Rebuild every assembly that calls an affected constructor, including callers that use named arguments. Argument names are resolved when the caller is compiled; they do not protect
+an existing DLL from a changed parameter order. Old binaries can assign same-typed arguments to different fields or fail to find the constructor when parameter types move. Obtain
+rebuilt versions of precompiled caller assemblies when their sources are unavailable.
 
 ### Use compatible comparison arguments
 
-`InstanceId`, `MessageRegistrationHandle`, and `MessageHandler` now follow `IComparable` input
-rules. Comparing an instance with null returns a positive value. Passing an unrelated non-null
-type to `CompareTo(object)` throws `ArgumentException`. `MessageHandler.CompareTo(MessageHandler)`
-also places null before a handler. Earlier versions returned -1 for these inputs.
+`InstanceId`, `MessageRegistrationHandle`, and `MessageHandler` now follow `IComparable` input rules. Comparing an instance with null returns a positive value. Passing an unrelated
+non-null type to `CompareTo(object)` throws `ArgumentException`. `MessageHandler.CompareTo(MessageHandler)` also places null before a handler. Earlier versions returned -1 for
+these inputs.
 
-Pass another value of the same type, or null, when using these methods. Numeric and owner ordering
-for valid values, equality, hashing, and generic comparisons between non-null values keep their
-previous behavior.
+Pass another value of the same type, or null, when using these methods. Numeric and owner ordering for valid values, equality, hashing, and generic comparisons between non-null
+values keep their previous behavior.
 
 ### Construct a new reflexive message to change its signature
 
-`MethodSignatureKey` captures its ordered parameter types at construction. Null and empty type
-lists both describe a method with no parameters, and default keys support equality and dictionary
-lookup. The constructor copies each nonempty type list once.
+`MethodSignatureKey` captures its ordered parameter types at construction. Null and empty type lists both describe a method with no parameters, and default keys support equality
+and dictionary lookup. The constructor copies each nonempty type list once.
 
-`ReflexiveMessage` uses that captured signature for reflected overload selection. Changing its
-public `parameterTypes` array after construction does not select a different overload. Construct
-a new message with the intended types instead. The `parameters` array still supplies the argument
-values and must remain compatible with the captured signature.
+`ReflexiveMessage` uses that captured signature for reflected overload selection. Changing its public `parameterTypes` array after construction does not select a different
+overload. Construct a new message with the intended types instead. The `parameters` array still supplies the argument values and must remain compatible with the captured signature.
 
 ### Read serialization metadata from the numeric field
 
-`InstanceId` now places `DataMember(Name = "id")` on its private numeric field instead of
-the getter-only `Id` property. The public getter and numeric wire member name remain unchanged.
-Code that inspects serialization attributes through reflection must no longer expect
-`DataMemberAttribute` on the `Id` property.
+`InstanceId` now places `DataMember(Name = "id")` on its private numeric field instead of the getter-only `Id` property. The public getter and numeric wire member name remain
+unchanged. Code that inspects serialization attributes through reflection must no longer expect `DataMemberAttribute` on the `Id` property.
 
-XML and JSON data contract deserialization restore the numeric identity. They do not find or
-restore a Unity object reference. Retain or resolve that reference separately when it is needed.
+XML and JSON data contract deserialization restore the numeric identity. They do not find or restore a Unity object reference. Retain or resolve that reference separately when it
+is needed.
 
 ### Remove the test-only runtime settings override
 
-DxMessaging 4.0 removes `DxMessagingRuntimeSettingsProvider.Override`. Configure
-`Assets/Resources/DxMessagingRuntimeSettings.asset` for application settings and read
-`DxMessagingRuntimeSettingsProvider.Current`. Keep any fixture configuration and
-restoration in test assemblies.
+DxMessaging 4.0 removes `DxMessagingRuntimeSettingsProvider.Override`. Configure `Assets/Resources/DxMessagingRuntimeSettings.asset` for application settings and read
+`DxMessagingRuntimeSettingsProvider.Current`. Keep any fixture configuration and restoration in test assemblies.
 
-When no resource asset exists, reset releases the provider-created default instance.
-After `DxMessagingStaticState.Reset()` or an Editor script reload, read `Current` again
-instead of retaining the old fallback. Resource assets remain valid across reset.
-See [settings lifetime](../reference/runtime-settings.md#settings-lifetime).
+When no resource asset exists, reset releases the provider-created default instance. After `DxMessagingStaticState.Reset()` or an Editor script reload, read `Current` again instead
+of retaining the old fallback. Resource assets remain valid across reset. See [settings lifetime](../reference/runtime-settings.md#settings-lifetime).
 
 ### Opt in to inherited string demo handlers
 
-`MessageAwareComponent` no longer registers two targeted `StringMessage` handlers and one
-untargeted `GlobalStringMessage` handler by default. Add
-`protected override bool RegisterForStringMessages => true;` to a component you control when it
-relied on automatic registration in 3.x. This includes a derived component that inherits a working
-handler from a parent installed through a third-party package. Preserve intentional opt-outs and
-existing computed properties. Keep calling `base.RegisterMessageHandlers()` so registrations
-declared by parent components run.
+`MessageAwareComponent` no longer registers two targeted `StringMessage` handlers and one untargeted `GlobalStringMessage` handler by default. Add
+`protected override bool RegisterForStringMessages => true;` to a component you control when it relied on automatic registration in 3.x. This includes a derived component that
+inherits a working handler from a parent installed through a third-party package. Preserve intentional opt-outs and existing computed properties. Keep calling
+`base.RegisterMessageHandlers()` so registrations declared by parent components run.
 
-See [Use `in` parameters for fast handlers](#use-in-parameters-for-fast-handlers) for the signature
-changes and build-target checks.
+See [Use `in` parameters for fast handlers](#use-in-parameters-for-fast-handlers) for the signature changes and build-target checks.
 
 ### Observe callback-driven configuration after the outer call
 
-A bus cleanup or provider callback can call `MessagingComponent.Configure` while another
-configuration is in progress. In 4.0, that nested call queues its request. Its provider resolution,
-listener migration, and errors complete through the outermost `Configure` call, preserving each
-request's order and rebind mode.
+A bus cleanup or provider callback can call `MessagingComponent.Configure` while another configuration is in progress. In 4.0, that nested call queues its request. Its provider
+resolution, listener migration, and errors complete through the outermost `Configure` call, preserving each request's order and rebind mode.
 
-Move work that requires delivery on the newly configured bus outside the callback, after the
-outermost call returns. Handle queued failures around that outer call: a single error keeps its
-original exception identity; multiple errors appear in `AggregateException.InnerExceptions`.
-See [configuration from callbacks](../advanced/runtime-configuration.md#configuration-from-callbacks).
+Move work that requires delivery on the newly configured bus outside the callback, after the outermost call returns. Handle queued failures around that outer call: a single error
+keeps its original exception identity; multiple errors appear in `AggregateException.InnerExceptions`. See
+[configuration from callbacks](../advanced/runtime-configuration.md#configuration-from-callbacks).
 
 ### Use `in` parameters for fast handlers
 
-Fast handlers and post-processors receive read-only message references in DxMessaging 4.0. Change
-explicit handler parameters from `ref` to `in`:
+Fast handlers and post-processors receive read-only message references in DxMessaging 4.0. Change explicit handler parameters from `ref` to `in`:
 
 ```csharp
 // 3.x
@@ -205,188 +161,116 @@ void OnDamageV3(ref ApplyDamage message) { }
 void OnDamageV4(in ApplyDamage message) { }
 ```
 
-Unity disables package Editor code in Safe Mode. If the project opens in Safe Mode after the
-upgrade, fix the compilation errors using the manual steps in this guide. Run the preview after
-Unity exits Safe Mode.
+Unity disables package Editor code in Safe Mode. If the project opens in Safe Mode after the upgrade, fix the compilation errors using the manual steps in this guide. Run the
+preview after Unity exits Safe Mode.
 
-To update project scripts automatically, choose **Tools / Wallstop Studios / DxMessaging /
-Upgrade 3.x Fast Handlers to 4.0**. The command previews the number of changes before writing. It
-scans C# scripts under `Assets` for callbacks used by recognized DxMessaging registrations, explicit
-`FastHandler` delegates, and the changed `MessageAwareComponent` overrides. It edits scripts Unity
-has imported. Refresh the Asset Database and preview again when an unimported script needs review.
-When the tool updates an inherited string-handler override and can verify that it can add the
-opt-in, it inserts `protected override bool RegisterForStringMessages => true;` to preserve the
-3.x behavior. Existing opt-ins, opt-outs, and computed properties stay unchanged. The preview
-skips generated scripts identified by file names such as `Receiver.g.i.cs` or by a generated header
-that can be active before the first code token in a build configuration. The Console reports any
-conditional header the preview cannot verify. The tool leaves package sources, interceptors,
+To update project scripts automatically, choose **Tools / Wallstop Studios / DxMessaging / Upgrade 3.x Fast Handlers to 4.0**. The command previews the number of changes before
+writing. It scans C# scripts under `Assets` for callbacks used by recognized DxMessaging registrations, explicit `FastHandler` delegates, and the changed `MessageAwareComponent`
+overrides. It edits scripts Unity has imported. Refresh the Asset Database and preview again when an unimported script needs review. When the tool updates an inherited
+string-handler override and can verify that it can add the opt-in, it inserts `protected override bool RegisterForStringMessages => true;` to preserve the 3.x behavior. Existing
+opt-ins, opt-outs, and computed properties stay unchanged. The preview skips generated scripts identified by file names such as `Receiver.g.i.cs` or by a generated header that can
+be active before the first code token in a build configuration. The Console reports any conditional header the preview cannot verify. The tool leaves package sources, interceptors,
 emission calls, comments, and strings unchanged.
 
-The upgrade tool preserves UTF-8, including an optional byte-order mark, and BOM-marked UTF-16 or
-UTF-32 encoding. It also keeps line endings unchanged and checks for edits immediately before each
-replacement. After confirmation, the tool rechecks C# scripts, assembly settings, precompiled
-plug-ins under `Assets`, compiler response files, Unity's script assembly assignments, and package
-settings. Original backups stay beside the upgraded scripts because referenced compilation inputs
-can change outside `Assets`. Review the changes and compile the project before removing the
-backups listed in the Console. Keep project scripts and assembly settings in regular files and
-directories under `Assets` so the preview can verify them.
+The upgrade tool preserves UTF-8, including an optional byte-order mark, and BOM-marked UTF-16 or UTF-32 encoding. It also keeps line endings unchanged and checks for edits
+immediately before each replacement. After confirmation, the tool rechecks C# scripts, assembly settings, precompiled plug-ins under `Assets`, compiler response files, Unity's
+script assembly assignments, and package settings. Original backups stay beside the upgraded scripts because referenced compilation inputs can change outside `Assets`. Review the
+changes and compile the project before removing the backups listed in the Console. Keep project scripts and assembly settings in regular files and directories under `Assets` so the
+preview can verify them.
 
-The Console lists files requiring manual review before you confirm the upgrade. If it reports an
-unreadable script, cancel any pending confirmation, resolve the warning, and rerun the preview. Refresh the Asset
-Database and rerun the preview when the imported assembly settings or their asset GUIDs differ
-from disk. When a script is eligible for migration but comments or strings can hide a directive in
-some build configurations, the preview leaves the script untouched and reports the directive location.
+The Console lists files requiring manual review before you confirm the upgrade. If it reports an unreadable script, cancel any pending confirmation, resolve the warning, and rerun
+the preview. Refresh the Asset Database and rerun the preview when the imported assembly settings or their asset GUIDs differ from disk. When a script is eligible for migration but
+comments or strings can hide a directive in some build configurations, the preview leaves the script untouched and reports the directive location.
 
-The tool stages a copy of each original script before replacement. After a successful upgrade,
-it keeps the primary and staged originals for review and checks the upgraded script against the
-planned bytes. The Console lists the recovery paths and reports a changed or missing backup.
-Keep the staged copy if the primary backup can no longer be verified.
+The tool stages a copy of each original script before replacement. After a successful upgrade, it keeps the primary and staged originals for review and checks the upgraded script
+against the planned bytes. The Console lists the recovery paths and reports a changed or missing backup. Keep the staged copy if the primary backup can no longer be verified.
 
-If a later write fails, the tool uses a verified recovery copy to restore earlier scripts. If a
-replacement error leaves the script path empty, automatic recovery requires the backup that holds
-the displaced script. If the script remains missing, verify the staged original named in the
-Console and copy it back to the script path using an operation that refuses to overwrite an
-existing file. If a save arrives during replacement or rollback, use the Console paths to compare
-the live script with the retained copies and any displaced edits.
+If a later write fails, the tool uses a verified recovery copy to restore earlier scripts. If a replacement error leaves the script path empty, automatic recovery requires the
+backup that holds the displaced script. If the script remains missing, verify the staged original named in the Console and copy it back to the script path using an operation that
+refuses to overwrite an existing file. If a save arrives during replacement or rollback, use the Console paths to compare the live script with the retained copies and any displaced
+edits.
 
-The preview leaves unsupported encodings, overloads, qualified or cross-file callback declarations,
-and ambiguous receivers or delegate types unchanged. Prefix a package type with `global::` when an
-alias can hide the `DxMessaging` namespace. A `using` inside a namespace can also change which type
-the compiler selects. Confirm the intended type before qualifying its name. If a project script
-declares a type with the package type's full name, verify which declaration the compiler selects
-before migrating it. The preview uses Unity's
-compilation inputs for the active build target to check that package types come from
-the installed DxMessaging runtime. It reports the callback or type location when it cannot verify
-that binding. A source outside the script index, competing metadata, a modified or conditionally
-compiled runtime handler or registration method, missing runtime source checksums, or unverified
-compiler options can require manual review. The preview also checks project and package sources
-and precompiled plug-ins for declarations that can compete on another build target. Check the
-binding and related callers in your other build targets before making a deferred edit.
+The preview leaves unsupported encodings, overloads, qualified or cross-file callback declarations, and ambiguous receivers or delegate types unchanged. Prefix a package type with
+`global::` when an alias can hide the `DxMessaging` namespace. A `using` inside a namespace can also change which type the compiler selects. Confirm the intended type before
+qualifying its name. If a project script declares a type with the package type's full name, verify which declaration the compiler selects before migrating it. The preview uses
+Unity's compilation inputs for the active build target to check that package types come from the installed DxMessaging runtime. It reports the callback or type location when it
+cannot verify that binding. A source outside the script index, competing metadata, a modified or conditionally compiled runtime handler or registration method, missing runtime
+source checksums, or unverified compiler options can require manual review. The preview also checks project and package sources and precompiled plug-ins for declarations that can
+compete on another build target. Check the binding and related callers in your other build targets before making a deferred edit.
 
-The preview defers a callback that passes its newly readonly parameter as a `ref` or `out`
-argument, takes a typed reference with
-`__makeref`, or takes its address in a `fixed` initializer. It also preserves callbacks with
-parameter attributes that may require writable references, such as `OutAttribute`.
-It can update proven `base` calls in a changed
-`MessageAwareComponent` override. When a local callback forwards to one of the changed base
-methods, the preview keeps the related signature and argument edits together. It defers those
-edits if a direct call still needs the local callback's `ref` signature. The tool detects callbacks
-passed directly to both a handler and an interceptor in the same script. It records deferred
-callbacks in the Console before attempting to refresh the Asset Database. It checks calls and
-delegate bindings to named callbacks in the same
-file, including calls in other types and in interpolated expressions. For members that other
-scripts can access, the preview also scans C# scripts under `Assets` for possible uses. This
-includes private callbacks in partial types. It defers exposed callbacks when their callers could
-be outside `Assets`. Verify those callers and any other parts of the type before changing a signature
-that still needs `ref` or has an unproved binding. For a registration call, the
-preview checks the message routing type and the other arguments before changing an inferred
-callback. A route declaration in another script can establish that type when Unity assigns
-both scripts to the same assembly and the declaration is unique. An explicit package
-`FastHandler` establishes the callback parameter shape. The registration still needs a proven route.
-When a message gets its routing interface from source generation, such as a partial message marked
-with `[DxUntargetedMessage]`, the preview leaves its registration for manual review if it cannot
-prove the route from the available source. Verify the generated interface in your build, then update
-the callback as shown above.
+The preview defers a callback that passes its newly readonly parameter as a `ref` or `out` argument, takes a typed reference with `__makeref`, or takes its address in a `fixed`
+initializer. It also preserves callbacks with parameter attributes that may require writable references, such as `OutAttribute`. It can update proven `base` calls in a changed
+`MessageAwareComponent` override. When a local callback forwards to one of the changed base methods, the preview keeps the related signature and argument edits together. It defers
+those edits if a direct call still needs the local callback's `ref` signature. The tool detects callbacks passed directly to both a handler and an interceptor in the same script.
+It records deferred callbacks in the Console before attempting to refresh the Asset Database. It checks calls and delegate bindings to named callbacks in the same file, including
+calls in other types and in interpolated expressions. For members that other scripts can access, the preview also scans C# scripts under `Assets` for possible uses. This includes
+private callbacks in partial types. It defers exposed callbacks when their callers could be outside `Assets`. Verify those callers and any other parts of the type before changing a
+signature that still needs `ref` or has an unproved binding. For a registration call, the preview checks the message routing type and the other arguments before changing an
+inferred callback. A route declaration in another script can establish that type when Unity assigns both scripts to the same assembly and the declaration is unique. An explicit
+package `FastHandler` establishes the callback parameter shape. The registration still needs a proven route. When a message gets its routing interface from source generation, such
+as a partial message marked with `[DxUntargetedMessage]`, the preview leaves its registration for manual review if it cannot prove the route from the available source. Verify the
+generated interface in your build, then update the callback as shown above.
 
-When a stored fast delegate changes to the readonly signature, update invocations of that delegate
-too. This includes calls through fields and properties. For example, change `separate(ref pulse)`
-to `separate(in pulse)` and `separate?.Invoke(ref pulse)` to `separate?.Invoke(in pulse)`. Keep a
-separate writable callback for callers that need to modify the argument. When the preview cannot
-account for callers of a standalone `new MessageHandler.FastHandler<T>(...)` construction or a
-property, indexer, or method returning a fast delegate, review the delegate and its calls together.
-This includes explicit interface implementations. The preview reports legacy initializers
-declared through a fast-delegate type alias, including global aliases from another script in the
-same assembly. Check direct calls
-that omit an argument modifier. A call such as `this.Forward(default(Pulse))` can select a different
-overload after `Forward` changes from `ref` to `in`. If the call must keep using an extension, call
-it explicitly, for example `Extensions.Forward(this, default(Pulse))`.
+When a stored fast delegate changes to the readonly signature, update invocations of that delegate too. This includes calls through fields and properties. For example, change
+`separate(ref pulse)` to `separate(in pulse)` and `separate?.Invoke(ref pulse)` to `separate?.Invoke(in pulse)`. Keep a separate writable callback for callers that need to modify
+the argument. When the preview cannot account for callers of a standalone `new MessageHandler.FastHandler<T>(...)` construction or a property, indexer, or method returning a fast
+delegate, review the delegate and its calls together. This includes explicit interface implementations. The preview reports legacy initializers declared through a fast-delegate
+type alias, including global aliases from another script in the same assembly. Check direct calls that omit an argument modifier. A call such as `this.Forward(default(Pulse))` can
+select a different overload after `Forward` changes from `ref` to `in`. If the call must keep using an extension, call it explicitly, for example
+`Extensions.Forward(this, default(Pulse))`.
 
-Review any deferred `RegisterGlobalAcceptAll` call as a group because its three callbacks must
-bind to the same overload. If the preview cannot trace an argument back to its delegate, it can
-also defer separate fast delegate initializers in that script. Reports include the source line
-and column so you can find the callback or its use.
-Partial `MessageAwareComponent` declarations require manual review before adding the string-handler
-opt-in because another part can already declare the property. The preview also defers the opt-in
-when it cannot verify that the installed property is a protected overridable `bool` getter.
-A component named `RegisterForStringMessages` cannot declare the property itself. Rename the
-component or declare the override in a differently named base class you control. Without an override
-that returns `true`, the 4.0 default is `false`.
-Review project-wide callback uses. The preview skips branches when it can prove a preprocessor
-condition is false. It defers callbacks whose boundaries or method-group bindings depend on unresolved
-branches. Check those callbacks in each build configuration. Use separate callback declarations
-when two delegate types require different parameter modifiers. Inspect the diff and let Unity
-compile before committing the migration.
+Review any deferred `RegisterGlobalAcceptAll` call as a group because its three callbacks must bind to the same overload. If the preview cannot trace an argument back to its
+delegate, it can also defer separate fast delegate initializers in that script. Reports include the source line and column so you can find the callback or its use. Partial
+`MessageAwareComponent` declarations require manual review before adding the string-handler opt-in because another part can already declare the property. The preview also defers
+the opt-in when it cannot verify that the installed property is a protected overridable `bool` getter. A component named `RegisterForStringMessages` cannot declare the property
+itself. Rename the component or declare the override in a differently named base class you control. Without an override that returns `true`, the 4.0 default is `false`. Review
+project-wide callback uses. The preview skips branches when it can prove a preprocessor condition is false. It defers callbacks whose boundaries or method-group bindings depend on
+unresolved branches. Check those callbacks in each build configuration. Use separate callback declarations when two delegate types require different parameter modifiers. Inspect
+the diff and let Unity compile before committing the migration.
 
-The preview defers assignments, compound assignments, and increment or decrement operations on a
-callback parameter, a direct indexer such as `message[0]`, or a member chain such as
-`message.Child.Value` or `message.Child[0]`. It also defers writes through repeated indexers, such as
-`message[0][0] = 1`. A readonly receiver can copy a struct before calling its getter. The getter can
-then update that copy even when the array write reaches the original array. Review writes through
-these indexers even when they compile with `in`.
+The preview defers assignments, compound assignments, and increment or decrement operations on a callback parameter, a direct indexer such as `message[0]`, or a member chain such
+as `message.Child.Value` or `message.Child[0]`. It also defers writes through repeated indexers, such as `message[0][0] = 1`. A readonly receiver can copy a struct before calling
+its getter. The getter can then update that copy even when the array write reaches the original array. Review writes through these indexers even when they compile with `in`.
 
-The preview also defers direct reads such as `message.Value` or `message[0]` when it cannot verify
-the access. The same source can refer to a field or to a struct getter that changes the receiver.
-After conversion to `in`, a getter can still return the same value while writing to a copy. Inspect
-the member before converting the callback by hand. A callback that only passes the whole message
-by value, such as `Observe(message)`, can still migrate automatically.
+The preview also defers direct reads such as `message.Value` or `message[0]` when it cannot verify the access. The same source can refer to a field or to a struct getter that
+changes the receiver. After conversion to `in`, a getter can still return the same value while writing to a copy. Inspect the member before converting the callback by hand. A
+callback that only passes the whole message by value, such as `Observe(message)`, can still migrate automatically.
 
-The scan recognizes simple parentheses around a receiver or target, such as `(message).Value`, and
-applies the same grouping rule to direct `ref` and `out` arguments. It also follows single-operand
-`checked` and `unchecked` wrappers and recognizes null-forgiving postfix writes and tuple targets.
-It checks direct targets in ordinary
-tuple deconstruction, including bodies of `if`, `else`, `while`, `for`, `foreach`, `using`, `lock`,
-`fixed`, and `do` without braces.
+The scan recognizes simple parentheses around a receiver or target, such as `(message).Value`, and applies the same grouping rule to direct `ref` and `out` arguments. It also
+follows single-operand `checked` and `unchecked` wrappers and recognizes null-forgiving postfix writes and tuple targets. It checks direct targets in ordinary tuple deconstruction,
+including bodies of `if`, `else`, `while`, `for`, `foreach`, `using`, `lock`, `fixed`, and `do` without braces.
 
-The preview flags calls such as `message.Increment()` and `message.Child.Increment()` because an
-`in` parameter can cause a mutable struct method to run on a defensive copy. The preview also flags
-direct enumeration such as `foreach (var item in message)` and direct pinning such as
-`fixed (int* pointer = message)`. A mutable struct method can supply the enumerator or the
-reference to pin. A query that uses the message directly as a source can also call instance methods.
-The text scan checks calls, writes, and `ref` or `out` arguments in regular,
-verbatim, and C# 11 raw interpolations.
-The scan ignores literal text and format specifiers. It can flag read-only calls, class members,
-initializer members that share the parameter's name, calls through delegate fields, and readonly
-aliases to nested members. The preview scopes parameters of simple, explicitly typed local
-functions to their own declarations. Inspect more complex local function declarations, explicit
-method type arguments, conditional access, complex interpolation, casts, and indirect targets
+The preview flags calls such as `message.Increment()` and `message.Child.Increment()` because an `in` parameter can cause a mutable struct method to run on a defensive copy. The
+preview also flags direct enumeration such as `foreach (var item in message)` and direct pinning such as `fixed (int* pointer = message)`. A mutable struct method can supply the
+enumerator or the reference to pin. A query that uses the message directly as a source can also call instance methods. The text scan checks calls, writes, and `ref` or `out`
+arguments in regular, verbatim, and C# 11 raw interpolations. The scan ignores literal text and format specifiers. It can flag read-only calls, class members, initializer members
+that share the parameter's name, calls through delegate fields, and readonly aliases to nested members. The preview scopes parameters of simple, explicitly typed local functions to
+their own declarations. Inspect more complex local function declarations, explicit method type arguments, conditional access, complex interpolation, casts, and indirect targets
 manually.
 
-Copy a struct message to a local when the callback needs writable scratch data. Interceptors run
-before handlers, so move a payload or context edit to an interceptor only when earlier handlers can
-also see the edited value. If those handlers need the original, create the edited value at the
-original stage and pass it explicitly to the listeners that need it.
+Copy a struct message to a local when the callback needs writable scratch data. Interceptors run before handlers, so move a payload or context edit to an interceptor only when
+earlier handlers can also see the edited value. If those handlers need the original, create the edited value at the original stage and pass it explicitly to the listeners that need
+it.
 
-When you migrate a deferred string-handler override by hand, resolve its writable uses first.
-Use a local copy for scratch writes. Preserve caller-visible writes at the stage that owns the
-writable data. Check which virtual method the declaration overrides. Change the parameter from
-`ref` to `in` only if that virtual method now takes `in`. Keep `ref` when a custom base method
-still requires it.
+When you migrate a deferred string-handler override by hand, resolve its writable uses first. Use a local copy for scratch writes. Preserve caller-visible writes at the stage that
+owns the writable data. Check which virtual method the declaration overrides. Change the parameter from `ref` to `in` only if that virtual method now takes `in`. Keep `ref` when a
+custom base method still requires it.
 
-Search for calls to `base.HandleStringGameObjectMessage`, `base.HandleStringComponentMessage`,
-and `base.HandleGlobalStringMessage` throughout the class, including in helper methods. Check these
-calls even when the preview converted the override. Review a reported abstract override together
-with its implementations. Check which base declaration each call selects.
-Change `ref` to `in` for the migrated signatures, such as `base.HandleGlobalStringMessage(in message)`.
-Keep `ref` on calls to custom overloads that still require it.
+Search for calls to `base.HandleStringGameObjectMessage`, `base.HandleStringComponentMessage`, and `base.HandleGlobalStringMessage` throughout the class, including in helper
+methods. Check these calls even when the preview converted the override. Review a reported abstract override together with its implementations. Check which base declaration each
+call selects. Change `ref` to `in` for the migrated signatures, such as `base.HandleGlobalStringMessage(in message)`. Keep `ref` on calls to custom overloads that still require it.
 
-Check `RegisterForStringMessages` in each build configuration and preserve its prior behavior,
-including deliberate opt-outs such as `=> false`. A computed override that reads
-`base.RegisterForStringMessages` needs review because 4.0 changes the package default to `false`.
-For a component that directly inherits DxMessaging's `MessageAwareComponent`, change
-`=> enabled && base.RegisterForStringMessages` to `=> enabled` to preserve the result from 3.x.
-If a custom base provides the setting, check that base's behavior first.
+Check `RegisterForStringMessages` in each build configuration and preserve its prior behavior, including deliberate opt-outs such as `=> false`. A computed override that reads
+`base.RegisterForStringMessages` needs review because 4.0 changes the package default to `false`. For a component that directly inherits DxMessaging's `MessageAwareComponent`,
+change `=> enabled && base.RegisterForStringMessages` to `=> enabled` to preserve the result from 3.x. If a custom base provides the setting, check that base's behavior first.
 
-Add `protected override bool RegisterForStringMessages => true;` only in configurations
-that previously relied on the inherited 3.x default. The preview flags conditional overrides
-and members that hide the inherited setting for manual review. Before adding an opt-in,
-rename or remove the hiding member and update its callers. If you replace the member with
-an override in place, choose the value that preserves the intended registration behavior
-in each build configuration.
+Add `protected override bool RegisterForStringMessages => true;` only in configurations that previously relied on the inherited 3.x default. The preview flags conditional overrides
+and members that hide the inherited setting for manual review. Before adding an opt-in, rename or remove the hiding member and update its callers. If you replace the member with an
+override in place, choose the value that preserves the intended registration behavior in each build configuration.
 
-If a local function serves as a `FastHandler` and also has direct calls, update its signature and
-those calls together. For example, change `Forward(ref copy)` to `Forward(in copy)` when the call
-only reads `copy`. If a direct call must change its argument, use a separate function with a
-`ref` parameter for that call. Keep the `FastHandler` callback readonly.
+If a local function serves as a `FastHandler` and also has direct calls, update its signature and those calls together. For example, change `Forward(ref copy)` to
+`Forward(in copy)` when the call only reads `copy`. If a direct call must change its argument, use a separate function with a `ref` parameter for that call. Keep the `FastHandler`
+callback readonly.
 
 Apply the same change to both parameters of callbacks that receive a target or source:
 
@@ -394,22 +278,16 @@ Apply the same change to both parameters of callbacks that receive a target or s
 void OnDamage(in InstanceId source, in TookDamage message) { }
 ```
 
-Overrides of `MessageAwareComponent.HandleStringGameObjectMessage`,
-`HandleStringComponentMessage`, and `HandleGlobalStringMessage` must also change their message
-parameter from `ref` to `in`.
+Overrides of `MessageAwareComponent.HandleStringGameObjectMessage`, `HandleStringComponentMessage`, and `HandleGlobalStringMessage` must also change their message parameter from
+`ref` to `in`.
 
-Keep interceptor parameters and emitted message variables as `ref`. Interceptors remain the
-supported place to mutate a payload or its routing context before handlers observe it.
+Keep interceptor parameters and emitted message variables as `ref`. Interceptors remain the supported place to mutate a payload or its routing context before handlers observe it.
 
-Rebuild precompiled assemblies and plugins that reference `MessageHandler.FastHandler<T>`,
-`MessageHandler.FastHandlerWithContext<T>`, or the changed `MessageAwareComponent` virtual methods
-because their metadata changed. Prefer `readonly struct` messages and readonly instance members;
-calling a non-readonly member through an `in` parameter can make the compiler create a defensive
-copy. Roslynator rule RCS1242 also reports an `in` parameter whose concrete struct type is not
-declared `readonly`. Mark the message struct `readonly` when its fields and behavior are already
-immutable. Keep intentionally mutable messages mutable for interceptor use and configure RCS1242
-for those handler declarations instead. For class messages, `in` protects the reference itself but
-does not make the referenced object's fields immutable.
+Rebuild precompiled assemblies and plugins that reference `MessageHandler.FastHandler<T>`, `MessageHandler.FastHandlerWithContext<T>`, or the changed `MessageAwareComponent`
+virtual methods because their metadata changed. Prefer `readonly struct` messages and readonly instance members; calling a non-readonly member through an `in` parameter can make
+the compiler create a defensive copy. Roslynator rule RCS1242 also reports an `in` parameter whose concrete struct type is not declared `readonly`. Mark the message struct
+`readonly` when its fields and behavior are already immutable. Keep intentionally mutable messages mutable for interceptor use and configure RCS1242 for those handler declarations
+instead. For class messages, `in` protects the reference itself but does not make the referenced object's fields immutable.
 
 ## Philosophy: Start Small, Prove Value
 
@@ -433,9 +311,8 @@ does not make the referenced object's fields immutable.
 1. **Install DxMessaging** via Package Manager
 1. **Read the [Visual Guide](../getting-started/visual-guide.md)** (5 minutes)
 1. **Import the Mini Combat sample** from Package Manager
-1. **Create a throwaway test scene**. Save the component classes as `TestListener.cs` and
-   `TestEmitter.cs`, each with the shown imports, and attach both to active scene GameObjects.
-   Enter Play Mode to emit from `TestEmitter.Start` after the listener registers:
+1. **Create a throwaway test scene**. Save the component classes as `TestListener.cs` and `TestEmitter.cs`, each with the shown imports, and attach both to active scene
+   GameObjects. Enter Play Mode to emit from `TestEmitter.Start` after the listener registers:
 
    ```csharp
    using DxMessaging.Core.Attributes;
@@ -640,73 +517,47 @@ When to use direct references/events:
 
 ## Memory reclamation in 3.0
 
-DxMessaging 3.0 adds a memory-reclamation subsystem that resets empty
-per-message-type and per-context slots so long-running sessions do not
-retain a slot for every message type or `InstanceId` ever touched. The
-2.x dispatch surface is unchanged; the new pieces are opt-in tuning and
-diagnostics.
+DxMessaging 3.0 adds a memory-reclamation subsystem that resets empty per-message-type and per-context slots so long-running sessions do not retain a slot for every message type or
+`InstanceId` ever touched. The 2.x dispatch surface is unchanged; the new pieces are opt-in tuning and diagnostics.
 
 ### What is new
 
-- **Optional `DxMessagingRuntimeSettings` asset.** A ScriptableObject loaded
-  via `Resources.Load<DxMessagingRuntimeSettings>("DxMessagingRuntimeSettings")`.
-  Use `Assets > Create > Wallstop Studios > DxMessaging > Runtime Settings (in Resources)`
-  to drop the asset under `Assets/Resources/`. Without an asset the runtime
-  hands out a defaulted instance, so the 2.x out-of-the-box behavior is
-  preserved.
-- **New `Trim` and `TrimAll` API.** `IMessageBus.Trim(bool force = false)`
-  and the convenience wrapper `MessageHandler.TrimAll(bool force = false)`
-  reclaim empty slots and pooled collections synchronously. Both return a
-  `TrimResult` reporting how much was reclaimed.
-- **New `OccupiedTypeSlots` and `OccupiedTargetSlots` counters on
-  `IMessageBus`.** Aggregated read-only counters for use in diagnostics and
-  leak-watching tests.
+- **Optional `DxMessagingRuntimeSettings` asset.** A ScriptableObject loaded via `Resources.Load<DxMessagingRuntimeSettings>("DxMessagingRuntimeSettings")`. Use
+  `Assets > Create > Wallstop Studios > DxMessaging > Runtime Settings (in Resources)` to drop the asset under `Assets/Resources/`. Without an asset the runtime hands out a
+  defaulted instance, so the 2.x out-of-the-box behavior is preserved.
+- **New `Trim` and `TrimAll` API.** `IMessageBus.Trim(bool force = false)` and the convenience wrapper `MessageHandler.TrimAll(bool force = false)` reclaim empty slots and pooled
+  collections synchronously. Both return a `TrimResult` reporting how much was reclaimed.
+- **New `OccupiedTypeSlots` and `OccupiedTargetSlots` counters on `IMessageBus`.** Aggregated read-only counters for use in diagnostics and leak-watching tests.
 
 ### Backward compatibility
 
-- The defaults match 2.x behavior with no asset present: idle eviction is
-  on with a 30 second threshold, the explicit Trim API is on, pool retention
-  is LRU at 512 entries.
-- No existing dispatch, registration, or interceptor code changes. Active
-  registrations are never reclaimed; the sweep only resets empty slots.
-- The settings asset hot-reloads through `DxMessagingRuntimeSettings.SettingsChanged`.
-  Existing buses re-apply caps without recreation, so editing the asset
-  during Play mode does not invalidate registrations.
+- The defaults match 2.x behavior with no asset present: idle eviction is on with a 30 second threshold, the explicit Trim API is on, pool retention is LRU at 512 entries.
+- No existing dispatch, registration, or interceptor code changes. Active registrations are never reclaimed; the sweep only resets empty slots.
+- The settings asset hot-reloads through `DxMessagingRuntimeSettings.SettingsChanged`. Existing buses re-apply caps without recreation, so editing the asset during Play mode does
+  not invalidate registrations.
 
 ### When to adopt
 
-- **Shipped titles or dedicated servers running for hours.** Drop the asset
-  in to bound retained slot memory; tune `IdleEvictionSeconds` and
-  `BufferMaxDistinctEntries` for the workload.
-- **Editor sessions across many scene loads.** Call
-  `MessageHandler.TrimAll(force: true)` at scene unload to keep the
-  occupancy counters honest.
-- **Leak diagnosis.** Snapshot `OccupiedTypeSlots` / `OccupiedTargetSlots`,
-  run the operation, force a trim, then compare. Surviving slots correspond
-  to active registrations.
+- **Shipped titles or dedicated servers running for hours.** Drop the asset in to bound retained slot memory; tune `IdleEvictionSeconds` and `BufferMaxDistinctEntries` for the
+  workload.
+- **Editor sessions across many scene loads.** Call `MessageHandler.TrimAll(force: true)` at scene unload to keep the occupancy counters honest.
+- **Leak diagnosis.** Snapshot `OccupiedTypeSlots` / `OccupiedTargetSlots`, run the operation, force a trim, then compare. Surviving slots correspond to active registrations.
 
-For tuning, scenario tables, and worked examples, see the
-[Memory Reclamation guide](memory-reclamation.md). For asset parameters,
-defaults, and the full diagnostic API, see the
+For tuning, scenario tables, and worked examples, see the [Memory Reclamation guide](memory-reclamation.md). For asset parameters, defaults, and the full diagnostic API, see the
 [Runtime Settings reference](../reference/runtime-settings.md).
 
 ## Coexistence Patterns
 
 ### Pattern 1: Event-to-Message Bridge
 
-Subscribe while the bridge is enabled and unsubscribe when it is disabled. Remember the
-publisher used for the subscription so cleanup still removes the callback if the Inspector
-reference changes. The new reference takes effect on the next enable. An unassigned reference
-leaves the bridge inactive.
+Subscribe while the bridge is enabled and unsubscribe when it is disabled. Remember the publisher used for the subscription so cleanup still removes the callback if the Inspector
+reference changes. The new reference takes effect on the next enable. An unassigned reference leaves the bridge inactive.
 
-This example assumes a legacy publisher exposing `event Action<int> OnSomethingHappened` and
-an untargeted `SomethingHappened(int value)` message. DxMessaging tokens manage message
+This example assumes a legacy publisher exposing `event Action<int> OnSomethingHappened` and an untargeted `SomethingHappened(int value)` message. DxMessaging tokens manage message
 subscriptions; they do not remove subscriptions to another object's C# events.
 
-Use `ReferenceEquals` when removing the C# event. A destroyed Unity publisher can still
-have a managed wrapper, even though Unity compares it equal to null. Cleanup must remove
-the callback from that wrapper. The enable check keeps using Unity's null comparison
-to avoid subscribing to a destroyed publisher.
+Use `ReferenceEquals` when removing the C# event. A destroyed Unity publisher can still have a managed wrapper, even though Unity compares it equal to null. Cleanup must remove the
+callback from that wrapper. The enable check keeps using Unity's null comparison to avoid subscribing to a destroyed publisher.
 
 ```csharp
 public class LegacyBridge : MonoBehaviour {
@@ -878,8 +729,7 @@ Track these to validate migration is worthwhile:
 
 ##### Example
 
-to "Before: Adding achievement tracking required touching 12 files.
-to After: Added achievement system with zero changes to existing code."
+to "Before: Adding achievement tracking required touching 12 files. to After: Added achievement system with zero changes to existing code."
 
 ## Timeline Examples
 
@@ -912,8 +762,7 @@ to After: Added achievement system with zero changes to existing code."
 ### For Developers
 
 - "No more manual unsubscribe hell"
-- "Built-in debugging (Message Monitor shows emissions and Flow Graph shows
-  loaded-scene component routes)"
+- "Built-in debugging (Message Monitor shows emissions and Flow Graph shows loaded-scene component routes)"
 - "Add features without touching existing code"
 
 ### For QA
@@ -949,8 +798,7 @@ Once the bus/provider abstractions are in place, wire listeners through the regi
 - Centralises diagnostics toggles and message bus selection.
 - Keeps MonoBehaviours and pure C# services on the same path.
 
-This example uses VContainer's `IStartable` interface and assumes your application already
-defines the untargeted `InventoryChanged` message. `Start()` activates the lease;
+This example uses VContainer's `IStartable` interface and assumes your application already defines the untargeted `InventoryChanged` message. `Start()` activates the lease;
 `Dispose()` releases its registrations.
 
 ```csharp
@@ -990,15 +838,14 @@ public sealed class InventoryService : IStartable, IDisposable
 }
 ```
 
-In the [VContainer scope setup](../integrations/vcontainer.md#register-the-service-in-your-scope),
-register this service with `builder.RegisterEntryPoint<InventoryService>()` after registering
-the bus and registration builder. VContainer calls `Start()` near `MonoBehaviour.Start()`
-and disposes singleton/scoped entry points with their scope. See
-[VContainer's entry point lifecycle](https://vcontainer.hadashikick.jp/integrations/entrypoint).
-Use your container's own startup and disposal bindings for other frameworks.
+In the [VContainer scope setup](../integrations/vcontainer.md#register-the-service-in-your-scope), register this service with `builder.RegisterEntryPoint<InventoryService>()` after
+registering the bus and registration builder. VContainer calls `Start()` near `MonoBehaviour.Start()` and disposes singleton/scoped entry points with their scope. See
+[VContainer's entry point lifecycle](https://vcontainer.hadashikick.jp/integrations/entrypoint). Use your container's own startup and disposal bindings for other frameworks.
 
-- **Unity scene code:** Call `MessagingComponent.CreateRegistrationBuilder()` to use the component's configured bus/provider. Give each independent service or pooled owner its own lease and dispose it when that owner finishes. The component does not track these leases.
-- **Container shims:** Register the bus and builder through your container's [installer or registration extensions](../integrations/index.md). The `ZENJECT_PRESENT`, `VCONTAINER_PRESENT`, and `REFLEX_PRESENT` symbols enable the optional shims; follow the framework setup to bind their services.
+- **Unity scene code:** Call `MessagingComponent.CreateRegistrationBuilder()` to use the component's configured bus/provider. Give each independent service or pooled owner its own
+  lease and dispose it when that owner finishes. The component does not track these leases.
+- **Container shims:** Register the bus and builder through your container's [installer or registration extensions](../integrations/index.md). The `ZENJECT_PRESENT`,
+  `VCONTAINER_PRESENT`, and `REFLEX_PRESENT` symbols enable the optional shims; follow the framework setup to bind their services.
 - **Tests:** Prefer the builder to create isolated tokens tied to the test fixture lifecycle.
 
 ### "Should we migrate tests?"

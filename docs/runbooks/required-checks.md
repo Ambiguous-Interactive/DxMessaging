@@ -1,50 +1,34 @@
 # Required Status Checks Runbook
 
-This runbook is the reference for making CI a required gate for the default
-branch, so that auto-merge blocks a pull request until the chosen checks pass.
-It records which checks are safe to require today, which remediated workflows
-must be verified before they can be required, how to apply the ruleset, and how
-to keep the required set from silently breaking.
+This runbook is the reference for making CI a required gate for the default branch, so that auto-merge blocks a pull request until the chosen checks pass. It records which checks
+are safe to require today, which remediated workflows must be verified before they can be required, how to apply the ruleset, and how to keep the required set from silently
+breaking.
 
-The brief branch-protection checklist in [CI and GitHub Settings](../ops/ci-and-github-settings.md#branch-and-tag-protection)
-points here for the detail.
+The brief branch-protection checklist in [CI and GitHub Settings](../ops/ci-and-github-settings.md#branch-and-tag-protection) points here for the detail.
 
 ## The one rule that governs everything
 
-A required status check must report a conclusion on **every** pull request,
-whatever it touches. Branch protection waits for each required check by name. If
-a required check never reports on some pull request shape -- because its
-workflow filtered itself out of that pull request -- auto-merge waits forever
-and the pull request can never merge.
+A required status check must report a conclusion on **every** pull request, whatever it touches. Branch protection waits for each required check by name. If a required check never
+reports on some pull request shape -- because its workflow filtered itself out of that pull request -- auto-merge waits forever and the pull request can never merge.
 
-A **skipped** job still reports: GitHub posts the job as `skipped`, and branch
-protection treats a skipped required check as passing. So the requirement is not
-"the check must run", it is "the check must be **present** (run or skip), never
-absent". A workflow that path-filters its whole trigger is absent on
-non-matching pull requests and cannot be required as written.
+A **skipped** job still reports: GitHub posts the job as `skipped`, and branch protection treats a skipped required check as passing. So the requirement is not "the check must
+run", it is "the check must be **present** (run or skip), never absent". A workflow that path-filters its whole trigger is absent on non-matching pull requests and cannot be
+required as written.
 
 ## Validation lanes
 
-[The iteration runbook](iteration-speed.md) describes fast PR, nightly and exact-source release
-qualification. The three required check names below remain unchanged. Generator, documentation
-compiler and runtime tests run as separate jobs; ordinary runtime cases and representative retention
-use separate processes, with exhaustive retention selected by owning changes or nightly runs.
+[The iteration runbook](iteration-speed.md) describes fast PR, nightly and exact-source release qualification. The three required check names below remain unchanged. Generator,
+documentation compiler and runtime tests run as separate jobs; ordinary runtime cases and representative retention use separate processes, with exhaustive retention selected by
+owning changes or nightly runs.
 
 ## Current state
 
-Auto-merge is enabled. The aggregate CI gate is **applied and live
-(2026-08-20)**: repository ruleset `Required CI - Unity Tests (default branch)`
-(id `17663217`, active, `~DEFAULT_BRANCH`) requires exactly `CI Success`,
-`Unity CI Success`, and `Devcontainer CI Success`. PR #316 verified the first
-two aggregates before their 2026-07-30 switch. PR #382 verified the devcontainer
-aggregate with both architecture jobs relevant and successful; PR #385 verified
-the unrelated-change path with both architecture jobs skipped and the aggregate
-successful. The individual static contexts remain dependencies of
-`CI Success`, but the ruleset does not require their literal names.
+Auto-merge is enabled. The aggregate CI gate is **applied and live (2026-08-20)**: repository ruleset `Required CI - Unity Tests (default branch)` (id `17663217`, active,
+`~DEFAULT_BRANCH`) requires exactly `CI Success`, `Unity CI Success`, and `Devcontainer CI Success`. PR #316 verified the first two aggregates before their 2026-07-30 switch. PR
+\#382 verified the devcontainer aggregate with both architecture jobs relevant and successful; PR #385 verified the unrelated-change path with both architecture jobs skipped and
+the aggregate successful. The individual static contexts remain dependencies of `CI Success`, but the ruleset does not require their literal names.
 
-The `bot-auto-commit` App (id `3977200`) stays in `bypass_actors` (mode
-`always`) so the perf-doc and generated-doc auto-commits can still push to
-`master`.
+The `bot-auto-commit` App (id `3977200`) stays in `bypass_actors` (mode `always`) so the perf-doc and generated-doc auto-commits can still push to `master`.
 
 ## Aggregate Gates
 
@@ -56,18 +40,13 @@ Unity CI Success
 Devcontainer CI Success
 ```
 
-Do not add individual static job names or Unity matrix names to the ruleset
-after the aggregate switch. The aggregate jobs are the API that branch
-protection consumes.
+Do not add individual static job names or Unity matrix names to the ruleset after the aggregate switch. The aggregate jobs are the API that branch protection consumes.
 
 ### CI Success
 
-[`ci.yml`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/workflows/ci.yml)
-hosts the static correctness/style gates as jobs, with a final `CI Success` job
-that has `if: ${{ always() }}` and uses `re-actors/alls-green` over every static
-job. Static jobs also use `if: ${{ always() }}` and no-op internally when their
-change detector says a PR or push does not touch relevant files. This keeps
-every context present without allowing skipped dependencies in `CI Success`.
+[`ci.yml`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/workflows/ci.yml) hosts the static correctness/style gates as jobs, with a final `CI Success`
+job that has `if: ${{ always() }}` and uses `re-actors/alls-green` over every static job. Static jobs also use `if: ${{ always() }}` and no-op internally when their change detector
+says a PR or push does not touch relevant files. This keeps every context present without allowing skipped dependencies in `CI Success`.
 
 `CI Success` covers:
 
@@ -90,60 +69,37 @@ every context present without allowing skipped dependencies in `CI Success`.
 
 ### Unity CI Success
 
-[`unity-tests.yml`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/workflows/unity-tests.yml)
-hosts the Unity correctness gate. Its `pull_request` trigger is filtered by
-`paths-ignore`, so a Unity-independent pull request never starts the licensed
-matrix. Three shapes skip the licensed work, and each is validated rather than
-assumed:
+[`unity-tests.yml`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/workflows/unity-tests.yml) hosts the Unity correctness gate. Its `pull_request` trigger
+is filtered by `paths-ignore`, so a Unity-independent pull request never starts the licensed matrix. Three shapes skip the licensed work, and each is validated rather than assumed:
 
-- **A documentation or isolated-tooling pull request.** Every changed file matches the closed
-  Unity-independent allowlist in `paths-ignore`, so the workflow is absent
-  rather than running an empty matrix.
+- **A documentation or isolated-tooling pull request.** Every changed file matches the closed Unity-independent allowlist in `paths-ignore`, so the workflow is absent rather than
+  running an empty matrix.
 - **A fork pull request.**
-- **A Dependabot pull request.** Both read from a different secret store, so the
-  Unity serial and the build-lock App credentials resolve empty and a licensed
-  leg would fail on missing credentials rather than on the change under test.
+- **A Dependabot pull request.** Both read from a different secret store, so the Unity serial and the build-lock App credentials resolve empty and a licensed leg would fail on
+  missing credentials rather than on the change under test.
 
-A required check must be present, never absent, so the Unity-independent shape
-needs a reporter:
-[`unity-docs-gate.yml`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/workflows/unity-docs-gate.yml)
-triggers when an allowed path or a workflow changes on a pull request into `master`.
-Its classifier lists the changed files via
-`gh api .../files` (including `previous_filename` for renames), fails closed on
-a lookup failure, an empty listing, or a count that differs from the event's
-`changed_files`. The reporter uses `Unity CI Success` only for an independent
-change or failed classification. Mixed changes report `Unity docs gate not applicable`,
-leaving the required context to `unity-tests.yml`.
-`scripts/__tests__/ci-aggregate-workflow.test.js` checks the allowlist against both
+A required check must be present, never absent, so the Unity-independent shape needs a reporter:
+[`unity-docs-gate.yml`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/workflows/unity-docs-gate.yml) triggers when an allowed path or a workflow changes
+on a pull request into `master`. Its classifier lists the changed files via `gh api .../files` (including `previous_filename` for renames), fails closed on a lookup failure, an
+empty listing, or a count that differs from the event's `changed_files`. The reporter uses `Unity CI Success` only for an independent change or failed classification. Mixed changes
+report `Unity docs gate not applicable`, leaving the required context to `unity-tests.yml`. `scripts/__tests__/ci-aggregate-workflow.test.js` checks the allowlist against both
 licensed workflows and the classifier.
 
-The allowlist includes documentation, root Markdown, agent context, `.devcontainer/`,
-issue templates, `scripts/llm/`, its harness test, and `scripts/wiki/`.
-Runtime, editor, generator, Unity harness, package configuration, workflow, and
-unknown paths still run Unity. Static checks continue to validate their relevant
-inputs. A tooling-only PR avoids the newest-version Unity job; runtime PRs retain it.
-Default-branch pushes retain the applicable static checks; they do not supply Unity compatibility or
-performance qualification. Nightly and manual dispatches supply those lanes. Release preparation
-requires successful full compatibility and performance evidence for the exact release revision.
+The allowlist includes documentation, root Markdown, agent context, `.devcontainer/`, issue templates, `scripts/llm/`, its harness test, and `scripts/wiki/`. Runtime, editor,
+generator, Unity harness, package configuration, workflow, and unknown paths still run Unity. Static checks continue to validate their relevant inputs. A tooling-only PR avoids the
+newest-version Unity job; runtime PRs retain it. Default-branch pushes retain the applicable static checks; they do not supply Unity compatibility or performance qualification.
+Nightly and manual dispatches supply those lanes. Release preparation requires successful full compatibility and performance evidence for the exact release revision.
 
 Keep the trigger filters and the companion classifier in sync. GitHub limits
-[trigger diff evaluation](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#git-diff-comparisons)
-to 300 files. A mixed PR whose Unity input falls outside that window can require
-a rerun or a smaller PR; the companion must never turn incomplete data into a
-successful skip. Moving classification inside the licensed workflow requires an
-organization-policy-compatible aggregate change, not an added permissive skip.
+[trigger diff evaluation](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#git-diff-comparisons) to 300 files. A mixed PR whose Unity input falls
+outside that window can require a rerun or a smaller PR; the companion must never turn incomplete data into a successful skip. Moving classification inside the licensed workflow
+requires an organization-policy-compatible aggregate change, not an added permissive skip.
 
-The top-level `concurrency` setting keeps literal `cancel-in-progress: true`, as
-required by the organization build-lock enrollment contract. Pull-request runs
-share one group keyed by pull-request number, so a new head cancels the
-superseded run instead of leaving its remaining matrix legs queued. Push and
-manual runs share a group per ref. Cancellation is safe because the central
-acquire action handles cancellation signals, every licensed job retains its
-`if: always()` cleanup chain, and the scheduled reaper recovers stale holders.
-The organization build lock still provides mutual exclusion for licensed work.
-The per-leg current-head checks remain as defense in depth before setup and lock
-acquisition. Job-level preflight groups may partition per head because they run
-on GitHub-hosted infrastructure and cannot acquire a licensed seat.
+The top-level `concurrency` setting keeps literal `cancel-in-progress: true`, as required by the organization build-lock enrollment contract. Pull-request runs share one group
+keyed by pull-request number, so a new head cancels the superseded run instead of leaving its remaining matrix legs queued. Push and manual runs share a group per ref. Cancellation
+is safe because the central acquire action handles cancellation signals, every licensed job retains its `if: always()` cleanup chain, and the scheduled reaper recovers stale
+holders. The organization build lock still provides mutual exclusion for licensed work. The per-leg current-head checks remain as defense in depth before setup and lock
+acquisition. Job-level preflight groups may partition per head because they run on GitHub-hosted infrastructure and cannot acquire a licensed seat.
 
 The required Unity check name is the stable aggregate:
 
@@ -151,36 +107,22 @@ The required Unity check name is the stable aggregate:
 Unity CI Success
 ```
 
-`Unity CI Success` has `if: ${{ always() }}` and no job-level condition that can
-be false. Its one step reads the results of `runner-preflight`
-and the `unity-tests` matrix and asserts that both are `skipped` for exactly the
-fork and Dependabot shapes above and `success` otherwise. That step is the
-enrollment policy's closed trusted-skip shape, byte-validated by
-`scripts/__tests__/ci-aggregate-workflow.test.js` against a truth table.
-Blanket allowed-skip lists and `re-actors/alls-green` stay rejected.
+`Unity CI Success` has `if: ${{ always() }}` and no job-level condition that can be false. Its one step reads the results of `runner-preflight` and the `unity-tests` matrix and
+asserts that both are `skipped` for exactly the fork and Dependabot shapes above and `success` otherwise. That step is the enrollment policy's closed trusted-skip shape,
+byte-validated by `scripts/__tests__/ci-aggregate-workflow.test.js` against a truth table. Blanket allowed-skip lists and `re-actors/alls-green` stay rejected.
 
-Do **not** require the expanded matrix job names (`Unity <version> all modes`),
-or `Self-hosted runner registration preflight`. When a
-job-level `if:` skips a matrix before expansion, GitHub can report only one
-skipped check with the literal name
-`Unity ${{ matrix.unity-version }} all modes`, so requiring the
-expanded names leaves auto-merge waiting for absent checks.
+Do **not** require the expanded matrix job names (`Unity <version> all modes`), or `Self-hosted runner registration preflight`. When a job-level `if:` skips a matrix before
+expansion, GitHub can report only one skipped check with the literal name `Unity ${{ matrix.unity-version }} all modes`, so requiring the expanded names leaves auto-merge waiting
+for absent checks.
 
 ### Devcontainer CI Success
 
-[`devcontainer-test.yml`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/workflows/devcontainer-test.yml)
-always starts for pull requests. Its `changes` job determines whether
-devcontainer, workflow, action, script, or npm manifest/lock files changed.
-The Dockerfile copies `package.json`, and both image jobs run the script suite;
-those inputs must trigger validation. Issue-template-only and documentation-only
-changes do not build images. Rename endpoints are included, and incomplete
-file listings run the build or fail detection rather than silently skipping it.
-The x64 and native ARM64 smoke jobs run when they
-are relevant and otherwise report `skipped`; the final `Devcontainer CI Success`
-job uses `if: ${{ always() }}` and fails closed unless change detection succeeded
-with an explicit result. PR #382 proved the relevant path with both smoke jobs
-successful. PR #385 proved the unrelated path with both smoke jobs skipped and
-the aggregate successful.
+[`devcontainer-test.yml`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/workflows/devcontainer-test.yml) always starts for pull requests. Its `changes`
+job determines whether devcontainer, workflow, action, script, or npm manifest/lock files changed. The Dockerfile copies `package.json`, and both image jobs run the script suite;
+those inputs must trigger validation. Issue-template-only and documentation-only changes do not build images. Rename endpoints are included, and incomplete file listings run the
+build or fail detection rather than silently skipping it. The x64 and native ARM64 smoke jobs run when they are relevant and otherwise report `skipped`; the final
+`Devcontainer CI Success` job uses `if: ${{ always() }}` and fails closed unless change detection succeeded with an explicit result. PR #382 proved the relevant path with both
+smoke jobs successful. PR #385 proved the unrelated path with both smoke jobs skipped and the aggregate successful.
 
 Require only the stable aggregate:
 
@@ -188,14 +130,12 @@ Require only the stable aggregate:
 Devcontainer CI Success
 ```
 
-Do not require either architecture job directly. The aggregate is the literal
-branch-protection API and remains present for both change shapes.
+Do not require either architecture job directly. The aggregate is the literal branch-protection API and remains present for both change shapes.
 
 ## Retired Individual Static Contexts
 
-Before the aggregate switch, ruleset `17663217` required these 14 static
-contexts individually. Keep this list as migration history and for aggregate
-dependency audits; do not add these names back to the ruleset.
+Before the aggregate switch, ruleset `17663217` required these 14 static contexts individually. Keep this list as migration history and for aggregate dependency audits; do not add
+these names back to the ruleset.
 
 ```text
 Lint repository Markdown
@@ -218,38 +158,25 @@ Lint docs links
 
 These never gate a pull request:
 
-- `perf-numbers.yml`. It runs only by nightly or manual dispatch. It supplies release evidence,
-  not a PR status. Requiring its aggregate would leave ordinary PRs waiting for an absent check.
-- Auto-fix workflows `csharpier-autofix.yml` and `prettier-autofix.yml`. Their
-  visible `Format and propose changes` check is path-filtered (`**/*.cs`;
-  `**/*.md` etc.), so it is absent on non-matching pull requests -- the same
-  hang failure mode. The dedicated `Check C# formatting`, `Lint repository
-Markdown`, and `Prettier and yamllint` gates are the correct required checks.
-- `deploy-docs.yml` (deploy is push-only; its PR build duplicates the
-  `Validate Documentation Build` job in `ci.yml`), and the
-  schedule/dispatch/release workflows, none of which have a `pull_request`
-  trigger (`unity-benchmarks.yml`, `release*.yml`, `runner-bootstrap.yml`,
-  `post-merge-maintenance.yml`, `sync-wiki.yml`,
-  `markdown-link-validity.yml`, `stuck-job-watchdog.yml`, `unstick-run.yml`,
-  `devcontainer-prebuild.yml`).
+- `perf-numbers.yml`. It runs only by nightly or manual dispatch. It supplies release evidence, not a PR status. Requiring its aggregate would leave ordinary PRs waiting for an
+  absent check.
+- Auto-fix workflows `csharpier-autofix.yml` and `prettier-autofix.yml`. Their visible `Format and propose changes` check is path-filtered (`**/*.cs`; `**/*.md` etc.), so it is
+  absent on non-matching pull requests -- the same hang failure mode. The dedicated `Check C# formatting`, `Lint repository Markdown`, and `Prettier and yamllint` gates are the
+  correct required checks.
+- `deploy-docs.yml` (deploy is push-only; its PR build duplicates the `Validate Documentation Build` job in `ci.yml`), and the schedule/dispatch/release workflows, none of which
+  have a `pull_request` trigger (`unity-benchmarks.yml`, `release*.yml`, `runner-bootstrap.yml`, `post-merge-maintenance.yml`, `sync-wiki.yml`, `markdown-link-validity.yml`,
+  `stuck-job-watchdog.yml`, `unstick-run.yml`, `devcontainer-prebuild.yml`).
 
 ## Remediation: make a gate always-report
 
-Copy the required-gate pattern. Keep the workflow trigger unfiltered, and move
-the path decision into the workflow so the check is always present. A first job
-lists the changed paths via `gh api .../files`, includes `previous_filename` for
-renames, and sets an output that the gate job uses. The required gate must fail
-closed: it may skip only when change detection succeeds and explicitly emits
-`relevant=false`. If the `changes` job fails, is skipped, or emits an unexpected
-value, the required gate runs a diagnostic guard step and fails instead of
-reporting a skipped success.
+Copy the required-gate pattern. Keep the workflow trigger unfiltered, and move the path decision into the workflow so the check is always present. A first job lists the changed
+paths via `gh api .../files`, includes `previous_filename` for renames, and sets an output that the gate job uses. The required gate must fail closed: it may skip only when change
+detection succeeds and explicitly emits `relevant=false`. If the `changes` job fails, is skipped, or emits an unexpected value, the required gate runs a diagnostic guard step and
+fails instead of reporting a skipped success.
 
-For an individually required job, put the decision in the required job's `if:`
-so the job reports `skipped` after successful detection emits `relevant=false`.
-For a job covered by an aggregate, keep the job-level condition at
-`if: ${{ always() }}` and skip expensive steps internally. The aggregate should
-not allow skipped dependencies unless the skipped dependency is intentional and
-documented, as in `Unity CI Success`.
+For an individually required job, put the decision in the required job's `if:` so the job reports `skipped` after successful detection emits `relevant=false`. For a job covered by
+an aggregate, keep the job-level condition at `if: ${{ always() }}` and skip expensive steps internally. The aggregate should not allow skipped dependencies unless the skipped
+dependency is intentional and documented, as in `Unity CI Success`.
 
 ```yaml
 on:
@@ -291,24 +218,17 @@ jobs:
       - run: ./check.sh
 ```
 
-When `changes.relevant` is `false` and `changes` succeeded, `gate` is skipped,
-reports success, and the required check `Check C# formatting` is still present.
-The job `name:` is the required-check string, so it must be stable and not depend
-on the job id.
+When `changes.relevant` is `false` and `changes` succeeded, `gate` is skipped, reports success, and the required check `Check C# formatting` is still present. The job `name:` is
+the required-check string, so it must be stable and not depend on the job id.
 
-For a required matrix job, do **not** put a falsifiable `if:` on the matrix job
-itself. GitHub can evaluate that guard before matrix expansion and report only
-one skipped check with the literal matrix expression. Either require an
-always-reporting aggregate job, or keep the matrix job at `if: ${{ always() }}`
-and gate the expensive steps internally. `ci.yml` uses the latter pattern for
-the three script-test OS contexts.
+For a required matrix job, do **not** put a falsifiable `if:` on the matrix job itself. GitHub can evaluate that guard before matrix expansion and report only one skipped check
+with the literal matrix expression. Either require an always-reporting aggregate job, or keep the matrix job at `if: ${{ always() }}` and gate the expensive steps internally.
+`ci.yml` uses the latter pattern for the three script-test OS contexts.
 
 ## Applying the ruleset
 
-Prefer a repository ruleset over classic branch protection: rulesets support a
-bypass list (needed so the perf-doc auto-commit App can push to the default
-branch) and are API-manageable. Applying it needs repository admin; the commands
-below are a template to run with an admin token, not something CI performs.
+Prefer a repository ruleset over classic branch protection: rulesets support a bypass list (needed so the perf-doc auto-commit App can push to the default branch) and are
+API-manageable. Applying it needs repository admin; the commands below are a template to run with an admin token, not something CI performs.
 
 ```bash
 # List existing rulesets and current required checks.
@@ -364,29 +284,18 @@ gh api repos/Ambiguous-Interactive/DxMessaging/rulesets/17663217 \
   --input aggregate-ruleset.json
 ```
 
-Do not use `POST` for the aggregate switch; that creates a second ruleset
-instead of updating the live one. Do not replace `bypass_actors` with an empty
-array; the existing bot-auto-commit App bypass (integration id `3977200`, mode
-`always`) must remain so the perf-doc auto-commit keeps reaching the default
-branch. Add or remove names in `required_status_checks` only after the
-corresponding workflow has been verified present-and-reporting on real pull
-requests.
+Do not use `POST` for the aggregate switch; that creates a second ruleset instead of updating the live one. Do not replace `bypass_actors` with an empty array; the existing
+bot-auto-commit App bypass (integration id `3977200`, mode `always`) must remain so the perf-doc auto-commit keeps reaching the default branch. Add or remove names in
+`required_status_checks` only after the corresponding workflow has been verified present-and-reporting on real pull requests.
 
 ## Augmenting the gate (DONE 2026-06-15)
 
-The path-filtered gates listed above were remediated to the always-report pattern
-(each gained a `changes` job that lists the PR's files via `gh api` -- failing
-safe to "run" if that call errors -- and each required gate fails closed if
-change detection itself fails or emits no valid output). The remediation merged
-via PR #232 (`c42f8a4`). The ruleset required `Unity CI Success` plus these 14
-remediated contexts until the aggregate switch on 2026-07-30. Each static
-context was
-verified present-and-reporting `success` on PR #232's check-runs (a real PR that
-exercised the remediated workflows) before the augment; the skip-success path is
-structural. Single required jobs carry a fail-closed job-level `if:` and matrix
-required jobs keep `if: ${{ always() }}` at the job level while skipping
-expensive steps internally. GitHub counts skipped required checks as passing, and
-the workflows always trigger on `pull_request`.
+The path-filtered gates listed above were remediated to the always-report pattern (each gained a `changes` job that lists the PR's files via `gh api` -- failing safe to "run" if
+that call errors -- and each required gate fails closed if change detection itself fails or emits no valid output). The remediation merged via PR #232 (`c42f8a4`). The ruleset
+required `Unity CI Success` plus these 14 remediated contexts until the aggregate switch on 2026-07-30. Each static context was verified present-and-reporting `success` on PR
+\#232's check-runs (a real PR that exercised the remediated workflows) before the augment; the skip-success path is structural. Single required jobs carry a fail-closed job-level
+`if:` and matrix required jobs keep `if: ${{ always() }}` at the job level while skipping expensive steps internally. GitHub counts skipped required checks as passing, and the
+workflows always trigger on `pull_request`.
 
 The 14 remediated contexts (the source of the augment):
 
@@ -417,10 +326,8 @@ gh api repos/OWNER/REPO/rulesets/<id> -X PUT --input augmented-ruleset.json
 
 ## Aggregate ruleset switches (DONE 2026-08-20)
 
-PR #316 verified `CI Success` and `Unity CI Success` on a real workflow and
-documentation change before the 2026-07-30 switch. PRs #382 and #385 verified
-the relevant and unrelated paths for `Devcontainer CI Success` before its
-2026-08-20 addition. Ruleset `17663217` now contains only:
+PR #316 verified `CI Success` and `Unity CI Success` on a real workflow and documentation change before the 2026-07-30 switch. PRs #382 and #385 verified the relevant and unrelated
+paths for `Devcontainer CI Success` before its 2026-08-20 addition. Ruleset `17663217` now contains only:
 
 ```text
 CI Success
@@ -428,60 +335,41 @@ Unity CI Success
 Devcontainer CI Success
 ```
 
-The switch preserved the existing `conditions`, `bypass_actors`, enforcement
-mode, and required-check policy. `CI Success` also reported on the default
-branch after merge.
+The switch preserved the existing `conditions`, `bypass_actors`, enforcement mode, and required-check policy. `CI Success` also reported on the default branch after merge.
 
 ## Fragile check names
 
 A required check is matched by literal string, so these break silently:
 
-- **Matrix-interpolated names.** Do not require `Unity <version> all modes` names.
-  The static Unity matrix is validated against `.github/unity-versions.json`, and
-  job-level skip paths can prevent matrix expansion entirely, producing only the
-  literal skipped check `Unity ${{ matrix.unity-version }} all modes`.
-  Require `Unity CI Success` instead. Static script tests are inside `ci.yml`;
-  the matrix still expands to `Script tests (ubuntu-latest)`,
-  `Script tests (macos-latest)`, and `Script tests (windows-latest)`, but branch
+- **Matrix-interpolated names.** Do not require `Unity <version> all modes` names. The static Unity matrix is validated against `.github/unity-versions.json`, and job-level skip
+  paths can prevent matrix expansion entirely, producing only the literal skipped check `Unity ${{ matrix.unity-version }} all modes`. Require `Unity CI Success` instead. Static
+  script tests are inside `ci.yml`; the matrix still expands to `Script tests (ubuntu-latest)`, `Script tests (macos-latest)`, and `Script tests (windows-latest)`, but branch
   protection requires only `CI Success`.
-- **Jobs with no `name:`.** Their check-run context is the bare job id. Generic
-  ids like `test`/`lint` collide across workflows and are easy to mistype, so
-  every required job must keep a unique, stable `name:`.
-- **Renames.** Renaming a job's `name:` drops the old required check (which then
-  never reports) without any error. Treat required-check names as an API.
-- **Path-filtered auto-fix workflows.** Do not require the auto-fix workflows. Their visible
-  `Format and propose changes` jobs are absent on non-matching pull requests. Require the
+- **Jobs with no `name:`.** Their check-run context is the bare job id. Generic ids like `test`/`lint` collide across workflows and are easy to mistype, so every required job must
+  keep a unique, stable `name:`.
+- **Renames.** Renaming a job's `name:` drops the old required check (which then never reports) without any error. Treat required-check names as an API.
+- **Path-filtered auto-fix workflows.** Do not require the auto-fix workflows. Their visible `Format and propose changes` jobs are absent on non-matching pull requests. Require the
   dedicated lint gates instead.
 
 ## Maintenance
 
 When the required set or a workflow changes, keep them in sync:
 
-1. Adding a static required check: add it as a job in `ci.yml`, add it to
-   `ci-success.needs`, make it always-report, make it fail closed on
-   change-detection failures, and update
+1. Adding a static required check: add it as a job in `ci.yml`, add it to `ci-success.needs`, make it always-report, make it fail closed on change-detection failures, and update
    `scripts/__tests__/ci-aggregate-workflow.test.js`.
-1. Renaming a static job's `name:`: keep `CI Success` unchanged, and update docs
-   that list the human-readable job name.
-1. Renaming `CI Success`, `Unity CI Success`, or `Devcontainer CI Success`:
-   update the ruleset in the same change after the new name has reported on real
-   PRs.
-1. Bumping `.github/unity-versions.json`: do not edit the ruleset while it
-   requires `Unity CI Success`; verify the aggregate still reports on a real PR
-   or dispatch run after the version change merges.
-1. Drift check: compare the ruleset's `required_status_checks` contexts against
-   `CI Success`, `Unity CI Success`, and `Devcontainer CI Success`.
-   `gh api .../rulesets/<id>` lists the configured contexts; aggregate job
-   `name:` fields are the source of truth.
+1. Renaming a static job's `name:`: keep `CI Success` unchanged, and update docs that list the human-readable job name.
+1. Renaming `CI Success`, `Unity CI Success`, or `Devcontainer CI Success`: update the ruleset in the same change after the new name has reported on real PRs.
+1. Bumping `.github/unity-versions.json`: do not edit the ruleset while it requires `Unity CI Success`; verify the aggregate still reports on a real PR or dispatch run after the
+   version change merges.
+1. Drift check: compare the ruleset's `required_status_checks` contexts against `CI Success`, `Unity CI Success`, and `Devcontainer CI Success`. `gh api .../rulesets/<id>` lists
+   the configured contexts; aggregate job `name:` fields are the source of truth.
 
 ## Verification
 
 After applying the ruleset:
 
-1. Observe the next unrelated pull request and the next pull request that touches the gate's
-   relevant inputs. For the devcontainer gate, use `.devcontainer/**` or `package.json`.
-1. Confirm every required check reports (runs or skips) on both, so neither hangs waiting for an
-   absent check.
+1. Observe the next unrelated pull request and the next pull request that touches the gate's relevant inputs. For the devcontainer gate, use `.devcontainer/**` or `package.json`.
+1. Confirm every required check reports (runs or skips) on both, so neither hangs waiting for an absent check.
 1. Confirm auto-merge waits for every required check, then completes only after all are green.
 
 ## See Also

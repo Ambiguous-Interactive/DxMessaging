@@ -59,10 +59,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     );
                     if (variant != PostProcessorVariant.Untargeted)
                     {
-                        yield return new TestCaseData(
-                            variant,
-                            PostProcessorDelegateShape.Action
-                        ).SetName(
+                        yield return new TestCaseData(variant, PostProcessorDelegateShape.Action).SetName(
                             $"{nameof(AddFirstPostProcessorDuringInterceptorDoesNotRunInSameEmission)}({variant},Action)"
                         );
                     }
@@ -71,14 +68,9 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void BaselineFirstEmissionFiresHandlerAndPostProcessor(
-            [ValueSource(nameof(AllVariants))] PostProcessorVariant variant
-        )
+        public void BaselineFirstEmissionFiresHandlerAndPostProcessor([ValueSource(nameof(AllVariants))] PostProcessorVariant variant)
         {
-            GameObject host = new(
-                nameof(BaselineFirstEmissionFiresHandlerAndPostProcessor) + "_" + variant,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(BaselineFirstEmissionFiresHandlerAndPostProcessor) + "_" + variant, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -91,33 +83,14 @@ namespace DxMessaging.Tests.Runtime.Core
 
             Emit(variant, host);
 
-            Assert.AreEqual(
-                1,
-                handlerCount,
-                "[{0}] Baseline handler must fire exactly once on first emission. sourceId={1}, handlerCount={2}.",
-                variant,
-                hostId.Id,
-                handlerCount
-            );
-            Assert.AreEqual(
-                1,
-                ppCount,
-                "[{0}] Baseline post-processor must fire exactly once on first emission. sourceId={1}, ppCount={2}.",
-                variant,
-                hostId.Id,
-                ppCount
-            );
+            Assert.AreEqual(1, handlerCount, "[{0}] Baseline handler must fire exactly once on first emission. sourceId={1}, handlerCount={2}.", variant, hostId.Id, handlerCount);
+            Assert.AreEqual(1, ppCount, "[{0}] Baseline post-processor must fire exactly once on first emission. sourceId={1}, ppCount={2}.", variant, hostId.Id, ppCount);
         }
 
         [Test]
-        public void AddPostProcessorDuringHandlerDoesNotRunInSameEmission(
-            [ValueSource(nameof(AllVariants))] PostProcessorVariant variant
-        )
+        public void AddPostProcessorDuringHandlerDoesNotRunInSameEmission([ValueSource(nameof(AllVariants))] PostProcessorVariant variant)
         {
-            GameObject host = new(
-                nameof(AddPostProcessorDuringHandlerDoesNotRunInSameEmission) + "_" + variant,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(AddPostProcessorDuringHandlerDoesNotRunInSameEmission) + "_" + variant, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -183,21 +156,11 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [TestCaseSource(nameof(FirstPostProcessorCases))]
-        public void AddFirstPostProcessorDuringInterceptorDoesNotRunInSameEmission(
-            PostProcessorVariant variant,
-            PostProcessorDelegateShape delegateShape
-        )
+        public void AddFirstPostProcessorDuringInterceptorDoesNotRunInSameEmission(PostProcessorVariant variant, PostProcessorDelegateShape delegateShape)
         {
-            GameObject host = new(
-                nameof(AddFirstPostProcessorDuringInterceptorDoesNotRunInSameEmission)
-                    + "_"
-                    + variant,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(AddFirstPostProcessorDuringInterceptorDoesNotRunInSameEmission) + "_" + variant, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
-            MessageRegistrationToken token = GetToken(
-                host.GetComponent<EmptyMessageAwareComponent>()
-            );
+            MessageRegistrationToken token = GetToken(host.GetComponent<EmptyMessageAwareComponent>());
             InstanceId hostId = host;
             int latePostCount = 0;
             bool added = false;
@@ -210,15 +173,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         if (!added)
                         {
                             added = true;
-                            handles.Add(
-                                RegisterPostProcessor(
-                                    variant,
-                                    token,
-                                    hostId,
-                                    () => ++latePostCount,
-                                    delegateShape: delegateShape
-                                )
-                            );
+                            handles.Add(RegisterPostProcessor(variant, token, hostId, () => ++latePostCount, delegateShape: delegateShape));
                         }
                     }));
                 handles.Add(RegisterHandler(variant, token, hostId, () => { }));
@@ -235,8 +190,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Assert.AreEqual(
                     0,
                     firstEmissionCount,
-                    "[{0}, {1}] The first post-processor registered during an interceptor must "
-                        + "wait until the next emission. firstEmissionCount={2}, totalCount={3}.",
+                    "[{0}, {1}] The first post-processor registered during an interceptor must " + "wait until the next emission. firstEmissionCount={2}, totalCount={3}.",
                     variant,
                     delegateShape,
                     firstEmissionCount,
@@ -245,8 +199,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Assert.AreEqual(
                     1,
                     latePostCount,
-                    "[{0}, {1}] The post-processor registered during the previous emission must "
-                        + "run once on the next emission. firstEmissionCount={2}, totalCount={3}.",
+                    "[{0}, {1}] The post-processor registered during the previous emission must " + "run once on the next emission. firstEmissionCount={2}, totalCount={3}.",
                     variant,
                     delegateShape,
                     firstEmissionCount,
@@ -256,16 +209,9 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void AddPostProcessorAtDifferentPriorityDuringHandlerDoesNotRunInSameEmission(
-            [ValueSource(nameof(AllVariants))] PostProcessorVariant variant
-        )
+        public void AddPostProcessorAtDifferentPriorityDuringHandlerDoesNotRunInSameEmission([ValueSource(nameof(AllVariants))] PostProcessorVariant variant)
         {
-            GameObject host = new(
-                nameof(AddPostProcessorAtDifferentPriorityDuringHandlerDoesNotRunInSameEmission)
-                    + "_"
-                    + variant,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(AddPostProcessorAtDifferentPriorityDuringHandlerDoesNotRunInSameEmission) + "_" + variant, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -331,16 +277,11 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void AddManyPostProcessorsDuringHandlerNoneRunInSameEmission(
-            [ValueSource(nameof(AllVariants))] PostProcessorVariant variant
-        )
+        public void AddManyPostProcessorsDuringHandlerNoneRunInSameEmission([ValueSource(nameof(AllVariants))] PostProcessorVariant variant)
         {
             const int NewCount = 4;
 
-            GameObject host = new(
-                nameof(AddManyPostProcessorsDuringHandlerNoneRunInSameEmission) + "_" + variant,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(AddManyPostProcessorsDuringHandlerNoneRunInSameEmission) + "_" + variant, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -414,25 +355,15 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void AddPostProcessorOnDifferentMessageHandlerDuringHandler(
-            [ValueSource(nameof(AllVariants))] PostProcessorVariant variant
-        )
+        public void AddPostProcessorOnDifferentMessageHandlerDuringHandler([ValueSource(nameof(AllVariants))] PostProcessorVariant variant)
         {
-            GameObject hostA = new(
-                nameof(AddPostProcessorOnDifferentMessageHandlerDuringHandler) + "_A_" + variant,
-                typeof(EmptyMessageAwareComponent)
-            );
-            GameObject hostB = new(
-                nameof(AddPostProcessorOnDifferentMessageHandlerDuringHandler) + "_B_" + variant,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject hostA = new(nameof(AddPostProcessorOnDifferentMessageHandlerDuringHandler) + "_A_" + variant, typeof(EmptyMessageAwareComponent));
+            GameObject hostB = new(nameof(AddPostProcessorOnDifferentMessageHandlerDuringHandler) + "_B_" + variant, typeof(EmptyMessageAwareComponent));
             _spawned.Add(hostA);
             _spawned.Add(hostB);
 
-            EmptyMessageAwareComponent componentA =
-                hostA.GetComponent<EmptyMessageAwareComponent>();
-            EmptyMessageAwareComponent componentB =
-                hostB.GetComponent<EmptyMessageAwareComponent>();
+            EmptyMessageAwareComponent componentA = hostA.GetComponent<EmptyMessageAwareComponent>();
+            EmptyMessageAwareComponent componentB = hostB.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken tokenA = GetToken(componentA);
             MessageRegistrationToken tokenB = GetToken(componentB);
 
@@ -499,23 +430,14 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void PostProcessorIgnoresEmissionFromDifferentSource(
-            [ValueSource(nameof(SourceFilteredVariants))] PostProcessorVariant variant
-        )
+        public void PostProcessorIgnoresEmissionFromDifferentSource([ValueSource(nameof(SourceFilteredVariants))] PostProcessorVariant variant)
         {
-            GameObject registeredHost = new(
-                nameof(PostProcessorIgnoresEmissionFromDifferentSource) + "_reg_" + variant,
-                typeof(EmptyMessageAwareComponent)
-            );
-            GameObject otherHost = new(
-                nameof(PostProcessorIgnoresEmissionFromDifferentSource) + "_other_" + variant,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject registeredHost = new(nameof(PostProcessorIgnoresEmissionFromDifferentSource) + "_reg_" + variant, typeof(EmptyMessageAwareComponent));
+            GameObject otherHost = new(nameof(PostProcessorIgnoresEmissionFromDifferentSource) + "_other_" + variant, typeof(EmptyMessageAwareComponent));
             _spawned.Add(registeredHost);
             _spawned.Add(otherHost);
 
-            EmptyMessageAwareComponent registeredComponent =
-                registeredHost.GetComponent<EmptyMessageAwareComponent>();
+            EmptyMessageAwareComponent registeredComponent = registeredHost.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(registeredComponent);
 
             InstanceId registeredSource = registeredHost;
@@ -557,48 +479,27 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 case PostProcessorVariant.Untargeted:
                 {
-                    return token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (in SimpleUntargetedMessage _) => onInvoked(),
-                        priority: priority
-                    );
+                    return token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => onInvoked(), priority: priority);
                 }
                 case PostProcessorVariant.Targeted:
                 {
-                    return token.RegisterTargeted<SimpleTargetedMessage>(
-                        source,
-                        (in SimpleTargetedMessage _) => onInvoked(),
-                        priority: priority
-                    );
+                    return token.RegisterTargeted<SimpleTargetedMessage>(source, (in SimpleTargetedMessage _) => onInvoked(), priority: priority);
                 }
                 case PostProcessorVariant.Broadcast:
                 {
-                    return token.RegisterBroadcast<SimpleBroadcastMessage>(
-                        source,
-                        (in SimpleBroadcastMessage _) => onInvoked(),
-                        priority: priority
-                    );
+                    return token.RegisterBroadcast<SimpleBroadcastMessage>(source, (in SimpleBroadcastMessage _) => onInvoked(), priority: priority);
                 }
                 case PostProcessorVariant.TargetedWithoutTargeting:
                 {
-                    return token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(
-                        (_, _) => onInvoked(),
-                        priority: priority
-                    );
+                    return token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>((_, _) => onInvoked(), priority: priority);
                 }
                 case PostProcessorVariant.BroadcastWithoutSource:
                 {
-                    return token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>(
-                        (_, _) => onInvoked(),
-                        priority: priority
-                    );
+                    return token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>((_, _) => onInvoked(), priority: priority);
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(variant),
-                        variant,
-                        "Unsupported post-processor variant."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(variant), variant, "Unsupported post-processor variant.");
                 }
             }
         }
@@ -616,44 +517,25 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 case PostProcessorVariant.Untargeted:
                 {
-                    return token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
-                        (in SimpleUntargetedMessage _) => onInvoked(),
-                        priority: priority
-                    );
+                    return token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => onInvoked(), priority: priority);
                 }
                 case PostProcessorVariant.Targeted:
                 {
                     if (delegateShape == PostProcessorDelegateShape.Action)
                     {
-                        return token.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
-                            source,
-                            (SimpleTargetedMessage _) => onInvoked(),
-                            priority: priority
-                        );
+                        return token.RegisterTargetedPostProcessor<SimpleTargetedMessage>(source, (SimpleTargetedMessage _) => onInvoked(), priority: priority);
                     }
 
-                    return token.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
-                        source,
-                        (in SimpleTargetedMessage _) => onInvoked(),
-                        priority: priority
-                    );
+                    return token.RegisterTargetedPostProcessor<SimpleTargetedMessage>(source, (in SimpleTargetedMessage _) => onInvoked(), priority: priority);
                 }
                 case PostProcessorVariant.Broadcast:
                 {
                     if (delegateShape == PostProcessorDelegateShape.Action)
                     {
-                        return token.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(
-                            source,
-                            (SimpleBroadcastMessage _) => onInvoked(),
-                            priority: priority
-                        );
+                        return token.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(source, (SimpleBroadcastMessage _) => onInvoked(), priority: priority);
                     }
 
-                    return token.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(
-                        source,
-                        (in SimpleBroadcastMessage _) => onInvoked(),
-                        priority: priority
-                    );
+                    return token.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(source, (in SimpleBroadcastMessage _) => onInvoked(), priority: priority);
                 }
                 case PostProcessorVariant.TargetedWithoutTargeting:
                 {
@@ -687,20 +569,12 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(variant),
-                        variant,
-                        "Unsupported post-processor variant."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(variant), variant, "Unsupported post-processor variant.");
                 }
             }
         }
 
-        private static MessageRegistrationHandle RegisterInterceptor(
-            PostProcessorVariant variant,
-            MessageRegistrationToken token,
-            Action onInvoked
-        )
+        private static MessageRegistrationHandle RegisterInterceptor(PostProcessorVariant variant, MessageRegistrationToken token, Action onInvoked)
         {
             switch (variant)
             {
@@ -738,11 +612,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(variant),
-                        variant,
-                        "Unsupported post-processor variant."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(variant), variant, "Unsupported post-processor variant.");
                 }
             }
         }
@@ -773,11 +643,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(variant),
-                        variant,
-                        "Unsupported post-processor variant."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(variant), variant, "Unsupported post-processor variant.");
                 }
             }
         }

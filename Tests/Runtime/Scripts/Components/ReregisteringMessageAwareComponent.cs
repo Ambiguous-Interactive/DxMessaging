@@ -26,16 +26,13 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
 
         protected override bool ReregisterOnEnableAfterRelease => reregisterOnEnableAfterRelease;
 
-        protected override bool MessageRegistrationTiedToEnableStatus =>
-            tieRegistrationToEnableStatus;
+        protected override bool MessageRegistrationTiedToEnableStatus => tieRegistrationToEnableStatus;
 
         protected override void RegisterMessageHandlers()
         {
             base.RegisterMessageHandlers();
             ++registerInvocationCount;
-            _ = _messageRegistrationToken.RegisterUntargeted<SimpleUntargetedMessage>(
-                HandleSimpleUntargetedMessage
-            );
+            _ = _messageRegistrationToken.RegisterUntargeted<SimpleUntargetedMessage>(HandleSimpleUntargetedMessage);
         }
 
         private void HandleSimpleUntargetedMessage(in SimpleUntargetedMessage message)

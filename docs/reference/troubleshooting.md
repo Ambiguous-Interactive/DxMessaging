@@ -8,19 +8,13 @@
 
 Use the Editor tools to locate the failed stage before changing code:
 
-1. Enable Editor diagnostics and open
-   [Message Monitor](../guides/diagnostics.md#message-monitor). If the emission
-   is absent, inspect the sender, route kind, and target/source context.
-1. Select the emission to inspect its exact message type and context. Enable
-   stack-trace capture only when you need the emitting file and line.
-1. If the receiver uses a loaded-scene `MessagingComponent`, open
-   [Flow Graph](../guides/diagnostics.md#flow-graph). A missing component edge
-   points to registration, token state, or provider setup. An existing edge with
-   no calls points to context mismatch, an interceptor veto, or disabled state.
-   Direct bus or token registrations outside those components do not appear in
-   the graph; use bus logs and registration counters for those paths.
-1. Check the [Inspector overlay](../guides/inspector-overlay.md) for missing
-   `MessageAwareComponent` base calls and provider warnings.
+1. Enable Editor diagnostics and open [Message Monitor](../guides/diagnostics.md#message-monitor). If the emission is absent, inspect the sender, route kind, and target/source
+   context.
+1. Select the emission to inspect its exact message type and context. Enable stack-trace capture only when you need the emitting file and line.
+1. If the receiver uses a loaded-scene `MessagingComponent`, open [Flow Graph](../guides/diagnostics.md#flow-graph). A missing component edge points to registration, token state,
+   or provider setup. An existing edge with no calls points to context mismatch, an interceptor veto, or disabled state. Direct bus or token registrations outside those components
+   do not appear in the graph; use bus logs and registration counters for those paths.
+1. Check the [Inspector overlay](../guides/inspector-overlay.md) for missing `MessageAwareComponent` base calls and provider warnings.
 
 Then check the matching cause below:
 
@@ -29,12 +23,14 @@ Then check the matching cause below:
 - For targeted and broadcast messages, supply a valid `InstanceId`. Check that the target or source exists when you emit.
 - In Unity, confirm your `MessagingComponent` exists on sender/receiver GameObjects.
 - **CRITICAL**: If inheriting from `MessageAwareComponent`, ensure your overrides call base methods:
-  - **`base.RegisterMessageHandlers()`** - Call this FIRST in your override to preserve parent class registrations. Override `RegisterForStringMessages => true` separately when you want the built-in string demos.
+  - **`base.RegisterMessageHandlers()`** - Call this FIRST in your override to preserve parent class registrations. Override `RegisterForStringMessages => true` separately when you
+    want the built-in string demos.
   - **`base.Awake()`** - Call this if you override `Awake()`, or your token won't be created (this is the #1 cause of handlers not firing).
   - **`base.OnEnable()` / `base.OnDisable()`** - Call these so the token actually enables/disables.
   - **`base.OnDestroy()`** - Call this if you override `OnDestroy()`, or registrations leak past the component's lifetime and held references prevent GC.
   - **Never use `new` to hide Unity methods** (e.g., `new void OnEnable()`); always use `override` and call `base.*`.
-  - For the complete table of guarded methods and the exact failure mode for each, see [Inheritance and base calls](../getting-started/quick-start.md#important-inheritance-and-base-calls) in the quickstart.
+  - For the complete table of guarded methods and the exact failure mode for each, see
+    [Inheritance and base calls](../getting-started/quick-start.md#important-inheritance-and-base-calls) in the quickstart.
 
 ## Registration timing
 
@@ -45,23 +41,23 @@ Then check the matching cause below:
 
 ## Unexpected ordering
 
-- Check `priority` values within the same dispatch phase. Lower values run earlier. For equal
-  priorities, check which handler owns each callback. See
+- Check `priority` values within the same dispatch phase. Lower values run earlier. For equal priorities, check which handler owns each callback. See
   [execution order](../concepts/interceptors-and-ordering.md#execution-order).
 - Interceptors always precede handlers and can cancel; confirm interceptors return `true`.
 
 ## Double registration or over-deregistration warnings
 
 - Avoid calling stage/enable multiple times; pair registrations and lifecycles consistently.
-- Use Flow Graph to inspect loaded-scene `MessagingComponent` route topology.
-  Review logs with `bus.Log.Enabled = true` for direct registrations or when you
-  need the registration mutation history.
+- Use Flow Graph to inspect loaded-scene `MessagingComponent` route topology. Review logs with `bus.Log.Enabled = true` for direct registrations or when you need the registration
+  mutation history.
 
 ## Allocations and boxing
 
 - Prefer struct messages implementing the generic interfaces: `I*Message<T>`.
 - Use handler overloads that take an `in` parameter to avoid message copies.
-- Register handlers once in `Awake`/setup, not every frame: each registration allocates a small bounded amount, while ordinary typed steady-state struct dispatch is allocation-free. Struct global accept-all dispatch boxes the message, and emission-site stack-trace capture allocates while enabled. See the [allocation FAQ](faq.md#does-dxmessaging-allocate-memory-is-dispatch-zero-gc).
+- Register handlers once in `Awake`/setup, not every frame: each registration allocates a small bounded amount, while ordinary typed steady-state struct dispatch is
+  allocation-free. Struct global accept-all dispatch boxes the message, and emission-site stack-trace capture allocates while enabled. See the
+  [allocation FAQ](faq.md#does-dxmessaging-allocate-memory-is-dispatch-zero-gc).
 
 ## Emitting while disabled
 
@@ -69,45 +65,32 @@ Then check the matching cause below:
 
 ## Diagnostics overhead
 
-- Diagnostics are off by default. Leave them off in release builds (`IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.Off`); enable them only when inspecting message history. See [Diagnostics](../guides/diagnostics.md).
+- Diagnostics are off by default. Leave them off in release builds (`IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.Off`); enable them only when inspecting message
+  history. See [Diagnostics](../guides/diagnostics.md).
 
 ## Source generator did not generate Emit or handler methods
 
-The generators add message interfaces, `MessageType`, and an optional field
-constructor. `Emit` helpers are extension methods; handler callbacks are methods
-you write and register.
+The generators add message interfaces, `MessageType`, and an optional field constructor. `Emit` helpers are extension methods; handler callbacks are methods you write and register.
 
-1. For a missing `Emit` helper, import `DxMessaging.Core.Extensions` and check that
-   the message implements the matching route interface. For struct messages,
-   assign the value to a local before calling a by-reference emission helper.
-1. For generated interfaces or `MessageType`, apply `[DxUntargetedMessage]`,
-   `[DxTargetedMessage]`, or `[DxBroadcastMessage]`. Mark the message and every
-   containing declaration `partial`. You can implement the route interface by
-   hand without these attributes or the generation-related `partial` requirement.
-1. For a field constructor, apply `[DxAutoConstructor]` to a partial type with
-   public instance fields, or opt in to [serialized fields](helpers.md#serialized-fields-and-read-only-properties-400).
-   Properties and static fields are excluded.
-1. Read the first compiler error in Unity's Console and let compilation finish
-   after fixing it. An assembly definition is not required; the package's
-   generators reach `Assembly-CSharp`. In 4.0, custom assembly definitions that use
-   attributes must directly reference `WallstopStudios.DxMessaging.Attributes`.
+1. For a missing `Emit` helper, import `DxMessaging.Core.Extensions` and check that the message implements the matching route interface. For struct messages, assign the value to a
+   local before calling a by-reference emission helper.
+1. For generated interfaces or `MessageType`, apply `[DxUntargetedMessage]`, `[DxTargetedMessage]`, or `[DxBroadcastMessage]`. Mark the message and every containing declaration
+   `partial`. You can implement the route interface by hand without these attributes or the generation-related `partial` requirement.
+1. For a field constructor, apply `[DxAutoConstructor]` to a partial type with public instance fields, or opt in to
+   [serialized fields](helpers.md#serialized-fields-and-read-only-properties-400). Properties and static fields are excluded.
+1. Read the first compiler error in Unity's Console and let compilation finish after fixing it. An assembly definition is not required; the package's generators reach
+   `Assembly-CSharp`. In 4.0, custom assembly definitions that use attributes must directly reference `WallstopStudios.DxMessaging.Attributes`.
 
-See [source generator troubleshooting](helpers.md#troubleshooting-source-generators)
-for nested types, constructor rules, generated-source inspection and bug-report
-details.
+See [source generator troubleshooting](helpers.md#troubleshooting-source-generators) for nested types, constructor rules, generated-source inspection and bug-report details.
 
 ## Memory grows in long sessions
 
-- Read `bus.OccupiedTypeSlots` and `bus.OccupiedTargetSlots` (or the global
-  `MessageHandler.MessageBus.OccupiedTypeSlots` / `OccupiedTargetSlots`) at
-  region boundaries to see whether per-type or per-target slots are the
-  culprit.
-- Call `MessageHandler.TrimAll(force: true)` (or `bus.Trim(force: true)`) at
-  scene unload or other natural transitions. Slots that survive a forced
-  trim correspond to active registrations.
-- Tune the reclamation policy through `DxMessagingRuntimeSettings`. See the
-  [Memory Reclamation guide](../guides/memory-reclamation.md) for tuning
-  recommendations and a leak-watching pattern.
+- Read `bus.OccupiedTypeSlots` and `bus.OccupiedTargetSlots` (or the global `MessageHandler.MessageBus.OccupiedTypeSlots` / `OccupiedTargetSlots`) at region boundaries to see
+  whether per-type or per-target slots are the culprit.
+- Call `MessageHandler.TrimAll(force: true)` (or `bus.Trim(force: true)`) at scene unload or other natural transitions. Slots that survive a forced trim correspond to active
+  registrations.
+- Tune the reclamation policy through `DxMessagingRuntimeSettings`. See the [Memory Reclamation guide](../guides/memory-reclamation.md) for tuning recommendations and a
+  leak-watching pattern.
 
 ---
 

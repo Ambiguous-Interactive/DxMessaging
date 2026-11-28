@@ -15,15 +15,10 @@ namespace DxMessaging.Tests.Runtime.Core
     {
         [Test]
         public void RemoveOtherPostProcessorAcrossHandlersDuringDispatch(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.AllKindsIncludingWithoutContext)
-            )]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKindsIncludingWithoutContext))] MessageScenario scenario
         )
         {
-            (EmptyMessageAwareComponent[] components, MessageRegistrationToken[] tokens) =
-                SpawnTwoListeners(scenario, "RemoveOtherPp_");
+            (EmptyMessageAwareComponent[] components, MessageRegistrationToken[] tokens) = SpawnTwoListeners(scenario, "RemoveOtherPp_");
 
             using LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName);
 
@@ -36,12 +31,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Ensure dispatch reaches the post-processor stage by registering a no-op handler
                 on the same MessageHandler that owns pp[0].
             */
-            MessageRegistrationHandle noop = RegisterHandler(
-                scenario,
-                tokens[0],
-                emissionTarget,
-                () => { }
-            );
+            MessageRegistrationHandle noop = RegisterHandler(scenario, tokens[0], emissionTarget, () => { });
 
             pp[0] = RegisterPostProcessor(scenario, tokens[0], emissionTarget, () =>
             {
@@ -56,14 +46,7 @@ namespace DxMessaging.Tests.Runtime.Core
             });
 
             EmitForScenario(scenario, components[0]);
-            Assert.AreEqual(
-                1,
-                counts[0],
-                "[{0}] pp[0] must run on the first emission. counts=({1}, {2}).",
-                scenario,
-                counts[0],
-                counts[1]
-            );
+            Assert.AreEqual(1, counts[0], "[{0}] pp[0] must run on the first emission. counts=({1}, {2}).", scenario, counts[0], counts[1]);
             Assert.AreEqual(
                 1,
                 counts[1],
@@ -72,22 +55,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 counts[0],
                 counts[1]
             );
-            CollectionAssert.AreEqual(
-                new List<int> { 0, 1 },
-                order,
-                "[{0}] pp[0] must run before pp[1] within the first emission.",
-                scenario
-            );
+            CollectionAssert.AreEqual(new List<int> { 0, 1 }, order, "[{0}] pp[0] must run before pp[1] within the first emission.", scenario);
 
             EmitForScenario(scenario, components[0]);
-            Assert.AreEqual(
-                2,
-                counts[0],
-                "[{0}] pp[0] must run again on the second emission. counts=({1}, {2}).",
-                scenario,
-                counts[0],
-                counts[1]
-            );
+            Assert.AreEqual(2, counts[0], "[{0}] pp[0] must run again on the second emission. counts=({1}, {2}).", scenario, counts[0], counts[1]);
             Assert.AreEqual(
                 1,
                 counts[1],
@@ -103,15 +74,10 @@ namespace DxMessaging.Tests.Runtime.Core
 
         [Test]
         public void RemoveSelfPostProcessorAcrossHandlersDuringDispatch(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.AllKindsIncludingWithoutContext)
-            )]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKindsIncludingWithoutContext))] MessageScenario scenario
         )
         {
-            (EmptyMessageAwareComponent[] components, MessageRegistrationToken[] tokens) =
-                SpawnTwoListeners(scenario, "RemoveSelfPp_");
+            (EmptyMessageAwareComponent[] components, MessageRegistrationToken[] tokens) = SpawnTwoListeners(scenario, "RemoveSelfPp_");
 
             using LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName);
 
@@ -119,12 +85,7 @@ namespace DxMessaging.Tests.Runtime.Core
             int[] counts = new int[2];
             InstanceId emissionTarget = ResolveEmissionTarget(scenario, components);
 
-            MessageRegistrationHandle noop = RegisterHandler(
-                scenario,
-                tokens[0],
-                emissionTarget,
-                () => { }
-            );
+            MessageRegistrationHandle noop = RegisterHandler(scenario, tokens[0], emissionTarget, () => { });
 
             pp[0] = RegisterPostProcessor(scenario, tokens[0], emissionTarget, () =>
             {
@@ -134,40 +95,12 @@ namespace DxMessaging.Tests.Runtime.Core
             pp[1] = RegisterPostProcessor(scenario, tokens[1], emissionTarget, () => counts[1]++);
 
             EmitForScenario(scenario, components[0]);
-            Assert.AreEqual(
-                1,
-                counts[0],
-                "[{0}] pp[0] must run once before removing itself. counts=({1}, {2}).",
-                scenario,
-                counts[0],
-                counts[1]
-            );
-            Assert.AreEqual(
-                1,
-                counts[1],
-                "[{0}] pp[1] on the sibling handler must still run on the first emission. counts=({1}, {2}).",
-                scenario,
-                counts[0],
-                counts[1]
-            );
+            Assert.AreEqual(1, counts[0], "[{0}] pp[0] must run once before removing itself. counts=({1}, {2}).", scenario, counts[0], counts[1]);
+            Assert.AreEqual(1, counts[1], "[{0}] pp[1] on the sibling handler must still run on the first emission. counts=({1}, {2}).", scenario, counts[0], counts[1]);
 
             EmitForScenario(scenario, components[0]);
-            Assert.AreEqual(
-                1,
-                counts[0],
-                "[{0}] pp[0] removed itself during the previous emission so it must not run again. counts=({1}, {2}).",
-                scenario,
-                counts[0],
-                counts[1]
-            );
-            Assert.AreEqual(
-                2,
-                counts[1],
-                "[{0}] pp[1] must continue to run on subsequent emissions. counts=({1}, {2}).",
-                scenario,
-                counts[0],
-                counts[1]
-            );
+            Assert.AreEqual(1, counts[0], "[{0}] pp[0] removed itself during the previous emission so it must not run again. counts=({1}, {2}).", scenario, counts[0], counts[1]);
+            Assert.AreEqual(2, counts[1], "[{0}] pp[1] must continue to run on subsequent emissions. counts=({1}, {2}).", scenario, counts[0], counts[1]);
 
             tokens[1].RemoveRegistration(pp[1]);
             tokens[0].RemoveRegistration(noop);
@@ -175,15 +108,10 @@ namespace DxMessaging.Tests.Runtime.Core
 
         [Test]
         public void RemoveAllPostProcessorsAcrossHandlersDuringDispatch(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.AllKindsIncludingWithoutContext)
-            )]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKindsIncludingWithoutContext))] MessageScenario scenario
         )
         {
-            (EmptyMessageAwareComponent[] components, MessageRegistrationToken[] tokens) =
-                SpawnTwoListeners(scenario, "RemoveAllPp_");
+            (EmptyMessageAwareComponent[] components, MessageRegistrationToken[] tokens) = SpawnTwoListeners(scenario, "RemoveAllPp_");
 
             using LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName);
 
@@ -191,12 +119,7 @@ namespace DxMessaging.Tests.Runtime.Core
             int[] counts = new int[2];
             InstanceId emissionTarget = ResolveEmissionTarget(scenario, components);
 
-            MessageRegistrationHandle noop = RegisterHandler(
-                scenario,
-                tokens[0],
-                emissionTarget,
-                () => { }
-            );
+            MessageRegistrationHandle noop = RegisterHandler(scenario, tokens[0], emissionTarget, () => { });
 
             pp[0] = RegisterPostProcessor(scenario, tokens[0], emissionTarget, () =>
             {
@@ -225,14 +148,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             EmitForScenario(scenario, components[0]);
-            Assert.AreEqual(
-                1,
-                counts[0],
-                "[{0}] pp[0] removed itself so it must not fire on the second emission. counts=({1}, {2}).",
-                scenario,
-                counts[0],
-                counts[1]
-            );
+            Assert.AreEqual(1, counts[0], "[{0}] pp[0] removed itself so it must not fire on the second emission. counts=({1}, {2}).", scenario, counts[0], counts[1]);
             Assert.AreEqual(
                 1,
                 counts[1],
@@ -247,15 +163,10 @@ namespace DxMessaging.Tests.Runtime.Core
 
         [Test]
         public void AddNewPostProcessorAcrossHandlersDuringDispatch(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.AllKindsIncludingWithoutContext)
-            )]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKindsIncludingWithoutContext))] MessageScenario scenario
         )
         {
-            (EmptyMessageAwareComponent[] components, MessageRegistrationToken[] tokens) =
-                SpawnTwoListeners(scenario, "AddNewPp_");
+            (EmptyMessageAwareComponent[] components, MessageRegistrationToken[] tokens) = SpawnTwoListeners(scenario, "AddNewPp_");
 
             using LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName);
 
@@ -266,33 +177,19 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationHandle existingHandle;
             InstanceId emissionTarget = ResolveEmissionTarget(scenario, components);
 
-            MessageRegistrationHandle noop = RegisterHandler(
-                scenario,
-                tokens[0],
-                emissionTarget,
-                () => { }
-            );
+            MessageRegistrationHandle noop = RegisterHandler(scenario, tokens[0], emissionTarget, () => { });
             existingHandle = RegisterPostProcessor(scenario, tokens[0], emissionTarget, () =>
             {
                 existingCount++;
                 if (!added)
                 {
                     added = true;
-                    addedHandle = RegisterPostProcessor(scenario, tokens[1], emissionTarget, () =>
-                        addedCount++
-                    );
+                    addedHandle = RegisterPostProcessor(scenario, tokens[1], emissionTarget, () => addedCount++);
                 }
             });
 
             EmitForScenario(scenario, components[0]);
-            Assert.AreEqual(
-                1,
-                existingCount,
-                "[{0}] Existing post-processor must run on the first emission. existing={1}, added={2}.",
-                scenario,
-                existingCount,
-                addedCount
-            );
+            Assert.AreEqual(1, existingCount, "[{0}] Existing post-processor must run on the first emission. existing={1}, added={2}.", scenario, existingCount, addedCount);
             Assert.AreEqual(
                 0,
                 addedCount,
@@ -303,14 +200,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             EmitForScenario(scenario, components[0]);
-            Assert.AreEqual(
-                2,
-                existingCount,
-                "[{0}] Existing post-processor must run again on the second emission. existing={1}, added={2}.",
-                scenario,
-                existingCount,
-                addedCount
-            );
+            Assert.AreEqual(2, existingCount, "[{0}] Existing post-processor must run again on the second emission. existing={1}, added={2}.", scenario, existingCount, addedCount);
             Assert.AreEqual(
                 1,
                 addedCount,
@@ -327,15 +217,10 @@ namespace DxMessaging.Tests.Runtime.Core
 
         [Test]
         public void RemoveOtherHandlerAcrossHandlersDuringDispatch(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.AllKindsIncludingWithoutContext)
-            )]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKindsIncludingWithoutContext))] MessageScenario scenario
         )
         {
-            (EmptyMessageAwareComponent[] components, MessageRegistrationToken[] tokens) =
-                SpawnTwoListeners(scenario, "RemoveOtherHandler_");
+            (EmptyMessageAwareComponent[] components, MessageRegistrationToken[] tokens) = SpawnTwoListeners(scenario, "RemoveOtherHandler_");
 
             using LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName);
 
@@ -351,14 +236,7 @@ namespace DxMessaging.Tests.Runtime.Core
             handlers[1] = RegisterHandler(scenario, tokens[1], emissionTarget, () => counts[1]++);
 
             EmitForScenario(scenario, components[0]);
-            Assert.AreEqual(
-                1,
-                counts[0],
-                "[{0}] handlers[0] must run on the first emission. counts=({1}, {2}).",
-                scenario,
-                counts[0],
-                counts[1]
-            );
+            Assert.AreEqual(1, counts[0], "[{0}] handlers[0] must run on the first emission. counts=({1}, {2}).", scenario, counts[0], counts[1]);
             Assert.AreEqual(
                 1,
                 counts[1],
@@ -369,22 +247,8 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             EmitForScenario(scenario, components[0]);
-            Assert.AreEqual(
-                2,
-                counts[0],
-                "[{0}] handlers[0] must continue running on subsequent emissions. counts=({1}, {2}).",
-                scenario,
-                counts[0],
-                counts[1]
-            );
-            Assert.AreEqual(
-                1,
-                counts[1],
-                "[{0}] handlers[1] was removed mid-emit so subsequent emissions must skip it. counts=({1}, {2}).",
-                scenario,
-                counts[0],
-                counts[1]
-            );
+            Assert.AreEqual(2, counts[0], "[{0}] handlers[0] must continue running on subsequent emissions. counts=({1}, {2}).", scenario, counts[0], counts[1]);
+            Assert.AreEqual(1, counts[1], "[{0}] handlers[1] was removed mid-emit so subsequent emissions must skip it. counts=({1}, {2}).", scenario, counts[0], counts[1]);
 
             tokens[0].RemoveRegistration(handlers[0]);
         }
@@ -407,10 +271,7 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken[] tokens = new MessageRegistrationToken[2];
             for (int i = 0; i < 2; i++)
             {
-                GameObject go = new(
-                    "GlobalAcceptAll_RemoveOther_" + i,
-                    typeof(EmptyMessageAwareComponent)
-                );
+                GameObject go = new("GlobalAcceptAll_RemoveOther_" + i, typeof(EmptyMessageAwareComponent));
                 _spawned.Add(go);
                 components[i] = go.GetComponent<EmptyMessageAwareComponent>();
                 tokens[i] = GetToken(components[i]);
@@ -431,22 +292,11 @@ namespace DxMessaging.Tests.Runtime.Core
                     acceptAllTargeted: (_, _) => { },
                     acceptAllBroadcast: (_, _) => { }
                 );
-            global[1] = tokens[1]
-                .RegisterGlobalAcceptAll(
-                    acceptAllUntargeted: _ => counts[1]++,
-                    acceptAllTargeted: (_, _) => { },
-                    acceptAllBroadcast: (_, _) => { }
-                );
+            global[1] = tokens[1].RegisterGlobalAcceptAll(acceptAllUntargeted: _ => counts[1]++, acceptAllTargeted: (_, _) => { }, acceptAllBroadcast: (_, _) => { });
 
             SimpleUntargetedMessage msg = new();
             msg.EmitUntargeted();
-            Assert.AreEqual(
-                1,
-                counts[0],
-                "global[0] must fire on the first emission. counts=({0}, {1}).",
-                counts[0],
-                counts[1]
-            );
+            Assert.AreEqual(1, counts[0], "global[0] must fire on the first emission. counts=({0}, {1}).", counts[0], counts[1]);
             /*
                 Documented behavior: the global accept-all path uses lazy
                 per-entry prefreeze, so global[1] is dropped during the same
@@ -464,37 +314,19 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             msg.EmitUntargeted();
-            Assert.AreEqual(
-                2,
-                counts[0],
-                "global[0] must fire on the second emission. counts=({0}, {1}).",
-                counts[0],
-                counts[1]
-            );
-            Assert.AreEqual(
-                0,
-                counts[1],
-                "global[1] was removed before the second emission so it must not fire. counts=({0}, {1}).",
-                counts[0],
-                counts[1]
-            );
+            Assert.AreEqual(2, counts[0], "global[0] must fire on the second emission. counts=({0}, {1}).", counts[0], counts[1]);
+            Assert.AreEqual(0, counts[1], "global[1] was removed before the second emission so it must not fire. counts=({0}, {1}).", counts[0], counts[1]);
 
             tokens[0].RemoveRegistration(global[0]);
         }
 
-        private (
-            EmptyMessageAwareComponent[] components,
-            MessageRegistrationToken[] tokens
-        ) SpawnTwoListeners(MessageScenario scenario, string namePrefix)
+        private (EmptyMessageAwareComponent[] components, MessageRegistrationToken[] tokens) SpawnTwoListeners(MessageScenario scenario, string namePrefix)
         {
             EmptyMessageAwareComponent[] components = new EmptyMessageAwareComponent[2];
             MessageRegistrationToken[] tokens = new MessageRegistrationToken[2];
             for (int i = 0; i < 2; i++)
             {
-                GameObject go = new(
-                    namePrefix + scenario.Kind + "_" + i,
-                    typeof(EmptyMessageAwareComponent)
-                );
+                GameObject go = new(namePrefix + scenario.Kind + "_" + i, typeof(EmptyMessageAwareComponent));
                 _spawned.Add(go);
                 components[i] = go.GetComponent<EmptyMessageAwareComponent>();
                 tokens[i] = GetToken(components[i]);
@@ -502,10 +334,7 @@ namespace DxMessaging.Tests.Runtime.Core
             return (components, tokens);
         }
 
-        private static InstanceId ResolveEmissionTarget(
-            MessageScenario scenario,
-            EmptyMessageAwareComponent[] components
-        )
+        private static InstanceId ResolveEmissionTarget(MessageScenario scenario, EmptyMessageAwareComponent[] components)
         {
             switch (scenario.Kind)
             {
@@ -519,69 +348,38 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
 
-        private static MessageRegistrationHandle RegisterHandler(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            InstanceId source,
-            Action onInvoked,
-            int priority = 0
-        )
+        private static MessageRegistrationHandle RegisterHandler(MessageScenario scenario, MessageRegistrationToken token, InstanceId source, Action onInvoked, int priority = 0)
         {
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
                 {
-                    return token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (in SimpleUntargetedMessage _) => onInvoked(),
-                        priority: priority
-                    );
+                    return token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => onInvoked(), priority: priority);
                 }
                 case MessageKind.Targeted:
                 {
-                    return token.RegisterTargeted<SimpleTargetedMessage>(
-                        source,
-                        (in SimpleTargetedMessage _) => onInvoked(),
-                        priority: priority
-                    );
+                    return token.RegisterTargeted<SimpleTargetedMessage>(source, (in SimpleTargetedMessage _) => onInvoked(), priority: priority);
                 }
                 case MessageKind.Broadcast:
                 {
-                    return token.RegisterBroadcast<SimpleBroadcastMessage>(
-                        source,
-                        (in SimpleBroadcastMessage _) => onInvoked(),
-                        priority: priority
-                    );
+                    return token.RegisterBroadcast<SimpleBroadcastMessage>(source, (in SimpleBroadcastMessage _) => onInvoked(), priority: priority);
                 }
                 case MessageKind.TargetedWithoutTargeting:
                 {
-                    return token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(
-                        (_, _) => onInvoked(),
-                        priority: priority
-                    );
+                    return token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>((_, _) => onInvoked(), priority: priority);
                 }
                 case MessageKind.BroadcastWithoutSource:
                 {
-                    return token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>(
-                        (_, _) => onInvoked(),
-                        priority: priority
-                    );
+                    return token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>((_, _) => onInvoked(), priority: priority);
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
@@ -598,26 +396,15 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 case MessageKind.Untargeted:
                 {
-                    return token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
-                        (in SimpleUntargetedMessage _) => onInvoked(),
-                        priority: priority
-                    );
+                    return token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => onInvoked(), priority: priority);
                 }
                 case MessageKind.Targeted:
                 {
-                    return token.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
-                        source,
-                        (in SimpleTargetedMessage _) => onInvoked(),
-                        priority: priority
-                    );
+                    return token.RegisterTargetedPostProcessor<SimpleTargetedMessage>(source, (in SimpleTargetedMessage _) => onInvoked(), priority: priority);
                 }
                 case MessageKind.Broadcast:
                 {
-                    return token.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(
-                        source,
-                        (in SimpleBroadcastMessage _) => onInvoked(),
-                        priority: priority
-                    );
+                    return token.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(source, (in SimpleBroadcastMessage _) => onInvoked(), priority: priority);
                 }
                 case MessageKind.TargetedWithoutTargeting:
                 {
@@ -635,19 +422,12 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
 
-        private static void EmitForScenario(
-            MessageScenario scenario,
-            EmptyMessageAwareComponent component
-        )
+        private static void EmitForScenario(MessageScenario scenario, EmptyMessageAwareComponent component)
         {
             switch (scenario.Kind)
             {
@@ -673,11 +453,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }

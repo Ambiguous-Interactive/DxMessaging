@@ -75,8 +75,7 @@ namespace DxMessaging.Core.Configuration
                 ownedFallback = _ownedFallback;
                 _ownedFallback = null;
 #if UNITY_EDITOR
-                DxMessagingRuntimeSettingsOwnership ownership =
-                    DxMessagingRuntimeSettingsOwnership.instance;
+                DxMessagingRuntimeSettingsOwnership ownership = DxMessagingRuntimeSettingsOwnership.instance;
                 retainedFallback = ownership.Fallback;
                 ownership.Fallback = null;
 #endif
@@ -131,9 +130,7 @@ namespace DxMessaging.Core.Configuration
             DxMessagingRuntimeSettings asset = null;
             try
             {
-                asset = Resources.Load<DxMessagingRuntimeSettings>(
-                    DxMessagingRuntimeSettings.ResourceName
-                );
+                asset = Resources.Load<DxMessagingRuntimeSettings>(DxMessagingRuntimeSettings.ResourceName);
             }
             catch
             {
@@ -144,16 +141,14 @@ namespace DxMessaging.Core.Configuration
                 return asset;
             }
 #if UNITY_EDITOR
-            DxMessagingRuntimeSettingsOwnership ownership =
-                DxMessagingRuntimeSettingsOwnership.instance;
+            DxMessagingRuntimeSettingsOwnership ownership = DxMessagingRuntimeSettingsOwnership.instance;
             if (ownership.Fallback != null)
             {
                 _ownedFallback = ownership.Fallback;
                 return _ownedFallback;
             }
 #endif
-            DxMessagingRuntimeSettings fallback =
-                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            DxMessagingRuntimeSettings fallback = ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
             fallback.MarkAsFallbackInstance();
             fallback.hideFlags = HideFlags.HideAndDontSave;
             fallback.name = DxMessagingRuntimeSettings.ResourceName + " (Default)";

@@ -62,20 +62,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 arrivals[id] = offeredTick;
             }
-            string schedule = BuildSchedule(
-                "editor-immediate-burst-" + burstSize.ToString(CultureInfo.InvariantCulture),
-                frequency,
-                offeredTick,
-                horizonEndTick,
-                arrivals
-            );
+            string schedule = BuildSchedule("editor-immediate-burst-" + burstSize.ToString(CultureInfo.InvariantCulture), frequency, offeredTick, horizonEndTick, arrivals);
             string digest = Digest(schedule);
             TestContext.Out.WriteLine("DXM_OPEN_LOOP_SCHEDULE_V1 " + schedule);
-            Assert.That(
-                Stopwatch.GetTimestamp(),
-                Is.LessThan(offeredTick),
-                "schedule missed offer"
-            );
+            Assert.That(Stopwatch.GetTimestamp(), Is.LessThan(offeredTick), "schedule missed offer");
             while (Stopwatch.GetTimestamp() < offeredTick)
             {
                 Thread.SpinWait(32);
@@ -92,24 +82,14 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 Assert.That(callbackOrder[id], Is.EqualTo(id), $"callback order {id}");
                 Assert.That(starts[id], Is.GreaterThanOrEqualTo(offeredTick), $"start {id}");
-                Assert.That(
-                    completions[id],
-                    Is.GreaterThanOrEqualTo(starts[id]),
-                    $"completion {id}"
-                );
+                Assert.That(completions[id], Is.GreaterThanOrEqualTo(starts[id]), $"completion {id}");
             }
 
             string observations = BuildObservations(burstSize, digest, starts, completions);
             TestContext.Out.WriteLine("DXM_OPEN_LOOP_OBSERVATIONS_V1 " + observations);
         }
 
-        internal static string BuildSchedule(
-            string traceId,
-            long frequency,
-            long offered,
-            long end,
-            long[] arrivals
-        )
+        internal static string BuildSchedule(string traceId, long frequency, long offered, long end, long[] arrivals)
         {
             StringBuilder output = new();
             output
@@ -128,28 +108,15 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 {
                     output.Append(',');
                 }
-                output
-                    .Append("{\"id\":\"")
-                    .Append(id.ToString(CultureInfo.InvariantCulture))
-                    .Append("\",\"arrivalTick\":\"")
-                    .Append(Decimal(arrivals[id]))
-                    .Append("\"}");
+                output.Append("{\"id\":\"").Append(id.ToString(CultureInfo.InvariantCulture)).Append("\",\"arrivalTick\":\"").Append(Decimal(arrivals[id])).Append("\"}");
             }
             return output.Append("]}").ToString();
         }
 
-        internal static string BuildObservations(
-            int count,
-            string digest,
-            long[] starts,
-            long[] ends
-        )
+        internal static string BuildObservations(int count, string digest, long[] starts, long[] ends)
         {
             StringBuilder output = new();
-            output
-                .Append("{\"schemaVersion\":1,\"scheduleSha256\":\"")
-                .Append(digest)
-                .Append("\",\"events\":[");
+            output.Append("{\"schemaVersion\":1,\"scheduleSha256\":\"").Append(digest).Append("\",\"events\":[");
             for (int id = 0; id < count; ++id)
             {
                 if (id != 0)
@@ -173,10 +140,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         internal static string Digest(string schedule)
         {
             using SHA256 sha = SHA256.Create();
-            return BitConverter
-                .ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(schedule)))
-                .Replace("-", string.Empty)
-                .ToLowerInvariant();
+            return BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(schedule))).Replace("-", string.Empty).ToLowerInvariant();
         }
 
         private readonly struct BurstMessage : IUntargetedMessage

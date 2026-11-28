@@ -37,14 +37,8 @@ namespace DxMessaging.Tests.Runtime.Core
         public void SequenceCounterOverflowPreservesRingPosition()
         {
             using SpscFixedRingControl<int> ring = new(4);
-            FieldInfo head = typeof(SpscFixedRingControl<int>).GetField(
-                "_head",
-                BindingFlags.NonPublic | BindingFlags.Instance
-            );
-            FieldInfo tail = typeof(SpscFixedRingControl<int>).GetField(
-                "_tail",
-                BindingFlags.NonPublic | BindingFlags.Instance
-            );
+            FieldInfo head = typeof(SpscFixedRingControl<int>).GetField("_head", BindingFlags.NonPublic | BindingFlags.Instance);
+            FieldInfo tail = typeof(SpscFixedRingControl<int>).GetField("_tail", BindingFlags.NonPublic | BindingFlags.Instance);
             Assert.That(head, Is.Not.Null);
             Assert.That(tail, Is.Not.Null);
             head.SetValue(ring, int.MaxValue - 1);
@@ -68,10 +62,7 @@ namespace DxMessaging.Tests.Runtime.Core
         public void ResetAndDisposeClearReferencesAndRejectDisposedWork()
         {
             SpscFixedRingControl<object> ring = new(4);
-            FieldInfo field = typeof(SpscFixedRingControl<object>).GetField(
-                "_items",
-                BindingFlags.NonPublic | BindingFlags.Instance
-            );
+            FieldInfo field = typeof(SpscFixedRingControl<object>).GetField("_items", BindingFlags.NonPublic | BindingFlags.Instance);
             Assert.That(field, Is.Not.Null);
             object[] slots = (object[])field.GetValue(ring);
             object first = new();
@@ -187,10 +178,7 @@ namespace DxMessaging.Tests.Runtime.Core
         public void ConcurrentResetAndDisposalLeaveNoRetainedReferences()
         {
             SpscFixedRingControl<object> ring = new(8);
-            FieldInfo field = typeof(SpscFixedRingControl<object>).GetField(
-                "_items",
-                BindingFlags.NonPublic | BindingFlags.Instance
-            );
+            FieldInfo field = typeof(SpscFixedRingControl<object>).GetField("_items", BindingFlags.NonPublic | BindingFlags.Instance);
             Assert.That(field, Is.Not.Null);
             object[] slots = (object[])field.GetValue(ring);
             using ManualResetEventSlim start = new(false);
@@ -270,11 +258,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 for (int iteration = 0; iteration < 32; ++iteration)
                 {
                     int dropped = ring.Reset();
-                    Assert.That(
-                        dropped,
-                        Is.InRange(0, ring.Capacity),
-                        $"Reset iteration {iteration}."
-                    );
+                    Assert.That(dropped, Is.InRange(0, ring.Capacity), $"Reset iteration {iteration}.");
                     Thread.Yield();
                 }
             }
@@ -352,23 +336,10 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 maintenance.Start();
                 started = true;
-                Assert.That(
-                    SpinWait.SpinUntil(
-                        () => (int)state.GetValue(ring) != 0,
-                        TimeSpan.FromSeconds(10)
-                    ),
-                    Is.True,
-                    "Maintenance must close admission."
-                );
+                Assert.That(SpinWait.SpinUntil(() => (int)state.GetValue(ring) != 0, TimeSpan.FromSeconds(10)), Is.True, "Maintenance must close admission.");
                 Assert.That(finished.IsSet, Is.False, "An admitted operation must finish first.");
-                Assert.That(
-                    slots[0],
-                    Is.SameAs(payload),
-                    "Maintenance must not clear active storage."
-                );
-                Type exceptionType = dispose
-                    ? typeof(ObjectDisposedException)
-                    : typeof(InvalidOperationException);
+                Assert.That(slots[0], Is.SameAs(payload), "Maintenance must not clear active storage.");
+                Type exceptionType = dispose ? typeof(ObjectDisposedException) : typeof(InvalidOperationException);
                 Assert.Throws(exceptionType, () => ring.TryEnqueue(new object()));
                 Assert.Throws(exceptionType, () => ring.TryDequeue(out _));
             }
@@ -380,11 +351,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     joined = maintenance.Join(TimeSpan.FromSeconds(10));
                 }
             }
-            Assert.That(
-                joined,
-                Is.True,
-                "Maintenance must finish after the admitted operation exits."
-            );
+            Assert.That(joined, Is.True, "Maintenance must finish after the admitted operation exits.");
             Assert.That(failure, Is.Null);
             Assert.That(slots.All(item => item == null), Is.True);
             if (!dispose)

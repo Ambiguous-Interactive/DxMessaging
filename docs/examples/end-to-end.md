@@ -130,8 +130,7 @@ public sealed class HealRules : IDisposable
 }
 ```
 
-Keep the interceptor owner alive for the rules scope. Token-owned post-processors remain on
-their token and need no separate bus handle:
+Keep the interceptor owner alive for the rules scope. Token-owned post-processors remain on their token and need no separate bus handle:
 
 ```csharp
 using HealRules healRules = new(MessageHandler.MessageBus);
@@ -141,8 +140,8 @@ _ = token.RegisterBroadcastWithoutSourcePostProcessor<TookDamage>((InstanceId sr
 });
 ```
 
-The `UIOverlay` handler above owns the floating damage presentation. This post-processor
-records the completed dispatch for telemetry; it does not claim that a health change occurred.
+The `UIOverlay` handler above owns the floating damage presentation. This post-processor records the completed dispatch for telemetry; it does not claim that a health change
+occurred.
 
 Settings menu (untargeted)
 
@@ -162,14 +161,10 @@ public sealed class SettingsMenu
 Diagnostics (Editor)
 
 - Enable Editor diagnostics in **Project Settings > Wallstop Studios > DxMessaging**.
-- Open **Tools > Wallstop Studios > DxMessaging > Message Monitor** to verify
-  the three emissions, their route kinds, and their source/target contexts.
-- Open **Tools > Wallstop Studios > DxMessaging > Flow Graph** to inspect the
-  message-to-receiver routes and select a route for delivery evidence.
-- Select a `MessagingComponent` to inspect its local buffer, registrations, and
-  lifecycle warnings.
-- See the [Diagnostics guide](../guides/diagnostics.md) for filters, call-site
-  capture, and screenshots of both tools.
+- Open **Tools > Wallstop Studios > DxMessaging > Message Monitor** to verify the three emissions, their route kinds, and their source/target contexts.
+- Open **Tools > Wallstop Studios > DxMessaging > Flow Graph** to inspect the message-to-receiver routes and select a route for delivery evidence.
+- Select a `MessagingComponent` to inspect its local buffer, registrations, and lifecycle warnings.
+- See the [Diagnostics guide](../guides/diagnostics.md) for filters, call-site capture, and screenshots of both tools.
 
 Notes
 

@@ -50,13 +50,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         internal static string Key(bool sticky, bool referencePayload, int cardinality) =>
             $"Sticky_Cycle{cardinality}_{(sticky ? "StickyEmit" : "OrdinaryEmit")}_{(referencePayload ? "Class" : "Struct")}";
 
-        internal static long RunContract(
-            bool sticky,
-            bool referencePayload,
-            int cardinality,
-            int first,
-            int second
-        )
+        internal static long RunContract(bool sticky, bool referencePayload, int cardinality, int first, int second)
         {
             using IDisposable registry = BenchmarkProtocol.IsolateIdleSweepRegistry();
             using Workload state = Create(sticky, referencePayload, cardinality, true);
@@ -67,12 +61,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             return state.Emissions;
         }
 
-        private static Workload Create(
-            bool sticky,
-            bool referencePayload,
-            int cardinality,
-            bool observe
-        )
+        private static Workload Create(bool sticky, bool referencePayload, int cardinality, bool observe)
         {
             if (cardinality != 3 && cardinality != 16)
             {
@@ -125,51 +114,26 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 token.RegisterUntargeted<TMessage>(message =>
                 {
-                    Assert.That(
-                        message,
-                        Is.EqualTo(_message),
-                        "Deliver the offered cyclic payload."
-                    );
+                    Assert.That(message, Is.EqualTo(_message), "Deliver the offered cyclic payload.");
                     observed.Add(typeof(TMessage));
                 });
             }
 
             public void VerifyRetained()
             {
-                Assert.That(
-                    _bus.TryGetLatest(out TMessage latest),
-                    Is.True,
-                    $"Retain {typeof(TMessage)}."
-                );
-                Assert.That(
-                    latest,
-                    Is.EqualTo(_message),
-                    $"Keep the offered {typeof(TMessage)} value."
-                );
+                Assert.That(_bus.TryGetLatest(out TMessage latest), Is.True, $"Retain {typeof(TMessage)}.");
+                Assert.That(latest, Is.EqualTo(_message), $"Keep the offered {typeof(TMessage)} value.");
                 if (typeof(TMessage).IsClass)
                 {
-                    Assert.That(
-                        latest,
-                        Is.SameAs(_message),
-                        $"Preserve {typeof(TMessage)} identity."
-                    );
+                    Assert.That(latest, Is.SameAs(_message), $"Preserve {typeof(TMessage)} identity.");
                 }
             }
 
-            public void VerifyAbsent(MessageBus bus) =>
-                Assert.That(
-                    bus.TryGetLatest(out TMessage _),
-                    Is.False,
-                    $"No foreign {typeof(TMessage)} state."
-                );
+            public void VerifyAbsent(MessageBus bus) => Assert.That(bus.TryGetLatest(out TMessage _), Is.False, $"No foreign {typeof(TMessage)} state.");
 
             public void Clear()
             {
-                Assert.That(
-                    _bus.ClearLatest<TMessage>(),
-                    Is.True,
-                    $"Clear {typeof(TMessage)} exactly once."
-                );
+                Assert.That(_bus.ClearLatest<TMessage>(), Is.True, $"Clear {typeof(TMessage)} exactly once.");
                 VerifyAbsent(_bus);
             }
 
@@ -242,37 +206,16 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             public void Verify(long expected)
             {
-                string context =
-                    $"sticky={_sticky}, cardinality={_entries.Length}, expected={expected}";
-                Assert.That(
-                    _initialEmissionId,
-                    Is.EqualTo(_entries.Length),
-                    "Seed every type: " + context
-                );
-                Assert.That(
-                    Emissions,
-                    Is.EqualTo(expected),
-                    "Count actual bus emissions: " + context
-                );
-                Assert.That(
-                    _next,
-                    Is.EqualTo(expected % _entries.Length),
-                    "Preserve rotation: " + context
-                );
+                string context = $"sticky={_sticky}, cardinality={_entries.Length}, expected={expected}";
+                Assert.That(_initialEmissionId, Is.EqualTo(_entries.Length), "Seed every type: " + context);
+                Assert.That(Emissions, Is.EqualTo(expected), "Count actual bus emissions: " + context);
+                Assert.That(_next, Is.EqualTo(expected % _entries.Length), "Preserve rotation: " + context);
                 if (_observed != null)
                 {
-                    Assert.That(
-                        _observed.Count,
-                        Is.EqualTo(expected),
-                        "Deliver once per operation: " + context
-                    );
+                    Assert.That(_observed.Count, Is.EqualTo(expected), "Deliver once per operation: " + context);
                     for (int index = 0; index < _observed.Count; ++index)
                     {
-                        Assert.That(
-                            _observed[index],
-                            Is.SameAs(_entries[index % _entries.Length].MessageType),
-                            "Keep actual type order: " + context
-                        );
+                        Assert.That(_observed[index], Is.SameAs(_entries[index % _entries.Length].MessageType), "Keep actual type order: " + context);
                     }
                 }
                 MessageBus other = new() { DiagnosticsMode = false };
@@ -281,11 +224,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     entry.VerifyRetained();
                     entry.VerifyAbsent(other);
                 }
-                Assert.That(
-                    _bus.DiagnosticsMode,
-                    Is.False,
-                    "Keep diagnostics disabled: " + context
-                );
+                Assert.That(_bus.DiagnosticsMode, Is.False, "Keep diagnostics disabled: " + context);
             }
 
             public void Dispose()
@@ -357,16 +296,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             }
         }
 
-        private static IEntry CreateEntry<TMarker>(
-            MessageBus bus,
-            bool referencePayload,
-            int index
-        ) =>
+        private static IEntry CreateEntry<TMarker>(MessageBus bus, bool referencePayload, int index) =>
             referencePayload
-                ? new Entry<ReferenceMessage<TMarker>>(
-                    bus,
-                    new ReferenceMessage<TMarker>(17 + index)
-                )
+                ? new Entry<ReferenceMessage<TMarker>>(bus, new ReferenceMessage<TMarker>(17 + index))
                 : new Entry<ValueMessage<TMarker>>(bus, new ValueMessage<TMarker>(17 + index));
 
         private readonly struct ValueMessage<TMarker> : IUntargetedMessage<ValueMessage<TMarker>>
@@ -376,8 +308,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             public int Value { get; }
         }
 
-        private sealed class ReferenceMessage<TMarker>
-            : IUntargetedMessage<ReferenceMessage<TMarker>>
+        private sealed class ReferenceMessage<TMarker> : IUntargetedMessage<ReferenceMessage<TMarker>>
         {
             internal ReferenceMessage(int value) => Value = value;
 
@@ -429,13 +360,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             [Values(0, 2, 31)] int second
         )
         {
-            long emissions = StickyCyclicTypeBenchmarks.RunContract(
-                sticky,
-                referencePayload,
-                cardinality,
-                first,
-                second
-            );
+            long emissions = StickyCyclicTypeBenchmarks.RunContract(sticky, referencePayload, cardinality, first, second);
             Assert.That(
                 emissions,
                 Is.EqualTo((long)first + second),
@@ -448,28 +373,16 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         [TestCase(17)]
         public void UnsupportedCyclicCardinalityIsRejected(int cardinality)
         {
-            ArgumentOutOfRangeException failure = Assert.Throws<ArgumentOutOfRangeException>(() =>
-                StickyCyclicTypeBenchmarks.RunContract(true, false, cardinality, 0, 0)
-            );
-            Assert.That(
-                failure.ParamName,
-                Is.EqualTo("cardinality"),
-                $"cardinality={cardinality}: reject before construction."
-            );
+            ArgumentOutOfRangeException failure = Assert.Throws<ArgumentOutOfRangeException>(() => StickyCyclicTypeBenchmarks.RunContract(true, false, cardinality, 0, 0));
+            Assert.That(failure.ParamName, Is.EqualTo("cardinality"), $"cardinality={cardinality}: reject before construction.");
         }
 
         [TestCase(-1, 0)]
         [TestCase(0, -1)]
         public void NegativeCyclicOperationCountIsRejected(int first, int second)
         {
-            ArgumentOutOfRangeException failure = Assert.Throws<ArgumentOutOfRangeException>(() =>
-                StickyCyclicTypeBenchmarks.RunContract(true, false, 3, first, second)
-            );
-            Assert.That(
-                failure.ParamName,
-                Is.EqualTo("count"),
-                $"first={first},second={second}: reject a negative count."
-            );
+            ArgumentOutOfRangeException failure = Assert.Throws<ArgumentOutOfRangeException>(() => StickyCyclicTypeBenchmarks.RunContract(true, false, 3, first, second));
+            Assert.That(failure.ParamName, Is.EqualTo("count"), $"first={first},second={second}: reject a negative count.");
         }
     }
 }

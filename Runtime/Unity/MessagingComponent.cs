@@ -57,17 +57,14 @@ namespace DxMessaging.Unity
         [NonSerialized]
         private IMessageBusProvider _messageBusProvider;
 
-        internal readonly Dictionary<MonoBehaviour, MessageRegistrationToken> _registeredListeners =
-            new();
+        internal readonly Dictionary<MonoBehaviour, MessageRegistrationToken> _registeredListeners = new();
 
         /// <summary>Gets whether Unity has begun the owner's destruction callback.</summary>
         internal bool DestructionStarted => _destroyed;
 
-        internal bool AutoConfigureSerializedProviderOnAwake =>
-            autoConfigureSerializedProviderOnAwake;
+        internal bool AutoConfigureSerializedProviderOnAwake => autoConfigureSerializedProviderOnAwake;
 
-        internal bool HasRuntimeProvider =>
-            MessageBusProviderUtility.IsAvailable(_messageBusProvider);
+        internal bool HasRuntimeProvider => MessageBusProviderUtility.IsAvailable(_messageBusProvider);
 
         internal bool HasMessageBusOverride => _messageBusOverride != null;
 
@@ -75,8 +72,7 @@ namespace DxMessaging.Unity
 
         internal MessageBusProviderHandle SerializedProviderHandle => _serializedProviderHandle;
 
-        internal ScriptableMessageBusProvider SerializedProviderAsset =>
-            _serializedProviderHandle.SerializedProvider;
+        internal ScriptableMessageBusProvider SerializedProviderAsset => _serializedProviderHandle.SerializedProvider;
 
         /// <summary>
         /// Creates a <see cref="IMessageRegistrationBuilder"/> aligned with this component's configured bus or provider.
@@ -120,23 +116,14 @@ namespace DxMessaging.Unity
         private MessageRegistrationToken CreateToken(MonoBehaviour listener, bool warnOnExisting)
         {
             ValidateListener(listener);
-            if (
-                _registeredListeners.TryGetValue(
-                    listener,
-                    out MessageRegistrationToken createdToken
-                )
-            )
+            if (_registeredListeners.TryGetValue(listener, out MessageRegistrationToken createdToken))
             {
                 if (!warnOnExisting || !MessagingDebug.enabled)
                 {
                     return createdToken;
                 }
 
-                MessagingDebug.Log(
-                    LogLevel.Warn,
-                    "Ignoring double RegistrationToken request for {0}.",
-                    listener
-                );
+                MessagingDebug.Log(LogLevel.Warn, "Ignoring double RegistrationToken request for {0}.", listener);
                 // The warning receiver can release or replace the token.
                 ValidateListener(listener);
                 if (_registeredListeners.TryGetValue(listener, out createdToken))
@@ -175,9 +162,7 @@ namespace DxMessaging.Unity
 
             if (gameObject != listener.gameObject)
             {
-                throw new ArgumentException(
-                    $"Cannot create a RegistrationToken without a mismatched owner. {listener.gameObject} != existing {gameObject}."
-                );
+                throw new ArgumentException($"Cannot create a RegistrationToken without a mismatched owner. {listener.gameObject} != existing {gameObject}.");
             }
         }
 
@@ -202,9 +187,7 @@ namespace DxMessaging.Unity
             HashSet<MessageRegistrationToken> owners = _lifecycleTokens ??= new();
             if (!owners.Add(token))
             {
-                throw new InvalidOperationException(
-                    "A lifecycle already owns this listener token. Reuse it or release it before creating another owner."
-                );
+                throw new InvalidOperationException("A lifecycle already owns this listener token. Reuse it or release it before creating another owner.");
             }
             return new MessagingLifecycle(this, listener, token);
         }
@@ -251,20 +234,12 @@ namespace DxMessaging.Unity
         /// Resolution and migration errors from queued requests are reported by that outermost call.
         /// <para><b>Fixed in v4.0.0.</b></para>
         /// </remarks>
-        public void Configure(
-            IMessageBusProvider messageBusProvider,
-            MessageBusRebindMode rebindMode
-        )
+        public void Configure(IMessageBusProvider messageBusProvider, MessageBusRebindMode rebindMode)
         {
-            _messageBusProvider = MessageBusProviderUtility.IsAvailable(messageBusProvider)
-                ? messageBusProvider
-                : null;
+            _messageBusProvider = MessageBusProviderUtility.IsAvailable(messageBusProvider) ? messageBusProvider : null;
             _messageBusOverride = null;
 
-            _serializedProviderHandle =
-                _messageBusProvider != null
-                    ? MessageBusProviderHandle.FromProvider(_messageBusProvider)
-                    : MessageBusProviderHandle.Empty;
+            _serializedProviderHandle = _messageBusProvider != null ? MessageBusProviderHandle.FromProvider(_messageBusProvider) : MessageBusProviderHandle.Empty;
             ApplyMessageBusConfiguration(rebindMode);
         }
 
@@ -286,10 +261,7 @@ namespace DxMessaging.Unity
         /// Resolution and migration errors from queued requests are reported by that outermost call.
         /// <para><b>Fixed in v4.0.0.</b></para>
         /// </remarks>
-        public void Configure(
-            MessageBusProviderHandle providerHandle,
-            MessageBusRebindMode rebindMode
-        )
+        public void Configure(MessageBusProviderHandle providerHandle, MessageBusRebindMode rebindMode)
         {
             _serializedProviderHandle = providerHandle;
             _messageBusOverride = null;
@@ -460,10 +432,7 @@ namespace DxMessaging.Unity
                 }
                 catch (Exception exception)
                 {
-                    Debug.LogWarning(
-                        $"[DxMessaging] Disposing listener token failed. {exception}",
-                        this
-                    );
+                    Debug.LogWarning($"[DxMessaging] Disposing listener token failed. {exception}", this);
                 }
             }
         }
@@ -478,8 +447,7 @@ namespace DxMessaging.Unity
         /// Calls after this owner's destruction callback have no effect.
         /// <para><b>Fixed in v4.0.0.</b></para>
         /// </remarks>
-        public void ToggleMessageHandler(bool newActive) =>
-            SetMessageHandlerActive(newActive, explicitToggle: true);
+        public void ToggleMessageHandler(bool newActive) => SetMessageHandlerActive(newActive, explicitToggle: true);
 
         private void SetMessageHandlerActive(bool newActive, bool explicitToggle)
         {
@@ -550,16 +518,13 @@ namespace DxMessaging.Unity
             _explicitInitialHandlerActive = false;
             if (!_destroyed && this != null && handler != null)
             {
-                handler.active = ReferenceEquals(handler, explicitlyToggled)
-                    ? requestedActive
-                    : IsHandlerActiveForLifecycle;
+                handler.active = ReferenceEquals(handler, explicitlyToggled) ? requestedActive : IsHandlerActiveForLifecycle;
             }
         }
 
         private bool IsHandlerActiveForLifecycle => emitMessagesWhenDisabled || isActiveAndEnabled;
 
-        private MessageHandler CreateMessageHandler(IMessageBus resolvedBus) =>
-            new(gameObject, resolvedBus) { active = IsHandlerActiveForLifecycle };
+        private MessageHandler CreateMessageHandler(IMessageBus resolvedBus) => new(gameObject, resolvedBus) { active = IsHandlerActiveForLifecycle };
 
         /// <summary>Drains accepted requests without overlapping listener migrations.</summary>
         private void ApplyMessageBusConfiguration(MessageBusRebindMode rebindMode)
@@ -568,11 +533,7 @@ namespace DxMessaging.Unity
                 Retain provider identity before Resolve can accept another configuration. Deferred
                 resolution then preserves both request inputs and acceptance order.
             */
-            MessageBusConfiguration configuration = new(
-                _messageBusOverride,
-                _messageBusOverride == null ? ResolveConfiguredProvider() : null,
-                rebindMode
-            );
+            MessageBusConfiguration configuration = new(_messageBusOverride, _messageBusOverride == null ? ResolveConfiguredProvider() : null, rebindMode);
             if (_applyingMessageBusConfiguration)
             {
                 (_pendingMessageBusConfigurations ??= new()).Enqueue(configuration);
@@ -602,10 +563,7 @@ namespace DxMessaging.Unity
                         }
                     }
 
-                    if (
-                        _pendingMessageBusConfigurations == null
-                        || _pendingMessageBusConfigurations.Count == 0
-                    )
+                    if (_pendingMessageBusConfigurations == null || _pendingMessageBusConfigurations.Count == 0)
                     {
                         break;
                     }
@@ -632,10 +590,7 @@ namespace DxMessaging.Unity
         private void ApplyMessageBusConfiguration(in MessageBusConfiguration configuration)
         {
             IMessageBus resolvedBus = configuration.MessageBus;
-            if (
-                resolvedBus == null
-                && MessageBusProviderUtility.IsAvailable(configuration.Provider)
-            )
+            if (resolvedBus == null && MessageBusProviderUtility.IsAvailable(configuration.Provider))
             {
                 resolvedBus = ResolveProviderBus(configuration.Provider);
             }
@@ -666,19 +621,9 @@ namespace DxMessaging.Unity
                 Retargeting calls foreign bus cleanup, which can release or replace another
                 listener. Only migrate identities that remain owned after each callback.
             */
-            foreach (
-                KeyValuePair<
-                    MonoBehaviour,
-                    MessageRegistrationToken
-                > listener in _registeredListeners.ToArray()
-            )
+            foreach (KeyValuePair<MonoBehaviour, MessageRegistrationToken> listener in _registeredListeners.ToArray())
             {
-                if (
-                    _registeredListeners.TryGetValue(
-                        listener.Key,
-                        out MessageRegistrationToken token
-                    ) && ReferenceEquals(token, listener.Value)
-                )
+                if (_registeredListeners.TryGetValue(listener.Key, out MessageRegistrationToken token) && ReferenceEquals(token, listener.Value))
                 {
                     token.RetargetMessageBus(resolvedBus, effectiveMode);
                 }
@@ -692,11 +637,7 @@ namespace DxMessaging.Unity
             internal readonly IMessageBusProvider Provider;
             internal readonly MessageBusRebindMode RebindMode;
 
-            internal MessageBusConfiguration(
-                IMessageBus messageBus,
-                IMessageBusProvider provider,
-                MessageBusRebindMode rebindMode
-            )
+            internal MessageBusConfiguration(IMessageBus messageBus, IMessageBusProvider provider, MessageBusRebindMode rebindMode)
             {
                 MessageBus = messageBus;
                 Provider = provider;
@@ -764,9 +705,7 @@ namespace DxMessaging.Unity
             }
 
             _messageBusProvider = null;
-            if (
-                _serializedProviderHandle.TryGetProvider(out IMessageBusProvider providerFromHandle)
-            )
+            if (_serializedProviderHandle.TryGetProvider(out IMessageBusProvider providerFromHandle))
             {
                 _messageBusProvider = providerFromHandle;
             }
@@ -789,9 +728,7 @@ namespace DxMessaging.Unity
                 return;
             }
 
-            foreach (
-                KeyValuePair<MonoBehaviour, MessageRegistrationToken> pair in _registeredListeners
-            )
+            foreach (KeyValuePair<MonoBehaviour, MessageRegistrationToken> pair in _registeredListeners)
             {
                 MonoBehaviour listener = pair.Key;
                 MessageRegistrationToken token = pair.Value;
@@ -811,9 +748,7 @@ namespace DxMessaging.Unity
             }
             else if (0 < _registeredListeners.Count)
             {
-                Debug.LogWarning(
-                    $"[DxMessaging] Runtime state for '{name}' still has listener tokens awaiting cleanup. Retry the reset."
-                );
+                Debug.LogWarning($"[DxMessaging] Runtime state for '{name}' still has listener tokens awaiting cleanup. Retry the reset.");
             }
             else
             {

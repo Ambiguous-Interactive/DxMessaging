@@ -35,42 +35,26 @@ namespace DxMessaging.Tests.Editor
         {
             if (string.IsNullOrWhiteSpace(scenePath))
             {
-                throw new ArgumentException(
-                    "An authored scene path is required.",
-                    nameof(scenePath)
-                );
+                throw new ArgumentException("An authored scene path is required.", nameof(scenePath));
             }
 
             for (int index = 0; index < SceneManager.sceneCount; index++)
             {
                 Scene loaded = SceneManager.GetSceneAt(index);
-                if (
-                    loaded.isLoaded
-                    && string.Equals(loaded.path, scenePath, StringComparison.OrdinalIgnoreCase)
-                )
+                if (loaded.isLoaded && string.Equals(loaded.path, scenePath, StringComparison.OrdinalIgnoreCase))
                 {
-                    throw new InvalidOperationException(
-                        $"Cannot claim authored scene '{scenePath}' because it was already loaded."
-                    );
+                    throw new InvalidOperationException($"Cannot claim authored scene '{scenePath}' because it was already loaded.");
                 }
             }
 
             Scene originalActiveScene = SceneManager.GetActiveScene();
             Scene opened = EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Additive);
-            return new OwnedEditModeScene(
-                opened,
-                isPreviewScene: false,
-                originalActiveScene: originalActiveScene
-            );
+            return new OwnedEditModeScene(opened, isPreviewScene: false, originalActiveScene: originalActiveScene);
         }
 
         internal static OwnedEditModeScene CreatePreview()
         {
-            return new OwnedEditModeScene(
-                EditorSceneManager.NewPreviewScene(),
-                isPreviewScene: true,
-                originalActiveScene: SceneManager.GetActiveScene()
-            );
+            return new OwnedEditModeScene(EditorSceneManager.NewPreviewScene(), isPreviewScene: true, originalActiveScene: SceneManager.GetActiveScene());
         }
 
         internal void Activate()
@@ -78,26 +62,19 @@ namespace DxMessaging.Tests.Editor
             ThrowIfDisposed();
             if (_isPreviewScene)
             {
-                throw new InvalidOperationException(
-                    "A preview scene cannot become the active scene."
-                );
+                throw new InvalidOperationException("A preview scene cannot become the active scene.");
             }
 
             if (!SceneManager.SetActiveScene(_scene))
             {
-                throw new InvalidOperationException(
-                    $"Unity refused to activate fixture-owned scene '{_scene.path}'."
-                );
+                throw new InvalidOperationException($"Unity refused to activate fixture-owned scene '{_scene.path}'.");
             }
         }
 
         internal GameObject CreateGameObject(string name, params Type[] componentTypes)
         {
             ThrowIfDisposed();
-            GameObject gameObject = EditorUtility.CreateGameObjectWithHideFlags(
-                name,
-                HideFlags.HideAndDontSave
-            );
+            GameObject gameObject = EditorUtility.CreateGameObjectWithHideFlags(name, HideFlags.HideAndDontSave);
             SceneManager.MoveGameObjectToScene(gameObject, _scene);
             gameObject.hideFlags = HideFlags.None;
 
@@ -107,10 +84,7 @@ namespace DxMessaging.Tests.Editor
                 {
                     if (componentType == null)
                     {
-                        throw new ArgumentException(
-                            "Scene-resident component types cannot contain null.",
-                            nameof(componentTypes)
-                        );
+                        throw new ArgumentException("Scene-resident component types cannot contain null.", nameof(componentTypes));
                     }
                     gameObject.AddComponent(componentType);
                 }
@@ -137,9 +111,7 @@ namespace DxMessaging.Tests.Editor
                     && !SceneManager.SetActiveScene(_originalActiveScene)
                 )
                 {
-                    throw new InvalidOperationException(
-                        $"Unity refused to restore active scene '{_originalActiveScene.path}'."
-                    );
+                    throw new InvalidOperationException($"Unity refused to restore active scene '{_originalActiveScene.path}'.");
                 }
             }
             catch (Exception exception)
@@ -154,18 +126,14 @@ namespace DxMessaging.Tests.Editor
                 {
                     if (!EditorSceneManager.ClosePreviewScene(_scene))
                     {
-                        throw new InvalidOperationException(
-                            "Unity refused to close the fixture-owned preview scene."
-                        );
+                        throw new InvalidOperationException("Unity refused to close the fixture-owned preview scene.");
                     }
                 }
                 else if (sceneIsValid && _scene.isLoaded)
                 {
                     if (!EditorSceneManager.CloseScene(_scene, removeScene: true))
                     {
-                        throw new InvalidOperationException(
-                            $"Unity refused to close fixture-owned scene '{_scene.path}'."
-                        );
+                        throw new InvalidOperationException($"Unity refused to close fixture-owned scene '{_scene.path}'.");
                     }
                 }
             }

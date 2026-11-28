@@ -23,9 +23,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     foreach (bool fresh in new[] { false, true })
                     {
-                        yield return new TestCaseData(capacity, slot, fresh).SetName(
-                            $"ReflexiveReentryOwnership_capacity{capacity}_slot{slot}_fresh{fresh}"
-                        );
+                        yield return new TestCaseData(capacity, slot, fresh).SetName($"ReflexiveReentryOwnership_capacity{capacity}_slot{slot}_fresh{fresh}");
                     }
                 }
             }
@@ -37,14 +35,9 @@ namespace DxMessaging.Tests.Runtime.Core
         /// Read nodes directly after Unity 2022 IL2CPP could not reflect their List property.
         /// </remarks>
         [TestCaseSource(nameof(Cases))]
-        public void ReentrantPublicationPreservesCacheOwnership(
-            int capacity,
-            int metadataSlot,
-            bool freshSignature
-        )
+        public void ReentrantPublicationPreservesCacheOwnership(int capacity, int metadataSlot, bool freshSignature)
         {
-            DxMessagingRuntimeSettings settings =
-                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            DxMessagingRuntimeSettings settings = ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
             try
             {
                 settings._bufferMaxDistinctEntries = capacity;
@@ -59,32 +52,17 @@ namespace DxMessaging.Tests.Runtime.Core
                         bus.ResetState();
                         GameObject host = new("ReentryOwnership" + cycle);
                         _spawned.Add(host);
-                        ReflexiveReentryReceiver receiver =
-                            host.AddComponent<ReflexiveReentryReceiver>();
-                        SignatureSnapshotReceiverComponent thirdReceiver =
-                            host.AddComponent<SignatureSnapshotReceiverComponent>();
+                        ReflexiveReentryReceiver receiver = host.AddComponent<ReflexiveReentryReceiver>();
+                        SignatureSnapshotReceiverComponent thirdReceiver = host.AddComponent<SignatureSnapshotReceiverComponent>();
                         InstanceId target = host;
                         int deliveries = 0;
                         receiver.OnMessage = (method, first, second) =>
                         {
-                            Assert.That(
-                                first,
-                                Is.EqualTo(1),
-                                "First argument must survive reentry."
-                            );
-                            Assert.That(
-                                second,
-                                Is.EqualTo(2),
-                                "Second argument must survive reentry."
-                            );
+                            Assert.That(first, Is.EqualTo(1), "First argument must survive reentry.");
+                            Assert.That(second, Is.EqualTo(2), "Second argument must survive reentry.");
                             ++deliveries;
                         };
-                        ReflexiveMessage other = new(
-                            nameof(ReflexiveReentryReceiver.ReceiveOther),
-                            ReflexiveSendMode.Flat,
-                            1,
-                            2
-                        );
+                        ReflexiveMessage other = new(nameof(ReflexiveReentryReceiver.ReceiveOther), ReflexiveSendMode.Flat, 1, 2);
                         other.EmitTargeted(target, bus);
                         AssertOwnership(bus, Math.Min(capacity, 1));
                         deliveries = 0;
@@ -102,57 +80,31 @@ namespace DxMessaging.Tests.Runtime.Core
                             armed = false;
                             ++callbacks;
                             ReflexiveMessage nested = freshSignature
-                                ? new ReflexiveMessage(
-                                    nameof(ReflexiveReentryReceiver.Receive),
-                                    ReflexiveSendMode.Flat,
-                                    new object[] { 1, 2 },
-                                    types
-                                )
+                                ? new ReflexiveMessage(nameof(ReflexiveReentryReceiver.Receive), ReflexiveSendMode.Flat, new object[] { 1, 2 }, types)
                                 : message;
                             nested.EmitTargeted(target, bus);
                             ++nestedReturns;
                         });
-                        message = new ReflexiveMessage(
-                            nameof(ReflexiveReentryReceiver.Receive),
-                            ReflexiveSendMode.Flat,
-                            new object[] { 1, 2 },
-                            types
-                        );
+                        message = new ReflexiveMessage(nameof(ReflexiveReentryReceiver.Receive), ReflexiveSendMode.Flat, new object[] { 1, 2 }, types);
                         long generation = MessageBus.GetResetGeneration(bus);
                         armed = true;
                         message.EmitTargeted(target, bus);
                         Assert.That(callbacks, Is.EqualTo(1), "Cold metadata must call back once.");
                         Assert.That(nestedReturns, Is.EqualTo(1), "Nested delivery must return.");
-                        Assert.That(
-                            deliveries,
-                            Is.EqualTo(2),
-                            "Nested and outer sends must deliver."
-                        );
-                        Assert.That(
-                            MessageBus.GetResetGeneration(bus),
-                            Is.EqualTo(generation),
-                            "Same-generation reentry must not reset the bus."
-                        );
+                        Assert.That(deliveries, Is.EqualTo(2), "Nested and outer sends must deliver.");
+                        Assert.That(MessageBus.GetResetGeneration(bus), Is.EqualTo(generation), "Same-generation reentry must not reset the bus.");
                         AssertOwnership(bus, Math.Min(capacity, 2));
                         AssertCached(bus, message, 0 < capacity);
                         AssertCached(bus, other, 1 < capacity);
 
-                        ReflexiveMessage third = new(
-                            nameof(SignatureSnapshotReceiverComponent.ReceiveSignature),
-                            ReflexiveSendMode.Flat,
-                            1,
-                            2
-                        );
+                        ReflexiveMessage third = new(nameof(SignatureSnapshotReceiverComponent.ReceiveSignature), ReflexiveSendMode.Flat, 1, 2);
                         third.EmitTargeted(target, bus);
                         Assert.That(thirdReceiver.IntegerCalls, Is.EqualTo(1));
                         AssertOwnership(bus, Math.Min(capacity, 3));
                         AssertCached(bus, message, 1 < capacity);
                         AssertCached(bus, other, 2 < capacity);
                         Assert.That(
-                            bus.IsReflexiveMethodCached(
-                                typeof(SignatureSnapshotReceiverComponent),
-                                third.signatureKey
-                            ),
+                            bus.IsReflexiveMethodCached(typeof(SignatureSnapshotReceiverComponent), third.signatureKey),
                             Is.EqualTo(0 < capacity),
                             "The newest method must remain cached when retention is enabled."
                         );
@@ -195,41 +147,19 @@ namespace DxMessaging.Tests.Runtime.Core
 
         private static void AssertOwnership(MessageBus bus, int expectedCount)
         {
-            Dictionary<
-                (Type, MethodSignatureKey),
-                LinkedListNode<MessageBus.ReflexiveMethodEntry>
-            > cache =
-                (Dictionary<
-                    (Type, MethodSignatureKey),
-                    LinkedListNode<MessageBus.ReflexiveMethodEntry>
-                >)
-                    MessageBusInspection.ReadField(bus, "_methodCache");
-            LinkedList<MessageBus.ReflexiveMethodEntry> lru =
-                (LinkedList<MessageBus.ReflexiveMethodEntry>)
-                    MessageBusInspection.ReadField(bus, "_methodCacheLru");
+            Dictionary<(Type, MethodSignatureKey), LinkedListNode<MessageBus.ReflexiveMethodEntry>> cache =
+                (Dictionary<(Type, MethodSignatureKey), LinkedListNode<MessageBus.ReflexiveMethodEntry>>)MessageBusInspection.ReadField(bus, "_methodCache");
+            LinkedList<MessageBus.ReflexiveMethodEntry> lru = (LinkedList<MessageBus.ReflexiveMethodEntry>)MessageBusInspection.ReadField(bus, "_methodCacheLru");
             Assert.That(cache.Count, Is.EqualTo(expectedCount), "Dictionary must obey capacity.");
             Assert.That(lru.Count, Is.EqualTo(expectedCount), "LRU must have one node per key.");
             HashSet<LinkedListNode<MessageBus.ReflexiveMethodEntry>> nodes = new();
-            foreach (
-                KeyValuePair<
-                    (Type, MethodSignatureKey),
-                    LinkedListNode<MessageBus.ReflexiveMethodEntry>
-                > entry in cache
-            )
+            foreach (KeyValuePair<(Type, MethodSignatureKey), LinkedListNode<MessageBus.ReflexiveMethodEntry>> entry in cache)
             {
                 Assert.That(nodes.Add(entry.Value), Is.True, "Every key must own a distinct node.");
-                Assert.That(
-                    entry.Value.List,
-                    Is.SameAs(lru),
-                    "Every dictionary node must belong to this LRU."
-                );
+                Assert.That(entry.Value.List, Is.SameAs(lru), "Every dictionary node must belong to this LRU.");
             }
             int visited = 0;
-            for (
-                LinkedListNode<MessageBus.ReflexiveMethodEntry> node = lru.First;
-                node != null;
-                node = node.Next
-            )
+            for (LinkedListNode<MessageBus.ReflexiveMethodEntry> node = lru.First; node != null; node = node.Next)
             {
                 Assert.That(nodes.Remove(node), Is.True, "LRU must contain only dictionary nodes.");
                 ++visited;

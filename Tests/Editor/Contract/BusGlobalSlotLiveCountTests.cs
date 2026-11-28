@@ -40,10 +40,7 @@ namespace DxMessaging.Tests.Editor.Contract
         private static readonly InstanceId HandlerOwnerA = new InstanceId(0x4E61_5841);
         private static readonly InstanceId HandlerOwnerB = new InstanceId(0x4E61_5842);
 
-        private static readonly FieldInfo GlobalSlotsField = typeof(MessageBus).GetField(
-            "_globalSlots",
-            BindingFlags.Instance | BindingFlags.NonPublic
-        );
+        private static readonly FieldInfo GlobalSlotsField = typeof(MessageBus).GetField("_globalSlots", BindingFlags.Instance | BindingFlags.NonPublic);
 
         [Test]
         public void LiveCountStartsAtZero()
@@ -53,11 +50,7 @@ namespace DxMessaging.Tests.Editor.Contract
             BusGlobalSlot slot = ReadGlobalSlot(bus);
             Assert.AreEqual(0, slot.liveCount);
             Assert.IsTrue(slot.IsEmpty);
-            Assert.AreEqual(
-                slot.sharedHandlers.Count,
-                slot.liveCount,
-                "The production live counter must match the actual handler set."
-            );
+            Assert.AreEqual(slot.sharedHandlers.Count, slot.liveCount, "The production live counter must match the actual handler set.");
         }
 
         [Test]
@@ -73,11 +66,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 BusGlobalSlot slot = ReadGlobalSlot(bus);
                 Assert.AreEqual(1, slot.liveCount);
                 Assert.IsFalse(slot.IsEmpty);
-                Assert.AreEqual(
-                    slot.sharedHandlers.Count,
-                    slot.liveCount,
-                    "The production live counter must match the actual handler set."
-                );
+                Assert.AreEqual(slot.sharedHandlers.Count, slot.liveCount, "The production live counter must match the actual handler set.");
             }
             finally
             {
@@ -103,11 +92,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 BusGlobalSlot slot = ReadGlobalSlot(bus);
                 Assert.AreEqual(1, slot.liveCount);
                 Assert.IsFalse(slot.IsEmpty);
-                Assert.AreEqual(
-                    slot.sharedHandlers.Count,
-                    slot.liveCount,
-                    "The production live counter must match the actual handler set."
-                );
+                Assert.AreEqual(slot.sharedHandlers.Count, slot.liveCount, "The production live counter must match the actual handler set.");
             }
             finally
             {
@@ -130,11 +115,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 BusGlobalSlot slot = ReadGlobalSlot(bus);
                 Assert.AreEqual(2, slot.liveCount);
                 Assert.IsFalse(slot.IsEmpty);
-                Assert.AreEqual(
-                    slot.sharedHandlers.Count,
-                    slot.liveCount,
-                    "The production live counter must match the actual handler set."
-                );
+                Assert.AreEqual(slot.sharedHandlers.Count, slot.liveCount, "The production live counter must match the actual handler set.");
             }
             finally
             {
@@ -159,11 +140,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 BusGlobalSlot slot = ReadGlobalSlot(bus);
                 Assert.AreEqual(0, slot.liveCount);
                 Assert.IsTrue(slot.IsEmpty);
-                Assert.AreEqual(
-                    slot.sharedHandlers.Count,
-                    slot.liveCount,
-                    "The production live counter must match the actual handler set."
-                );
+                Assert.AreEqual(slot.sharedHandlers.Count, slot.liveCount, "The production live counter must match the actual handler set.");
             }
             finally
             {
@@ -195,11 +172,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 BusGlobalSlot slot = ReadGlobalSlot(bus);
                 Assert.AreEqual(1, slot.liveCount);
                 Assert.IsFalse(slot.IsEmpty);
-                Assert.AreEqual(
-                    slot.sharedHandlers.Count,
-                    slot.liveCount,
-                    "The production live counter must match the actual handler set."
-                );
+                Assert.AreEqual(slot.sharedHandlers.Count, slot.liveCount, "The production live counter must match the actual handler set.");
             }
             finally
             {
@@ -223,11 +196,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 Assert.AreEqual(0, bus.RegisteredGlobalAcceptAll);
                 BusGlobalSlot slot = ReadGlobalSlot(bus);
                 Assert.AreEqual(0, slot.liveCount);
-                Assert.AreEqual(
-                    slot.sharedHandlers.Count,
-                    slot.liveCount,
-                    "The production live counter must match the actual handler set."
-                );
+                Assert.AreEqual(slot.sharedHandlers.Count, slot.liveCount, "The production live counter must match the actual handler set.");
 
                 /*
                     Second invocation is over-deregistration: the early-exit
@@ -239,11 +208,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 slot = ReadGlobalSlot(bus);
                 Assert.AreEqual(0, slot.liveCount);
                 Assert.IsTrue(slot.IsEmpty);
-                Assert.AreEqual(
-                    slot.sharedHandlers.Count,
-                    slot.liveCount,
-                    "The production live counter must match the actual handler set."
-                );
+                Assert.AreEqual(slot.sharedHandlers.Count, slot.liveCount, "The production live counter must match the actual handler set.");
             }
             finally
             {
@@ -264,27 +229,13 @@ namespace DxMessaging.Tests.Editor.Contract
 
                 MessageBusRegistration dereg = bus.RegisterGlobalAcceptAll(handler);
                 slot = ReadGlobalSlot(bus);
-                Assert.IsFalse(
-                    slot.IsEmpty,
-                    "After registration liveCount > 0, IsEmpty must be false."
-                );
-                Assert.AreEqual(
-                    slot.sharedHandlers.Count,
-                    slot.liveCount,
-                    "The production live counter must match the actual handler set."
-                );
+                Assert.IsFalse(slot.IsEmpty, "After registration liveCount > 0, IsEmpty must be false.");
+                Assert.AreEqual(slot.sharedHandlers.Count, slot.liveCount, "The production live counter must match the actual handler set.");
 
                 bus.Deregister<IMessage>(in dereg);
                 slot = ReadGlobalSlot(bus);
-                Assert.IsTrue(
-                    slot.IsEmpty,
-                    "After final deregistration liveCount == 0, IsEmpty must be true."
-                );
-                Assert.AreEqual(
-                    slot.sharedHandlers.Count,
-                    slot.liveCount,
-                    "The production live counter must match the actual handler set."
-                );
+                Assert.IsTrue(slot.IsEmpty, "After final deregistration liveCount == 0, IsEmpty must be true.");
+                Assert.AreEqual(slot.sharedHandlers.Count, slot.liveCount, "The production live counter must match the actual handler set.");
             }
             finally
             {
@@ -294,10 +245,7 @@ namespace DxMessaging.Tests.Editor.Contract
 
         private static BusGlobalSlot ReadGlobalSlot(MessageBus bus)
         {
-            Assert.IsNotNull(
-                GlobalSlotsField,
-                "Could not locate the private '_globalSlots' field on MessageBus via reflection."
-            );
+            Assert.IsNotNull(GlobalSlotsField, "Could not locate the private '_globalSlots' field on MessageBus via reflection.");
             object value = GlobalSlotsField.GetValue(bus);
             Assert.IsInstanceOf<BusGlobalSlot>(value);
             return (BusGlobalSlot)value;

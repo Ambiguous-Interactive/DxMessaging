@@ -29,8 +29,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
         [Test]
         public void ArbitraryOrderDeregistrationKeepsSurvivorsInRegistrationOrder(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario
         )
         {
             foreach (int[] removal in RemovalPermutations(HandlerCount))
@@ -42,51 +41,29 @@ namespace DxMessaging.Tests.Runtime.Core
                 for (int i = 0; i < HandlerCount; i++)
                 {
                     int label = i;
-                    handles[i] = ScenarioCallbacks.RegisterCountingHandler(
-                        scenario,
-                        token,
-                        hostId,
-                        () => order.Add(label)
-                    );
+                    handles[i] = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () => order.Add(label));
                     liveInRegistrationOrder.Add(i);
                 }
 
-                AssertEmitOrder(
-                    scenario,
-                    hostId,
-                    order,
-                    liveInRegistrationOrder.ToArray(),
-                    $"anchor (all live), perm=[{string.Join(",", removal)}]"
-                );
+                AssertEmitOrder(scenario, hostId, order, liveInRegistrationOrder.ToArray(), $"anchor (all live), perm=[{string.Join(",", removal)}]");
 
                 foreach (int idx in removal)
                 {
                     token.RemoveRegistration(handles[idx]);
                     _ = liveInRegistrationOrder.Remove(idx);
-                    AssertEmitOrder(
-                        scenario,
-                        hostId,
-                        order,
-                        liveInRegistrationOrder.ToArray(),
-                        $"after removing {idx}, perm=[{string.Join(",", removal)}]"
-                    );
+                    AssertEmitOrder(scenario, hostId, order, liveInRegistrationOrder.ToArray(), $"after removing {idx}, perm=[{string.Join(",", removal)}]");
                 }
 
                 // Everything removed: nothing fires.
                 order.Clear();
                 ScenarioCallbacks.EmitForKind(scenario, hostId);
-                Assert.AreEqual(
-                    0,
-                    order.Count,
-                    $"no handler may fire after all are removed, perm=[{string.Join(",", removal)}]"
-                );
+                Assert.AreEqual(0, order.Count, $"no handler may fire after all are removed, perm=[{string.Join(",", removal)}]");
             }
         }
 
         [Test]
         public void MixedPriorityArbitraryOrderDeregistrationKeepsSurvivorsInDispatchOrder(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario
         )
         {
             int[] priorities = { 1, 0, 2, 0, 1, 2, 0, 1 };
@@ -101,43 +78,24 @@ namespace DxMessaging.Tests.Runtime.Core
                 for (int i = 0; i < n; i++)
                 {
                     int label = i;
-                    handles[i] = ScenarioCallbacks.RegisterCountingHandler(
-                        scenario,
-                        token,
-                        hostId,
-                        () => order.Add(label),
-                        priorities[i]
-                    );
+                    handles[i] = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () => order.Add(label), priorities[i]);
                     liveInRegistrationOrder.Add(i);
                 }
 
-                AssertEmitOrder(
-                    scenario,
-                    hostId,
-                    order,
-                    ExpectedByPriority(liveInRegistrationOrder, priorities),
-                    $"anchor (all live), perm=[{string.Join(",", removal)}]"
-                );
+                AssertEmitOrder(scenario, hostId, order, ExpectedByPriority(liveInRegistrationOrder, priorities), $"anchor (all live), perm=[{string.Join(",", removal)}]");
 
                 foreach (int idx in removal)
                 {
                     token.RemoveRegistration(handles[idx]);
                     _ = liveInRegistrationOrder.Remove(idx);
-                    AssertEmitOrder(
-                        scenario,
-                        hostId,
-                        order,
-                        ExpectedByPriority(liveInRegistrationOrder, priorities),
-                        $"after removing {idx}, perm=[{string.Join(",", removal)}]"
-                    );
+                    AssertEmitOrder(scenario, hostId, order, ExpectedByPriority(liveInRegistrationOrder, priorities), $"after removing {idx}, perm=[{string.Join(",", removal)}]");
                 }
             }
         }
 
         [Test]
         public void ArbitraryOrderRemovalThenReRegistrationMaintainsRegistrationOrder(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario
         )
         {
             (MessageRegistrationToken token, InstanceId hostId) = NewHost(scenario);
@@ -147,12 +105,7 @@ namespace DxMessaging.Tests.Runtime.Core
             for (int i = 0; i < 6; i++)
             {
                 int label = i;
-                handles[i] = ScenarioCallbacks.RegisterCountingHandler(
-                    scenario,
-                    token,
-                    hostId,
-                    () => order.Add(label)
-                );
+                handles[i] = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () => order.Add(label));
                 live.Add(i);
             }
 
@@ -162,37 +115,20 @@ namespace DxMessaging.Tests.Runtime.Core
                 token.RemoveRegistration(handles[idx]);
                 _ = live.Remove(idx);
             }
-            AssertEmitOrder(
-                scenario,
-                hostId,
-                order,
-                live.ToArray(),
-                "after arbitrary-order removal"
-            );
+            AssertEmitOrder(scenario, hostId, order, live.ToArray(), "after arbitrary-order removal");
 
             // Re-register two new handlers; they append to the LIVE registration order.
             for (int i = 6; i < 8; i++)
             {
                 int label = i;
-                _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () =>
-                    order.Add(label)
-                );
+                _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () => order.Add(label));
                 live.Add(i);
             }
-            AssertEmitOrder(
-                scenario,
-                hostId,
-                order,
-                live.ToArray(),
-                "after re-registration following arbitrary-order removal"
-            );
+            AssertEmitOrder(scenario, hostId, order, live.ToArray(), "after re-registration following arbitrary-order removal");
         }
 
         [Test]
-        public void RemovingTheSameHandleTwiceIsIdempotent(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void RemovingTheSameHandleTwiceIsIdempotent([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             (MessageRegistrationToken token, InstanceId hostId) = NewHost(scenario);
             List<int> order = new();
@@ -200,12 +136,7 @@ namespace DxMessaging.Tests.Runtime.Core
             for (int i = 0; i < 3; i++)
             {
                 int label = i;
-                handles[i] = ScenarioCallbacks.RegisterCountingHandler(
-                    scenario,
-                    token,
-                    hostId,
-                    () => order.Add(label)
-                );
+                handles[i] = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () => order.Add(label));
             }
 
             token.RemoveRegistration(handles[1]);
@@ -216,13 +147,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.DoesNotThrow(() => token.RemoveRegistration(handles[1]));
             Assert.DoesNotThrow(() => token.RemoveRegistration(handles[1]));
 
-            AssertEmitOrder(
-                scenario,
-                hostId,
-                order,
-                new[] { 0, 2 },
-                "survivors after idempotent double-removal of the middle handle"
-            );
+            AssertEmitOrder(scenario, hostId, order, new[] { 0, 2 }, "survivors after idempotent double-removal of the middle handle");
         }
 
         [Test]
@@ -236,16 +161,12 @@ namespace DxMessaging.Tests.Runtime.Core
                 (handler, priority) into a SINGLE dispatch entry, so it fires ONCE per emit
                 regardless of count, until every registration is removed.
             */
-            System.Action<DxMessaging.Tests.Runtime.Scripts.Messages.SimpleUntargetedMessage> shared =
-                _ => invocations++;
+            System.Action<DxMessaging.Tests.Runtime.Scripts.Messages.SimpleUntargetedMessage> shared = _ => invocations++;
 
             MessageRegistrationHandle[] handles = new MessageRegistrationHandle[4];
             for (int i = 0; i < 4; i++)
             {
-                handles[i] =
-                    token.RegisterUntargeted<DxMessaging.Tests.Runtime.Scripts.Messages.SimpleUntargetedMessage>(
-                        shared
-                    );
+                handles[i] = token.RegisterUntargeted<DxMessaging.Tests.Runtime.Scripts.Messages.SimpleUntargetedMessage>(shared);
             }
 
             AssertFiresOnce(untargeted, hostId, ref invocations, "refcount 4");
@@ -254,45 +175,26 @@ namespace DxMessaging.Tests.Runtime.Core
             foreach (int idx in new[] { 2, 0, 3 })
             {
                 token.RemoveRegistration(handles[idx]);
-                AssertFiresOnce(
-                    untargeted,
-                    hostId,
-                    ref invocations,
-                    $"after removing refcount handle {idx}"
-                );
+                AssertFiresOnce(untargeted, hostId, ref invocations, $"after removing refcount handle {idx}");
             }
 
             // Remove the last registration: count -> 0, handler stops firing.
             token.RemoveRegistration(handles[1]);
             invocations = 0;
             ScenarioCallbacks.EmitForKind(untargeted, hostId);
-            Assert.AreEqual(
-                0,
-                invocations,
-                "after the final refcount registration is removed the handler must stop firing"
-            );
+            Assert.AreEqual(0, invocations, "after the final refcount registration is removed the handler must stop firing");
         }
 
-        private static void AssertFiresOnce(
-            MessageScenario scenario,
-            InstanceId hostId,
-            ref int invocations,
-            string ctx
-        )
+        private static void AssertFiresOnce(MessageScenario scenario, InstanceId hostId, ref int invocations, string ctx)
         {
             invocations = 0;
             ScenarioCallbacks.EmitForKind(scenario, hostId);
-            Assert.AreEqual(
-                1,
-                invocations,
-                $"a refcounted handler must fire exactly once per emit while its count >= 1 ({ctx})"
-            );
+            Assert.AreEqual(1, invocations, $"a refcounted handler must fire exactly once per emit while its count >= 1 ({ctx})");
         }
 
         [Test]
         public void ArbitraryOrderPostProcessorDeregistrationKeepsSurvivorsInRegistrationOrder(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario
         )
         {
             foreach (int[] removal in RemovalPermutations(HandlerCount))
@@ -304,41 +206,23 @@ namespace DxMessaging.Tests.Runtime.Core
                 for (int i = 0; i < HandlerCount; i++)
                 {
                     int label = i;
-                    handles[i] = ScenarioCallbacks.RegisterCountingPostProcessor(
-                        scenario,
-                        token,
-                        hostId,
-                        () => order.Add(label)
-                    );
+                    handles[i] = ScenarioCallbacks.RegisterCountingPostProcessor(scenario, token, hostId, () => order.Add(label));
                     live.Add(i);
                 }
 
-                AssertEmitOrder(
-                    scenario,
-                    hostId,
-                    order,
-                    live.ToArray(),
-                    $"post-processors anchor, perm=[{string.Join(",", removal)}]"
-                );
+                AssertEmitOrder(scenario, hostId, order, live.ToArray(), $"post-processors anchor, perm=[{string.Join(",", removal)}]");
                 foreach (int idx in removal)
                 {
                     token.RemoveRegistration(handles[idx]);
                     _ = live.Remove(idx);
-                    AssertEmitOrder(
-                        scenario,
-                        hostId,
-                        order,
-                        live.ToArray(),
-                        $"post-processors after removing {idx}, perm=[{string.Join(",", removal)}]"
-                    );
+                    AssertEmitOrder(scenario, hostId, order, live.ToArray(), $"post-processors after removing {idx}, perm=[{string.Join(",", removal)}]");
                 }
             }
         }
 
         [Test]
         public void ArbitraryOrderInterceptorDeregistrationKeepsSurvivorsInRegistrationOrder(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario
         )
         {
             foreach (int[] removal in RemovalPermutations(HandlerCount))
@@ -353,65 +237,33 @@ namespace DxMessaging.Tests.Runtime.Core
                 for (int i = 0; i < HandlerCount; i++)
                 {
                     int label = i;
-                    handles[i] = ScenarioCallbacks.RegisterCountingInterceptor(
-                        scenario,
-                        token,
-                        result: () => true,
-                        onIntercepted: () => order.Add(label)
-                    );
+                    handles[i] = ScenarioCallbacks.RegisterCountingInterceptor(scenario, token, result: () => true, onIntercepted: () => order.Add(label));
                     live.Add(i);
                 }
 
-                AssertEmitOrder(
-                    scenario,
-                    hostId,
-                    order,
-                    live.ToArray(),
-                    $"interceptors anchor, perm=[{string.Join(",", removal)}]"
-                );
+                AssertEmitOrder(scenario, hostId, order, live.ToArray(), $"interceptors anchor, perm=[{string.Join(",", removal)}]");
                 foreach (int idx in removal)
                 {
                     token.RemoveRegistration(handles[idx]);
                     _ = live.Remove(idx);
-                    AssertEmitOrder(
-                        scenario,
-                        hostId,
-                        order,
-                        live.ToArray(),
-                        $"interceptors after removing {idx}, perm=[{string.Join(",", removal)}]"
-                    );
+                    AssertEmitOrder(scenario, hostId, order, live.ToArray(), $"interceptors after removing {idx}, perm=[{string.Join(",", removal)}]");
                 }
             }
         }
 
-        private (MessageRegistrationToken token, InstanceId hostId) NewHost(
-            MessageScenario scenario
-        )
+        private (MessageRegistrationToken token, InstanceId hostId) NewHost(MessageScenario scenario)
         {
-            GameObject host = new(
-                $"{nameof(MixedOrderDeregistrationTests)}_{scenario.Kind}",
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new($"{nameof(MixedOrderDeregistrationTests)}_{scenario.Kind}", typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             return (GetToken(component), host);
         }
 
-        private static void AssertEmitOrder(
-            MessageScenario scenario,
-            InstanceId hostId,
-            List<int> order,
-            int[] expected,
-            string ctx
-        )
+        private static void AssertEmitOrder(MessageScenario scenario, InstanceId hostId, List<int> order, int[] expected, string ctx)
         {
             order.Clear();
             ScenarioCallbacks.EmitForKind(scenario, hostId);
-            Assert.AreEqual(
-                expected,
-                order.ToArray(),
-                $"surviving handlers must fire exactly once each in dispatch order — {ctx}"
-            );
+            Assert.AreEqual(expected, order.ToArray(), $"surviving handlers must fire exactly once each in dispatch order — {ctx}");
         }
 
         // Stable order by ascending priority, preserving registration order within a priority.

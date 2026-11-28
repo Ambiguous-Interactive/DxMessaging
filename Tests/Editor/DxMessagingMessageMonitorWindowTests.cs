@@ -22,8 +22,7 @@ namespace DxMessaging.Tests.Editor
     [TestFixture]
     public sealed class DxMessagingMessageMonitorWindowTests
     {
-        private const string SceneSafetyFixturePath =
-            "Packages/com.wallstop-studios.dxmessaging/Tests/Editor/Fixtures/EditModeSceneSafety.unity";
+        private const string SceneSafetyFixturePath = "Packages/com.wallstop-studios.dxmessaging/Tests/Editor/Fixtures/EditModeSceneSafety.unity";
         private readonly List<Object> _createdObjects = new();
         private readonly List<string> _createdAssetPaths = new();
         private const float MonitorMinimumWidth = 420f;
@@ -31,37 +30,24 @@ namespace DxMessaging.Tests.Editor
 
         private readonly List<EditorWindow> _createdWindows = new();
         private const string MessageTypeLanesName = "dxmessaging-monitor-message-type-lanes";
-        private const string MessageTypeLaneScrollViewName =
-            "dxmessaging-monitor-message-type-lane-scroll";
-        private const string MessageTypeLaneRowClassName =
-            "dxmessaging-monitor-message-type-lane-row";
-        private const string MessageTypeLanesSummaryLabelName =
-            "dxmessaging-monitor-message-type-lanes-summary";
-        private const string MessageTypeLaneTypeLabelName =
-            "dxmessaging-monitor-message-type-lane-type";
-        private const string MessageTypeLaneSummaryLabelName =
-            "dxmessaging-monitor-message-type-lane-summary";
-        private const string MessageTypeLaneFilterButtonName =
-            "dxmessaging-monitor-message-type-lane-filter";
+        private const string MessageTypeLaneScrollViewName = "dxmessaging-monitor-message-type-lane-scroll";
+        private const string MessageTypeLaneRowClassName = "dxmessaging-monitor-message-type-lane-row";
+        private const string MessageTypeLanesSummaryLabelName = "dxmessaging-monitor-message-type-lanes-summary";
+        private const string MessageTypeLaneTypeLabelName = "dxmessaging-monitor-message-type-lane-type";
+        private const string MessageTypeLaneSummaryLabelName = "dxmessaging-monitor-message-type-lane-summary";
+        private const string MessageTypeLaneFilterButtonName = "dxmessaging-monitor-message-type-lane-filter";
         private const string ContextLanesName = "dxmessaging-monitor-context-lanes";
         private const string ContextLaneScrollViewName = "dxmessaging-monitor-context-lane-scroll";
         private const string ContextLaneRowClassName = "dxmessaging-monitor-context-lane-row";
-        private const string ContextLanesSummaryLabelName =
-            "dxmessaging-monitor-context-lanes-summary";
-        private const string ContextLaneContextLabelName =
-            "dxmessaging-monitor-context-lane-context";
-        private const string ContextLaneSummaryLabelName =
-            "dxmessaging-monitor-context-lane-summary";
-        private const string ContextLaneFilterButtonName =
-            "dxmessaging-monitor-context-lane-filter";
+        private const string ContextLanesSummaryLabelName = "dxmessaging-monitor-context-lanes-summary";
+        private const string ContextLaneContextLabelName = "dxmessaging-monitor-context-lane-context";
+        private const string ContextLaneSummaryLabelName = "dxmessaging-monitor-context-lane-summary";
+        private const string ContextLaneFilterButtonName = "dxmessaging-monitor-context-lane-filter";
         private const string ActiveFilterSummaryName = "dxmessaging-monitor-active-filter";
-        private const string ActiveFilterSummaryLabelName =
-            "dxmessaging-monitor-active-filter-label";
-        private const string ActiveFilterTokenScrollViewName =
-            "dxmessaging-monitor-active-filter-token-scroll";
+        private const string ActiveFilterSummaryLabelName = "dxmessaging-monitor-active-filter-label";
+        private const string ActiveFilterTokenScrollViewName = "dxmessaging-monitor-active-filter-token-scroll";
         private const string ActiveFilterTokenClassName = "dxmessaging-monitor-active-filter-token";
-        private const string ActiveFilterClearButtonName =
-            "dxmessaging-monitor-active-filter-clear";
+        private const string ActiveFilterClearButtonName = "dxmessaging-monitor-active-filter-clear";
 
         [TearDown]
         public void TearDown()
@@ -80,11 +66,7 @@ namespace DxMessaging.Tests.Editor
                     {
                         if (instance is GameObject gameObject)
                         {
-                            foreach (
-                                MessagingComponent messagingComponent in gameObject.GetComponentsInChildren<MessagingComponent>(
-                                    includeInactive: true
-                                )
-                            )
+                            foreach (MessagingComponent messagingComponent in gameObject.GetComponentsInChildren<MessagingComponent>(includeInactive: true))
                             {
                                 messagingComponent.EditorResetRuntimeState();
                             }
@@ -99,9 +81,7 @@ namespace DxMessaging.Tests.Editor
                 {
                     if (!string.IsNullOrWhiteSpace(assetPath))
                     {
-                        EditorWindowTestUtility.IgnoreUnityInvalidGcHandleAsserts(() =>
-                            AssetDatabase.DeleteAsset(assetPath)
-                        );
+                        EditorWindowTestUtility.IgnoreUnityInvalidGcHandleAsserts(() => AssetDatabase.DeleteAsset(assetPath));
                     }
                 }
                 _createdAssetPaths.Clear();
@@ -130,13 +110,7 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void MessageMonitorDoesNotUseFocusedInspectorTickRefresh()
         {
-            Assert.That(
-                typeof(DxMessagingMessageMonitorWindow).GetMethod(
-                    "OnInspectorUpdate",
-                    BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public
-                ),
-                Is.Null
-            );
+            Assert.That(typeof(DxMessagingMessageMonitorWindow).GetMethod("OnInspectorUpdate", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public), Is.Null);
         }
 
         [Test]
@@ -149,68 +123,28 @@ namespace DxMessaging.Tests.Editor
             );
             VisualElement root = new();
 
-            DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                root,
-                snapshot,
-                MessageMonitorViewState.Default,
-                onCopyExport: _ => { }
-            );
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot, MessageMonitorViewState.Default, onCopyExport: _ => { });
 
-            Assert.That(
-                root.ClassListContains(DxMessagingMessageMonitorWindow.RootClassName),
-                Is.True
-            );
+            Assert.That(root.ClassListContains(DxMessagingMessageMonitorWindow.RootClassName), Is.True);
             Assert.That(root.ClassListContains(DxMessagingEditorTheme.ThemeClassName), Is.True);
             Assert.That(root.ClassListContains(DxMessagingEditorTheme.WindowClassName), Is.True);
             Assert.That(
-                root.Query<VisualElement>(
-                        className: DxMessagingMessageMonitorWindow.ToolbarClassName
-                    )
-                    .First()
-                    .ClassListContains(DxMessagingEditorTheme.ToolbarClassName),
+                root.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.ToolbarClassName).First().ClassListContains(DxMessagingEditorTheme.ToolbarClassName),
                 Is.True
             );
-            Assert.That(
-                root.Q<Button>(DxMessagingMessageMonitorWindow.ExportButtonName)
-                    .ClassListContains(DxMessagingEditorTheme.ToolButtonClassName),
-                Is.True
-            );
-            Assert.That(
-                root.Q<Label>(DxMessagingMessageMonitorWindow.StatusLabelName).text,
-                Does.Contain("Off")
-            );
-            Assert.That(
-                root.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.RowClassName)
-                    .ToList(),
-                Is.Empty
-            );
+            Assert.That(root.Q<Button>(DxMessagingMessageMonitorWindow.ExportButtonName).ClassListContains(DxMessagingEditorTheme.ToolButtonClassName), Is.True);
+            Assert.That(root.Q<Label>(DxMessagingMessageMonitorWindow.StatusLabelName).text, Does.Contain("Off"));
+            Assert.That(root.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.RowClassName).ToList(), Is.Empty);
             Label emptyBody = root.Q<Label>(DxMessagingMessageMonitorWindow.EmptyStateLabelName);
             Assert.That(emptyBody, Is.Not.Null);
             Assert.That(emptyBody.text, Does.Contain("Enable"));
-            Assert.That(
-                emptyBody.ClassListContains(DxMessagingEditorTheme.EmptyBodyClassName),
-                Is.True
-            );
-            Assert.That(
-                emptyBody.parent.ClassListContains(DxMessagingEditorTheme.EmptyClassName),
-                Is.True
-            );
-            Label emptyTitle = root.Q<Label>(
-                DxMessagingMessageMonitorWindow.EmptyStateTitleLabelName
-            );
+            Assert.That(emptyBody.ClassListContains(DxMessagingEditorTheme.EmptyBodyClassName), Is.True);
+            Assert.That(emptyBody.parent.ClassListContains(DxMessagingEditorTheme.EmptyClassName), Is.True);
+            Label emptyTitle = root.Q<Label>(DxMessagingMessageMonitorWindow.EmptyStateTitleLabelName);
             Assert.That(emptyTitle, Is.Not.Null);
-            Assert.That(
-                emptyTitle.ClassListContains(DxMessagingEditorTheme.EmptyTitleClassName),
-                Is.True
-            );
-            Assert.That(
-                root.Q<Button>(DxMessagingMessageMonitorWindow.ExportButtonName).enabledSelf,
-                Is.False
-            );
-            Assert.That(
-                DxMessagingMessageMonitorWindow.CreateExportText(snapshot, snapshot.Entries),
-                Does.Contain("\"entryCount\": 0")
-            );
+            Assert.That(emptyTitle.ClassListContains(DxMessagingEditorTheme.EmptyTitleClassName), Is.True);
+            Assert.That(root.Q<Button>(DxMessagingMessageMonitorWindow.ExportButtonName).enabledSelf, Is.False);
+            Assert.That(DxMessagingMessageMonitorWindow.CreateExportText(snapshot, snapshot.Entries), Does.Contain("\"entryCount\": 0"));
         }
 
         /*
@@ -221,27 +155,13 @@ namespace DxMessaging.Tests.Editor
         [TestCase("unavailable", "Monitor unavailable", "active global bus")]
         [TestCase("diagnostics-off", "Diagnostics are Off", "Enable diagnostics")]
         [TestCase("no-messages-yet", "No messages yet", "recorded")]
-        public void BuildMonitorUiEmptyStateHasExpectedTitleAndBody(
-            string state,
-            string expectedTitle,
-            string expectedBodySubstring
-        )
+        public void BuildMonitorUiEmptyStateHasExpectedTitleAndBody(string state, string expectedTitle, string expectedBodySubstring)
         {
             MessageMonitorSnapshot snapshot = state switch
             {
-                "unavailable" => MessageMonitorSnapshot.Unavailable(
-                    "The active global bus is not the default DxMessaging MessageBus."
-                ),
-                "diagnostics-off" => new MessageMonitorSnapshot(
-                    diagnosticsEnabled: false,
-                    capacity: 8,
-                    entries: Array.Empty<MessageMonitorEntry>()
-                ),
-                _ => new MessageMonitorSnapshot(
-                    diagnosticsEnabled: true,
-                    capacity: 8,
-                    entries: Array.Empty<MessageMonitorEntry>()
-                ),
+                "unavailable" => MessageMonitorSnapshot.Unavailable("The active global bus is not the default DxMessaging MessageBus."),
+                "diagnostics-off" => new MessageMonitorSnapshot(diagnosticsEnabled: false, capacity: 8, entries: Array.Empty<MessageMonitorEntry>()),
+                _ => new MessageMonitorSnapshot(diagnosticsEnabled: true, capacity: 8, entries: Array.Empty<MessageMonitorEntry>()),
             };
             VisualElement root = new();
 
@@ -250,19 +170,13 @@ namespace DxMessaging.Tests.Editor
             Label title = root.Q<Label>(DxMessagingMessageMonitorWindow.EmptyStateTitleLabelName);
             Assert.That(title, Is.Not.Null);
             Assert.That(title.text, Is.EqualTo(expectedTitle));
-            Assert.That(
-                title.ClassListContains(DxMessagingEditorTheme.EmptyTitleClassName),
-                Is.True
-            );
+            Assert.That(title.ClassListContains(DxMessagingEditorTheme.EmptyTitleClassName), Is.True);
 
             Label body = root.Q<Label>(DxMessagingMessageMonitorWindow.EmptyStateLabelName);
             Assert.That(body, Is.Not.Null);
             Assert.That(body.text, Does.Contain(expectedBodySubstring));
             Assert.That(body.ClassListContains(DxMessagingEditorTheme.EmptyBodyClassName), Is.True);
-            Assert.That(
-                body.parent.ClassListContains(DxMessagingEditorTheme.EmptyClassName),
-                Is.True
-            );
+            Assert.That(body.parent.ClassListContains(DxMessagingEditorTheme.EmptyClassName), Is.True);
         }
 
         [Test]
@@ -270,32 +184,16 @@ namespace DxMessaging.Tests.Editor
         {
             MessageMonitorEntry older = CreateEntry(new OlderMessage(), null);
             MessageMonitorEntry newer = CreateEntry(new NewerMessage(), new InstanceId(123));
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { newer, older }
-            );
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { newer, older });
             VisualElement root = new();
 
             DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot);
 
-            List<VisualElement> rows = root.Query<VisualElement>(
-                    className: DxMessagingMessageMonitorWindow.RowClassName
-                )
-                .ToList();
+            List<VisualElement> rows = root.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.RowClassName).ToList();
             Assert.That(rows.Count, Is.EqualTo(2));
-            Assert.That(
-                rows[0].Q<Label>(DxMessagingMessageMonitorWindow.MessageTypeLabelName).text,
-                Is.EqualTo(nameof(NewerMessage))
-            );
-            Assert.That(
-                rows[0].Q<Label>(DxMessagingMessageMonitorWindow.ContextLabelName).text,
-                Does.Contain("123")
-            );
-            Assert.That(
-                rows[1].Q<Label>(DxMessagingMessageMonitorWindow.MessageTypeLabelName).text,
-                Is.EqualTo(nameof(OlderMessage))
-            );
+            Assert.That(rows[0].Q<Label>(DxMessagingMessageMonitorWindow.MessageTypeLabelName).text, Is.EqualTo(nameof(NewerMessage)));
+            Assert.That(rows[0].Q<Label>(DxMessagingMessageMonitorWindow.ContextLabelName).text, Does.Contain("123"));
+            Assert.That(rows[1].Q<Label>(DxMessagingMessageMonitorWindow.MessageTypeLabelName).text, Is.EqualTo(nameof(OlderMessage)));
         }
 
         [Test]
@@ -303,27 +201,15 @@ namespace DxMessaging.Tests.Editor
         {
             MessageMonitorEntry untargeted = CreateEntry(new OlderMessage(), null);
             MessageMonitorEntry targeted = CreateEntry(new NewerMessage(), new InstanceId(123));
-            MessageMonitorEntry broadcast = CreateEntry(
-                new BroadcastMessage(),
-                new InstanceId(456)
-            );
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { untargeted, targeted, broadcast }
-            );
+            MessageMonitorEntry broadcast = CreateEntry(new BroadcastMessage(), new InstanceId(456));
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { untargeted, targeted, broadcast });
             VisualElement root = new();
 
             DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot);
 
-            Dictionary<string, VisualElement> rowsByType = root.Query<VisualElement>(
-                    className: DxMessagingMessageMonitorWindow.RowClassName
-                )
+            Dictionary<string, VisualElement> rowsByType = root.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.RowClassName)
                 .ToList()
-                .ToDictionary(
-                    row => row.Q<Label>(DxMessagingMessageMonitorWindow.MessageTypeLabelName).text,
-                    StringComparer.Ordinal
-                );
+                .ToDictionary(row => row.Q<Label>(DxMessagingMessageMonitorWindow.MessageTypeLabelName).text, StringComparer.Ordinal);
 
             AssertTaxonomyRow(rowsByType[nameof(OlderMessage)], "Untargeted");
             AssertTaxonomyRow(rowsByType[nameof(NewerMessage)], "Targeted");
@@ -333,24 +219,13 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void BuildMonitorUiKeepsStackTracesOutOfLogRows()
         {
-            MessageMonitorEntry entry = new(
-                nameof(OlderMessage),
-                "Context: Player",
-                CapturedStackTrace
-            );
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { entry }
-            );
+            MessageMonitorEntry entry = new(nameof(OlderMessage), "Context: Player", CapturedStackTrace);
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { entry });
             VisualElement root = new();
 
             DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot);
 
-            List<VisualElement> rows = root.Query<VisualElement>(
-                    className: DxMessagingMessageMonitorWindow.RowClassName
-                )
-                .ToList();
+            List<VisualElement> rows = root.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.RowClassName).ToList();
             Assert.That(rows.Count, Is.EqualTo(1));
             Assert.That(
                 rows[0].Query<Label>().ToList().ConvertAll(label => label.text),
@@ -358,15 +233,11 @@ namespace DxMessaging.Tests.Editor
                 "A log row must not render the stack trace; it belongs to the selected entry."
             );
 
-            Foldout stack = root.Q<Foldout>(
-                DxMessagingMessageMonitorWindow.DetailsStackFoldoutName
-            );
+            Foldout stack = root.Q<Foldout>(DxMessagingMessageMonitorWindow.DetailsStackFoldoutName);
             Assert.That(stack, Is.Not.Null);
             Assert.That(stack.value, Is.False, "The stack trace disclosure must start collapsed.");
             Assert.That(
-                stack
-                    .Q<Label>(DxMessagingMessageMonitorWindow.DetailsStackFirstFrameLabelName)
-                    .text,
+                stack.Q<Label>(DxMessagingMessageMonitorWindow.DetailsStackFirstFrameLabelName).text,
                 Does.Contain("EmitOneOfEach"),
                 "The first frame shown must be the emitting call site."
             );
@@ -396,11 +267,7 @@ namespace DxMessaging.Tests.Editor
         {
             MessageMonitorEntry[] entries = Enumerable
                 .Range(0, 6)
-                .Select(index => new MessageMonitorEntry(
-                    $"Sample.Message{index:00}",
-                    $"Context: Object {index:00} (9748{index:00})",
-                    CapturedStackTrace
-                ))
+                .Select(index => new MessageMonitorEntry($"Sample.Message{index:00}", $"Context: Object {index:00} (9748{index:00})", CapturedStackTrace))
                 .ToArray();
             EditorWindow window = CreateTrackedEditorWindow();
 
@@ -411,30 +278,14 @@ namespace DxMessaging.Tests.Editor
                 VisualElement root = window.rootVisualElement;
                 root.style.width = 900f;
                 root.style.height = 620f;
-                DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                    root,
-                    new MessageMonitorSnapshot(
-                        diagnosticsEnabled: true,
-                        capacity: 100,
-                        entries: entries
-                    )
-                );
+                DxMessagingMessageMonitorWindow.BuildMonitorUi(root, new MessageMonitorSnapshot(diagnosticsEnabled: true, capacity: 100, entries: entries));
 
                 Assert.That(root.panel, Is.Not.Null, "A shown window must produce a panel.");
-                EditorSurfaceCapture.InvokeInheritedPanelMethod(
-                    root.panel,
-                    "ValidateLayout",
-                    Array.Empty<object>()
-                );
+                EditorSurfaceCapture.InvokeInheritedPanelMethod(root.panel, "ValidateLayout", Array.Empty<object>());
 
-                VisualElement header = root.Q<VisualElement>(
-                    DxMessagingMessageMonitorWindow.ListHeaderName
-                );
+                VisualElement header = root.Q<VisualElement>(DxMessagingMessageMonitorWindow.ListHeaderName);
                 Assert.That(header, Is.Not.Null);
-                VisualElement row = root.Query<VisualElement>(
-                        className: DxMessagingMessageMonitorWindow.RowClassName
-                    )
-                    .First();
+                VisualElement row = root.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.RowClassName).First();
                 Assert.That(row, Is.Not.Null);
 
                 AssertGutter(header, "the column header");
@@ -453,8 +304,7 @@ namespace DxMessaging.Tests.Editor
             Assert.That(
                 inset,
                 Is.GreaterThanOrEqualTo(12f),
-                $"The leftmost content of {description} sits {inset}px from its left edge, so it "
-                    + "reads as flush against the window."
+                $"The leftmost content of {description} sits {inset}px from its left edge, so it " + "reads as flush against the window."
             );
         }
 
@@ -466,54 +316,27 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void TheStackTraceRendersOneRowPerFrameWithoutEngineCaptureFrames()
         {
-            MessageMonitorEntry entry = new(
-                nameof(OlderMessage),
-                "Context: Player",
-                CapturedStackTrace
-            );
+            MessageMonitorEntry entry = new(nameof(OlderMessage), "Context: Player", CapturedStackTrace);
             VisualElement root = new();
 
-            DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                root,
-                new MessageMonitorSnapshot(
-                    diagnosticsEnabled: true,
-                    capacity: 8,
-                    entries: new[] { entry }
-                )
-            );
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(root, new MessageMonitorSnapshot(diagnosticsEnabled: true, capacity: 8, entries: new[] { entry }));
 
-            Foldout stack = root.Q<Foldout>(
-                DxMessagingMessageMonitorWindow.DetailsStackFoldoutName
-            );
+            Foldout stack = root.Q<Foldout>(DxMessagingMessageMonitorWindow.DetailsStackFoldoutName);
             Assert.That(stack, Is.Not.Null);
 
-            List<VisualElement> frameRows = stack
-                .Query<VisualElement>(
-                    className: DxMessagingMessageMonitorWindow.DetailsStackFrameRowClassName
-                )
-                .ToList();
-            Assert.That(
-                frameRows.Count,
-                Is.EqualTo(2),
-                "The trace has four frames, two of which are Unity's own capture frames."
-            );
+            List<VisualElement> frameRows = stack.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.DetailsStackFrameRowClassName).ToList();
+            Assert.That(frameRows.Count, Is.EqualTo(2), "The trace has four frames, two of which are Unity's own capture frames.");
             Assert.That(
                 stack.Query<Label>().ToList().ConvertAll(label => label.text),
                 Has.None.Contains("ExtractStackTrace"),
                 "Unity's stack-capture frames describe taking the stack, never the emitting code."
             );
             Assert.That(
-                stack
-                    .Q<Label>(DxMessagingMessageMonitorWindow.DetailsStackFirstFrameLabelName)
-                    .text,
+                stack.Q<Label>(DxMessagingMessageMonitorWindow.DetailsStackFirstFrameLabelName).text,
                 Does.Contain("EmitOneOfEach"),
                 "The first surviving frame is the emitting call site and reads as the answer."
             );
-            Assert.That(
-                stack.text,
-                Does.Contain("2"),
-                "The disclosure header counts the frames a reader will actually see."
-            );
+            Assert.That(stack.text, Does.Contain("2"), "The disclosure header counts the frames a reader will actually see.");
         }
 
         [Test]
@@ -524,11 +347,7 @@ namespace DxMessaging.Tests.Editor
                 + "EmitOneOfEachWithALongMethodName (at Packages/"
                 + "com.wallstop-studios.dxmessaging/Editor/Windows/"
                 + "DxMessagingMessageMonitorWindow.cs:185)";
-            MessageMonitorEntry entry = new(
-                nameof(OlderMessage),
-                "Context: Player",
-                longFrame + "\n" + longFrame.Replace(":185)", ":138)")
-            );
+            MessageMonitorEntry entry = new(nameof(OlderMessage), "Context: Player", longFrame + "\n" + longFrame.Replace(":185)", ":138)"));
             EditorWindow window = CreateTrackedEditorWindow();
 
             try
@@ -538,76 +357,39 @@ namespace DxMessaging.Tests.Editor
                 VisualElement root = window.rootVisualElement;
                 root.style.width = 480f;
                 root.style.height = 520f;
-                DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                    root,
-                    new MessageMonitorSnapshot(
-                        diagnosticsEnabled: true,
-                        capacity: 8,
-                        entries: new[] { entry }
-                    )
-                );
+                DxMessagingMessageMonitorWindow.BuildMonitorUi(root, new MessageMonitorSnapshot(diagnosticsEnabled: true, capacity: 8, entries: new[] { entry }));
 
-                Foldout stack = root.Q<Foldout>(
-                    DxMessagingMessageMonitorWindow.DetailsStackFoldoutName
-                );
+                Foldout stack = root.Q<Foldout>(DxMessagingMessageMonitorWindow.DetailsStackFoldoutName);
                 Assert.That(stack, Is.Not.Null, "A captured trace must expose its disclosure.");
                 stack.value = true;
-                EditorSurfaceCapture.InvokeInheritedPanelMethod(
-                    root.panel,
-                    "ValidateLayout",
-                    Array.Empty<object>()
-                );
+                EditorSurfaceCapture.InvokeInheritedPanelMethod(root.panel, "ValidateLayout", Array.Empty<object>());
 
-                List<VisualElement> rows = stack
-                    .Query<VisualElement>(
-                        className: DxMessagingMessageMonitorWindow.DetailsStackFrameRowClassName
-                    )
-                    .ToList();
+                List<VisualElement> rows = stack.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.DetailsStackFrameRowClassName).ToList();
                 Assert.That(rows.Count, Is.EqualTo(2), "Both caller frames must be visible.");
                 for (int index = 0; index < rows.Count; ++index)
                 {
                     VisualElement row = rows[index];
                     Label label = row.Q<Label>();
                     Assert.That(label, Is.Not.Null, "Every stack row must render its frame text.");
-                    Assert.That(
-                        label.resolvedStyle.whiteSpace,
-                        Is.EqualTo(WhiteSpace.Normal),
-                        "A long frame must wrap instead of collapsing to one clipped line."
-                    );
+                    Assert.That(label.resolvedStyle.whiteSpace, Is.EqualTo(WhiteSpace.Normal), "A long frame must wrap instead of collapsing to one clipped line.");
                     Assert.That(
                         label.worldBound.height,
                         Is.GreaterThan(label.resolvedStyle.fontSize * 1.5f),
                         "The deliberately long frame must occupy more than one rendered line."
                     );
-                    Assert.That(
-                        row.resolvedStyle.flexShrink,
-                        Is.EqualTo(0f),
-                        "A frame row must not be compressed below its wrapped label."
-                    );
+                    Assert.That(row.resolvedStyle.flexShrink, Is.EqualTo(0f), "A frame row must not be compressed below its wrapped label.");
                     Assert.That(
                         row.worldBound.height,
                         Is.GreaterThanOrEqualTo(label.worldBound.height - 0.5f),
                         "The full wrapped frame must fit inside its row instead of being clipped."
                     );
                     Button open = row.Q<Button>();
-                    Assert.That(
-                        open,
-                        Is.Not.Null,
-                        "A real package source path must render its Open link in the regression."
-                    );
-                    Assert.That(
-                        open.resolvedStyle.height,
-                        Is.LessThanOrEqualTo(18.5f),
-                        "A toolbar-height Open button must not add blank lines between frames."
-                    );
+                    Assert.That(open, Is.Not.Null, "A real package source path must render its Open link in the regression.");
+                    Assert.That(open.resolvedStyle.height, Is.LessThanOrEqualTo(18.5f), "A toolbar-height Open button must not add blank lines between frames.");
                 }
 
                 float gap = rows[1].worldBound.yMin - rows[0].worldBound.yMax;
-                Assert.That(
-                    gap,
-                    Is.InRange(0f, 4f),
-                    $"Stack rows should read continuously; measured vertical gap was {gap}px."
-                );
+                Assert.That(gap, Is.InRange(0f, 4f), $"Stack rows should read continuously; measured vertical gap was {gap}px.");
             }
             finally
             {
@@ -622,8 +404,7 @@ namespace DxMessaging.Tests.Editor
             MessageMonitorEntry entry = new(
                 nameof(OlderMessage),
                 "Context: Player",
-                $"Sample.First:Emit () (at {SourcePath}:185)\n"
-                    + $"Sample.Second:Call () (at {SourcePath}:138)"
+                $"Sample.First:Emit () (at {SourcePath}:185)\n" + $"Sample.Second:Call () (at {SourcePath}:138)"
             );
             EditorWindow window = CreateTrackedEditorWindow();
 
@@ -634,31 +415,14 @@ namespace DxMessaging.Tests.Editor
                 VisualElement root = window.rootVisualElement;
                 root.style.width = 900f;
                 root.style.height = 420f;
-                DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                    root,
-                    new MessageMonitorSnapshot(
-                        diagnosticsEnabled: true,
-                        capacity: 8,
-                        entries: new[] { entry }
-                    )
-                );
+                DxMessagingMessageMonitorWindow.BuildMonitorUi(root, new MessageMonitorSnapshot(diagnosticsEnabled: true, capacity: 8, entries: new[] { entry }));
 
-                Foldout stack = root.Q<Foldout>(
-                    DxMessagingMessageMonitorWindow.DetailsStackFoldoutName
-                );
+                Foldout stack = root.Q<Foldout>(DxMessagingMessageMonitorWindow.DetailsStackFoldoutName);
                 Assert.That(stack, Is.Not.Null, "A captured trace must expose its disclosure.");
                 stack.value = true;
-                EditorSurfaceCapture.InvokeInheritedPanelMethod(
-                    root.panel,
-                    "ValidateLayout",
-                    Array.Empty<object>()
-                );
+                EditorSurfaceCapture.InvokeInheritedPanelMethod(root.panel, "ValidateLayout", Array.Empty<object>());
 
-                List<VisualElement> rows = stack
-                    .Query<VisualElement>(
-                        className: DxMessagingMessageMonitorWindow.DetailsStackFrameRowClassName
-                    )
-                    .ToList();
+                List<VisualElement> rows = stack.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.DetailsStackFrameRowClassName).ToList();
                 Assert.That(rows.Count, Is.EqualTo(2), "Both one-line frames must be visible.");
                 Label first = rows[0].Q<Label>();
                 Label second = rows[1].Q<Label>();
@@ -678,11 +442,7 @@ namespace DxMessaging.Tests.Editor
                 Assert.That(rows[1].Q<Button>(), Is.Not.Null, "The second frame must render Open.");
 
                 float labelGap = second.worldBound.yMin - first.worldBound.yMax;
-                Assert.That(
-                    labelGap,
-                    Is.InRange(0f, 5f),
-                    $"Compact Open buttons must not add blank lines; measured gap was {labelGap}px."
-                );
+                Assert.That(labelGap, Is.InRange(0f, 5f), $"Compact Open buttons must not add blank lines; measured gap was {labelGap}px.");
             }
             finally
             {
@@ -708,10 +468,7 @@ namespace DxMessaging.Tests.Editor
         [TestCase(ContextState.NeverCaptured)]
         public void AContextLinksToItsObjectOnlyWhileThatObjectStillExists(ContextState state)
         {
-            GameObject contextObject = EditorUtility.CreateGameObjectWithHideFlags(
-                nameof(AContextLinksToItsObjectOnlyWhileThatObjectStillExists),
-                HideFlags.HideAndDontSave
-            );
+            GameObject contextObject = EditorUtility.CreateGameObjectWithHideFlags(nameof(AContextLinksToItsObjectOnlyWhileThatObjectStillExists), HideFlags.HideAndDontSave);
             bool contextIsAlive = state == ContextState.Alive;
             InstanceId objectBackedContext = contextObject;
             InstanceId? context;
@@ -727,9 +484,7 @@ namespace DxMessaging.Tests.Editor
             {
                 context = objectBackedContext;
             }
-            MessageMonitorEntry entry = MessageMonitorEntry.FromEmission(
-                new MessageEmissionData(new OlderMessage(), context)
-            );
+            MessageMonitorEntry entry = MessageMonitorEntry.FromEmission(new MessageEmissionData(new OlderMessage(), context));
             if (state == ContextState.Destroyed)
             {
                 Object.DestroyImmediate(contextObject);
@@ -740,42 +495,19 @@ namespace DxMessaging.Tests.Editor
             }
             VisualElement root = new();
 
-            DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                root,
-                new MessageMonitorSnapshot(
-                    diagnosticsEnabled: true,
-                    capacity: 8,
-                    entries: new[] { entry }
-                )
-            );
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(root, new MessageMonitorSnapshot(diagnosticsEnabled: true, capacity: 8, entries: new[] { entry }));
 
-            VisualElement contextRow = root.Q<VisualElement>(
-                DxMessagingMessageMonitorWindow.DetailsContextRowName
-            );
+            VisualElement contextRow = root.Q<VisualElement>(DxMessagingMessageMonitorWindow.DetailsContextRowName);
             Assert.That(contextRow, Is.Not.Null, "The detail pane always names the context.");
-            Label contextValue = contextRow.Q<Label>(
-                DxMessagingMessageMonitorWindow.DetailsContextLabelName
-            );
+            Label contextValue = contextRow.Q<Label>(DxMessagingMessageMonitorWindow.DetailsContextLabelName);
             Assert.That(contextValue, Is.Not.Null);
-            Assert.That(
-                contextValue.text,
-                state == ContextState.NeverCaptured
-                    ? Is.EqualTo("Context: none")
-                    : Does.StartWith("Context:"),
-                "An inert context is still readable."
-            );
+            Assert.That(contextValue.text, state == ContextState.NeverCaptured ? Is.EqualTo("Context: none") : Does.StartWith("Context:"), "An inert context is still readable.");
             Assert.That(
                 contextValue.ClassListContains(DxMessagingEditorTheme.ClickableClassName),
                 Is.EqualTo(contextIsAlive),
-                contextIsAlive
-                    ? "A live context must say it can be clicked."
-                    : "A context whose object is gone must not offer a link that does nothing."
+                contextIsAlive ? "A live context must say it can be clicked." : "A context whose object is gone must not offer a link that does nothing."
             );
-            Assert.That(
-                contextValue.focusable,
-                Is.EqualTo(contextIsAlive),
-                "Whatever a mouse can reach, a keyboard must reach too."
-            );
+            Assert.That(contextValue.focusable, Is.EqualTo(contextIsAlive), "Whatever a mouse can reach, a keyboard must reach too.");
         }
 
         /// <summary>
@@ -801,14 +533,7 @@ namespace DxMessaging.Tests.Editor
                     new MessageMonitorSnapshot(
                         diagnosticsEnabled: true,
                         capacity: 8,
-                        entries: new[]
-                        {
-                            new MessageMonitorEntry(
-                                nameof(OlderMessage),
-                                "Context: Player",
-                                CapturedStackTrace
-                            ),
-                        }
+                        entries: new[] { new MessageMonitorEntry(nameof(OlderMessage), "Context: Player", CapturedStackTrace) }
                     ),
                     MessageMonitorViewState.Default,
                     onRefresh: () => { },
@@ -816,51 +541,25 @@ namespace DxMessaging.Tests.Editor
                     componentEntries: CreateComponentEntries(4)
                 );
 
-                VisualElement componentResizer = root.Q<VisualElement>(
-                    DxMessagingMessageMonitorWindow.ComponentResizerName
-                );
-                Assert.That(
-                    componentResizer,
-                    Is.Not.Null,
-                    "Component Diagnostics is the panel #344 named; it must be resizable."
-                );
-                VisualElement detailsResizer = root.Q<VisualElement>(
-                    DxMessagingMessageMonitorWindow.DetailsPaneResizerName
-                );
-                Assert.That(
-                    detailsResizer,
-                    Is.Not.Null,
-                    "The divider must resize the entire details pane below the log."
-                );
+                VisualElement componentResizer = root.Q<VisualElement>(DxMessagingMessageMonitorWindow.ComponentResizerName);
+                Assert.That(componentResizer, Is.Not.Null, "Component Diagnostics is the panel #344 named; it must be resizable.");
+                VisualElement detailsResizer = root.Q<VisualElement>(DxMessagingMessageMonitorWindow.DetailsPaneResizerName);
+                Assert.That(detailsResizer, Is.Not.Null, "The divider must resize the entire details pane below the log.");
                 Assert.That(
                     root.Query<VisualElement>("dxmessaging-monitor-details-stack-resizer").First(),
                     Is.Null,
                     "The old nested stack-trace resizer made the middle of the pane move instead."
                 );
 
-                ScrollView componentScroll = root.Q<ScrollView>(
-                    DxMessagingMessageMonitorWindow.ComponentScrollViewName
-                );
-                Assert.That(
-                    componentScroll,
-                    Is.Not.Null,
-                    "Component Diagnostics must expose its scrolling resize target."
-                );
-                Assert.That(
-                    componentScroll.style.maxHeight.value.value,
-                    Is.EqualTo(180f),
-                    "The shipped cap is what makes the panel feel stuck."
-                );
+                ScrollView componentScroll = root.Q<ScrollView>(DxMessagingMessageMonitorWindow.ComponentScrollViewName);
+                Assert.That(componentScroll, Is.Not.Null, "Component Diagnostics must expose its scrolling resize target.");
+                Assert.That(componentScroll.style.maxHeight.value.value, Is.EqualTo(180f), "The shipped cap is what makes the panel feel stuck.");
 
                 /*
                     Lay the window out first: `worldBound` is NaN until it has, and a drag built from
                     NaN coordinates produces a NaN delta that clamps to NaN.
                 */
-                EditorSurfaceCapture.InvokeInheritedPanelMethod(
-                    root.panel,
-                    "ValidateLayout",
-                    Array.Empty<object>()
-                );
+                EditorSurfaceCapture.InvokeInheritedPanelMethod(root.panel, "ValidateLayout", Array.Empty<object>());
 
                 /*
                     Drive the handle's own pointer handlers rather than calling the apply helper
@@ -869,11 +568,7 @@ namespace DxMessaging.Tests.Editor
                 */
                 DragResizeHandle(componentResizer, deltaY: 220f);
 
-                Assert.That(
-                    componentScroll.style.height.value.value,
-                    Is.GreaterThan(180f),
-                    "Dragging down must grow the panel past the shipped cap."
-                );
+                Assert.That(componentScroll.style.height.value.value, Is.GreaterThan(180f), "Dragging down must grow the panel past the shipped cap.");
                 Assert.That(
                     componentScroll.style.maxHeight.value.value,
                     Is.GreaterThanOrEqualTo(componentScroll.style.height.value.value),
@@ -882,32 +577,17 @@ namespace DxMessaging.Tests.Editor
                 Assert.That(
                     componentScroll.style.flexShrink.value,
                     Is.EqualTo(0f),
-                    "A shrinkable target treats a height as a starting size Yoga takes back, so the "
-                        + "drag would not survive layout."
+                    "A shrinkable target treats a height as a starting size Yoga takes back, so the " + "drag would not survive layout."
                 );
 
-                VisualElement detailsPane = root.Q<VisualElement>(
-                    DxMessagingMessageMonitorWindow.DetailsPaneName
-                );
-                Assert.That(
-                    detailsPane,
-                    Is.Not.Null,
-                    "The selected snapshot row must render its details pane."
-                );
+                VisualElement detailsPane = root.Q<VisualElement>(DxMessagingMessageMonitorWindow.DetailsPaneName);
+                Assert.That(detailsPane, Is.Not.Null, "The selected snapshot row must render its details pane.");
                 VisualElement detailsSlot = detailsPane.parent;
                 float initialDetailsHeight = detailsSlot.resolvedStyle.height;
                 DragResizeHandle(detailsResizer, deltaY: -140f);
                 float draggedDetailsHeight = detailsSlot.style.height.value.value;
-                Assert.That(
-                    draggedDetailsHeight,
-                    Is.GreaterThan(initialDetailsHeight),
-                    "Dragging the divider upward must grow the whole details area."
-                );
-                EditorSurfaceCapture.InvokeInheritedPanelMethod(
-                    root.panel,
-                    "ValidateLayout",
-                    Array.Empty<object>()
-                );
+                Assert.That(draggedDetailsHeight, Is.GreaterThan(initialDetailsHeight), "Dragging the divider upward must grow the whole details area.");
+                EditorSurfaceCapture.InvokeInheritedPanelMethod(root.panel, "ValidateLayout", Array.Empty<object>());
                 Assert.That(
                     detailsPane.worldBound.height,
                     Is.EqualTo(detailsSlot.worldBound.height).Within(1f),
@@ -916,34 +596,19 @@ namespace DxMessaging.Tests.Editor
 
                 // Both dragged heights have to survive the rebuild every filter keystroke causes.
                 float draggedComponentHeight = componentScroll.style.height.value.value;
-                TextField filter = root.Q<TextField>(
-                    DxMessagingMessageMonitorWindow.FilterFieldName
-                );
+                TextField filter = root.Q<TextField>(DxMessagingMessageMonitorWindow.FilterFieldName);
                 Assert.That(filter, Is.Not.Null, "Snapshot mode must render its filter field.");
                 filter.value = "Sample";
 
-                ScrollView rebuiltScroll = root.Q<ScrollView>(
-                    DxMessagingMessageMonitorWindow.ComponentScrollViewName
-                );
-                Assert.That(
-                    rebuiltScroll,
-                    Is.Not.Null,
-                    "Filtering must rebuild Component Diagnostics with its scroll target."
-                );
+                ScrollView rebuiltScroll = root.Q<ScrollView>(DxMessagingMessageMonitorWindow.ComponentScrollViewName);
+                Assert.That(rebuiltScroll, Is.Not.Null, "Filtering must rebuild Component Diagnostics with its scroll target.");
                 Assert.That(
                     rebuiltScroll.style.height.value.value,
                     Is.EqualTo(draggedComponentHeight),
-                    "A filter keystroke rebuilds this section; the height a reader dragged must come "
-                        + "back with it."
+                    "A filter keystroke rebuilds this section; the height a reader dragged must come " + "back with it."
                 );
-                VisualElement rebuiltDetailsPane = root.Q<VisualElement>(
-                    DxMessagingMessageMonitorWindow.DetailsPaneName
-                );
-                Assert.That(
-                    rebuiltDetailsPane,
-                    Is.Not.Null,
-                    "Filtering must rebuild the selected snapshot details pane."
-                );
+                VisualElement rebuiltDetailsPane = root.Q<VisualElement>(DxMessagingMessageMonitorWindow.DetailsPaneName);
+                Assert.That(rebuiltDetailsPane, Is.Not.Null, "Filtering must rebuild the selected snapshot details pane.");
                 Assert.That(
                     rebuiltDetailsPane.parent.style.height.value.value,
                     Is.EqualTo(draggedDetailsHeight),
@@ -974,53 +639,26 @@ namespace DxMessaging.Tests.Editor
                     new MessageMonitorSnapshot(
                         diagnosticsEnabled: true,
                         capacity: 8,
-                        entries: new[]
-                        {
-                            new MessageMonitorEntry(
-                                nameof(OlderMessage),
-                                "Context: Player",
-                                CapturedStackTrace
-                            ),
-                        }
+                        entries: new[] { new MessageMonitorEntry(nameof(OlderMessage), "Context: Player", CapturedStackTrace) }
                     ),
                     MessageMonitorViewState.Default,
                     initialDetailsPaneHeight: DxMessagingMessageMonitorWindow.DetailsPaneResizeMaxHeight,
                     onDetailsPaneHeightChanged: height => rememberedHeight = height
                 );
-                EditorSurfaceCapture.InvokeInheritedPanelMethod(
-                    root.panel,
-                    "ValidateLayout",
-                    Array.Empty<object>()
-                );
+                EditorSurfaceCapture.InvokeInheritedPanelMethod(root.panel, "ValidateLayout", Array.Empty<object>());
 
-                VisualElement detailsPane = root.Q<VisualElement>(
-                    DxMessagingMessageMonitorWindow.DetailsPaneName
-                );
-                Assert.That(
-                    detailsPane,
-                    Is.Not.Null,
-                    "A remembered height must still render the snapshot details pane."
-                );
+                VisualElement detailsPane = root.Q<VisualElement>(DxMessagingMessageMonitorWindow.DetailsPaneName);
+                Assert.That(detailsPane, Is.Not.Null, "A remembered height must still render the snapshot details pane.");
                 VisualElement detailsSlot = detailsPane.parent;
-                VisualElement divider = root.Q<VisualElement>(
-                    DxMessagingMessageMonitorWindow.DetailsPaneResizerName
-                );
-                Assert.That(
-                    divider,
-                    Is.Not.Null,
-                    "A remembered height must still render the snapshot divider."
-                );
+                VisualElement divider = root.Q<VisualElement>(DxMessagingMessageMonitorWindow.DetailsPaneResizerName);
+                Assert.That(divider, Is.Not.Null, "A remembered height must still render the snapshot divider.");
                 float visibleHeight = detailsSlot.resolvedStyle.height;
                 Assert.That(
                     visibleHeight,
                     Is.LessThan(DxMessagingMessageMonitorWindow.DetailsPaneResizeMaxHeight),
                     "The short window must constrain the remembered tall-pane request."
                 );
-                Assert.That(
-                    divider.worldBound.yMin,
-                    Is.GreaterThanOrEqualTo(root.worldBound.yMin - 0.5f),
-                    "The constrained snapshot divider must stay inside the short window."
-                );
+                Assert.That(divider.worldBound.yMin, Is.GreaterThanOrEqualTo(root.worldBound.yMin - 0.5f), "The constrained snapshot divider must stay inside the short window.");
                 Assert.That(
                     detailsSlot.worldBound.yMax,
                     Is.LessThanOrEqualTo(root.worldBound.yMax + 0.5f),
@@ -1031,13 +669,7 @@ namespace DxMessaging.Tests.Editor
 
                 Assert.That(
                     rememberedHeight,
-                    Is.EqualTo(
-                            Mathf.Clamp(
-                                visibleHeight + 20f,
-                                DxMessagingMessageMonitorWindow.DetailsPaneMinHeight,
-                                DxMessagingMessageMonitorWindow.DetailsPaneResizeMaxHeight
-                            )
-                        )
+                    Is.EqualTo(Mathf.Clamp(visibleHeight + 20f, DxMessagingMessageMonitorWindow.DetailsPaneMinHeight, DxMessagingMessageMonitorWindow.DetailsPaneResizeMaxHeight))
                         .Within(1f),
                     "The first new drag must start from the visible height, then honor the pane bounds."
                 );
@@ -1055,14 +687,8 @@ namespace DxMessaging.Tests.Editor
             string preferenceKey = DxMessagingMessageMonitorWindow.DetailsPaneHeightPreferenceKey;
             bool hadPreviousValue = EditorPrefs.HasKey(preferenceKey);
             float previousValue = EditorPrefs.GetFloat(preferenceKey, 0f);
-            FieldInfo heightField = typeof(DxMessagingMessageMonitorWindow).GetField(
-                "_detailsPaneHeight",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
-            MethodInfo rememberHeight = typeof(DxMessagingMessageMonitorWindow).GetMethod(
-                "RememberDetailsPaneHeight",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
+            FieldInfo heightField = typeof(DxMessagingMessageMonitorWindow).GetField("_detailsPaneHeight", BindingFlags.Instance | BindingFlags.NonPublic);
+            MethodInfo rememberHeight = typeof(DxMessagingMessageMonitorWindow).GetMethod("RememberDetailsPaneHeight", BindingFlags.Instance | BindingFlags.NonPublic);
             Assert.That(heightField, Is.Not.Null, "The window must retain the divider position.");
             Assert.That(rememberHeight, Is.Not.Null, "The resize callback must update the window.");
 
@@ -1077,11 +703,7 @@ namespace DxMessaging.Tests.Editor
                 first = null;
 
                 reopened = ScriptableObject.CreateInstance<DxMessagingMessageMonitorWindow>();
-                Assert.That(
-                    (float)heightField.GetValue(reopened),
-                    Is.EqualTo(RememberedHeight),
-                    "OnDisable must persist the dragged height and OnEnable must restore it."
-                );
+                Assert.That((float)heightField.GetValue(reopened), Is.EqualTo(RememberedHeight), "OnDisable must persist the dragged height and OnEnable must restore it.");
             }
             finally
             {
@@ -1114,13 +736,7 @@ namespace DxMessaging.Tests.Editor
         private static void SendActivationKey(VisualElement target, char character, KeyCode keyCode)
         {
             target.Focus();
-            using (
-                KeyDownEvent keyDown = KeyDownEvent.GetPooled(
-                    character,
-                    keyCode,
-                    EventModifiers.None
-                )
-            )
+            using (KeyDownEvent keyDown = KeyDownEvent.GetPooled(character, keyCode, EventModifiers.None))
             {
                 keyDown.target = target;
                 target.panel.visualTree.SendEvent(keyDown);
@@ -1198,11 +814,7 @@ namespace DxMessaging.Tests.Editor
                 EditorWindowTestUtility.ShowWindow(window);
                 DxMessagingMessageMonitorWindow.BuildMonitorUi(
                     window.rootVisualElement,
-                    new MessageMonitorSnapshot(
-                        diagnosticsEnabled: true,
-                        capacity: 8,
-                        entries: Array.Empty<MessageMonitorEntry>()
-                    ),
+                    new MessageMonitorSnapshot(diagnosticsEnabled: true, capacity: 8, entries: Array.Empty<MessageMonitorEntry>()),
                     MessageMonitorViewState.Default,
                     onRefresh: () => { },
                     onCopyExport: _ => { },
@@ -1210,35 +822,17 @@ namespace DxMessaging.Tests.Editor
                     onEnterLiveMode: () => enterLiveCount++
                 );
 
-                Label badge = window.rootVisualElement.Q<Label>(
-                    DxMessagingMessageMonitorWindow.ModeBadgeLabelName
-                );
+                Label badge = window.rootVisualElement.Q<Label>(DxMessagingMessageMonitorWindow.ModeBadgeLabelName);
                 Assert.That(badge, Is.Not.Null);
-                Assert.That(
-                    badge.ClassListContains(DxMessagingEditorTheme.ClickableClassName),
-                    Is.True,
-                    "The word that names the mode must say it can be clicked."
-                );
-                Assert.That(
-                    badge.focusable,
-                    Is.True,
-                    "Whatever a mouse can reach, a keyboard must reach too."
-                );
+                Assert.That(badge.ClassListContains(DxMessagingEditorTheme.ClickableClassName), Is.True, "The word that names the mode must say it can be clicked.");
+                Assert.That(badge.focusable, Is.True, "Whatever a mouse can reach, a keyboard must reach too.");
 
                 SendClick(badge);
 
-                Assert.That(
-                    enterLiveCount,
-                    Is.EqualTo(1),
-                    "Clicking the SNAPSHOT badge switches to live mode."
-                );
+                Assert.That(enterLiveCount, Is.EqualTo(1), "Clicking the SNAPSHOT badge switches to live mode.");
 
                 SendActivationKey(badge, '\0', KeyCode.Return);
-                Assert.That(
-                    enterLiveCount,
-                    Is.EqualTo(2),
-                    "A Return key code activates the badge the same way a click does."
-                );
+                Assert.That(enterLiveCount, Is.EqualTo(2), "A Return key code activates the badge the same way a click does.");
 
                 /*
                     The character-only event UI Toolkit raises right after the key-code one must
@@ -1246,11 +840,7 @@ namespace DxMessaging.Tests.Editor
                     -- entering live mode twice, or pinging a context twice, from a single press.
                 */
                 SendActivationKey(badge, '\n', KeyCode.None);
-                Assert.That(
-                    enterLiveCount,
-                    Is.EqualTo(2),
-                    "The paired character event must not activate a second time."
-                );
+                Assert.That(enterLiveCount, Is.EqualTo(2), "The paired character event must not activate a second time.");
             }
             finally
             {
@@ -1266,10 +856,7 @@ namespace DxMessaging.Tests.Editor
         /// comma-separated argument assemblies inside brackets, which is what breaks a naive
         /// split on the first comma.
         /// </summary>
-        [TestCase(
-            "Sample.Ping, Sample.Runtime, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-            "Sample.Ping [Sample.Runtime]"
-        )]
+        [TestCase("Sample.Ping, Sample.Runtime, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null", "Sample.Ping [Sample.Runtime]")]
         [TestCase(
             "Sample.Box`1[[Sample.Payload, Other.Asm, Version=1.0.0.0]], Sample.Runtime, Version=1.0.0.0",
             "Sample.Box`1[[Sample.Payload, Other.Asm, Version=1.0.0.0]] [Sample.Runtime]"
@@ -1277,15 +864,9 @@ namespace DxMessaging.Tests.Editor
         [TestCase("Sample.Ping", "Sample.Ping")]
         [TestCase("", "")]
         [TestCase(null, "")]
-        public void ACapturedTypeNameConvertsToTheShapeTheSourceResolverReads(
-            string assemblyQualifiedName,
-            string expected
-        )
+        public void ACapturedTypeNameConvertsToTheShapeTheSourceResolverReads(string assemblyQualifiedName, string expected)
         {
-            Assert.That(
-                DxMessagingEditorSourceLinks.CreateSourceLookupName(assemblyQualifiedName),
-                Is.EqualTo(expected)
-            );
+            Assert.That(DxMessagingEditorSourceLinks.CreateSourceLookupName(assemblyQualifiedName), Is.EqualTo(expected));
         }
 
         /// <summary>
@@ -1304,10 +885,7 @@ namespace DxMessaging.Tests.Editor
                     Warm the lazy index the way the window does, then let it finish. `OlderMessage`
                     is declared in this file, so the location it resolves to is a real asset.
                 */
-                _ = DxMessagingEditorSourceLinks.TryResolveSourceForAssemblyQualifiedName(
-                    typeof(OlderMessage).AssemblyQualifiedName,
-                    out _
-                );
+                _ = DxMessagingEditorSourceLinks.TryResolveSourceForAssemblyQualifiedName(typeof(OlderMessage).AssemblyQualifiedName, out _);
                 EditorSourceIndexInspection.Complete();
 
                 Assert.That(
@@ -1320,32 +898,14 @@ namespace DxMessaging.Tests.Editor
                 );
                 Assert.That(location.AssetPath, Does.EndWith(".cs"));
 
-                MessageMonitorEntry entry = new(
-                    nameof(OlderMessage),
-                    "Context: Player",
-                    CapturedStackTrace,
-                    messageTypeIdentity: typeof(OlderMessage).AssemblyQualifiedName
-                );
+                MessageMonitorEntry entry = new(nameof(OlderMessage), "Context: Player", CapturedStackTrace, messageTypeIdentity: typeof(OlderMessage).AssemblyQualifiedName);
                 VisualElement root = new();
-                DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                    root,
-                    new MessageMonitorSnapshot(
-                        diagnosticsEnabled: true,
-                        capacity: 8,
-                        entries: new[] { entry }
-                    )
-                );
+                DxMessagingMessageMonitorWindow.BuildMonitorUi(root, new MessageMonitorSnapshot(diagnosticsEnabled: true, capacity: 8, entries: new[] { entry }));
 
-                VisualElement typeRow = root.Q<VisualElement>(
-                    DxMessagingMessageMonitorWindow.DetailsTypeRowName
-                );
+                VisualElement typeRow = root.Q<VisualElement>(DxMessagingMessageMonitorWindow.DetailsTypeRowName);
                 Assert.That(typeRow, Is.Not.Null);
                 Button link = typeRow.Q<Button>(DxMessagingEditorSourceLinks.SourceLinkButtonName);
-                Assert.That(
-                    link,
-                    Is.Not.Null,
-                    "A type whose source resolves must offer a link to it."
-                );
+                Assert.That(link, Is.Not.Null, "A type whose source resolves must offer a link to it.");
                 Assert.That(link.tooltip, Does.Contain(location.AssetPath));
             }
             finally
@@ -1363,8 +923,7 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void TheWindowRerendersItsDetailPaneWhenTheSourceIndexCompletes()
         {
-            DxMessagingMessageMonitorWindow window =
-                ScriptableObject.CreateInstance<DxMessagingMessageMonitorWindow>();
+            DxMessagingMessageMonitorWindow window = ScriptableObject.CreateInstance<DxMessagingMessageMonitorWindow>();
             _createdWindows.Add(window);
 
             /*
@@ -1377,44 +936,30 @@ namespace DxMessaging.Tests.Editor
                 new MessageMonitorSnapshot(
                     diagnosticsEnabled: true,
                     capacity: 8,
-                    entries: new[]
-                    {
-                        new MessageMonitorEntry(
-                            nameof(OlderMessage),
-                            "Context: Player",
-                            CapturedStackTrace
-                        ),
-                    }
+                    entries: new[] { new MessageMonitorEntry(nameof(OlderMessage), "Context: Player", CapturedStackTrace) }
                 )
             );
 
             ScrollView log = root.Q<ScrollView>(DxMessagingMessageMonitorWindow.ListName);
-            VisualElement details = root.Q<VisualElement>(
-                DxMessagingMessageMonitorWindow.DetailsPaneName
-            );
+            VisualElement details = root.Q<VisualElement>(DxMessagingMessageMonitorWindow.DetailsPaneName);
             Assert.That(log, Is.Not.Null);
             Assert.That(details, Is.Not.Null);
 
             try
             {
                 EditorSourceIndexInspection.Reset();
-                _ = DxMessagingEditorSourceLinks.TryResolveSourceForAssemblyQualifiedName(
-                    typeof(OlderMessage).AssemblyQualifiedName,
-                    out _
-                );
+                _ = DxMessagingEditorSourceLinks.TryResolveSourceForAssemblyQualifiedName(typeof(OlderMessage).AssemblyQualifiedName, out _);
                 EditorSourceIndexInspection.Complete();
 
                 Assert.That(
                     root.Q<VisualElement>(DxMessagingMessageMonitorWindow.DetailsPaneName),
                     Is.Not.SameAs(details),
-                    "A completed index must re-render the pane that can carry a source link; a window "
-                        + "that does not listen shows a linkless pane forever."
+                    "A completed index must re-render the pane that can carry a source link; a window " + "that does not listen shows a linkless pane forever."
                 );
                 Assert.That(
                     root.Q<ScrollView>(DxMessagingMessageMonitorWindow.ListName),
                     Is.SameAs(log),
-                    "Re-rendering for a link must not rebuild the log and take the reader's scroll "
-                        + "position with it."
+                    "Re-rendering for a link must not rebuild the log and take the reader's scroll " + "position with it."
                 );
             }
             finally
@@ -1430,26 +975,12 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void ATypeThatResolvesToNoSourceRendersNoLink()
         {
-            MessageMonitorEntry entry = new(
-                "NotARealType",
-                "Context: Player",
-                CapturedStackTrace,
-                messageTypeIdentity: "Nowhere.NotARealType, Nowhere.Asm, Version=1.0.0.0"
-            );
+            MessageMonitorEntry entry = new("NotARealType", "Context: Player", CapturedStackTrace, messageTypeIdentity: "Nowhere.NotARealType, Nowhere.Asm, Version=1.0.0.0");
             VisualElement root = new();
 
-            DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                root,
-                new MessageMonitorSnapshot(
-                    diagnosticsEnabled: true,
-                    capacity: 8,
-                    entries: new[] { entry }
-                )
-            );
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(root, new MessageMonitorSnapshot(diagnosticsEnabled: true, capacity: 8, entries: new[] { entry }));
 
-            VisualElement typeRow = root.Q<VisualElement>(
-                DxMessagingMessageMonitorWindow.DetailsTypeRowName
-            );
+            VisualElement typeRow = root.Q<VisualElement>(DxMessagingMessageMonitorWindow.DetailsTypeRowName);
             Assert.That(typeRow, Is.Not.Null, "The detail pane always names the type.");
             Assert.That(
                 typeRow.Q<Button>(DxMessagingEditorSourceLinks.SourceLinkButtonName),
@@ -1461,69 +992,35 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void BuildMonitorUiRendersModeBadgeAndListHeader()
         {
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { CreateEntry(new OlderMessage(), null) }
-            );
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { CreateEntry(new OlderMessage(), null) });
             VisualElement root = new();
 
             DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot);
 
             Label badge = root.Q<Label>(DxMessagingMessageMonitorWindow.ModeBadgeLabelName);
             Assert.That(badge, Is.Not.Null);
-            Assert.That(
-                badge.text,
-                Is.EqualTo(DxMessagingMessageMonitorWindow.SnapshotModeBadgeText)
-            );
-            Assert.That(
-                badge.tooltip,
-                Is.EqualTo(DxMessagingMessageMonitorWindow.SnapshotModeHintText)
-            );
-            Assert.That(
-                root.Q<Label>(DxMessagingMessageMonitorWindow.ModeHintLabelName).text,
-                Is.EqualTo(DxMessagingMessageMonitorWindow.SnapshotModeHintText)
-            );
+            Assert.That(badge.text, Is.EqualTo(DxMessagingMessageMonitorWindow.SnapshotModeBadgeText));
+            Assert.That(badge.tooltip, Is.EqualTo(DxMessagingMessageMonitorWindow.SnapshotModeHintText));
+            Assert.That(root.Q<Label>(DxMessagingMessageMonitorWindow.ModeHintLabelName).text, Is.EqualTo(DxMessagingMessageMonitorWindow.SnapshotModeHintText));
 
-            VisualElement header = root.Q<VisualElement>(
-                DxMessagingMessageMonitorWindow.ListHeaderName
-            );
+            VisualElement header = root.Q<VisualElement>(DxMessagingMessageMonitorWindow.ListHeaderName);
             Assert.That(header, Is.Not.Null);
-            Assert.That(
-                header.ClassListContains(DxMessagingEditorTheme.ListHeaderClassName),
-                Is.True
-            );
-            CollectionAssert.AreEqual(
-                new[] { "ROUTE", "MESSAGE", "CONTEXT", "#" },
-                header.Query<Label>().ToList().ConvertAll(label => label.text)
-            );
+            Assert.That(header.ClassListContains(DxMessagingEditorTheme.ListHeaderClassName), Is.True);
+            CollectionAssert.AreEqual(new[] { "ROUTE", "MESSAGE", "CONTEXT", "#" }, header.Query<Label>().ToList().ConvertAll(label => label.text));
         }
 
         [Test]
         public void BuildMonitorUiKeepsSecondarySectionsCollapsed()
         {
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { CreateEntry(new OlderMessage(), null) }
-            );
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { CreateEntry(new OlderMessage(), null) });
             VisualElement root = new();
 
-            DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                root,
-                snapshot,
-                MessageMonitorViewState.Default,
-                componentEntries: Array.Empty<ComponentMonitorEntry>()
-            );
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot, MessageMonitorViewState.Default, componentEntries: Array.Empty<ComponentMonitorEntry>());
 
-            Foldout breakdown = root.Q<Foldout>(
-                DxMessagingMessageMonitorWindow.BreakdownFoldoutName
-            );
+            Foldout breakdown = root.Q<Foldout>(DxMessagingMessageMonitorWindow.BreakdownFoldoutName);
             Assert.That(breakdown, Is.Not.Null);
             Assert.That(breakdown.value, Is.False);
-            Foldout components = root.Q<Foldout>(
-                DxMessagingMessageMonitorWindow.ComponentFoldoutName
-            );
+            Foldout components = root.Q<Foldout>(DxMessagingMessageMonitorWindow.ComponentFoldoutName);
             Assert.That(components, Is.Not.Null);
             Assert.That(components.value, Is.False);
         }
@@ -1550,11 +1047,7 @@ namespace DxMessaging.Tests.Editor
         [TestCase(520, 620, true)]
         [TestCase(900, 620, false)]
         [TestCase(900, 620, true)]
-        public void BuildMonitorUiKeepsNonScrollingSectionsInsideTheWindow(
-            int width,
-            int height,
-            bool expandDisclosures
-        )
+        public void BuildMonitorUiKeepsNonScrollingSectionsInsideTheWindow(int width, int height, bool expandDisclosures)
         {
             MessageMonitorEntry[] entries = Enumerable
                 .Range(0, 24)
@@ -1564,11 +1057,7 @@ namespace DxMessaging.Tests.Editor
                     "UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)"
                 ))
                 .ToArray();
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 100,
-                entries: entries
-            );
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 100, entries: entries);
             EditorWindow window = CreateTrackedEditorWindow();
 
             try
@@ -1595,18 +1084,12 @@ namespace DxMessaging.Tests.Editor
 
                 if (expandDisclosures)
                 {
-                    root.Q<Foldout>(DxMessagingMessageMonitorWindow.BreakdownFoldoutName).value =
-                        true;
-                    root.Q<Foldout>(DxMessagingMessageMonitorWindow.ComponentFoldoutName).value =
-                        true;
+                    root.Q<Foldout>(DxMessagingMessageMonitorWindow.BreakdownFoldoutName).value = true;
+                    root.Q<Foldout>(DxMessagingMessageMonitorWindow.ComponentFoldoutName).value = true;
                 }
 
                 Assert.That(root.panel, Is.Not.Null, "A shown window must produce a panel.");
-                EditorSurfaceCapture.InvokeInheritedPanelMethod(
-                    root.panel,
-                    "ValidateLayout",
-                    Array.Empty<object>()
-                );
+                EditorSurfaceCapture.InvokeInheritedPanelMethod(root.panel, "ValidateLayout", Array.Empty<object>());
 
                 ScrollView log = root.Q<ScrollView>(DxMessagingMessageMonitorWindow.ListName);
                 Assert.That(log, Is.Not.Null);
@@ -1619,10 +1102,7 @@ namespace DxMessaging.Tests.Editor
                     {
                         continue;
                     }
-                    if (
-                        elementBounds.yMax <= bounds.yMax + 0.5f
-                        && elementBounds.xMax <= bounds.xMax + 0.5f
-                    )
+                    if (elementBounds.yMax <= bounds.yMax + 0.5f && elementBounds.xMax <= bounds.xMax + 0.5f)
                     {
                         continue;
                     }
@@ -1632,17 +1112,10 @@ namespace DxMessaging.Tests.Editor
                         continue;
                     }
 
-                    escaped.Add(
-                        $"{(string.IsNullOrEmpty(element.name) ? "<unnamed>" : element.name)} [{string.Join(" ", element.GetClasses())}] {elementBounds}"
-                    );
+                    escaped.Add($"{(string.IsNullOrEmpty(element.name) ? "<unnamed>" : element.name)} [{string.Join(" ", element.GetClasses())}] {elementBounds}");
                 }
 
-                Assert.That(
-                    escaped,
-                    Is.Empty,
-                    $"At {width}x{height} these elements render outside the window: "
-                        + string.Join("; ", escaped)
-                );
+                Assert.That(escaped, Is.Empty, $"At {width}x{height} these elements render outside the window: " + string.Join("; ", escaped));
             }
             finally
             {
@@ -1676,11 +1149,7 @@ namespace DxMessaging.Tests.Editor
 
         private static bool IsScrolledContent(VisualElement element, VisualElement root)
         {
-            for (
-                VisualElement current = element.parent;
-                current != null && current != root;
-                current = current.parent
-            )
+            for (VisualElement current = element.parent; current != null && current != root; current = current.parent)
             {
                 if (current is ScrollView)
                 {
@@ -1696,15 +1165,8 @@ namespace DxMessaging.Tests.Editor
         {
             MessageMonitorEntry untargeted = CreateEntry(new OlderMessage(), null);
             MessageMonitorEntry targeted = CreateEntry(new NewerMessage(), new InstanceId(123));
-            MessageMonitorEntry broadcast = CreateEntry(
-                new BroadcastMessage(),
-                new InstanceId(456)
-            );
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { untargeted, targeted, broadcast }
-            );
+            MessageMonitorEntry broadcast = CreateEntry(new BroadcastMessage(), new InstanceId(456));
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { untargeted, targeted, broadcast });
             EditorWindow window = CreateTrackedEditorWindow();
 
             try
@@ -1712,55 +1174,25 @@ namespace DxMessaging.Tests.Editor
                 EditorWindowTestUtility.ShowWindow(window);
                 VisualElement root = window.rootVisualElement;
                 MessageMonitorViewState observed = MessageMonitorViewState.Default;
-                DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                    root,
-                    snapshot,
-                    MessageMonitorViewState.Default,
-                    viewState => observed = viewState,
-                    onCopyExport: _ => { }
-                );
+                DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot, MessageMonitorViewState.Default, viewState => observed = viewState, onCopyExport: _ => { });
 
-                Toggle targetedChip = root.Q<Toggle>(
-                    DxMessagingMessageMonitorWindow.TargetedChipName
-                );
+                Toggle targetedChip = root.Q<Toggle>(DxMessagingMessageMonitorWindow.TargetedChipName);
                 Assert.That(targetedChip, Is.Not.Null);
                 Assert.That(targetedChip.text, Is.EqualTo("Targeted 1"));
                 Assert.That(targetedChip.tooltip, Does.Contain("one target object"));
-                Assert.That(
-                    targetedChip.ClassListContains(DxMessagingEditorTheme.ChipTargetedClassName),
-                    Is.True
-                );
-                Assert.That(
-                    targetedChip.ClassListContains(DxMessagingEditorTheme.ChipWideClassName),
-                    Is.True
-                );
-                Assert.That(
-                    root.Q<Toggle>(DxMessagingMessageMonitorWindow.UntargetedChipName).text,
-                    Is.EqualTo("Untargeted 1")
-                );
-                Assert.That(
-                    root.Q<Toggle>(DxMessagingMessageMonitorWindow.BroadcastChipName).text,
-                    Is.EqualTo("Broadcast 1")
-                );
+                Assert.That(targetedChip.ClassListContains(DxMessagingEditorTheme.ChipTargetedClassName), Is.True);
+                Assert.That(targetedChip.ClassListContains(DxMessagingEditorTheme.ChipWideClassName), Is.True);
+                Assert.That(root.Q<Toggle>(DxMessagingMessageMonitorWindow.UntargetedChipName).text, Is.EqualTo("Untargeted 1"));
+                Assert.That(root.Q<Toggle>(DxMessagingMessageMonitorWindow.BroadcastChipName).text, Is.EqualTo("Broadcast 1"));
 
                 targetedChip.value = false;
 
                 Assert.That(observed.ShowTargeted, Is.False);
-                List<string> visibleTypes = root.Query<VisualElement>(
-                        className: DxMessagingMessageMonitorWindow.RowClassName
-                    )
+                List<string> visibleTypes = root.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.RowClassName)
                     .ToList()
-                    .ConvertAll(row =>
-                        row.Q<Label>(DxMessagingMessageMonitorWindow.MessageTypeLabelName).text
-                    );
-                CollectionAssert.AreEquivalent(
-                    new[] { nameof(OlderMessage), nameof(BroadcastMessage) },
-                    visibleTypes
-                );
-                Assert.That(
-                    root.Q<Label>(DxMessagingMessageMonitorWindow.StatusLabelName).text,
-                    Does.Contain("2/3 shown")
-                );
+                    .ConvertAll(row => row.Q<Label>(DxMessagingMessageMonitorWindow.MessageTypeLabelName).text);
+                CollectionAssert.AreEquivalent(new[] { nameof(OlderMessage), nameof(BroadcastMessage) }, visibleTypes);
+                Assert.That(root.Q<Label>(DxMessagingMessageMonitorWindow.StatusLabelName).text, Does.Contain("2/3 shown"));
                 Assert.That(
                     root.Q<Toggle>(DxMessagingMessageMonitorWindow.TargetedChipName).text,
                     Is.EqualTo("Targeted 1"),
@@ -1770,14 +1202,7 @@ namespace DxMessaging.Tests.Editor
                 targetedChip.value = true;
 
                 Assert.That(observed.ShowTargeted, Is.True);
-                Assert.That(
-                    root.Query<VisualElement>(
-                            className: DxMessagingMessageMonitorWindow.RowClassName
-                        )
-                        .ToList()
-                        .Count,
-                    Is.EqualTo(3)
-                );
+                Assert.That(root.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.RowClassName).ToList().Count, Is.EqualTo(3));
             }
             finally
             {
@@ -1793,67 +1218,29 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void BuildMonitorUiSelectingARowKeepsTheLogAndItsScrollPosition()
         {
-            MessageMonitorEntry[] entries = Enumerable
-                .Range(0, 12)
-                .Select(index => new MessageMonitorEntry(
-                    $"Message{index:00}",
-                    $"Context: {index:00}",
-                    string.Empty
-                ))
-                .ToArray();
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 32,
-                entries: entries
-            );
+            MessageMonitorEntry[] entries = Enumerable.Range(0, 12).Select(index => new MessageMonitorEntry($"Message{index:00}", $"Context: {index:00}", string.Empty)).ToArray();
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 32, entries: entries);
             EditorWindow window = CreateTrackedEditorWindow();
 
             try
             {
                 EditorWindowTestUtility.ShowWindow(window);
                 VisualElement root = window.rootVisualElement;
-                DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                    root,
-                    snapshot,
-                    MessageMonitorViewState.Default,
-                    onCopyExport: _ => { }
-                );
+                DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot, MessageMonitorViewState.Default, onCopyExport: _ => { });
 
                 ScrollView list = root.Q<ScrollView>(DxMessagingMessageMonitorWindow.ListName);
                 Assert.That(list, Is.Not.Null);
-                List<VisualElement> rows = root.Query<VisualElement>(
-                        className: DxMessagingMessageMonitorWindow.RowClassName
-                    )
-                    .ToList();
+                List<VisualElement> rows = root.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.RowClassName).ToList();
                 Assert.That(rows.Count, Is.EqualTo(12));
 
                 SendClick(rows[5]);
 
+                Assert.That(root.Q<ScrollView>(DxMessagingMessageMonitorWindow.ListName), Is.SameAs(list), "Selecting a row must reuse the log, not rebuild it.");
+                Assert.That(root.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.RowClassName).ToList()[5], Is.SameAs(rows[5]));
+                Assert.That(rows[5].style.backgroundColor.value, Is.EqualTo(DxMessagingEditorPalette.SelectedWash));
+                Assert.That(rows[0].style.backgroundColor.keyword, Is.EqualTo(StyleKeyword.Null), "The previous selection's wash must be cleared, not repainted.");
                 Assert.That(
-                    root.Q<ScrollView>(DxMessagingMessageMonitorWindow.ListName),
-                    Is.SameAs(list),
-                    "Selecting a row must reuse the log, not rebuild it."
-                );
-                Assert.That(
-                    root.Query<VisualElement>(
-                            className: DxMessagingMessageMonitorWindow.RowClassName
-                        )
-                        .ToList()[5],
-                    Is.SameAs(rows[5])
-                );
-                Assert.That(
-                    rows[5].style.backgroundColor.value,
-                    Is.EqualTo(DxMessagingEditorPalette.SelectedWash)
-                );
-                Assert.That(
-                    rows[0].style.backgroundColor.keyword,
-                    Is.EqualTo(StyleKeyword.Null),
-                    "The previous selection's wash must be cleared, not repainted."
-                );
-                Assert.That(
-                    root.Q<VisualElement>(DxMessagingMessageMonitorWindow.DetailsPaneName)
-                        .Q<Label>(DxMessagingMessageMonitorWindow.DetailsTypeLabelName)
-                        .text,
+                    root.Q<VisualElement>(DxMessagingMessageMonitorWindow.DetailsPaneName).Q<Label>(DxMessagingMessageMonitorWindow.DetailsTypeLabelName).text,
                     Is.EqualTo("Message05")
                 );
             }
@@ -1872,27 +1259,16 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void BuildMonitorUiRefreshButtonAnswersAClick()
         {
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { CreateEntry(new OlderMessage(), null) }
-            );
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { CreateEntry(new OlderMessage(), null) });
             EditorWindow window = CreateTrackedEditorWindow();
             int refreshCount = 0;
 
             try
             {
                 EditorWindowTestUtility.ShowWindow(window);
-                DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                    window.rootVisualElement,
-                    snapshot,
-                    MessageMonitorViewState.Default,
-                    onRefresh: () => refreshCount++
-                );
+                DxMessagingMessageMonitorWindow.BuildMonitorUi(window.rootVisualElement, snapshot, MessageMonitorViewState.Default, onRefresh: () => refreshCount++);
 
-                Button refresh = window.rootVisualElement.Q<Button>(
-                    DxMessagingMessageMonitorWindow.RefreshButtonName
-                );
+                Button refresh = window.rootVisualElement.Q<Button>(DxMessagingMessageMonitorWindow.RefreshButtonName);
                 Assert.That(refresh, Is.Not.Null);
                 Assert.That(refresh.enabledSelf, Is.True);
 
@@ -1916,11 +1292,7 @@ namespace DxMessaging.Tests.Editor
         {
             MessageMonitorEntry older = CreateEntry(new OlderMessage(), null);
             MessageMonitorEntry newer = CreateEntry(new NewerMessage(), new InstanceId(123));
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { newer, older }
-            );
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { newer, older });
             EditorWindow window = CreateTrackedEditorWindow();
 
             try
@@ -1945,10 +1317,7 @@ namespace DxMessaging.Tests.Editor
                     Is.True,
                     "Typing in the filter must not close a disclosure the reader opened."
                 );
-                Assert.That(
-                    root.Q<Foldout>(DxMessagingMessageMonitorWindow.ComponentFoldoutName).value,
-                    Is.True
-                );
+                Assert.That(root.Q<Foldout>(DxMessagingMessageMonitorWindow.ComponentFoldoutName).value, Is.True);
 
                 /*
                     Untargeted, not Targeted: the filter above already leaves only the targeted
@@ -1956,16 +1325,8 @@ namespace DxMessaging.Tests.Editor
                 */
                 root.Q<Toggle>(DxMessagingMessageMonitorWindow.UntargetedChipName).value = false;
 
-                Assert.That(
-                    root.Q<Foldout>(DxMessagingMessageMonitorWindow.BreakdownFoldoutName),
-                    Is.Not.Null,
-                    "Hiding a route kind with no visible rows must not empty the log."
-                );
-                Assert.That(
-                    root.Q<Foldout>(DxMessagingMessageMonitorWindow.BreakdownFoldoutName).value,
-                    Is.True,
-                    "Toggling a taxonomy chip must not close a disclosure either."
-                );
+                Assert.That(root.Q<Foldout>(DxMessagingMessageMonitorWindow.BreakdownFoldoutName), Is.Not.Null, "Hiding a route kind with no visible rows must not empty the log.");
+                Assert.That(root.Q<Foldout>(DxMessagingMessageMonitorWindow.BreakdownFoldoutName).value, Is.True, "Toggling a taxonomy chip must not close a disclosure either.");
             }
             finally
             {
@@ -1981,27 +1342,18 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void BuildMonitorUiExportButtonAnswersAClick()
         {
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { CreateEntry(new OlderMessage(), null) }
-            );
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { CreateEntry(new OlderMessage(), null) });
             EditorWindow window = CreateTrackedEditorWindow();
             string copied = null;
 
             try
             {
                 EditorWindowTestUtility.ShowWindow(window);
-                DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                    window.rootVisualElement,
-                    snapshot,
-                    MessageMonitorViewState.Default,
-                    onCopyExport: exportText => copied = exportText
+                DxMessagingMessageMonitorWindow.BuildMonitorUi(window.rootVisualElement, snapshot, MessageMonitorViewState.Default, onCopyExport: exportText =>
+                    copied = exportText
                 );
 
-                Button export = window.rootVisualElement.Q<Button>(
-                    DxMessagingMessageMonitorWindow.ExportButtonName
-                );
+                Button export = window.rootVisualElement.Q<Button>(DxMessagingMessageMonitorWindow.ExportButtonName);
                 Assert.That(export, Is.Not.Null);
                 Assert.That(export.enabledSelf, Is.True);
 
@@ -2021,18 +1373,11 @@ namespace DxMessaging.Tests.Editor
         {
             MessageMonitorEntry untargeted = CreateEntry(new OlderMessage(), null);
             MessageMonitorEntry targeted = CreateEntry(new NewerMessage(), new InstanceId(123));
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { untargeted, targeted }
-            );
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { untargeted, targeted });
 
             string exportText = DxMessagingMessageMonitorWindow.CreateExportText(
                 snapshot,
-                DxMessagingMessageMonitorWindow.FilterEntries(
-                    snapshot.Entries,
-                    new MessageMonitorViewState(showTargeted: false)
-                )
+                DxMessagingMessageMonitorWindow.FilterEntries(snapshot.Entries, new MessageMonitorViewState(showTargeted: false))
             );
 
             Assert.That(exportText, Does.Contain("\"entryCount\": 1"));
@@ -2045,36 +1390,19 @@ namespace DxMessaging.Tests.Editor
         {
             MessageMonitorEntry older = CreateEntry(new OlderMessage(), null);
             MessageMonitorEntry newer = CreateEntry(new NewerMessage(), new InstanceId(123));
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { newer, older }
-            );
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { newer, older });
             VisualElement root = new();
 
-            DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                root,
-                snapshot,
-                new MessageMonitorViewState("123")
-            );
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot, new MessageMonitorViewState("123"));
 
             TextField filter = root.Q<TextField>(DxMessagingMessageMonitorWindow.FilterFieldName);
             Assert.That(filter, Is.Not.Null);
             Assert.That(filter.value, Is.EqualTo("123"));
-            Assert.That(
-                root.Q<Label>(DxMessagingMessageMonitorWindow.StatusLabelName).text,
-                Does.Contain("1/2 shown")
-            );
+            Assert.That(root.Q<Label>(DxMessagingMessageMonitorWindow.StatusLabelName).text, Does.Contain("1/2 shown"));
 
-            List<VisualElement> rows = root.Query<VisualElement>(
-                    className: DxMessagingMessageMonitorWindow.RowClassName
-                )
-                .ToList();
+            List<VisualElement> rows = root.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.RowClassName).ToList();
             Assert.That(rows.Count, Is.EqualTo(1));
-            Assert.That(
-                rows[0].Q<Label>(DxMessagingMessageMonitorWindow.MessageTypeLabelName).text,
-                Is.EqualTo(nameof(NewerMessage))
-            );
+            Assert.That(rows[0].Q<Label>(DxMessagingMessageMonitorWindow.MessageTypeLabelName).text, Is.EqualTo(nameof(NewerMessage)));
         }
 
         [Test]
@@ -2085,76 +1413,32 @@ namespace DxMessaging.Tests.Editor
                 capacity: 8,
                 entries: new[]
                 {
-                    new MessageMonitorEntry(
-                        "DuplicateMessage",
-                        "Context: one",
-                        string.Empty,
-                        "Type.One.DuplicateMessage",
-                        "Type.One.DuplicateMessage"
-                    ),
-                    new MessageMonitorEntry(
-                        "DuplicateMessage",
-                        "Context: two",
-                        string.Empty,
-                        "Type.Two.DuplicateMessage",
-                        "Type.Two.DuplicateMessage"
-                    ),
+                    new MessageMonitorEntry("DuplicateMessage", "Context: one", string.Empty, "Type.One.DuplicateMessage", "Type.One.DuplicateMessage"),
+                    new MessageMonitorEntry("DuplicateMessage", "Context: two", string.Empty, "Type.Two.DuplicateMessage", "Type.Two.DuplicateMessage"),
                 }
             );
             VisualElement root = new();
 
-            DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                root,
-                snapshot,
-                new MessageMonitorViewState("type:Type.Two")
-            );
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot, new MessageMonitorViewState("type:Type.Two"));
 
-            List<VisualElement> rows = root.Query<VisualElement>(
-                    className: DxMessagingMessageMonitorWindow.RowClassName
-                )
-                .ToList();
+            List<VisualElement> rows = root.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.RowClassName).ToList();
             Assert.That(rows.Count, Is.EqualTo(1));
-            Assert.That(
-                rows[0].Q<Label>(DxMessagingMessageMonitorWindow.ContextLabelName).text,
-                Does.Contain("two")
-            );
+            Assert.That(rows[0].Q<Label>(DxMessagingMessageMonitorWindow.ContextLabelName).text, Does.Contain("two"));
         }
 
         [Test]
         public void BuildMonitorUiFiltersEntriesByContextAndStackFacets()
         {
-            MessageMonitorEntry first = new(
-                nameof(OlderMessage),
-                "Context: Enemy",
-                "Game.Combat.Apply"
-            );
-            MessageMonitorEntry second = new(
-                nameof(NewerMessage),
-                "Context: Player",
-                "Game.Ui.Refresh"
-            );
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { first, second }
-            );
+            MessageMonitorEntry first = new(nameof(OlderMessage), "Context: Enemy", "Game.Combat.Apply");
+            MessageMonitorEntry second = new(nameof(NewerMessage), "Context: Player", "Game.Ui.Refresh");
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { first, second });
             VisualElement root = new();
 
-            DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                root,
-                snapshot,
-                new MessageMonitorViewState("context:Enemy stack:Combat")
-            );
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot, new MessageMonitorViewState("context:Enemy stack:Combat"));
 
-            List<VisualElement> rows = root.Query<VisualElement>(
-                    className: DxMessagingMessageMonitorWindow.RowClassName
-                )
-                .ToList();
+            List<VisualElement> rows = root.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.RowClassName).ToList();
             Assert.That(rows.Count, Is.EqualTo(1));
-            Assert.That(
-                rows[0].Q<Label>(DxMessagingMessageMonitorWindow.MessageTypeLabelName).text,
-                Is.EqualTo(nameof(OlderMessage))
-            );
+            Assert.That(rows[0].Q<Label>(DxMessagingMessageMonitorWindow.MessageTypeLabelName).text, Is.EqualTo(nameof(OlderMessage)));
         }
 
         [Test]
@@ -2162,154 +1446,73 @@ namespace DxMessaging.Tests.Editor
         {
             MessageMonitorEntry older = CreateEntry(new OlderMessage(), null);
             MessageMonitorEntry newer = CreateEntry(new NewerMessage(), new InstanceId(123));
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { newer, older }
-            );
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { newer, older });
             VisualElement root = new();
 
-            DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                root,
-                snapshot,
-                new MessageMonitorViewState("message:Newer")
-            );
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot, new MessageMonitorViewState("message:Newer"));
 
-            List<VisualElement> rows = root.Query<VisualElement>(
-                    className: DxMessagingMessageMonitorWindow.RowClassName
-                )
-                .ToList();
+            List<VisualElement> rows = root.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.RowClassName).ToList();
             Assert.That(rows.Count, Is.EqualTo(1));
-            Assert.That(
-                rows[0].Q<Label>(DxMessagingMessageMonitorWindow.MessageTypeLabelName).text,
-                Is.EqualTo(nameof(NewerMessage))
-            );
+            Assert.That(rows[0].Q<Label>(DxMessagingMessageMonitorWindow.MessageTypeLabelName).text, Is.EqualTo(nameof(NewerMessage)));
         }
 
         [Test]
         public void BuildMonitorUiPreservesPlainTextFilterAsWholeSubstring()
         {
-            MessageMonitorEntry entry = new(
-                nameof(NewerMessage),
-                "Context: Player",
-                "Game.Ui.Refresh"
-            );
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { entry }
-            );
+            MessageMonitorEntry entry = new(nameof(NewerMessage), "Context: Player", "Game.Ui.Refresh");
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { entry });
             VisualElement root = new();
 
-            DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                root,
-                snapshot,
-                new MessageMonitorViewState("NewerMessage Player")
-            );
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot, new MessageMonitorViewState("NewerMessage Player"));
 
-            Assert.That(
-                root.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.RowClassName)
-                    .ToList(),
-                Is.Empty
-            );
-            Assert.That(
-                root.Q<Label>(DxMessagingMessageMonitorWindow.EmptyStateLabelName).text,
-                Does.Contain("No messages match")
-            );
+            Assert.That(root.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.RowClassName).ToList(), Is.Empty);
+            Assert.That(root.Q<Label>(DxMessagingMessageMonitorWindow.EmptyStateLabelName).text, Does.Contain("No messages match"));
         }
 
         [Test]
         public void BuildMonitorUiPreservesFieldLookingPlainTextAsWholeSubstring()
         {
             MessageMonitorEntry playerType = new("PlayerAlert", "Context: Enemy", string.Empty);
-            MessageMonitorEntry playerContext = new(
-                nameof(OlderMessage),
-                "Context: Player",
-                string.Empty
-            );
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { playerType, playerContext }
-            );
+            MessageMonitorEntry playerContext = new(nameof(OlderMessage), "Context: Player", string.Empty);
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { playerType, playerContext });
             VisualElement root = new();
 
-            DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                root,
-                snapshot,
-                new MessageMonitorViewState("Context: Player")
-            );
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot, new MessageMonitorViewState("Context: Player"));
 
-            List<VisualElement> rows = root.Query<VisualElement>(
-                    className: DxMessagingMessageMonitorWindow.RowClassName
-                )
-                .ToList();
+            List<VisualElement> rows = root.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.RowClassName).ToList();
             Assert.That(rows.Count, Is.EqualTo(1));
-            Assert.That(
-                rows[0].Q<Label>(DxMessagingMessageMonitorWindow.ContextLabelName).text,
-                Is.EqualTo("Context: Player")
-            );
+            Assert.That(rows[0].Q<Label>(DxMessagingMessageMonitorWindow.ContextLabelName).text, Is.EqualTo("Context: Player"));
         }
 
         [Test]
         public void BuildMonitorUiDoesNotPartiallyScopeSpacedFacetValues()
         {
             MessageMonitorEntry entry = new("ShipMessage", "Context: Player", string.Empty);
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { entry }
-            );
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { entry });
             VisualElement root = new();
 
-            DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                root,
-                snapshot,
-                new MessageMonitorViewState("context:Player Ship")
-            );
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot, new MessageMonitorViewState("context:Player Ship"));
 
-            Assert.That(
-                root.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.RowClassName)
-                    .ToList(),
-                Is.Empty
-            );
+            Assert.That(root.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.RowClassName).ToList(), Is.Empty);
         }
 
         [Test]
         public void BuildMonitorUiRendersActiveTypedFilterSummary()
         {
-            MessageMonitorEntry entry = new(
-                nameof(NewerMessage),
-                "Context: Player",
-                "Game.Ui.Refresh"
-            );
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { entry }
-            );
+            MessageMonitorEntry entry = new(nameof(NewerMessage), "Context: Player", "Game.Ui.Refresh");
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { entry });
             VisualElement root = new();
 
-            DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                root,
-                snapshot,
-                new MessageMonitorViewState("type:Newer context:Player")
-            );
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot, new MessageMonitorViewState("type:Newer context:Player"));
 
             VisualElement summary = root.Q<VisualElement>(ActiveFilterSummaryName);
             Assert.That(summary, Is.Not.Null);
             Assert.That(summary.style.display.value, Is.EqualTo(DisplayStyle.Flex));
             AssertCompleteBorder(summary, DxMessagingEditorPalette.Amber);
-            Assert.That(
-                summary.Q<Label>(ActiveFilterSummaryLabelName).text,
-                Is.EqualTo("Active typed filters")
-            );
+            Assert.That(summary.Q<Label>(ActiveFilterSummaryLabelName).text, Is.EqualTo("Active typed filters"));
             CollectionAssert.AreEqual(
                 new[] { "type:Newer", "context:Player" },
-                summary
-                    .Query<Label>(className: ActiveFilterTokenClassName)
-                    .ToList()
-                    .ConvertAll(label => label.text)
+                summary.Query<Label>(className: ActiveFilterTokenClassName).ToList().ConvertAll(label => label.text)
             );
             Assert.That(summary.Q<Button>(ActiveFilterClearButtonName), Is.Not.Null);
         }
@@ -2317,48 +1520,23 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void BuildMonitorUiRendersActivePlainTextFilterSummary()
         {
-            MessageMonitorEntry entry = new(
-                nameof(NewerMessage),
-                "Context: Player",
-                "Game.Ui.Refresh"
-            );
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { entry }
-            );
+            MessageMonitorEntry entry = new(nameof(NewerMessage), "Context: Player", "Game.Ui.Refresh");
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { entry });
             VisualElement root = new();
 
-            DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                root,
-                snapshot,
-                new MessageMonitorViewState("Context: Player")
-            );
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot, new MessageMonitorViewState("Context: Player"));
 
             VisualElement summary = root.Q<VisualElement>(ActiveFilterSummaryName);
             Assert.That(summary, Is.Not.Null);
             Assert.That(summary.style.display.value, Is.EqualTo(DisplayStyle.Flex));
-            Assert.That(
-                summary.Q<Label>(ActiveFilterSummaryLabelName).text,
-                Is.EqualTo("Active text filter")
-            );
-            CollectionAssert.AreEqual(
-                new[] { "Context: Player" },
-                summary
-                    .Query<Label>(className: ActiveFilterTokenClassName)
-                    .ToList()
-                    .ConvertAll(label => label.text)
-            );
+            Assert.That(summary.Q<Label>(ActiveFilterSummaryLabelName).text, Is.EqualTo("Active text filter"));
+            CollectionAssert.AreEqual(new[] { "Context: Player" }, summary.Query<Label>(className: ActiveFilterTokenClassName).ToList().ConvertAll(label => label.text));
         }
 
         [Test]
         public void BuildMonitorUiHidesActiveFilterSummaryWithoutFilter()
         {
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { CreateEntry(new OlderMessage(), null) }
-            );
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { CreateEntry(new OlderMessage(), null) });
             VisualElement root = new();
 
             DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot);
@@ -2366,10 +1544,7 @@ namespace DxMessaging.Tests.Editor
             VisualElement summary = root.Q<VisualElement>(ActiveFilterSummaryName);
             Assert.That(summary, Is.Not.Null);
             Assert.That(summary.style.display.value, Is.EqualTo(DisplayStyle.None));
-            Assert.That(
-                summary.Query<Label>(className: ActiveFilterTokenClassName).ToList(),
-                Is.Empty
-            );
+            Assert.That(summary.Query<Label>(className: ActiveFilterTokenClassName).ToList(), Is.Empty);
         }
 
         [Test]
@@ -2377,11 +1552,7 @@ namespace DxMessaging.Tests.Editor
         {
             MessageMonitorEntry older = CreateEntry(new OlderMessage(), null);
             MessageMonitorEntry newer = CreateEntry(new NewerMessage(), new InstanceId(123));
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { newer, older }
-            );
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { newer, older });
             EditorWindow window = CreateTrackedEditorWindow();
             string observedFilter = null;
 
@@ -2397,9 +1568,7 @@ namespace DxMessaging.Tests.Editor
                     onCopyExport: _ => { }
                 );
 
-                TextField filter = root.Q<TextField>(
-                    DxMessagingMessageMonitorWindow.FilterFieldName
-                );
+                TextField filter = root.Q<TextField>(DxMessagingMessageMonitorWindow.FilterFieldName);
                 VisualElement summary = root.Q<VisualElement>(ActiveFilterSummaryName);
                 Button clear = summary.Q<Button>(ActiveFilterClearButtonName);
 
@@ -2423,27 +1592,16 @@ namespace DxMessaging.Tests.Editor
         {
             MessageMonitorEntry older = CreateEntry(new OlderMessage(), null);
             MessageMonitorEntry newer = CreateEntry(new NewerMessage(), new InstanceId(123));
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { newer, older }
-            );
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { newer, older });
             EditorWindow window = CreateTrackedEditorWindow();
 
             try
             {
                 EditorWindowTestUtility.ShowWindow(window);
                 VisualElement root = window.rootVisualElement;
-                DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                    root,
-                    snapshot,
-                    new MessageMonitorViewState("type:Missing"),
-                    onCopyExport: _ => { }
-                );
+                DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot, new MessageMonitorViewState("type:Missing"), onCopyExport: _ => { });
 
-                TextField filter = root.Q<TextField>(
-                    DxMessagingMessageMonitorWindow.FilterFieldName
-                );
+                TextField filter = root.Q<TextField>(DxMessagingMessageMonitorWindow.FilterFieldName);
                 VisualElement summary = root.Q<VisualElement>(ActiveFilterSummaryName);
                 Button clear = summary.Q<Button>(ActiveFilterClearButtonName);
                 Button export = root.Q<Button>(DxMessagingMessageMonitorWindow.ExportButtonName);
@@ -2451,35 +1609,16 @@ namespace DxMessaging.Tests.Editor
                 Assert.That(filter.value, Is.EqualTo("type:Missing"));
                 Assert.That(summary.style.display.value, Is.EqualTo(DisplayStyle.Flex));
                 Assert.That(export.enabledSelf, Is.False);
-                Assert.That(
-                    root.Q<Label>(DxMessagingMessageMonitorWindow.StatusLabelName).text,
-                    Does.Contain("0/2 shown")
-                );
-                Assert.That(
-                    root.Query<VisualElement>(
-                            className: DxMessagingMessageMonitorWindow.RowClassName
-                        )
-                        .ToList(),
-                    Is.Empty
-                );
+                Assert.That(root.Q<Label>(DxMessagingMessageMonitorWindow.StatusLabelName).text, Does.Contain("0/2 shown"));
+                Assert.That(root.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.RowClassName).ToList(), Is.Empty);
 
                 SendClick(clear);
 
                 Assert.That(filter.value, Is.EqualTo(string.Empty));
                 Assert.That(summary.style.display.value, Is.EqualTo(DisplayStyle.None));
                 Assert.That(export.enabledSelf, Is.True);
-                Assert.That(
-                    root.Q<Label>(DxMessagingMessageMonitorWindow.StatusLabelName).text,
-                    Does.Not.Contain("shown")
-                );
-                Assert.That(
-                    root.Query<VisualElement>(
-                            className: DxMessagingMessageMonitorWindow.RowClassName
-                        )
-                        .ToList()
-                        .Count,
-                    Is.EqualTo(2)
-                );
+                Assert.That(root.Q<Label>(DxMessagingMessageMonitorWindow.StatusLabelName).text, Does.Not.Contain("shown"));
+                Assert.That(root.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.RowClassName).ToList().Count, Is.EqualTo(2));
             }
             finally
             {
@@ -2490,22 +1629,11 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void BuildMonitorUiKeepsClearReachableForLongActiveFilter()
         {
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { CreateEntry(new OlderMessage(), null) }
-            );
-            string longFilter = string.Join(
-                " ",
-                Enumerable.Range(0, 24).Select(index => $"type:Message{index:00}")
-            );
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { CreateEntry(new OlderMessage(), null) });
+            string longFilter = string.Join(" ", Enumerable.Range(0, 24).Select(index => $"type:Message{index:00}"));
             VisualElement root = new();
 
-            DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                root,
-                snapshot,
-                new MessageMonitorViewState(longFilter)
-            );
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot, new MessageMonitorViewState(longFilter));
 
             VisualElement summary = root.Q<VisualElement>(ActiveFilterSummaryName);
             Button clear = summary.Q<Button>(ActiveFilterClearButtonName);
@@ -2516,10 +1644,7 @@ namespace DxMessaging.Tests.Editor
             Assert.That(tokenScroll, Is.Not.Null);
             Assert.That(children.IndexOf(clear), Is.LessThan(children.IndexOf(tokenScroll)));
             Assert.That(tokenScroll.style.maxHeight.value.value, Is.EqualTo(72f));
-            Assert.That(
-                tokenScroll.Query<Label>(className: ActiveFilterTokenClassName).ToList().Count,
-                Is.EqualTo(24)
-            );
+            Assert.That(tokenScroll.Query<Label>(className: ActiveFilterTokenClassName).ToList().Count, Is.EqualTo(24));
         }
 
         [Test]
@@ -2527,18 +1652,11 @@ namespace DxMessaging.Tests.Editor
         {
             MessageMonitorEntry older = CreateEntry(new OlderMessage(), null);
             MessageMonitorEntry newer = CreateEntry(new NewerMessage(), new InstanceId(123));
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { newer, older }
-            );
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { newer, older });
 
             string exportText = DxMessagingMessageMonitorWindow.CreateExportText(
                 snapshot,
-                DxMessagingMessageMonitorWindow.FilterEntries(
-                    snapshot.Entries,
-                    new MessageMonitorViewState("type:Newer")
-                )
+                DxMessagingMessageMonitorWindow.FilterEntries(snapshot.Entries, new MessageMonitorViewState("type:Newer"))
             );
 
             Assert.That(exportText, Does.Not.Contain("activeFilter"));
@@ -2550,47 +1668,21 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void BuildMonitorUiRendersVisibleContextLanesFromVisibleEntries()
         {
-            MessageMonitorEntry enemyOlder = new(
-                nameof(OlderMessage),
-                "Context: Enemy",
-                string.Empty
-            );
-            MessageMonitorEntry playerOlder = new(
-                nameof(OlderMessage),
-                "Context: Player",
-                string.Empty
-            );
-            MessageMonitorEntry playerNewer = new(
-                nameof(NewerMessage),
-                "Context: Player",
-                string.Empty
-            );
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { playerNewer, playerOlder, enemyOlder }
-            );
+            MessageMonitorEntry enemyOlder = new(nameof(OlderMessage), "Context: Enemy", string.Empty);
+            MessageMonitorEntry playerOlder = new(nameof(OlderMessage), "Context: Player", string.Empty);
+            MessageMonitorEntry playerNewer = new(nameof(NewerMessage), "Context: Player", string.Empty);
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { playerNewer, playerOlder, enemyOlder });
             VisualElement root = new();
 
             DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot);
 
             VisualElement lanes = root.Q<VisualElement>(ContextLanesName);
             Assert.That(lanes, Is.Not.Null);
-            Assert.That(
-                lanes.Q<Label>(ContextLanesSummaryLabelName).text,
-                Is.EqualTo(
-                    "2 context lanes | Entries: 3 | Busiest context: Context: Player | Share: 2/3 (67%)"
-                )
-            );
+            Assert.That(lanes.Q<Label>(ContextLanesSummaryLabelName).text, Is.EqualTo("2 context lanes | Entries: 3 | Busiest context: Context: Player | Share: 2/3 (67%)"));
 
-            List<VisualElement> rows = lanes
-                .Query<VisualElement>(className: ContextLaneRowClassName)
-                .ToList();
+            List<VisualElement> rows = lanes.Query<VisualElement>(className: ContextLaneRowClassName).ToList();
             Assert.That(rows.Count, Is.EqualTo(2));
-            Assert.That(
-                rows[0].Q<Label>(ContextLaneContextLabelName).text,
-                Is.EqualTo("Context: Player")
-            );
+            Assert.That(rows[0].Q<Label>(ContextLaneContextLabelName).text, Is.EqualTo("Context: Player"));
             Assert.That(
                 rows[0].Q<Label>(ContextLaneSummaryLabelName).text,
                 Is.EqualTo("2 - 67%"),
@@ -2600,10 +1692,7 @@ namespace DxMessaging.Tests.Editor
             Assert.That(tooltip, Does.Contain("Entries: 2 | Message types: 2 | Share: 2/3 (67%)"));
             Assert.That(tooltip, Does.Contain(nameof(OlderMessage)));
             Assert.That(tooltip, Does.Contain(nameof(NewerMessage)));
-            Assert.That(
-                rows[1].Q<Label>(ContextLaneContextLabelName).text,
-                Is.EqualTo("Context: Enemy")
-            );
+            Assert.That(rows[1].Q<Label>(ContextLaneContextLabelName).text, Is.EqualTo("Context: Enemy"));
         }
 
         [Test]
@@ -2622,14 +1711,8 @@ namespace DxMessaging.Tests.Editor
 
             DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot);
 
-            AssertCompleteBorder(
-                root.Q<VisualElement>(MessageTypeLanesName),
-                DxMessagingEditorPalette.BorderPanel
-            );
-            AssertCompleteBorder(
-                root.Q<VisualElement>(ContextLanesName),
-                DxMessagingEditorPalette.BorderPanel
-            );
+            AssertCompleteBorder(root.Q<VisualElement>(MessageTypeLanesName), DxMessagingEditorPalette.BorderPanel);
+            AssertCompleteBorder(root.Q<VisualElement>(ContextLanesName), DxMessagingEditorPalette.BorderPanel);
         }
 
         [Test]
@@ -2637,36 +1720,18 @@ namespace DxMessaging.Tests.Editor
         {
             MessageMonitorEntry older = new(nameof(OlderMessage), "Context: Enemy", string.Empty);
             MessageMonitorEntry newer = new(nameof(NewerMessage), "Context: Player", string.Empty);
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { newer, older }
-            );
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { newer, older });
             VisualElement root = new();
 
-            DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                root,
-                snapshot,
-                new MessageMonitorViewState("context:Player")
-            );
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot, new MessageMonitorViewState("context:Player"));
 
             VisualElement lanes = root.Q<VisualElement>(ContextLanesName);
             Assert.That(lanes, Is.Not.Null);
-            Assert.That(
-                lanes.Q<Label>(ContextLanesSummaryLabelName).text,
-                Is.EqualTo(
-                    "1 context lane | Entries: 1 | Busiest context: Context: Player | Share: 1/1 (100%)"
-                )
-            );
+            Assert.That(lanes.Q<Label>(ContextLanesSummaryLabelName).text, Is.EqualTo("1 context lane | Entries: 1 | Busiest context: Context: Player | Share: 1/1 (100%)"));
 
-            List<VisualElement> rows = lanes
-                .Query<VisualElement>(className: ContextLaneRowClassName)
-                .ToList();
+            List<VisualElement> rows = lanes.Query<VisualElement>(className: ContextLaneRowClassName).ToList();
             Assert.That(rows.Count, Is.EqualTo(1));
-            Assert.That(
-                rows[0].Q<Label>(ContextLaneContextLabelName).text,
-                Is.EqualTo("Context: Player")
-            );
+            Assert.That(rows[0].Q<Label>(ContextLaneContextLabelName).text, Is.EqualTo("Context: Player"));
         }
 
         [Test]
@@ -2674,70 +1739,36 @@ namespace DxMessaging.Tests.Editor
         {
             MessageMonitorEntry enemy = new(nameof(OlderMessage), "Context: Enemy", string.Empty);
             MessageMonitorEntry player = new(nameof(NewerMessage), "Context: Player", string.Empty);
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { player, enemy }
-            );
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { player, enemy });
             EditorWindow window = CreateTrackedEditorWindow();
 
             try
             {
                 EditorWindowTestUtility.ShowWindow(window);
                 VisualElement root = window.rootVisualElement;
-                DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                    root,
-                    snapshot,
-                    MessageMonitorViewState.Default,
-                    onCopyExport: _ => { }
-                );
+                DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot, MessageMonitorViewState.Default, onCopyExport: _ => { });
 
                 VisualElement playerLane = root.Q<VisualElement>(ContextLanesName)
                     .Query<VisualElement>(className: ContextLaneRowClassName)
                     .ToList()
-                    .First(row =>
-                        row.Q<Label>(ContextLaneContextLabelName).text == "Context: Player"
-                    );
+                    .First(row => row.Q<Label>(ContextLaneContextLabelName).text == "Context: Player");
                 Button filterButton = playerLane.Q<Button>(ContextLaneFilterButtonName);
                 Assert.That(filterButton, Is.Not.Null);
 
                 SendClick(filterButton);
 
-                Assert.That(
-                    root.Q<TextField>(DxMessagingMessageMonitorWindow.FilterFieldName).value,
-                    Is.EqualTo("context:\"Context: Player\"")
-                );
-                Assert.That(
-                    root.Q<VisualElement>(ActiveFilterSummaryName)
-                        .Q<Label>(ActiveFilterSummaryLabelName)
-                        .text,
-                    Is.EqualTo("Active typed filters")
-                );
+                Assert.That(root.Q<TextField>(DxMessagingMessageMonitorWindow.FilterFieldName).value, Is.EqualTo("context:\"Context: Player\""));
+                Assert.That(root.Q<VisualElement>(ActiveFilterSummaryName).Q<Label>(ActiveFilterSummaryLabelName).text, Is.EqualTo("Active typed filters"));
                 CollectionAssert.AreEqual(
                     new[] { "context:\"Context: Player\"" },
-                    root.Q<VisualElement>(ActiveFilterSummaryName)
-                        .Query<Label>(className: ActiveFilterTokenClassName)
-                        .ToList()
-                        .ConvertAll(label => label.text)
+                    root.Q<VisualElement>(ActiveFilterSummaryName).Query<Label>(className: ActiveFilterTokenClassName).ToList().ConvertAll(label => label.text)
                 );
-                Assert.That(
-                    root.Q<Label>(DxMessagingMessageMonitorWindow.StatusLabelName).text,
-                    Does.Contain("1/2 shown")
-                );
+                Assert.That(root.Q<Label>(DxMessagingMessageMonitorWindow.StatusLabelName).text, Does.Contain("1/2 shown"));
 
-                List<VisualElement> rows = root.Query<VisualElement>(
-                        className: DxMessagingMessageMonitorWindow.RowClassName
-                    )
-                    .ToList();
+                List<VisualElement> rows = root.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.RowClassName).ToList();
                 Assert.That(rows.Count, Is.EqualTo(1));
-                Assert.That(
-                    rows[0].Q<Label>(DxMessagingMessageMonitorWindow.ContextLabelName).text,
-                    Is.EqualTo("Context: Player")
-                );
-                Assert.That(
-                    root.Q<Button>(DxMessagingMessageMonitorWindow.ExportButtonName).enabledSelf,
-                    Is.True
-                );
+                Assert.That(rows[0].Q<Label>(DxMessagingMessageMonitorWindow.ContextLabelName).text, Is.EqualTo("Context: Player"));
+                Assert.That(root.Q<Button>(DxMessagingMessageMonitorWindow.ExportButtonName).enabledSelf, Is.True);
             }
             finally
             {
@@ -2749,71 +1780,36 @@ namespace DxMessaging.Tests.Editor
         public void BuildMonitorUiContextLaneFilterButtonMatchesOverlappingContextExactly()
         {
             MessageMonitorEntry player = new(nameof(NewerMessage), "Context: Player", string.Empty);
-            MessageMonitorEntry ship = new(
-                nameof(OlderMessage),
-                "Context: Player Ship",
-                string.Empty
-            );
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { ship, player }
-            );
+            MessageMonitorEntry ship = new(nameof(OlderMessage), "Context: Player Ship", string.Empty);
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { ship, player });
             EditorWindow window = CreateTrackedEditorWindow();
 
             try
             {
                 EditorWindowTestUtility.ShowWindow(window);
                 VisualElement root = window.rootVisualElement;
-                DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                    root,
-                    snapshot,
-                    MessageMonitorViewState.Default,
-                    onCopyExport: _ => { }
-                );
+                DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot, MessageMonitorViewState.Default, onCopyExport: _ => { });
 
                 VisualElement playerLane = root.Q<VisualElement>(ContextLanesName)
                     .Query<VisualElement>(className: ContextLaneRowClassName)
                     .ToList()
-                    .First(row =>
-                        row.Q<Label>(ContextLaneContextLabelName).text == "Context: Player"
-                    );
+                    .First(row => row.Q<Label>(ContextLaneContextLabelName).text == "Context: Player");
                 Button filterButton = playerLane.Q<Button>(ContextLaneFilterButtonName);
                 Assert.That(filterButton, Is.Not.Null);
 
                 SendClick(filterButton);
 
-                Assert.That(
-                    root.Q<TextField>(DxMessagingMessageMonitorWindow.FilterFieldName).value,
-                    Is.EqualTo("context:\"Context: Player\"")
-                );
-                Assert.That(
-                    root.Q<VisualElement>(ActiveFilterSummaryName)
-                        .Q<Label>(ActiveFilterSummaryLabelName)
-                        .text,
-                    Is.EqualTo("Active typed filters")
-                );
+                Assert.That(root.Q<TextField>(DxMessagingMessageMonitorWindow.FilterFieldName).value, Is.EqualTo("context:\"Context: Player\""));
+                Assert.That(root.Q<VisualElement>(ActiveFilterSummaryName).Q<Label>(ActiveFilterSummaryLabelName).text, Is.EqualTo("Active typed filters"));
                 CollectionAssert.AreEqual(
                     new[] { "context:\"Context: Player\"" },
-                    root.Q<VisualElement>(ActiveFilterSummaryName)
-                        .Query<Label>(className: ActiveFilterTokenClassName)
-                        .ToList()
-                        .ConvertAll(label => label.text)
+                    root.Q<VisualElement>(ActiveFilterSummaryName).Query<Label>(className: ActiveFilterTokenClassName).ToList().ConvertAll(label => label.text)
                 );
-                Assert.That(
-                    root.Q<Label>(DxMessagingMessageMonitorWindow.StatusLabelName).text,
-                    Does.Contain("1/2 shown")
-                );
+                Assert.That(root.Q<Label>(DxMessagingMessageMonitorWindow.StatusLabelName).text, Does.Contain("1/2 shown"));
 
-                List<VisualElement> rows = root.Query<VisualElement>(
-                        className: DxMessagingMessageMonitorWindow.RowClassName
-                    )
-                    .ToList();
+                List<VisualElement> rows = root.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.RowClassName).ToList();
                 Assert.That(rows.Count, Is.EqualTo(1));
-                Assert.That(
-                    rows[0].Q<Label>(DxMessagingMessageMonitorWindow.ContextLabelName).text,
-                    Is.EqualTo("Context: Player")
-                );
+                Assert.That(rows[0].Q<Label>(DxMessagingMessageMonitorWindow.ContextLabelName).text, Is.EqualTo("Context: Player"));
             }
             finally
             {
@@ -2826,18 +1822,12 @@ namespace DxMessaging.Tests.Editor
         {
             MessageMonitorEntry first = CreateEntry(new CollisionOne.DuplicateMessage(), null);
             MessageMonitorEntry second = CreateEntry(new CollisionTwo.DuplicateMessage(), null);
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { second, first }
-            );
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { second, first });
             VisualElement root = new();
 
             DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot);
 
-            List<VisualElement> rows = root.Q<VisualElement>(ContextLanesName)
-                .Query<VisualElement>(className: ContextLaneRowClassName)
-                .ToList();
+            List<VisualElement> rows = root.Q<VisualElement>(ContextLanesName).Query<VisualElement>(className: ContextLaneRowClassName).ToList();
             Assert.That(rows.Count, Is.EqualTo(1));
             Assert.That(rows[0].Q<Label>(ContextLaneSummaryLabelName).text, Is.EqualTo("2 - 100%"));
             string tooltip = rows[0].Q<Button>(ContextLaneFilterButtonName).tooltip;
@@ -2849,59 +1839,24 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void BuildMonitorUiKeepsDistinctContextLaneMessagesAcrossSplitContexts()
         {
-            MessageMonitorEntry first = new(
-                "DuplicateMessage",
-                "Context: Player",
-                string.Empty,
-                "Collision.One.DuplicateMessage",
-                "CollisionOne.DuplicateMessage"
-            );
-            MessageMonitorEntry second = new(
-                "DuplicateMessage",
-                "Context: Enemy",
-                string.Empty,
-                "Collision.Two.DuplicateMessage",
-                "CollisionTwo.DuplicateMessage"
-            );
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { second, first }
-            );
+            MessageMonitorEntry first = new("DuplicateMessage", "Context: Player", string.Empty, "Collision.One.DuplicateMessage", "CollisionOne.DuplicateMessage");
+            MessageMonitorEntry second = new("DuplicateMessage", "Context: Enemy", string.Empty, "Collision.Two.DuplicateMessage", "CollisionTwo.DuplicateMessage");
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { second, first });
             VisualElement root = new();
 
             DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot);
 
-            List<VisualElement> rows = root.Q<VisualElement>(ContextLanesName)
-                .Query<VisualElement>(className: ContextLaneRowClassName)
-                .ToList();
+            List<VisualElement> rows = root.Q<VisualElement>(ContextLanesName).Query<VisualElement>(className: ContextLaneRowClassName).ToList();
             Assert.That(rows.Count, Is.EqualTo(2));
-            Assert.That(
-                rows[0].Q<Button>(ContextLaneFilterButtonName).tooltip,
-                Does.Contain("CollisionTwo.DuplicateMessage")
-            );
-            Assert.That(
-                rows[1].Q<Button>(ContextLaneFilterButtonName).tooltip,
-                Does.Contain("CollisionOne.DuplicateMessage")
-            );
+            Assert.That(rows[0].Q<Button>(ContextLaneFilterButtonName).tooltip, Does.Contain("CollisionTwo.DuplicateMessage"));
+            Assert.That(rows[1].Q<Button>(ContextLaneFilterButtonName).tooltip, Does.Contain("CollisionOne.DuplicateMessage"));
         }
 
         [Test]
         public void BuildMonitorUiBoundsVisibleContextLaneRows()
         {
-            MessageMonitorEntry[] entries = Enumerable
-                .Range(0, 24)
-                .Select(index => new MessageMonitorEntry(
-                    $"Message{index:00}",
-                    $"Context: {index:00}",
-                    string.Empty
-                ))
-                .ToArray();
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 32,
-                entries: entries
-            );
+            MessageMonitorEntry[] entries = Enumerable.Range(0, 24).Select(index => new MessageMonitorEntry($"Message{index:00}", $"Context: {index:00}", string.Empty)).ToArray();
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 32, entries: entries);
             VisualElement root = new();
 
             DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot);
@@ -2910,10 +1865,7 @@ namespace DxMessaging.Tests.Editor
             ScrollView scroll = lanes.Q<ScrollView>(ContextLaneScrollViewName);
             Assert.That(scroll, Is.Not.Null);
             Assert.That(scroll.style.maxHeight.value.value, Is.EqualTo(96f));
-            Assert.That(
-                scroll.Query<VisualElement>(className: ContextLaneRowClassName).ToList().Count,
-                Is.EqualTo(24)
-            );
+            Assert.That(scroll.Query<VisualElement>(className: ContextLaneRowClassName).ToList().Count, Is.EqualTo(24));
         }
 
         [Test]
@@ -2921,16 +1873,9 @@ namespace DxMessaging.Tests.Editor
         {
             MessageMonitorEntry older = new(nameof(OlderMessage), "Context: Enemy", string.Empty);
             MessageMonitorEntry newer = new(nameof(NewerMessage), "Context: Player", string.Empty);
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { newer, older }
-            );
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { newer, older });
 
-            string exportText = DxMessagingMessageMonitorWindow.CreateExportText(
-                snapshot,
-                snapshot.Entries
-            );
+            string exportText = DxMessagingMessageMonitorWindow.CreateExportText(snapshot, snapshot.Entries);
 
             Assert.That(exportText, Does.Not.Contain("contextLanes"));
             Assert.That(exportText, Does.Not.Contain("visibleContextLanes"));
@@ -2941,11 +1886,7 @@ namespace DxMessaging.Tests.Editor
         {
             MessageMonitorEntry older = CreateEntry(new OlderMessage(), null);
             MessageMonitorEntry newer = CreateEntry(new NewerMessage(), new InstanceId(123));
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { newer, older }
-            );
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { newer, older });
             EditorWindow window = CreateTrackedEditorWindow();
             string observedFilter = null;
             int observedSelectedEntryIndex = -1;
@@ -2966,15 +1907,10 @@ namespace DxMessaging.Tests.Editor
                     onCopyExport: _ => { }
                 );
 
-                TextField filter = root.Q<TextField>(
-                    DxMessagingMessageMonitorWindow.FilterFieldName
-                );
+                TextField filter = root.Q<TextField>(DxMessagingMessageMonitorWindow.FilterFieldName);
                 Button refresh = root.Q<Button>(DxMessagingMessageMonitorWindow.RefreshButtonName);
                 Button export = root.Q<Button>(DxMessagingMessageMonitorWindow.ExportButtonName);
-                List<VisualElement> rows = root.Query<VisualElement>(
-                        className: DxMessagingMessageMonitorWindow.RowClassName
-                    )
-                    .ToList();
+                List<VisualElement> rows = root.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.RowClassName).ToList();
                 int childCountBeforeFilterChange = root.childCount;
 
                 Assert.That(refresh.enabledSelf, Is.False);
@@ -3009,36 +1945,19 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void BuildMonitorUiRendersNoFilteredMatchesState()
         {
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { CreateEntry(new OlderMessage(), null) }
-            );
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { CreateEntry(new OlderMessage(), null) });
             VisualElement root = new();
 
-            DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                root,
-                snapshot,
-                new MessageMonitorViewState("missing")
-            );
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot, new MessageMonitorViewState("missing"));
 
-            Assert.That(
-                root.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.RowClassName)
-                    .ToList(),
-                Is.Empty
-            );
-            Label emptyTitle = root.Q<Label>(
-                DxMessagingMessageMonitorWindow.EmptyStateTitleLabelName
-            );
+            Assert.That(root.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.RowClassName).ToList(), Is.Empty);
+            Label emptyTitle = root.Q<Label>(DxMessagingMessageMonitorWindow.EmptyStateTitleLabelName);
             Assert.That(emptyTitle, Is.Not.Null);
             Assert.That(emptyTitle.text, Is.EqualTo("No matches"));
             Label emptyBody = root.Q<Label>(DxMessagingMessageMonitorWindow.EmptyStateLabelName);
             Assert.That(emptyBody, Is.Not.Null);
             Assert.That(emptyBody.text, Does.Contain("No messages match"));
-            Assert.That(
-                root.Q<VisualElement>(DxMessagingMessageMonitorWindow.DetailsPaneName),
-                Is.Null
-            );
+            Assert.That(root.Q<VisualElement>(DxMessagingMessageMonitorWindow.DetailsPaneName), Is.Null);
         }
 
         [Test]
@@ -3046,60 +1965,27 @@ namespace DxMessaging.Tests.Editor
         {
             MessageMonitorEntry older = CreateEntry(new OlderMessage(), null);
             MessageMonitorEntry newer = CreateEntry(new NewerMessage(), new InstanceId(123));
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { newer, older }
-            );
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { newer, older });
             VisualElement root = new();
 
-            DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                root,
-                snapshot,
-                new MessageMonitorViewState(selectedEntryIndex: 1)
-            );
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot, new MessageMonitorViewState(selectedEntryIndex: 1));
 
-            VisualElement details = root.Q<VisualElement>(
-                DxMessagingMessageMonitorWindow.DetailsPaneName
-            );
+            VisualElement details = root.Q<VisualElement>(DxMessagingMessageMonitorWindow.DetailsPaneName);
             Assert.That(details, Is.Not.Null);
-            Assert.That(
-                details.Q<Label>(DxMessagingMessageMonitorWindow.DetailsTypeLabelName).text,
-                Does.Contain(nameof(OlderMessage))
-            );
-            Assert.That(
-                details.Q<Label>(DxMessagingMessageMonitorWindow.DetailsContextLabelName).text,
-                Does.Contain("none")
-            );
-            Label badge = details
-                .Query<Label>(className: DxMessagingEditorTheme.TypeBadgeClassName)
-                .First();
+            Assert.That(details.Q<Label>(DxMessagingMessageMonitorWindow.DetailsTypeLabelName).text, Does.Contain(nameof(OlderMessage)));
+            Assert.That(details.Q<Label>(DxMessagingMessageMonitorWindow.DetailsContextLabelName).text, Does.Contain("none"));
+            Label badge = details.Query<Label>(className: DxMessagingEditorTheme.TypeBadgeClassName).First();
             Assert.That(badge.text, Is.EqualTo(DxMessagingEditorPalette.UntargetedKind));
-            Assert.That(
-                badge.ClassListContains(
-                    ExpectedTypeBadgeClass(DxMessagingEditorPalette.UntargetedKind)
-                ),
-                Is.True
-            );
+            Assert.That(badge.ClassListContains(ExpectedTypeBadgeClass(DxMessagingEditorPalette.UntargetedKind)), Is.True);
         }
 
         [Test]
         public void BuildMonitorUiRendersVisibleMessageTypeLanesFromVisibleEntries()
         {
             MessageMonitorEntry olderWithoutContext = CreateEntry(new OlderMessage(), null);
-            MessageMonitorEntry olderWithContext = CreateEntry(
-                new OlderMessage(),
-                new InstanceId(42)
-            );
-            MessageMonitorEntry newerWithContext = CreateEntry(
-                new NewerMessage(),
-                new InstanceId(123)
-            );
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { newerWithContext, olderWithContext, olderWithoutContext }
-            );
+            MessageMonitorEntry olderWithContext = CreateEntry(new OlderMessage(), new InstanceId(42));
+            MessageMonitorEntry newerWithContext = CreateEntry(new NewerMessage(), new InstanceId(123));
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { newerWithContext, olderWithContext, olderWithoutContext });
             VisualElement root = new();
 
             DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot);
@@ -3108,49 +1994,25 @@ namespace DxMessaging.Tests.Editor
             Assert.That(lanes, Is.Not.Null);
             Assert.That(
                 lanes.Q<Label>(MessageTypeLanesSummaryLabelName).text,
-                Is.EqualTo(
-                    "2 message type lanes | Entries: 3 | Busiest message type: OlderMessage | Share: 2/3 (67%)"
-                )
+                Is.EqualTo("2 message type lanes | Entries: 3 | Busiest message type: OlderMessage | Share: 2/3 (67%)")
             );
 
-            List<VisualElement> rows = lanes
-                .Query<VisualElement>(className: MessageTypeLaneRowClassName)
-                .ToList();
+            List<VisualElement> rows = lanes.Query<VisualElement>(className: MessageTypeLaneRowClassName).ToList();
             Assert.That(rows.Count, Is.EqualTo(2));
-            Assert.That(
-                rows[0].Q<Label>(MessageTypeLaneTypeLabelName).text,
-                Is.EqualTo(nameof(OlderMessage))
-            );
-            Assert.That(
-                rows[0].Q<Label>(MessageTypeLaneSummaryLabelName).text,
-                Is.EqualTo("2 - 67%")
-            );
+            Assert.That(rows[0].Q<Label>(MessageTypeLaneTypeLabelName).text, Is.EqualTo(nameof(OlderMessage)));
+            Assert.That(rows[0].Q<Label>(MessageTypeLaneSummaryLabelName).text, Is.EqualTo("2 - 67%"));
             string tooltip = rows[0].Q<Button>(MessageTypeLaneFilterButtonName).tooltip;
             Assert.That(tooltip, Does.Contain("Entries: 2 | Contexts: 2 | Share: 2/3 (67%)"));
             Assert.That(tooltip, Does.Contain("Context: 42"));
             Assert.That(tooltip, Does.Contain("Context: none"));
-            Assert.That(
-                rows[1].Q<Label>(MessageTypeLaneTypeLabelName).text,
-                Is.EqualTo(nameof(NewerMessage))
-            );
+            Assert.That(rows[1].Q<Label>(MessageTypeLaneTypeLabelName).text, Is.EqualTo(nameof(NewerMessage)));
         }
 
         [Test]
         public void BuildMonitorUiBoundsVisibleMessageTypeLaneRows()
         {
-            MessageMonitorEntry[] entries = Enumerable
-                .Range(0, 24)
-                .Select(index => new MessageMonitorEntry(
-                    $"Message{index:00}",
-                    $"Context: {index:00}",
-                    string.Empty
-                ))
-                .ToArray();
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 32,
-                entries: entries
-            );
+            MessageMonitorEntry[] entries = Enumerable.Range(0, 24).Select(index => new MessageMonitorEntry($"Message{index:00}", $"Context: {index:00}", string.Empty)).ToArray();
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 32, entries: entries);
             VisualElement root = new();
 
             DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot);
@@ -3159,44 +2021,23 @@ namespace DxMessaging.Tests.Editor
             ScrollView scroll = lanes.Q<ScrollView>(MessageTypeLaneScrollViewName);
             Assert.That(scroll, Is.Not.Null);
             Assert.That(scroll.style.maxHeight.value.value, Is.EqualTo(96f));
-            Assert.That(
-                scroll.Query<VisualElement>(className: MessageTypeLaneRowClassName).ToList().Count,
-                Is.EqualTo(24)
-            );
+            Assert.That(scroll.Query<VisualElement>(className: MessageTypeLaneRowClassName).ToList().Count, Is.EqualTo(24));
         }
 
         [Test]
         public void BuildMonitorUiKeepsDistinctMessageTypeIdentityForSameSimpleNames()
         {
-            MessageMonitorEntry first = CreateEntry(
-                new CollisionOne.DuplicateMessage(),
-                new InstanceId(1)
-            );
-            MessageMonitorEntry second = CreateEntry(
-                new CollisionTwo.DuplicateMessage(),
-                new InstanceId(2)
-            );
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { second, first }
-            );
+            MessageMonitorEntry first = CreateEntry(new CollisionOne.DuplicateMessage(), new InstanceId(1));
+            MessageMonitorEntry second = CreateEntry(new CollisionTwo.DuplicateMessage(), new InstanceId(2));
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { second, first });
             VisualElement root = new();
 
             DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot);
 
-            List<VisualElement> rows = root.Q<VisualElement>(MessageTypeLanesName)
-                .Query<VisualElement>(className: MessageTypeLaneRowClassName)
-                .ToList();
+            List<VisualElement> rows = root.Q<VisualElement>(MessageTypeLanesName).Query<VisualElement>(className: MessageTypeLaneRowClassName).ToList();
             Assert.That(rows.Count, Is.EqualTo(2));
-            Assert.That(
-                rows[0].Q<Label>(MessageTypeLaneTypeLabelName).text,
-                Does.Contain("CollisionOne.DuplicateMessage")
-            );
-            Assert.That(
-                rows[1].Q<Label>(MessageTypeLaneTypeLabelName).text,
-                Does.Contain("CollisionTwo.DuplicateMessage")
-            );
+            Assert.That(rows[0].Q<Label>(MessageTypeLaneTypeLabelName).text, Does.Contain("CollisionOne.DuplicateMessage"));
+            Assert.That(rows[1].Q<Label>(MessageTypeLaneTypeLabelName).text, Does.Contain("CollisionTwo.DuplicateMessage"));
         }
 
         [Test]
@@ -3204,36 +2045,21 @@ namespace DxMessaging.Tests.Editor
         {
             MessageMonitorEntry older = CreateEntry(new OlderMessage(), null);
             MessageMonitorEntry newer = CreateEntry(new NewerMessage(), new InstanceId(123));
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { newer, older }
-            );
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { newer, older });
             VisualElement root = new();
 
-            DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                root,
-                snapshot,
-                new MessageMonitorViewState(nameof(NewerMessage))
-            );
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot, new MessageMonitorViewState(nameof(NewerMessage)));
 
             VisualElement lanes = root.Q<VisualElement>(MessageTypeLanesName);
             Assert.That(lanes, Is.Not.Null);
             Assert.That(
                 lanes.Q<Label>(MessageTypeLanesSummaryLabelName).text,
-                Is.EqualTo(
-                    "1 message type lane | Entries: 1 | Busiest message type: NewerMessage | Share: 1/1 (100%)"
-                )
+                Is.EqualTo("1 message type lane | Entries: 1 | Busiest message type: NewerMessage | Share: 1/1 (100%)")
             );
 
-            List<VisualElement> rows = lanes
-                .Query<VisualElement>(className: MessageTypeLaneRowClassName)
-                .ToList();
+            List<VisualElement> rows = lanes.Query<VisualElement>(className: MessageTypeLaneRowClassName).ToList();
             Assert.That(rows.Count, Is.EqualTo(1));
-            Assert.That(
-                rows[0].Q<Label>(MessageTypeLaneTypeLabelName).text,
-                Is.EqualTo(nameof(NewerMessage))
-            );
+            Assert.That(rows[0].Q<Label>(MessageTypeLaneTypeLabelName).text, Is.EqualTo(nameof(NewerMessage)));
         }
 
         [Test]
@@ -3241,63 +2067,32 @@ namespace DxMessaging.Tests.Editor
         {
             MessageMonitorEntry older = CreateEntry(new OlderMessage(), null);
             MessageMonitorEntry newer = CreateEntry(new NewerMessage(), new InstanceId(123));
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { newer, older }
-            );
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { newer, older });
             EditorWindow window = CreateTrackedEditorWindow();
 
             try
             {
                 EditorWindowTestUtility.ShowWindow(window);
                 VisualElement root = window.rootVisualElement;
-                DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                    root,
-                    snapshot,
-                    MessageMonitorViewState.Default,
-                    onCopyExport: _ => { }
-                );
+                DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot, MessageMonitorViewState.Default, onCopyExport: _ => { });
 
                 VisualElement newerLane = root.Q<VisualElement>(MessageTypeLanesName)
                     .Query<VisualElement>(className: MessageTypeLaneRowClassName)
                     .ToList()
-                    .First(row =>
-                        row.Q<Label>(MessageTypeLaneTypeLabelName).text == nameof(NewerMessage)
-                    );
+                    .First(row => row.Q<Label>(MessageTypeLaneTypeLabelName).text == nameof(NewerMessage));
                 Button filterButton = newerLane.Q<Button>(MessageTypeLaneFilterButtonName);
                 Assert.That(filterButton, Is.Not.Null);
 
                 SendClick(filterButton);
 
-                Assert.That(
-                    root.Q<TextField>(DxMessagingMessageMonitorWindow.FilterFieldName).value,
-                    Is.EqualTo("type:NewerMessage")
-                );
-                Assert.That(
-                    root.Q<VisualElement>(ActiveFilterSummaryName)
-                        .Q<Label>(ActiveFilterSummaryLabelName)
-                        .text,
-                    Is.EqualTo("Active typed filters")
-                );
-                Assert.That(
-                    root.Q<Label>(DxMessagingMessageMonitorWindow.StatusLabelName).text,
-                    Does.Contain("1/2 shown")
-                );
+                Assert.That(root.Q<TextField>(DxMessagingMessageMonitorWindow.FilterFieldName).value, Is.EqualTo("type:NewerMessage"));
+                Assert.That(root.Q<VisualElement>(ActiveFilterSummaryName).Q<Label>(ActiveFilterSummaryLabelName).text, Is.EqualTo("Active typed filters"));
+                Assert.That(root.Q<Label>(DxMessagingMessageMonitorWindow.StatusLabelName).text, Does.Contain("1/2 shown"));
 
-                List<VisualElement> rows = root.Query<VisualElement>(
-                        className: DxMessagingMessageMonitorWindow.RowClassName
-                    )
-                    .ToList();
+                List<VisualElement> rows = root.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.RowClassName).ToList();
                 Assert.That(rows.Count, Is.EqualTo(1));
-                Assert.That(
-                    rows[0].Q<Label>(DxMessagingMessageMonitorWindow.MessageTypeLabelName).text,
-                    Is.EqualTo(nameof(NewerMessage))
-                );
-                Assert.That(
-                    root.Q<Button>(DxMessagingMessageMonitorWindow.ExportButtonName).enabledSelf,
-                    Is.True
-                );
+                Assert.That(rows[0].Q<Label>(DxMessagingMessageMonitorWindow.MessageTypeLabelName).text, Is.EqualTo(nameof(NewerMessage)));
+                Assert.That(root.Q<Button>(DxMessagingMessageMonitorWindow.ExportButtonName).enabledSelf, Is.True);
             }
             finally
             {
@@ -3310,16 +2105,9 @@ namespace DxMessaging.Tests.Editor
         {
             MessageMonitorEntry older = CreateEntry(new OlderMessage(), null);
             MessageMonitorEntry newer = CreateEntry(new NewerMessage(), new InstanceId(123));
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { newer, older }
-            );
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { newer, older });
 
-            string exportText = DxMessagingMessageMonitorWindow.CreateExportText(
-                snapshot,
-                snapshot.Entries
-            );
+            string exportText = DxMessagingMessageMonitorWindow.CreateExportText(snapshot, snapshot.Entries);
 
             Assert.That(exportText, Does.Not.Contain("messageTypeLanes"));
             Assert.That(exportText, Does.Not.Contain("visibleMessageTypeLanes"));
@@ -3328,11 +2116,7 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void BuildMonitorUiRendersComponentDiagnosticsPanel()
         {
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: Array.Empty<MessageMonitorEntry>()
-            );
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: Array.Empty<MessageMonitorEntry>());
             ComponentMonitorEntry component = new(
                 "Root/Emitter",
                 "MessagingComponent",
@@ -3350,50 +2134,25 @@ namespace DxMessaging.Tests.Editor
 
             DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot, new[] { component });
 
-            VisualElement panel = root.Q<VisualElement>(
-                DxMessagingMessageMonitorWindow.ComponentPanelName
-            );
+            VisualElement panel = root.Q<VisualElement>(DxMessagingMessageMonitorWindow.ComponentPanelName);
             Assert.That(panel, Is.Not.Null);
             AssertCompleteBorder(panel, DxMessagingEditorPalette.BorderPanel);
 
-            List<VisualElement> rows = root.Query<VisualElement>(
-                    className: DxMessagingMessageMonitorWindow.ComponentRowClassName
-                )
-                .ToList();
-            Assert.That(
-                root.Q<ScrollView>(DxMessagingMessageMonitorWindow.ComponentScrollViewName),
-                Is.Not.Null
-            );
+            List<VisualElement> rows = root.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.ComponentRowClassName).ToList();
+            Assert.That(root.Q<ScrollView>(DxMessagingMessageMonitorWindow.ComponentScrollViewName), Is.Not.Null);
             Assert.That(rows.Count, Is.EqualTo(1));
             AssertCompleteBorder(rows[0], DxMessagingEditorPalette.Amber);
-            Assert.That(
-                rows[0].Q<Label>(DxMessagingMessageMonitorWindow.ComponentNameLabelName).text,
-                Does.Contain("Root/Emitter")
-            );
-            Assert.That(
-                rows[0].Q<Label>(DxMessagingMessageMonitorWindow.ComponentSummaryLabelName).text,
-                Does.Contain("Registrations: 3")
-            );
-            Assert.That(
-                rows[0].Q<Label>(DxMessagingMessageMonitorWindow.ComponentSummaryLabelName).text,
-                Does.Contain("Calls: 7")
-            );
-            Assert.That(
-                rows[0].Q<Label>(DxMessagingMessageMonitorWindow.ComponentProviderLabelName).text,
-                Does.Contain("global bus")
-            );
-            Assert.That(
-                rows[0].Q<Label>(DxMessagingMessageMonitorWindow.ComponentWarningLabelName).text,
-                Does.Contain("Serialized provider missing")
-            );
+            Assert.That(rows[0].Q<Label>(DxMessagingMessageMonitorWindow.ComponentNameLabelName).text, Does.Contain("Root/Emitter"));
+            Assert.That(rows[0].Q<Label>(DxMessagingMessageMonitorWindow.ComponentSummaryLabelName).text, Does.Contain("Registrations: 3"));
+            Assert.That(rows[0].Q<Label>(DxMessagingMessageMonitorWindow.ComponentSummaryLabelName).text, Does.Contain("Calls: 7"));
+            Assert.That(rows[0].Q<Label>(DxMessagingMessageMonitorWindow.ComponentProviderLabelName).text, Does.Contain("global bus"));
+            Assert.That(rows[0].Q<Label>(DxMessagingMessageMonitorWindow.ComponentWarningLabelName).text, Does.Contain("Serialized provider missing"));
         }
 
         [Test]
         public void BuildMonitorUiKeepsComponentPanelVisibleWhenSnapshotUnavailable()
         {
-            MessageMonitorSnapshot snapshot = MessageMonitorSnapshot.Unavailable(
-                "The active global bus is not the default DxMessaging MessageBus."
-            );
+            MessageMonitorSnapshot snapshot = MessageMonitorSnapshot.Unavailable("The active global bus is not the default DxMessaging MessageBus.");
             ComponentMonitorEntry component = new(
                 "Root/Listener",
                 "MessagingComponent",
@@ -3411,36 +2170,16 @@ namespace DxMessaging.Tests.Editor
 
             DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot, new[] { component });
 
-            Assert.That(
-                root.Q<Label>(DxMessagingMessageMonitorWindow.StatusLabelName).text,
-                Is.EqualTo("Unavailable")
-            );
-            Assert.That(
-                root.Q<Label>(DxMessagingMessageMonitorWindow.EmptyStateLabelName).text,
-                Does.Contain("active global bus")
-            );
-            Assert.That(
-                root.Q<TextField>(DxMessagingMessageMonitorWindow.FilterFieldName),
-                Is.Null
-            );
-            Assert.That(
-                root.Query<VisualElement>(
-                        className: DxMessagingMessageMonitorWindow.ComponentRowClassName
-                    )
-                    .ToList()
-                    .Count,
-                Is.EqualTo(1)
-            );
+            Assert.That(root.Q<Label>(DxMessagingMessageMonitorWindow.StatusLabelName).text, Is.EqualTo("Unavailable"));
+            Assert.That(root.Q<Label>(DxMessagingMessageMonitorWindow.EmptyStateLabelName).text, Does.Contain("active global bus"));
+            Assert.That(root.Q<TextField>(DxMessagingMessageMonitorWindow.FilterFieldName), Is.Null);
+            Assert.That(root.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.ComponentRowClassName).ToList().Count, Is.EqualTo(1));
         }
 
         [Test]
         public void BuildMonitorUiKeepsComponentPanelVisibleWhenMessageDiagnosticsAreOff()
         {
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: false,
-                capacity: 8,
-                entries: Array.Empty<MessageMonitorEntry>()
-            );
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: false, capacity: 8, entries: Array.Empty<MessageMonitorEntry>());
             ComponentMonitorEntry component = new(
                 "Root/Listener",
                 "MessagingComponent",
@@ -3458,26 +2197,14 @@ namespace DxMessaging.Tests.Editor
 
             DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot, new[] { component });
 
-            Label emptyTitle = root.Q<Label>(
-                DxMessagingMessageMonitorWindow.EmptyStateTitleLabelName
-            );
+            Label emptyTitle = root.Q<Label>(DxMessagingMessageMonitorWindow.EmptyStateTitleLabelName);
             Assert.That(emptyTitle, Is.Not.Null);
             Assert.That(emptyTitle.text, Is.EqualTo("Diagnostics are Off"));
             Label emptyBody = root.Q<Label>(DxMessagingMessageMonitorWindow.EmptyStateLabelName);
             Assert.That(emptyBody, Is.Not.Null);
             Assert.That(emptyBody.text, Does.Contain("Enable diagnostics"));
-            Assert.That(
-                root.Query<VisualElement>(
-                        className: DxMessagingMessageMonitorWindow.ComponentRowClassName
-                    )
-                    .ToList()
-                    .Count,
-                Is.EqualTo(1)
-            );
-            Assert.That(
-                root.Q<Label>(DxMessagingMessageMonitorWindow.ComponentNameLabelName).text,
-                Does.Contain("inactive")
-            );
+            Assert.That(root.Query<VisualElement>(className: DxMessagingMessageMonitorWindow.ComponentRowClassName).ToList().Count, Is.EqualTo(1));
+            Assert.That(root.Q<Label>(DxMessagingMessageMonitorWindow.ComponentNameLabelName).text, Does.Contain("inactive"));
         }
 
         [Test]
@@ -3501,10 +2228,7 @@ namespace DxMessaging.Tests.Editor
             OlderMessage message = default;
             MessageHandler.MessageBus.UntargetedBroadcast(ref message);
 
-            IReadOnlyList<ComponentMonitorEntry> components =
-                DxMessagingMessageMonitorWindow.CaptureComponentSnapshots(
-                    new[] { messagingComponent }
-                );
+            IReadOnlyList<ComponentMonitorEntry> components = DxMessagingMessageMonitorWindow.CaptureComponentSnapshots(new[] { messagingComponent });
 
             Assert.That(components.Count, Is.EqualTo(1));
             Assert.That(components[0].HierarchyPath, Is.EqualTo("ComponentPanelHost"));
@@ -3518,17 +2242,12 @@ namespace DxMessaging.Tests.Editor
             Assert.That(components[0].WarningText, Is.Empty);
 
             messagingComponent.EditorResetRuntimeState();
-            Assert.That(
-                CountMessageBusRegistrations(messageBus),
-                Is.EqualTo(initialRegistrationCount)
-            );
+            Assert.That(CountMessageBusRegistrations(messageBus), Is.EqualTo(initialRegistrationCount));
         }
 
         [TestCase(true)]
         [TestCase(false)]
-        public void CaptureComponentSnapshotsFindsSceneComponentsAndSkipsPersistentAssets(
-            bool active
-        )
+        public void CaptureComponentSnapshotsFindsSceneComponentsAndSkipsPersistentAssets(bool active)
         {
             string suffix = Guid.NewGuid().ToString("N");
             string sceneName = "SceneComponentHost-" + suffix;
@@ -3537,9 +2256,7 @@ namespace DxMessaging.Tests.Editor
             GameObject prefabHost = null;
             _createdAssetPaths.Add(prefabPath);
 
-            using OwnedEditModeScene testScene = OwnedEditModeScene.OpenAuthored(
-                SceneSafetyFixturePath
-            );
+            using OwnedEditModeScene testScene = OwnedEditModeScene.OpenAuthored(SceneSafetyFixturePath);
             try
             {
                 /*
@@ -3553,9 +2270,7 @@ namespace DxMessaging.Tests.Editor
                 prefabHost = testScene.CreateGameObject(prefabName);
                 prefabHost.AddComponent<MessagingComponent>();
                 GameObject prefabAsset = null;
-                EditorWindowTestUtility.IgnoreUnityInvalidGcHandleAsserts(() =>
-                    prefabAsset = PrefabUtility.SaveAsPrefabAsset(prefabHost, prefabPath)
-                );
+                EditorWindowTestUtility.IgnoreUnityInvalidGcHandleAsserts(() => prefabAsset = PrefabUtility.SaveAsPrefabAsset(prefabHost, prefabPath));
                 Assert.That(prefabAsset, Is.Not.Null);
                 Object.DestroyImmediate(prefabHost);
                 prefabHost = null;
@@ -3564,26 +2279,15 @@ namespace DxMessaging.Tests.Editor
                 Assert.That(prefabComponent, Is.Not.Null);
                 Assert.That(EditorUtility.IsPersistent(prefabComponent), Is.True);
                 MessagingComponent[] unfiltered = Array.Empty<MessagingComponent>();
-                EditorWindowTestUtility.IgnoreUnityInvalidGcHandleAsserts(() =>
-                    unfiltered = Resources.FindObjectsOfTypeAll<MessagingComponent>()
-                );
+                EditorWindowTestUtility.IgnoreUnityInvalidGcHandleAsserts(() => unfiltered = Resources.FindObjectsOfTypeAll<MessagingComponent>());
                 Assert.That(unfiltered, Has.Member(sceneComponent));
                 Assert.That(unfiltered, Has.Member(prefabComponent));
 
-                IReadOnlyList<ComponentMonitorEntry> components =
-                    Array.Empty<ComponentMonitorEntry>();
-                EditorWindowTestUtility.IgnoreUnityInvalidGcHandleAsserts(() =>
-                    components = DxMessagingMessageMonitorWindow.CaptureComponentSnapshots()
-                );
+                IReadOnlyList<ComponentMonitorEntry> components = Array.Empty<ComponentMonitorEntry>();
+                EditorWindowTestUtility.IgnoreUnityInvalidGcHandleAsserts(() => components = DxMessagingMessageMonitorWindow.CaptureComponentSnapshots());
 
-                Assert.That(
-                    components.Any(component => component.HierarchyPath == sceneName),
-                    Is.True
-                );
-                Assert.That(
-                    components.Any(component => component.HierarchyPath == prefabName),
-                    Is.False
-                );
+                Assert.That(components.Any(component => component.HierarchyPath == sceneName), Is.True);
+                Assert.That(components.Any(component => component.HierarchyPath == prefabName), Is.False);
             }
             finally
             {
@@ -3597,25 +2301,18 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void CaptureComponentSnapshotsDoesNotResolveSerializedProviders()
         {
-            ThrowingScriptableMessageBusProvider provider = CreateTrackedObject(
-                ScriptableObject.CreateInstance<ThrowingScriptableMessageBusProvider>()
-            );
+            ThrowingScriptableMessageBusProvider provider = CreateTrackedObject(ScriptableObject.CreateInstance<ThrowingScriptableMessageBusProvider>());
             GameObject host = CreateTrackedObject("SerializedProviderHost");
             MessagingComponent messagingComponent = host.AddComponent<MessagingComponent>();
             SerializedObject serializedObject = new(messagingComponent);
-            SerializedProperty handleProperty = serializedObject.FindProperty(
-                "_serializedProviderHandle"
-            );
+            SerializedProperty handleProperty = serializedObject.FindProperty("_serializedProviderHandle");
             Assert.That(handleProperty, Is.Not.Null);
             SerializedProperty providerProperty = handleProperty.FindPropertyRelative("_provider");
             Assert.That(providerProperty, Is.Not.Null);
             providerProperty.objectReferenceValue = provider;
             serializedObject.ApplyModifiedPropertiesWithoutUndo();
 
-            IReadOnlyList<ComponentMonitorEntry> components =
-                DxMessagingMessageMonitorWindow.CaptureComponentSnapshots(
-                    new[] { messagingComponent }
-                );
+            IReadOnlyList<ComponentMonitorEntry> components = DxMessagingMessageMonitorWindow.CaptureComponentSnapshots(new[] { messagingComponent });
 
             Assert.That(components.Count, Is.EqualTo(1));
             Assert.That(provider.ResolveCount, Is.EqualTo(0));
@@ -3629,9 +2326,7 @@ namespace DxMessaging.Tests.Editor
             string suffix = Guid.NewGuid().ToString("N");
             string sceneName = "MonitorSceneHost-" + suffix;
             string previewName = "MonitorPreviewHost-" + suffix;
-            using OwnedEditModeScene testScene = OwnedEditModeScene.OpenAuthored(
-                SceneSafetyFixturePath
-            );
+            using OwnedEditModeScene testScene = OwnedEditModeScene.OpenAuthored(SceneSafetyFixturePath);
             using OwnedEditModeScene previewScene = OwnedEditModeScene.CreatePreview();
 
             testScene.Activate();
@@ -3643,15 +2338,10 @@ namespace DxMessaging.Tests.Editor
             Assert.That(EditorSceneManager.IsPreviewSceneObject(previewHost), Is.True);
 
             IReadOnlyList<ComponentMonitorEntry> components = Array.Empty<ComponentMonitorEntry>();
-            EditorWindowTestUtility.IgnoreUnityInvalidGcHandleAsserts(() =>
-                components = DxMessagingMessageMonitorWindow.CaptureComponentSnapshots()
-            );
+            EditorWindowTestUtility.IgnoreUnityInvalidGcHandleAsserts(() => components = DxMessagingMessageMonitorWindow.CaptureComponentSnapshots());
 
             Assert.That(components.Any(component => component.HierarchyPath == sceneName), Is.True);
-            Assert.That(
-                components.Any(component => component.HierarchyPath == previewName),
-                Is.False
-            );
+            Assert.That(components.Any(component => component.HierarchyPath == previewName), Is.False);
         }
 
         [Test]
@@ -3664,10 +2354,7 @@ namespace DxMessaging.Tests.Editor
 
             try
             {
-                IReadOnlyList<ComponentMonitorEntry> components =
-                    DxMessagingMessageMonitorWindow.CaptureComponentSnapshots(
-                        new[] { messagingComponent }
-                    );
+                IReadOnlyList<ComponentMonitorEntry> components = DxMessagingMessageMonitorWindow.CaptureComponentSnapshots(new[] { messagingComponent });
 
                 Assert.That(components.Count, Is.EqualTo(1));
                 Assert.That(components[0].HierarchyPath, Is.EqualTo("BrokenComponentHost"));
@@ -3684,16 +2371,9 @@ namespace DxMessaging.Tests.Editor
         public void CreateExportTextIncludesVisibleSnapshotEntries()
         {
             MessageMonitorEntry newer = CreateEntry(new NewerMessage(), new InstanceId(42));
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { newer }
-            );
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { newer });
 
-            string exportText = DxMessagingMessageMonitorWindow.CreateExportText(
-                snapshot,
-                snapshot.Entries
-            );
+            string exportText = DxMessagingMessageMonitorWindow.CreateExportText(snapshot, snapshot.Entries);
 
             Assert.That(exportText, Does.Contain("\"diagnosticsEnabled\": true"));
             Assert.That(exportText, Does.Contain("\"capacity\": 8"));
@@ -3706,18 +2386,11 @@ namespace DxMessaging.Tests.Editor
         {
             MessageMonitorEntry older = CreateEntry(new OlderMessage(), null);
             MessageMonitorEntry newer = CreateEntry(new NewerMessage(), new InstanceId(42));
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { newer, older }
-            );
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { newer, older });
 
             string exportText = DxMessagingMessageMonitorWindow.CreateExportText(
                 snapshot,
-                DxMessagingMessageMonitorWindow.FilterEntries(
-                    snapshot.Entries,
-                    new MessageMonitorViewState(nameof(NewerMessage))
-                )
+                DxMessagingMessageMonitorWindow.FilterEntries(snapshot.Entries, new MessageMonitorViewState(nameof(NewerMessage)))
             );
 
             Assert.That(exportText, Does.Contain("\"entryCount\": 1"));
@@ -3728,21 +2401,10 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void CreateExportTextEscapesJsonStringValues()
         {
-            MessageMonitorEntry entry = new(
-                "Quote\"Message",
-                "Context: slash\\line\nnext",
-                "Stack\tTrace\r\u0001"
-            );
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { entry }
-            );
+            MessageMonitorEntry entry = new("Quote\"Message", "Context: slash\\line\nnext", "Stack\tTrace\r\u0001");
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { entry });
 
-            string exportText = DxMessagingMessageMonitorWindow.CreateExportText(
-                snapshot,
-                snapshot.Entries
-            );
+            string exportText = DxMessagingMessageMonitorWindow.CreateExportText(snapshot, snapshot.Entries);
 
             Assert.That(exportText, Does.Contain("Quote\\\"Message"));
             Assert.That(exportText, Does.Contain("slash\\\\line\\nnext"));
@@ -3755,13 +2417,9 @@ namespace DxMessaging.Tests.Editor
         {
             MessageBus messageBus = new() { DiagnosticsMode = true };
             messageBus._emissionBuffer.Add(new MessageEmissionData(new OlderMessage()));
-            messageBus._emissionBuffer.Add(
-                new MessageEmissionData(new NewerMessage(), new InstanceId(42))
-            );
+            messageBus._emissionBuffer.Add(new MessageEmissionData(new NewerMessage(), new InstanceId(42)));
 
-            MessageMonitorSnapshot snapshot = DxMessagingMessageMonitorWindow.CaptureSnapshot(
-                messageBus
-            );
+            MessageMonitorSnapshot snapshot = DxMessagingMessageMonitorWindow.CaptureSnapshot(messageBus);
 
             Assert.That(snapshot.DiagnosticsEnabled, Is.True);
             Assert.That(snapshot.Capacity, Is.EqualTo(IMessageBus.GlobalMessageBufferSize));
@@ -3780,32 +2438,17 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void ActiveFilterTokensStayReachableWhenTheyWrapPastTheScrollViewHeight()
         {
-            MessageMonitorSnapshot snapshot = new(
-                diagnosticsEnabled: true,
-                capacity: 8,
-                entries: new[] { CreateEntry(new OlderMessage(), null) }
-            );
-            string longFilter = string.Join(
-                " ",
-                Enumerable.Range(0, 24).Select(index => $"type:Message{index:00}")
-            );
+            MessageMonitorSnapshot snapshot = new(diagnosticsEnabled: true, capacity: 8, entries: new[] { CreateEntry(new OlderMessage(), null) });
+            string longFilter = string.Join(" ", Enumerable.Range(0, 24).Select(index => $"type:Message{index:00}"));
             EditorWindow window = CreateTrackedEditorWindow();
             window.position = new Rect(0f, 0f, MonitorMinimumWidth, MonitorMinimumHeight);
             EditorWindowTestUtility.ShowWindow(window);
 
-            DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                window.rootVisualElement,
-                snapshot,
-                new MessageMonitorViewState(longFilter)
-            );
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(window.rootVisualElement, snapshot, new MessageMonitorViewState(longFilter));
             EditorWindowTestUtility.SettleLayout(window);
 
-            ScrollView tokenScroll = window
-                .rootVisualElement.Q<VisualElement>(ActiveFilterSummaryName)
-                .Q<ScrollView>(ActiveFilterTokenScrollViewName);
-            VisualElement tokenRow = tokenScroll.Q<VisualElement>(
-                DxMessagingMessageMonitorWindow.ActiveFilterTokenWrapRowName
-            );
+            ScrollView tokenScroll = window.rootVisualElement.Q<VisualElement>(ActiveFilterSummaryName).Q<ScrollView>(ActiveFilterTokenScrollViewName);
+            VisualElement tokenRow = tokenScroll.Q<VisualElement>(DxMessagingMessageMonitorWindow.ActiveFilterTokenWrapRowName);
 
             Assert.That(tokenRow, Is.Not.Null, "The tokens must wrap in a row the window owns.");
             Assert.That(
@@ -3813,11 +2456,7 @@ namespace DxMessaging.Tests.Editor
                 Is.GreaterThan(tokenScroll.contentViewport.resolvedStyle.height),
                 "The probe must overflow the viewport, otherwise there is nothing to scroll to."
             );
-            Assert.That(
-                tokenScroll.verticalScroller.highValue,
-                Is.GreaterThan(0f),
-                "Every token past the first visible line must be reachable by scrolling."
-            );
+            Assert.That(tokenScroll.verticalScroller.highValue, Is.GreaterThan(0f), "Every token past the first visible line must be reachable by scrolling.");
         }
 
         /// <summary>
@@ -3832,38 +2471,22 @@ namespace DxMessaging.Tests.Editor
             MessageMonitorSnapshot snapshot = new(
                 diagnosticsEnabled: true,
                 capacity: 8,
-                entries: new[]
-                {
-                    CreateEntry(new OlderMessage(), null),
-                    CreateEntry(new NewerMessage(), new InstanceId(123)),
-                }
+                entries: new[] { CreateEntry(new OlderMessage(), null), CreateEntry(new NewerMessage(), new InstanceId(123)) }
             );
-            string longFilter = string.Join(
-                " ",
-                Enumerable.Range(0, 24).Select(index => $"type:Message{index:00}")
-            );
+            string longFilter = string.Join(" ", Enumerable.Range(0, 24).Select(index => $"type:Message{index:00}"));
             EditorWindow window = CreateTrackedEditorWindow();
             window.position = new Rect(0f, 0f, MonitorMinimumWidth, MonitorMinimumHeight);
             EditorWindowTestUtility.ShowWindow(window);
 
-            DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                window.rootVisualElement,
-                snapshot,
-                new MessageMonitorViewState(longFilter)
-            );
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(window.rootVisualElement, snapshot, new MessageMonitorViewState(longFilter));
             EditorWindowTestUtility.SettleLayout(window);
 
             Assert.That(
-                window
-                    .rootVisualElement.Q<VisualElement>(ActiveFilterSummaryName)
-                    .Q<ScrollView>(ActiveFilterTokenScrollViewName),
+                window.rootVisualElement.Q<VisualElement>(ActiveFilterSummaryName).Q<ScrollView>(ActiveFilterTokenScrollViewName),
                 Is.Not.Null,
                 "The active-filter token scroll view is one of the wrapping containers this covers."
             );
-            EditorWindowTestUtility.AssertWrappingContainersContainTheirChildren(
-                window.rootVisualElement,
-                "The Message Monitor at its minimum window size"
-            );
+            EditorWindowTestUtility.AssertWrappingContainersContainTheirChildren(window.rootVisualElement, "The Message Monitor at its minimum window size");
         }
 
         private static MessageMonitorEntry CreateEntry(IMessage message, InstanceId? context)
@@ -3877,10 +2500,7 @@ namespace DxMessaging.Tests.Editor
             Assert.That(kind, Is.Not.Null);
             Assert.That(kind.text, Is.EqualTo(expectedKind));
             Assert.That(row.ClassListContains(DxMessagingEditorTheme.RowClassName), Is.True);
-            VisualElement dot = row.Query<VisualElement>(
-                    className: DxMessagingEditorTheme.DotClassName
-                )
-                .First();
+            VisualElement dot = row.Query<VisualElement>(className: DxMessagingEditorTheme.DotClassName).First();
             Assert.That(dot, Is.Not.Null);
             Assert.That(dot.ClassListContains(ExpectedDotClass(expectedKind)), Is.True);
         }
@@ -3902,22 +2522,10 @@ namespace DxMessaging.Tests.Editor
 
         private static void AssertCompleteBorder(VisualElement element, Color expectedColor)
         {
-            Assert.That(
-                element.style.borderTopWidth.value,
-                Is.EqualTo(DxMessagingEditorTheme.CompleteBorderWidth)
-            );
-            Assert.That(
-                element.style.borderRightWidth.value,
-                Is.EqualTo(DxMessagingEditorTheme.CompleteBorderWidth)
-            );
-            Assert.That(
-                element.style.borderBottomWidth.value,
-                Is.EqualTo(DxMessagingEditorTheme.CompleteBorderWidth)
-            );
-            Assert.That(
-                element.style.borderLeftWidth.value,
-                Is.EqualTo(DxMessagingEditorTheme.CompleteBorderWidth)
-            );
+            Assert.That(element.style.borderTopWidth.value, Is.EqualTo(DxMessagingEditorTheme.CompleteBorderWidth));
+            Assert.That(element.style.borderRightWidth.value, Is.EqualTo(DxMessagingEditorTheme.CompleteBorderWidth));
+            Assert.That(element.style.borderBottomWidth.value, Is.EqualTo(DxMessagingEditorTheme.CompleteBorderWidth));
+            Assert.That(element.style.borderLeftWidth.value, Is.EqualTo(DxMessagingEditorTheme.CompleteBorderWidth));
             AssertColor(element.style.borderTopColor.value, expectedColor);
             AssertColor(element.style.borderRightColor.value, expectedColor);
             AssertColor(element.style.borderBottomColor.value, expectedColor);
@@ -3969,10 +2577,7 @@ namespace DxMessaging.Tests.Editor
 
         private GameObject CreateTrackedObject(string name)
         {
-            GameObject gameObject = EditorUtility.CreateGameObjectWithHideFlags(
-                name,
-                HideFlags.HideAndDontSave
-            );
+            GameObject gameObject = EditorUtility.CreateGameObjectWithHideFlags(name, HideFlags.HideAndDontSave);
             _createdObjects.Add(gameObject);
             return gameObject;
         }

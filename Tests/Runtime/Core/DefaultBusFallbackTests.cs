@@ -47,10 +47,7 @@ namespace DxMessaging.Tests.Runtime.Core
         /// <see cref="HandlerUsesInjectedDefaultBusForBroadcastWithoutSource"/>.
         /// </summary>
         [Test]
-        public void HandlerUsesInjectedDefaultBus(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void HandlerUsesInjectedDefaultBus([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             MessageBus customBus = new();
             MessageHandler handler = new(new InstanceId(42), customBus) { active = true };
@@ -64,40 +61,22 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 case MessageKind.Untargeted:
                 {
-                    handle = ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
-                        scenario,
-                        token,
-                        (in SimpleUntargetedMessage _) => ++callCount
-                    );
+                    handle = ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(scenario, token, (in SimpleUntargetedMessage _) => ++callCount);
                     break;
                 }
                 case MessageKind.Targeted:
                 {
-                    handle = ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        target,
-                        (in SimpleTargetedMessage _) => ++callCount
-                    );
+                    handle = ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(scenario, token, target, (in SimpleTargetedMessage _) => ++callCount);
                     break;
                 }
                 case MessageKind.Broadcast:
                 {
-                    handle = ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        target,
-                        (in SimpleBroadcastMessage _) => ++callCount
-                    );
+                    handle = ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(scenario, token, target, (in SimpleBroadcastMessage _) => ++callCount);
                     break;
                 }
                 default:
                 {
-                    throw new System.ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new System.ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
             _handles.Add(handle);
@@ -105,28 +84,13 @@ namespace DxMessaging.Tests.Runtime.Core
             token.Enable();
 
             EmitForScenario(scenario, target, callOnCustomBus: true, customBus);
-            Assert.AreEqual(
-                1,
-                callCount,
-                "[{0}] Handler should observe messages emitted through its injected bus.",
-                scenario.Kind
-            );
+            Assert.AreEqual(1, callCount, "[{0}] Handler should observe messages emitted through its injected bus.", scenario.Kind);
 
             EmitForScenario(scenario, target, callOnCustomBus: false, customBus);
-            Assert.AreEqual(
-                1,
-                callCount,
-                "[{0}] Handler should remain isolated from the global bus when using an injected default.",
-                scenario.Kind
-            );
+            Assert.AreEqual(1, callCount, "[{0}] Handler should remain isolated from the global bus when using an injected default.", scenario.Kind);
         }
 
-        private static void EmitForScenario(
-            MessageScenario scenario,
-            InstanceId target,
-            bool callOnCustomBus,
-            MessageBus customBus
-        )
+        private static void EmitForScenario(MessageScenario scenario, InstanceId target, bool callOnCustomBus, MessageBus customBus)
         {
             IMessageBus bus = callOnCustomBus ? customBus : null;
             switch (scenario.Kind)
@@ -151,11 +115,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 default:
                 {
-                    throw new System.ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new System.ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
@@ -179,10 +139,7 @@ namespace DxMessaging.Tests.Runtime.Core
             _tokens.Add(token);
 
             int callCount = 0;
-            MessageRegistrationHandle handle =
-                token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>(
-                    (in InstanceId _, in SimpleBroadcastMessage _) => ++callCount
-                );
+            MessageRegistrationHandle handle = token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>((in InstanceId _, in SimpleBroadcastMessage _) => ++callCount);
             _handles.Add(handle);
 
             token.Enable();
@@ -190,29 +147,17 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleBroadcastMessage message = new();
             InstanceId source = new(777);
             message.EmitBroadcast(source, customBus);
-            Assert.AreEqual(
-                1,
-                callCount,
-                "Broadcast handlers should observe emissions on the injected bus."
-            );
+            Assert.AreEqual(1, callCount, "Broadcast handlers should observe emissions on the injected bus.");
 
             message.EmitBroadcast(source);
-            Assert.AreEqual(
-                1,
-                callCount,
-                "Broadcast handler should remain isolated from global emissions when using an injected default bus."
-            );
+            Assert.AreEqual(1, callCount, "Broadcast handler should remain isolated from global emissions when using an injected default bus.");
         }
 
         [Test]
         public void MessagingComponentConfigureRebindsExistingHandlerToCustomBus()
         {
             MessageBus customBus = new();
-            GameObject go = new(
-                nameof(MessagingComponentConfigureRebindsExistingHandlerToCustomBus),
-                typeof(MessagingComponent),
-                typeof(ManualListenerComponent)
-            );
+            GameObject go = new(nameof(MessagingComponentConfigureRebindsExistingHandlerToCustomBus), typeof(MessagingComponent), typeof(ManualListenerComponent));
             _spawned.Add(go);
 
             MessagingComponent messagingComponent = go.GetComponent<MessagingComponent>();
@@ -223,26 +168,16 @@ namespace DxMessaging.Tests.Runtime.Core
             _tokens.Add(token);
 
             int callCount = 0;
-            MessageRegistrationHandle handle = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                _ => ++callCount
-            );
+            MessageRegistrationHandle handle = token.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++callCount);
             _handles.Add(handle);
             token.Enable();
 
             SimpleUntargetedMessage message = new();
             message.EmitUntargeted(customBus);
-            Assert.AreEqual(
-                1,
-                callCount,
-                "Configure should redirect tokens to the provided MessageBus."
-            );
+            Assert.AreEqual(1, callCount, "Configure should redirect tokens to the provided MessageBus.");
 
             message.EmitUntargeted();
-            Assert.AreEqual(
-                1,
-                callCount,
-                "Global emissions should not reach tokens configured to use a custom bus."
-            );
+            Assert.AreEqual(1, callCount, "Global emissions should not reach tokens configured to use a custom bus.");
         }
 
         [Test]
@@ -250,11 +185,7 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             MessageBus initialBus = new();
             MessageBus newBus = new();
-            GameObject go = new(
-                nameof(MessagingComponentConfigurePreserveDefersRebindUntilReenabled),
-                typeof(MessagingComponent),
-                typeof(ManualListenerComponent)
-            );
+            GameObject go = new(nameof(MessagingComponentConfigurePreserveDefersRebindUntilReenabled), typeof(MessagingComponent), typeof(ManualListenerComponent));
             _spawned.Add(go);
 
             MessagingComponent messagingComponent = go.GetComponent<MessagingComponent>();
@@ -265,9 +196,7 @@ namespace DxMessaging.Tests.Runtime.Core
             _tokens.Add(token);
 
             int callCount = 0;
-            MessageRegistrationHandle handle = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                _ => ++callCount
-            );
+            MessageRegistrationHandle handle = token.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++callCount);
             _handles.Add(handle);
             token.Enable();
 
@@ -278,39 +207,23 @@ namespace DxMessaging.Tests.Runtime.Core
             messagingComponent.Configure(newBus, MessageBusRebindMode.PreserveRegistrations);
 
             message.EmitUntargeted(newBus);
-            Assert.AreEqual(
-                1,
-                callCount,
-                "Preserve mode should avoid rebinding active registrations immediately."
-            );
+            Assert.AreEqual(1, callCount, "Preserve mode should avoid rebinding active registrations immediately.");
 
             message.EmitUntargeted(initialBus);
-            Assert.AreEqual(
-                2,
-                callCount,
-                "Handlers should continue observing the original bus until re-enabled."
-            );
+            Assert.AreEqual(2, callCount, "Handlers should continue observing the original bus until re-enabled.");
 
             token.Disable();
             token.Enable();
 
             message.EmitUntargeted(newBus);
-            Assert.AreEqual(
-                3,
-                callCount,
-                "Re-enabling the token should rebind handlers to the new bus."
-            );
+            Assert.AreEqual(3, callCount, "Re-enabling the token should rebind handlers to the new bus.");
         }
 
         [UnityTest]
         public IEnumerator MessageAwareComponentConfigureMessageBusAppliesOverride()
         {
             MessageBus customBus = new();
-            GameObject go = new(
-                nameof(MessageAwareComponentConfigureMessageBusAppliesOverride),
-                typeof(MessagingComponent),
-                typeof(BusAwareComponent)
-            );
+            GameObject go = new(nameof(MessageAwareComponentConfigureMessageBusAppliesOverride), typeof(MessagingComponent), typeof(BusAwareComponent));
             _spawned.Add(go);
 
             BusAwareComponent component = go.GetComponent<BusAwareComponent>();
@@ -320,25 +233,13 @@ namespace DxMessaging.Tests.Runtime.Core
 
             SimpleUntargetedMessage message = new();
             message.EmitUntargeted(customBus);
-            Assert.AreEqual(
-                1,
-                component.Received,
-                "MessageAwareComponent should route through the configured bus."
-            );
+            Assert.AreEqual(1, component.Received, "MessageAwareComponent should route through the configured bus.");
 
             message.EmitUntargeted();
-            Assert.AreEqual(
-                1,
-                component.Received,
-                "Global bus should no longer deliver to the component after override."
-            );
+            Assert.AreEqual(1, component.Received, "Global bus should no longer deliver to the component after override.");
 
-            AssertMessageAwareComponentClearingProviderBeforeAwakeRevertsToGlobalBus(
-                ProviderConfigurationClearKind.NullProvider
-            );
-            AssertMessageAwareComponentClearingProviderBeforeAwakeRevertsToGlobalBus(
-                ProviderConfigurationClearKind.EmptyHandle
-            );
+            AssertMessageAwareComponentClearingProviderBeforeAwakeRevertsToGlobalBus(ProviderConfigurationClearKind.NullProvider);
+            AssertMessageAwareComponentClearingProviderBeforeAwakeRevertsToGlobalBus(ProviderConfigurationClearKind.EmptyHandle);
             AssertMessageAwareComponentDestroyedProviderBeforeAwakeRevertsToGlobalBus();
         }
 
@@ -347,11 +248,7 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             MessageBus initialBus = new();
             MessageBus newBus = new();
-            GameObject go = new(
-                nameof(MessageAwareComponentConfigureMessageBusPreserveDefersUntilReenable),
-                typeof(MessagingComponent),
-                typeof(BusAwareComponent)
-            );
+            GameObject go = new(nameof(MessageAwareComponentConfigureMessageBusPreserveDefersUntilReenable), typeof(MessagingComponent), typeof(BusAwareComponent));
             _spawned.Add(go);
 
             BusAwareComponent component = go.GetComponent<BusAwareComponent>();
@@ -361,37 +258,21 @@ namespace DxMessaging.Tests.Runtime.Core
 
             SimpleUntargetedMessage message = new();
             message.EmitUntargeted(initialBus);
-            Assert.AreEqual(
-                1,
-                component.Received,
-                "Component should receive messages emitted via the initial bus."
-            );
+            Assert.AreEqual(1, component.Received, "Component should receive messages emitted via the initial bus.");
 
             component.ConfigureMessageBus(newBus, MessageBusRebindMode.PreserveRegistrations);
 
             message.EmitUntargeted(newBus);
-            Assert.AreEqual(
-                1,
-                component.Received,
-                "Preserve mode should not rebind active handlers immediately."
-            );
+            Assert.AreEqual(1, component.Received, "Preserve mode should not rebind active handlers immediately.");
 
             message.EmitUntargeted(initialBus);
-            Assert.AreEqual(
-                2,
-                component.Received,
-                "Existing registrations should continue to observe the original bus."
-            );
+            Assert.AreEqual(2, component.Received, "Existing registrations should continue to observe the original bus.");
 
             component.Token.Disable();
             component.Token.Enable();
 
             message.EmitUntargeted(newBus);
-            Assert.AreEqual(
-                3,
-                component.Received,
-                "Re-enabling the token should rebind handlers to the new bus."
-            );
+            Assert.AreEqual(3, component.Received, "Re-enabling the token should rebind handlers to the new bus.");
         }
 
         /// <summary>Checks fallback for new leases without moving a listener already registered on another bus.</summary>
@@ -399,29 +280,18 @@ namespace DxMessaging.Tests.Runtime.Core
         [TestCase(true, true, false)]
         [TestCase(false, false, false)]
         [TestCase(true, false, true)]
-        public void SerializedProviderHandleSurvivesAwake(
-            bool configureBeforeAwake,
-            bool destroyBeforeAwake,
-            bool useProtectedProviderOverride
-        )
+        public void SerializedProviderHandleSurvivesAwake(bool configureBeforeAwake, bool destroyBeforeAwake, bool useProtectedProviderOverride)
         {
-            string context =
-                $"configureBeforeAwake={configureBeforeAwake}, destroyBeforeAwake={destroyBeforeAwake}, protectedOverride={useProtectedProviderOverride}";
+            string context = $"configureBeforeAwake={configureBeforeAwake}, destroyBeforeAwake={destroyBeforeAwake}, protectedOverride={useProtectedProviderOverride}";
             MessageBus globalBus = new();
             MessageBus serializedBus = new();
             MessageBus runtimeBus = new();
-            using MessageHandler.GlobalMessageBusScope global =
-                MessageHandler.OverrideGlobalMessageBus(globalBus);
+            using MessageHandler.GlobalMessageBusScope global = MessageHandler.OverrideGlobalMessageBus(globalBus);
             using LeakWatcher globalWatcher = new(globalBus, label: context + " global");
-            using LeakWatcher serializedWatcher = new(
-                serializedBus,
-                label: context + " serialized"
-            );
+            using LeakWatcher serializedWatcher = new(serializedBus, label: context + " serialized");
             using LeakWatcher runtimeWatcher = new(runtimeBus, label: context + " runtime");
-            TestScriptableMessageBusProvider serializedProvider =
-                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
-            TestScriptableMessageBusProvider runtimeProvider =
-                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
+            TestScriptableMessageBusProvider serializedProvider = ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
+            TestScriptableMessageBusProvider runtimeProvider = ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
             GameObject host = null;
             try
             {
@@ -478,18 +348,9 @@ namespace DxMessaging.Tests.Runtime.Core
                 using MessageRegistrationLease lease = companion
                     .CreateRegistrationBuilder()
                     .Build(
-                        new MessageRegistrationBuildOptions
-                        {
-                            ActivateOnBuild = true,
-                            Configure = token =>
-                                token.RegisterUntargeted<SimpleUntargetedMessage>(_ =>
-                                    ++leaseCalls
-                                ),
-                        }
+                        new MessageRegistrationBuildOptions { ActivateOnBuild = true, Configure = token => token.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++leaseCalls) }
                     );
-                MessageBus expectedLeaseBus = useProtectedProviderOverride
-                    ? globalBus
-                    : serializedBus;
+                MessageBus expectedLeaseBus = useProtectedProviderOverride ? globalBus : serializedBus;
                 int[] actualLeaseCalls = new int[buses.Length];
                 int[] expectedLeaseCalls = new int[buses.Length];
                 for (int index = 0; index < buses.Length; ++index)
@@ -501,17 +362,12 @@ namespace DxMessaging.Tests.Runtime.Core
                     Assert.That(
                         listener.Received - previousListenerCalls,
                         Is.EqualTo(ReferenceEquals(bus, listenerBus) ? 1 : 0),
-                        context
-                            + ": availability changes must leave the accepted listener in place."
+                        context + ": availability changes must leave the accepted listener in place."
                     );
                     actualLeaseCalls[index] = leaseCalls - previousLeaseCalls;
                     expectedLeaseCalls[index] = ReferenceEquals(bus, expectedLeaseBus) ? 1 : 0;
                 }
-                CollectionAssert.AreEqual(
-                    expectedLeaseCalls,
-                    actualLeaseCalls,
-                    context + ": fresh lease calls on the global, serialized and runtime buses."
-                );
+                CollectionAssert.AreEqual(expectedLeaseCalls, actualLeaseCalls, context + ": fresh lease calls on the global, serialized and runtime buses.");
             }
             finally
             {
@@ -528,33 +384,18 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private void AssertMessageAwareComponentClearingProviderBeforeAwakeRevertsToGlobalBus(
-            ProviderConfigurationClearKind clearKind
-        )
+        private void AssertMessageAwareComponentClearingProviderBeforeAwakeRevertsToGlobalBus(ProviderConfigurationClearKind clearKind)
         {
             MessageBus previousExplicitBus = new();
             IMessageBus globalBus = MessageHandler.MessageBus;
-            using (
-                LeakWatcher globalWatcher = new(
-                    globalBus,
-                    label: $"MessageAwareClear-{clearKind}-global"
-                )
-            )
-            using (
-                LeakWatcher previousWatcher = new(
-                    previousExplicitBus,
-                    label: $"MessageAwareClear-{clearKind}-previous"
-                )
-            )
+            using (LeakWatcher globalWatcher = new(globalBus, label: $"MessageAwareClear-{clearKind}-global"))
+            using (LeakWatcher previousWatcher = new(previousExplicitBus, label: $"MessageAwareClear-{clearKind}-previous"))
             {
                 GameObject go = new($"MessageAwareProviderConfigurationClear-{clearKind}");
                 go.SetActive(false);
                 _spawned.Add(go);
                 BusAwareComponent component = go.AddComponent<BusAwareComponent>();
-                component.ConfigureMessageBus(
-                    previousExplicitBus,
-                    MessageBusRebindMode.RebindActive
-                );
+                component.ConfigureMessageBus(previousExplicitBus, MessageBusRebindMode.RebindActive);
                 ClearProviderConfiguration(component, clearKind);
 
                 go.SetActive(true);
@@ -569,37 +410,20 @@ namespace DxMessaging.Tests.Runtime.Core
                 _ = _spawned.Remove(go);
                 Object.DestroyImmediate(go);
 
-                Assert.AreEqual(
-                    0,
-                    receivedFromPreviousBus,
-                    $"Clearing with {clearKind} should detach the prior explicit bus."
-                );
-                Assert.AreEqual(
-                    1,
-                    receivedAfterGlobalBus,
-                    $"Clearing with {clearKind} should restore the global bus."
-                );
+                Assert.AreEqual(0, receivedFromPreviousBus, $"Clearing with {clearKind} should detach the prior explicit bus.");
+                Assert.AreEqual(1, receivedAfterGlobalBus, $"Clearing with {clearKind} should restore the global bus.");
             }
         }
 
-        private static void ClearProviderConfiguration(
-            MessageAwareComponent component,
-            ProviderConfigurationClearKind clearKind
-        )
+        private static void ClearProviderConfiguration(MessageAwareComponent component, ProviderConfigurationClearKind clearKind)
         {
             switch (clearKind)
             {
                 case ProviderConfigurationClearKind.NullProvider:
-                    component.ConfigureMessageBus(
-                        (IMessageBusProvider)null,
-                        MessageBusRebindMode.RebindActive
-                    );
+                    component.ConfigureMessageBus((IMessageBusProvider)null, MessageBusRebindMode.RebindActive);
                     return;
                 case ProviderConfigurationClearKind.EmptyHandle:
-                    component.ConfigureMessageBus(
-                        MessageBusProviderHandle.Empty,
-                        MessageBusRebindMode.RebindActive
-                    );
+                    component.ConfigureMessageBus(MessageBusProviderHandle.Empty, MessageBusRebindMode.RebindActive);
                     return;
                 default:
                     Assert.Fail($"Unsupported provider configuration clear kind: {clearKind}.");
@@ -611,18 +435,10 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             MessageBus providerBus = new();
             IMessageBus globalBus = MessageHandler.MessageBus;
-            TestScriptableMessageBusProvider provider =
-                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
+            TestScriptableMessageBusProvider provider = ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
             provider.Configure(providerBus);
-            using (
-                LeakWatcher globalWatcher = new(globalBus, label: "MessageAwareDestroyed-global")
-            )
-            using (
-                LeakWatcher providerWatcher = new(
-                    providerBus,
-                    label: "MessageAwareDestroyed-provider"
-                )
-            )
+            using (LeakWatcher globalWatcher = new(globalBus, label: "MessageAwareDestroyed-global"))
+            using (LeakWatcher providerWatcher = new(providerBus, label: "MessageAwareDestroyed-provider"))
             {
                 GameObject go = new("MessageAwareDestroyedProvider");
                 go.SetActive(false);
@@ -643,16 +459,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 _ = _spawned.Remove(go);
                 Object.DestroyImmediate(go);
 
-                Assert.AreEqual(
-                    0,
-                    receivedFromDestroyedProvider,
-                    "A provider destroyed before Awake should not retain its former bus."
-                );
-                Assert.AreEqual(
-                    1,
-                    receivedAfterGlobalBus,
-                    "A provider destroyed before Awake should restore the global bus."
-                );
+                Assert.AreEqual(0, receivedFromDestroyedProvider, "A provider destroyed before Awake should not retain its former bus.");
+                Assert.AreEqual(1, receivedAfterGlobalBus, "A provider destroyed before Awake should restore the global bus.");
             }
         }
 

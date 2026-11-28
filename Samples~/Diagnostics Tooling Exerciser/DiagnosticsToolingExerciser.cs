@@ -82,17 +82,11 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
         private static void InitializeAfterSceneLoad()
         {
 #if UNITY_6000_4_OR_NEWER
-            DiagnosticsToolingExerciser[] runners = FindObjectsByType<DiagnosticsToolingExerciser>(
-                FindObjectsInactive.Exclude
-            );
+            DiagnosticsToolingExerciser[] runners = FindObjectsByType<DiagnosticsToolingExerciser>(FindObjectsInactive.Exclude);
 #elif UNITY_2023_1_OR_NEWER
-            DiagnosticsToolingExerciser[] runners = FindObjectsByType<DiagnosticsToolingExerciser>(
-                FindObjectsInactive.Exclude,
-                FindObjectsSortMode.None
-            );
+            DiagnosticsToolingExerciser[] runners = FindObjectsByType<DiagnosticsToolingExerciser>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
 #else
-            DiagnosticsToolingExerciser[] runners =
-                FindObjectsOfType<DiagnosticsToolingExerciser>();
+            DiagnosticsToolingExerciser[] runners = FindObjectsOfType<DiagnosticsToolingExerciser>();
 #endif
             foreach (DiagnosticsToolingExerciser runner in runners)
             {
@@ -199,11 +193,7 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
         {
             sequence++;
 
-            ToolingPulse pulse = new(
-                CreateTraceId("pulse"),
-                "Diagnostics sample global pulse",
-                sequence
-            );
+            ToolingPulse pulse = new(CreateTraceId("pulse"), "Diagnostics sample global pulse", sequence);
             pulse.EmitUntargeted();
 
             int targetedEmits = 0;
@@ -214,11 +204,7 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
                     continue;
                 }
 
-                ToolingCommand command = new(
-                    CreateTraceId("target"),
-                    $"Command for {receiver.ListenerLabel}",
-                    sequence
-                );
+                ToolingCommand command = new(CreateTraceId("target"), $"Command for {receiver.ListenerLabel}", sequence);
                 command.EmitGameObjectTargeted(receiver.gameObject);
                 targetedEmits++;
             }
@@ -243,8 +229,7 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
                 }
             }
 
-            lastRunSummary =
-                $"Sequence {sequence}: 1 untargeted, {targetedEmits} targeted, {broadcastEmits} broadcast";
+            lastRunSummary = $"Sequence {sequence}: 1 untargeted, {targetedEmits} targeted, {broadcastEmits} broadcast";
 
             if (logSummary)
             {
@@ -262,11 +247,7 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
             }
 
             separateBusSequence++;
-            ToolingPulse pulse = new(
-                $"sample-separate-{separateBusSequence:000}",
-                "Separate MessageBus",
-                separateBusSequence
-            );
+            ToolingPulse pulse = new($"sample-separate-{separateBusSequence:000}", "Separate MessageBus", separateBusSequence);
             separateMessageBus.UntargetedBroadcast(ref pulse);
         }
 
@@ -293,10 +274,7 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
                 }
                 else if (!object.ReferenceEquals(diagnosticsBus, messageBus))
                 {
-                    Debug.LogWarning(
-                        "DxMessaging diagnostics are already scoped to a different message bus.",
-                        this
-                    );
+                    Debug.LogWarning("DxMessaging diagnostics are already scoped to a different message bus.", this);
                     return;
                 }
 
@@ -306,10 +284,7 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
             }
             else
             {
-                Debug.LogWarning(
-                    "DxMessaging global diagnostics could not be enabled because the active global bus is not the default MessageBus.",
-                    this
-                );
+                Debug.LogWarning("DxMessaging global diagnostics could not be enabled because the active global bus is not the default MessageBus.", this);
             }
         }
 
@@ -334,14 +309,8 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
 
             separateMessageBus = new MessageBus { DiagnosticsMode = true };
             separateMessageBus.Log.Enabled = true;
-            standaloneMessageHandler = new MessageHandler((InstanceId)this, separateMessageBus)
-            {
-                active = true,
-            };
-            standaloneToken = MessageRegistrationToken.Create(
-                standaloneMessageHandler,
-                separateMessageBus
-            );
+            standaloneMessageHandler = new MessageHandler((InstanceId)this, separateMessageBus) { active = true };
+            standaloneToken = MessageRegistrationToken.Create(standaloneMessageHandler, separateMessageBus);
             standaloneToken.DiagnosticMode = true;
             _ = standaloneToken.RegisterUntargeted<ToolingPulse>(OnSeparateBusPulse);
             standaloneToken.Enable();

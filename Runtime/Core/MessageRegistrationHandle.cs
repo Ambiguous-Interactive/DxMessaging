@@ -9,10 +9,7 @@ namespace DxMessaging.Core
     /// <remarks>
     /// Use with <see cref="MessageRegistrationToken.RemoveRegistration"/> to selectively cancel a registration.
     /// </remarks>
-    public readonly struct MessageRegistrationHandle
-        : IEquatable<MessageRegistrationHandle>,
-            IComparable<MessageRegistrationHandle>,
-            IComparable
+    public readonly struct MessageRegistrationHandle : IEquatable<MessageRegistrationHandle>, IComparable<MessageRegistrationHandle>, IComparable
     {
         private static long StaticIdCount;
 
@@ -53,10 +50,7 @@ namespace DxMessaging.Core
         /// <param name="left">Left value to compare.</param>
         /// <param name="right">Right value to compare.</param>
         /// <returns><c>true</c> when both values have the same opaque registration identity; otherwise <c>false</c>.</returns>
-        public static bool operator ==(
-            MessageRegistrationHandle left,
-            MessageRegistrationHandle right
-        )
+        public static bool operator ==(MessageRegistrationHandle left, MessageRegistrationHandle right)
         {
             return left.Equals(right);
         }
@@ -65,10 +59,7 @@ namespace DxMessaging.Core
         /// <param name="left">Left value to compare.</param>
         /// <param name="right">Right value to compare.</param>
         /// <returns><c>false</c> when both values have the same opaque registration identity; otherwise <c>true</c>.</returns>
-        public static bool operator !=(
-            MessageRegistrationHandle left,
-            MessageRegistrationHandle right
-        )
+        public static bool operator !=(MessageRegistrationHandle left, MessageRegistrationHandle right)
         {
             return !left.Equals(right);
         }
@@ -79,10 +70,7 @@ namespace DxMessaging.Core
         /// <param name="left">Left-hand handle.</param>
         /// <param name="right">Right-hand handle.</param>
         /// <returns><c>true</c> when <paramref name="left"/> sorts after <paramref name="right"/>.</returns>
-        public static bool operator >(
-            MessageRegistrationHandle left,
-            MessageRegistrationHandle right
-        )
+        public static bool operator >(MessageRegistrationHandle left, MessageRegistrationHandle right)
         {
             return 0 < left.CompareTo(right);
         }
@@ -93,10 +81,7 @@ namespace DxMessaging.Core
         /// <param name="left">Left-hand handle.</param>
         /// <param name="right">Right-hand handle.</param>
         /// <returns><c>true</c> when <paramref name="left"/> sorts before <paramref name="right"/>.</returns>
-        public static bool operator <(
-            MessageRegistrationHandle left,
-            MessageRegistrationHandle right
-        )
+        public static bool operator <(MessageRegistrationHandle left, MessageRegistrationHandle right)
         {
             return left.CompareTo(right) < 0;
         }
@@ -105,10 +90,7 @@ namespace DxMessaging.Core
         /// <param name="left">Left value to compare.</param>
         /// <param name="right">Right value to compare.</param>
         /// <returns><c>true</c> when the left handle sorts before or at the right handle.</returns>
-        public static bool operator <=(
-            MessageRegistrationHandle left,
-            MessageRegistrationHandle right
-        )
+        public static bool operator <=(MessageRegistrationHandle left, MessageRegistrationHandle right)
         {
             return left.CompareTo(right) <= 0;
         }
@@ -117,10 +99,7 @@ namespace DxMessaging.Core
         /// <param name="left">Left value to compare.</param>
         /// <param name="right">Right value to compare.</param>
         /// <returns><c>true</c> when the left handle sorts after or at the right handle.</returns>
-        public static bool operator >=(
-            MessageRegistrationHandle left,
-            MessageRegistrationHandle right
-        )
+        public static bool operator >=(MessageRegistrationHandle left, MessageRegistrationHandle right)
         {
             return 0 <= left.CompareTo(right);
         }

@@ -22,8 +22,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             miscellaneousOptions: SymbolDisplayMiscellaneousOptions.EscapeKeywordIdentifiers
         );
 
-        private static readonly SymbolDisplayFormat IdentifierNameFormat =
-            DeclarationNameFormat.WithGenericsOptions(SymbolDisplayGenericsOptions.None);
+        private static readonly SymbolDisplayFormat IdentifierNameFormat = DeclarationNameFormat.WithGenericsOptions(SymbolDisplayGenericsOptions.None);
 
         private static readonly DiagnosticDescriptor InvalidOptionalDefaultDiagnostic = new(
             id: "DXMSG005",
@@ -34,15 +33,14 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             isEnabledByDefault: true
         );
 
-        private static readonly DiagnosticDescriptor UnsupportedStructInitializationDiagnostic =
-            new(
-                id: "DXMSG011",
-                title: "Cannot preserve explicit-interface struct initializers",
-                messageFormat: "Type '{0}' combines initialized and uninitialized explicit-interface auto-properties with a user parameterless constructor. Add an initializer to each explicit-interface auto-property, use named backing fields, or remove DxAutoConstructor and write the constructor explicitly.",
-                category: "DxMessaging",
-                defaultSeverity: DiagnosticSeverity.Error,
-                isEnabledByDefault: true
-            );
+        private static readonly DiagnosticDescriptor UnsupportedStructInitializationDiagnostic = new(
+            id: "DXMSG011",
+            title: "Cannot preserve explicit-interface struct initializers",
+            messageFormat: "Type '{0}' combines initialized and uninitialized explicit-interface auto-properties with a user parameterless constructor. Add an initializer to each explicit-interface auto-property, use named backing fields, or remove DxAutoConstructor and write the constructor explicitly.",
+            category: "DxMessaging",
+            defaultSeverity: DiagnosticSeverity.Error,
+            isEnabledByDefault: true
+        );
 
         private static readonly DiagnosticDescriptor PrimaryConstructorDiagnostic = new(
             id: "DXMSG012",
@@ -80,11 +78,9 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             isEnabledByDefault: true
         );
 
-        private const string AutoGenConstructorAttrFullName =
-            "DxMessaging.Core.Attributes.DxAutoConstructorAttribute";
+        private const string AutoGenConstructorAttrFullName = "DxMessaging.Core.Attributes.DxAutoConstructorAttribute";
 
-        private const string OptionalParameterAttrFullName =
-            "DxMessaging.Core.Attributes.DxOptionalParameterAttribute";
+        private const string OptionalParameterAttrFullName = "DxMessaging.Core.Attributes.DxOptionalParameterAttribute";
 
         private const string SerializeFieldAttrFullName = "UnityEngine.SerializeField";
 
@@ -123,12 +119,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             foreach (TypeDeclarationSyntax candidate in receiver.Candidates)
             {
                 context.CancellationToken.ThrowIfCancellationRequested();
-                TypeToGenerateInfo? target = GetSemanticTargetForGeneration(
-                    candidate,
-                    context.Compilation,
-                    treeOrder,
-                    context.CancellationToken
-                );
+                TypeToGenerateInfo? target = GetSemanticTargetForGeneration(candidate, context.Compilation, treeOrder, context.CancellationToken);
                 if (target.HasValue)
                 {
                     typesToGenerate.Add(target.Value);
@@ -144,11 +135,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 typeDecl.IsKind(SyntaxKind.ClassDeclaration)
                 || typeDecl.IsKind(SyntaxKind.StructDeclaration)
                 || typeDecl.IsKind(SyntaxKind.RecordDeclaration)
-                || string.Equals(
-                    typeDecl.Kind().ToString(),
-                    "RecordStructDeclaration",
-                    StringComparison.Ordinal
-                )
+                || string.Equals(typeDecl.Kind().ToString(), "RecordStructDeclaration", StringComparison.Ordinal)
             );
 
         private static TypeToGenerateInfo? GetSemanticTargetForGeneration(
@@ -158,13 +145,8 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             CancellationToken cancellationToken
         )
         {
-            SemanticModel semanticModel = compilation.GetSemanticModel(
-                typeDeclarationSyntax.SyntaxTree
-            );
-            if (
-                semanticModel.GetDeclaredSymbol(typeDeclarationSyntax, cancellationToken)
-                is not { } typeSymbol
-            )
+            SemanticModel semanticModel = compilation.GetSemanticModel(typeDeclarationSyntax.SyntaxTree);
+            if (semanticModel.GetDeclaredSymbol(typeDeclarationSyntax, cancellationToken) is not { } typeSymbol)
             {
                 return null;
             }
@@ -176,15 +158,10 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             foreach (AttributeData attributeData in typeSymbol.GetAttributes())
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (
-                    attributeData.AttributeClass?.ToDisplayString()
-                    == AutoGenConstructorAttrFullName
-                )
+                if (attributeData.AttributeClass?.ToDisplayString() == AutoGenConstructorAttrFullName)
                 {
                     hasAutoGenConstructorAttribute = true;
-                    foreach (
-                        KeyValuePair<string, TypedConstant> argument in attributeData.NamedArguments
-                    )
+                    foreach (KeyValuePair<string, TypedConstant> argument in attributeData.NamedArguments)
                     {
                         if (argument.Value.Value is not true)
                         {
@@ -214,17 +191,8 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             foreach (ISymbol member in typeSymbol.GetMembers())
             {
                 if (
-                    member
-                        is IFieldSymbol
-                        {
-                            IsStatic: false,
-                            IsImplicitlyDeclared: false,
-                            IsFixedSizeBuffer: false,
-                        } field
-                    && (
-                        field.DeclaredAccessibility == Accessibility.Public
-                        || (includeSerializedFields && HasSerializeFieldAttribute(field))
-                    )
+                    member is IFieldSymbol { IsStatic: false, IsImplicitlyDeclared: false, IsFixedSizeBuffer: false } field
+                    && (field.DeclaredAccessibility == Accessibility.Public || (includeSerializedFields && HasSerializeFieldAttribute(field)))
                 )
                 {
                     fieldsToInject.Add(field);
@@ -238,13 +206,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 return null;
             }
 
-            return new TypeToGenerateInfo(
-                typeSymbol,
-                typeDeclarationSyntax,
-                fieldsToInject,
-                includeSerializedFields,
-                generateSerializedProperties
-            );
+            return new TypeToGenerateInfo(typeSymbol, typeDeclarationSyntax, fieldsToInject, includeSerializedFields, generateSerializedProperties);
         }
 
         private static bool HasSerializeFieldAttribute(IFieldSymbol field)
@@ -260,16 +222,9 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
         }
 
         private static string EscapeIdentifier(string name) =>
-            SyntaxFacts.GetKeywordKind(name) != SyntaxKind.None
-            || SyntaxFacts.GetContextualKeywordKind(name) != SyntaxKind.None
-                ? "@" + name
-                : name;
+            SyntaxFacts.GetKeywordKind(name) != SyntaxKind.None || SyntaxFacts.GetContextualKeywordKind(name) != SyntaxKind.None ? "@" + name : name;
 
-        private static bool HasConflictingMember(
-            Compilation compilation,
-            INamedTypeSymbol type,
-            string name
-        )
+        private static bool HasConflictingMember(Compilation compilation, INamedTypeSymbol type, string name)
         {
             if (type.Name == name || type.GetMembers(name).Length != 0)
             {
@@ -295,54 +250,27 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             return false;
         }
 
-        private static void ReportSerializedNameDiagnostic(
-            GeneratorExecutionContext context,
-            IFieldSymbol field,
-            string name,
-            string reason
-        )
+        private static void ReportSerializedNameDiagnostic(GeneratorExecutionContext context, IFieldSymbol field, string name, string reason)
         {
-            context.ReportDiagnostic(
-                Diagnostic.Create(
-                    SerializedFieldNameDiagnostic,
-                    field.Locations.FirstOrDefault(),
-                    field.Name,
-                    name,
-                    reason
-                )
-            );
+            context.ReportDiagnostic(Diagnostic.Create(SerializedFieldNameDiagnostic, field.Locations.FirstOrDefault(), field.Name, name, reason));
         }
 
         /// <summary>Orders source trees before offsets that are meaningful only within one tree.</summary>
-        private static (int Tree, int Start) GetDeclarationOrder(
-            IFieldSymbol field,
-            IReadOnlyDictionary<SyntaxTree, int> treeOrder
-        )
+        private static (int Tree, int Start) GetDeclarationOrder(IFieldSymbol field, IReadOnlyDictionary<SyntaxTree, int> treeOrder)
         {
             SyntaxReference? declaration = field.DeclaringSyntaxReferences.FirstOrDefault();
-            return
-                declaration != null && treeOrder.TryGetValue(declaration.SyntaxTree, out int order)
-                ? (order, declaration.Span.Start)
-                : (-1, 0);
+            return declaration != null && treeOrder.TryGetValue(declaration.SyntaxTree, out int order) ? (order, declaration.Span.Start) : (-1, 0);
         }
 
         /// <summary>Preserves compilation declaration order across partial files and variable lists.</summary>
-        private static void SortFieldsByDeclarationOrder(
-            List<IFieldSymbol> fields,
-            IReadOnlyDictionary<SyntaxTree, int> treeOrder
-        )
+        private static void SortFieldsByDeclarationOrder(List<IFieldSymbol> fields, IReadOnlyDictionary<SyntaxTree, int> treeOrder)
         {
             for (int index = 1; index < fields.Count; index++)
             {
                 IFieldSymbol field = fields[index];
                 (int Tree, int Start) declarationOrder = GetDeclarationOrder(field, treeOrder);
                 int insertionIndex = index;
-                while (
-                    0 < insertionIndex
-                    && declarationOrder.CompareTo(
-                        GetDeclarationOrder(fields[insertionIndex - 1], treeOrder)
-                    ) < 0
-                )
+                while (0 < insertionIndex && declarationOrder.CompareTo(GetDeclarationOrder(fields[insertionIndex - 1], treeOrder)) < 0)
                 {
                     fields[insertionIndex] = fields[insertionIndex - 1];
                     insertionIndex--;
@@ -351,10 +279,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             }
         }
 
-        private static void Execute(
-            List<TypeToGenerateInfo> typesToGenerate,
-            GeneratorExecutionContext context
-        )
+        private static void Execute(List<TypeToGenerateInfo> typesToGenerate, GeneratorExecutionContext context)
         {
             if (typesToGenerate.Count == 0)
             {
@@ -376,44 +301,30 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 // If nested, ensure all containers are declared partial; otherwise report diagnostic and skip
                 if (typeInfo.TypeSymbol.ContainingType is not null)
                 {
-                    List<INamedTypeSymbol> nonPartial = GetNonPartialContainers(
-                        typeInfo.TypeSymbol
-                    );
+                    List<INamedTypeSymbol> nonPartial = GetNonPartialContainers(typeInfo.TypeSymbol);
                     if (0 < nonPartial.Count)
                     {
-                        string containersList = string.Join(
-                            ", ",
-                            nonPartial.Select(static s =>
-                                s.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)
-                            )
-                        );
+                        string containersList = string.Join(", ", nonPartial.Select(static s => s.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)));
                         context.ReportDiagnostic(
                             Diagnostic.Create(
                                 NonPartialContainerDiagnostic,
                                 typeInfo.DeclarationSyntax.Identifier.GetLocation(),
-                                typeInfo.TypeSymbol.ToDisplayString(
-                                    SymbolDisplayFormat.MinimallyQualifiedFormat
-                                ),
+                                typeInfo.TypeSymbol.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
                                 containersList
                             )
                         );
                         // Location-specific suggestions on each non-partial container
                         foreach (INamedTypeSymbol container in nonPartial)
                         {
-                            SyntaxReference? sr =
-                                container.DeclaringSyntaxReferences.FirstOrDefault();
+                            SyntaxReference? sr = container.DeclaringSyntaxReferences.FirstOrDefault();
                             if (sr != null && sr.GetSyntax() is TypeDeclarationSyntax tds)
                             {
                                 context.ReportDiagnostic(
                                     Diagnostic.Create(
                                         AddPartialSuggestionDiagnostic,
                                         tds.Identifier.GetLocation(),
-                                        container.ToDisplayString(
-                                            SymbolDisplayFormat.MinimallyQualifiedFormat
-                                        ),
-                                        typeInfo.TypeSymbol.ToDisplayString(
-                                            SymbolDisplayFormat.MinimallyQualifiedFormat
-                                        )
+                                        container.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                                        typeInfo.TypeSymbol.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)
                                     )
                                 );
                             }
@@ -426,60 +337,44 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                     typeInfo.TypeSymbol.TypeKind == TypeKind.Class
                     && IsRecordDeclaration(typeInfo.TypeSymbol)
                     && typeInfo.FieldsToInject.Count == 1
-                    && SymbolEqualityComparer.Default.Equals(
-                        typeInfo.FieldsToInject[0].Type,
-                        typeInfo.TypeSymbol
-                    )
+                    && SymbolEqualityComparer.Default.Equals(typeInfo.FieldsToInject[0].Type, typeInfo.TypeSymbol)
                 )
                 {
                     context.ReportDiagnostic(
                         Diagnostic.Create(
                             RecordCopyConstructorDiagnostic,
                             typeInfo.DeclarationSyntax.Identifier.GetLocation(),
-                            typeInfo.TypeSymbol.ToDisplayString(
-                                SymbolDisplayFormat.MinimallyQualifiedFormat
-                            )
+                            typeInfo.TypeSymbol.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)
                         )
                     );
                     continue;
                 }
 
-                ParameterListSyntax? primaryParameters = GetPrimaryConstructorParameters(
-                    typeInfo.TypeSymbol,
-                    context.CancellationToken
-                );
+                ParameterListSyntax? primaryParameters = GetPrimaryConstructorParameters(typeInfo.TypeSymbol, context.CancellationToken);
                 if (primaryParameters != null && 0 < primaryParameters.Parameters.Count)
                 {
                     context.ReportDiagnostic(
                         Diagnostic.Create(
                             PrimaryConstructorDiagnostic,
                             typeInfo.DeclarationSyntax.Identifier.GetLocation(),
-                            typeInfo.TypeSymbol.ToDisplayString(
-                                SymbolDisplayFormat.MinimallyQualifiedFormat
-                            )
+                            typeInfo.TypeSymbol.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)
                         )
                     );
                     continue;
                 }
 
                 // Generate the partial class/struct with the constructor
-                string? generatedSource = GenerateConstructorSource(
-                    context.Compilation,
-                    typeInfo,
-                    context,
-                    hasEmptyPrimaryConstructor: primaryParameters != null
-                );
+                string? generatedSource = GenerateConstructorSource(context.Compilation, typeInfo, context, hasEmptyPrimaryConstructor: primaryParameters != null);
                 if (generatedSource == null)
                 {
                     continue;
                 }
-                string hintName =
-                    $"{typeInfo.TypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}.AutoGenConstructor.g.cs"
-                        .Replace("global::", "")
-                        .Replace("@", "")
-                        .Replace("<", "-")
-                        .Replace(">", "-")
-                        .Replace(",", "-"); // Hyphens cannot collide with legal C# identifier characters.
+                string hintName = $"{typeInfo.TypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}.AutoGenConstructor.g.cs"
+                    .Replace("global::", "")
+                    .Replace("@", "")
+                    .Replace("<", "-")
+                    .Replace(">", "-")
+                    .Replace(",", "-"); // Hyphens cannot collide with legal C# identifier characters.
 
                 if (typeInfo.IncludeSerializedFields)
                 {
@@ -489,9 +384,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                         hintName,
                         cancellationToken: context.CancellationToken
                     );
-                    SemanticModel generatedModel = context
-                        .Compilation.AddSyntaxTrees(generatedTree)
-                        .GetSemanticModel(generatedTree);
+                    SemanticModel generatedModel = context.Compilation.AddSyntaxTrees(generatedTree).GetSemanticModel(generatedTree);
                     Diagnostic? inaccessibleSignature = generatedModel
                         .GetDeclarationDiagnostics(cancellationToken: context.CancellationToken)
                         .FirstOrDefault(static diagnostic => diagnostic.Id is "CS0051" or "CS0053");
@@ -501,9 +394,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                             Diagnostic.Create(
                                 SerializedFieldAccessibilityDiagnostic,
                                 typeInfo.DeclarationSyntax.Identifier.GetLocation(),
-                                typeInfo.TypeSymbol.ToDisplayString(
-                                    SymbolDisplayFormat.MinimallyQualifiedFormat
-                                ),
+                                typeInfo.TypeSymbol.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
                                 inaccessibleSignature.GetMessage(CultureInfo.InvariantCulture)
                             )
                         );
@@ -518,18 +409,12 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
         /// <summary>
         /// Finds primary constructor syntax across every partial declaration of the target type.
         /// </summary>
-        private static ParameterListSyntax? GetPrimaryConstructorParameters(
-            INamedTypeSymbol typeSymbol,
-            CancellationToken cancellationToken
-        )
+        private static ParameterListSyntax? GetPrimaryConstructorParameters(INamedTypeSymbol typeSymbol, CancellationToken cancellationToken)
         {
             foreach (SyntaxReference syntaxReference in typeSymbol.DeclaringSyntaxReferences)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (
-                    syntaxReference.GetSyntax(cancellationToken)
-                    is TypeDeclarationSyntax declaration
-                )
+                if (syntaxReference.GetSyntax(cancellationToken) is TypeDeclarationSyntax declaration)
                 {
                     /* Inspect direct syntax children to recognize newer primary-constructor
                      * declarations while using Unity's Roslyn 3.8 API surface. */
@@ -545,21 +430,12 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             return null;
         }
 
-        private static string? GenerateConstructorSource(
-            Compilation compilation,
-            TypeToGenerateInfo typeInfo,
-            GeneratorExecutionContext spc,
-            bool hasEmptyPrimaryConstructor
-        )
+        private static string? GenerateConstructorSource(Compilation compilation, TypeToGenerateInfo typeInfo, GeneratorExecutionContext spc, bool hasEmptyPrimaryConstructor)
         {
             INamedTypeSymbol typeSymbol = typeInfo.TypeSymbol;
             List<IFieldSymbol> fieldsToInject = typeInfo.FieldsToInject;
-            string namespaceName = typeSymbol.ContainingNamespace.IsGlobalNamespace
-                ? string.Empty
-                : typeSymbol.ContainingNamespace.ToDisplayString();
-            string namespaceBlockOpen = string.IsNullOrEmpty(namespaceName)
-                ? string.Empty
-                : $"namespace {namespaceName}\n{{";
+            string namespaceName = typeSymbol.ContainingNamespace.IsGlobalNamespace ? string.Empty : typeSymbol.ContainingNamespace.ToDisplayString();
+            string namespaceBlockOpen = string.IsNullOrEmpty(namespaceName) ? string.Empty : $"namespace {namespaceName}\n{{";
             string namespaceBlockClose = string.IsNullOrEmpty(namespaceName) ? string.Empty : "}";
             const string Indent = "    ";
 
@@ -602,9 +478,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 string containerName = container.ToDisplayString(DeclarationNameFormat);
 
                 // Do not repeat modifiers like sealed/abstract/static/readonly/ref here to avoid changing semantics across parts
-                containersOpen.AppendLine(
-                    $"{currentIndent}{containerAccessibility} partial {containerKind} {containerName}"
-                );
+                containersOpen.AppendLine($"{currentIndent}{containerAccessibility} partial {containerKind} {containerName}");
                 containersOpen.Append(currentIndent).AppendLine("{");
                 currentIndent += Indent;
             }
@@ -618,9 +492,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             {
                 TypeKind.Class => typeIsRecord ? "record" : "class",
                 TypeKind.Struct => typeIsRecord ? "record struct" : "struct",
-                _ => throw new InvalidOperationException(
-                    "Unsupported type kind for constructor generation"
-                ),
+                _ => throw new InvalidOperationException("Unsupported type kind for constructor generation"),
             };
 
             string typeAccessibility = typeSymbol.DeclaredAccessibility switch
@@ -640,48 +512,22 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             StringBuilder constructorParams = new();
             StringBuilder constructorBody = new();
             StringBuilder serializedProperties = new();
-            HashSet<string>? parameterNames = typeInfo.IncludeSerializedFields
-                ? new HashSet<string>(StringComparer.Ordinal)
-                : null;
-            HashSet<string>? propertyNames = typeInfo.GenerateSerializedProperties
-                ? new HashSet<string>(StringComparer.Ordinal)
-                : null;
-            bool reservesMessageType =
-                typeInfo.GenerateSerializedProperties
-                && DxMessageIdGenerator.HasMessageAttribute(typeSymbol);
+            HashSet<string>? parameterNames = typeInfo.IncludeSerializedFields ? new HashSet<string>(StringComparer.Ordinal) : null;
+            HashSet<string>? propertyNames = typeInfo.GenerateSerializedProperties ? new HashSet<string>(StringComparer.Ordinal) : null;
+            bool reservesMessageType = typeInfo.GenerateSerializedProperties && DxMessageIdGenerator.HasMessageAttribute(typeSymbol);
 
-            SymbolDisplayFormat fieldTypeFormat =
-                SymbolDisplayFormat.FullyQualifiedFormat.WithMiscellaneousOptions(
-                    SymbolDisplayMiscellaneousOptions.EscapeKeywordIdentifiers
-                        | SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier
-                );
+            SymbolDisplayFormat fieldTypeFormat = SymbolDisplayFormat.FullyQualifiedFormat.WithMiscellaneousOptions(
+                SymbolDisplayMiscellaneousOptions.EscapeKeywordIdentifiers | SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier
+            );
 
-            List<(
-                string Type,
-                string Name,
-                bool IsOptional,
-                string? DefaultExpr,
-                bool AnnotationsEnabled
-            )> parameterDetails =
-                new List<(
-                    string Type,
-                    string Name,
-                    bool IsOptional,
-                    string? DefaultExpr,
-                    bool AnnotationsEnabled
-                )>();
+            List<(string Type, string Name, bool IsOptional, string? DefaultExpr, bool AnnotationsEnabled)> parameterDetails =
+                new List<(string Type, string Name, bool IsOptional, string? DefaultExpr, bool AnnotationsEnabled)>();
 
             // For validating expressions, use the semantic model for this type's tree
-            SemanticModel semanticModel = compilation.GetSemanticModel(
-                typeInfo.DeclarationSyntax.SyntaxTree
-            );
+            SemanticModel semanticModel = compilation.GetSemanticModel(typeInfo.DeclarationSyntax.SyntaxTree);
             int anchorPosition = typeInfo.DeclarationSyntax.SpanStart;
 
-            (
-                bool requiresUnsafeContext,
-                bool useDefaultInitializer,
-                bool unsupportedInitialization
-            ) = hasEmptyPrimaryConstructor
+            (bool requiresUnsafeContext, bool useDefaultInitializer, bool unsupportedInitialization) = hasEmptyPrimaryConstructor
                 ? (false, true, false)
                 : AppendStructInitialization(compilation, typeSymbol, constructorBody);
             if (unsupportedInitialization)
@@ -697,11 +543,9 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             }
             foreach (IFieldSymbol field in fieldsToInject)
             {
-                SyntaxReference? fieldDeclaration =
-                    field.DeclaringSyntaxReferences.FirstOrDefault();
+                SyntaxReference? fieldDeclaration = field.DeclaringSyntaxReferences.FirstOrDefault();
                 SemanticModel fieldModel =
-                    fieldDeclaration == null
-                    || ReferenceEquals(fieldDeclaration.SyntaxTree, semanticModel.SyntaxTree)
+                    fieldDeclaration == null || ReferenceEquals(fieldDeclaration.SyntaxTree, semanticModel.SyntaxTree)
                         ? semanticModel
                         : compilation.GetSemanticModel(fieldDeclaration.SyntaxTree);
                 int fieldAnchor = fieldDeclaration?.Span.Start ?? anchorPosition;
@@ -709,48 +553,26 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 requiresUnsafeContext |= fieldRequiresUnsafeContext;
                 SymbolDisplayFormat parameterTypeFormat = fieldRequiresUnsafeContext
                     ? fieldTypeFormat
-                        .WithMiscellaneousOptions(
-                            fieldTypeFormat.MiscellaneousOptions
-                                | SymbolDisplayMiscellaneousOptions.UseSpecialTypes
-                        )
-                        .WithParameterOptions(
-                            fieldTypeFormat.ParameterOptions
-                                | SymbolDisplayParameterOptions.IncludeType
-                                | SymbolDisplayParameterOptions.IncludeParamsRefOut
-                        )
-                        .WithMemberOptions(
-                            fieldTypeFormat.MemberOptions | SymbolDisplayMemberOptions.IncludeRef
-                        )
+                        .WithMiscellaneousOptions(fieldTypeFormat.MiscellaneousOptions | SymbolDisplayMiscellaneousOptions.UseSpecialTypes)
+                        .WithParameterOptions(fieldTypeFormat.ParameterOptions | SymbolDisplayParameterOptions.IncludeType | SymbolDisplayParameterOptions.IncludeParamsRefOut)
+                        .WithMemberOptions(fieldTypeFormat.MemberOptions | SymbolDisplayMemberOptions.IncludeRef)
                     : fieldTypeFormat;
                 string fieldType = field.Type.ToDisplayString(parameterTypeFormat);
                 string fieldName = field.Name;
                 string fieldIdentifier = field.ToDisplayString(IdentifierNameFormat);
-                bool serialized =
-                    typeInfo.IncludeSerializedFields && HasSerializeFieldAttribute(field);
+                bool serialized = typeInfo.IncludeSerializedFields && HasSerializeFieldAttribute(field);
                 string parameterValue = serialized ? fieldName.TrimStart('_') : fieldName;
-                string parameterName = serialized
-                    ? EscapeIdentifier(parameterValue)
-                    : fieldIdentifier;
+                string parameterName = serialized ? EscapeIdentifier(parameterValue) : fieldIdentifier;
                 if (parameterNames != null)
                 {
                     if (!SyntaxFacts.IsValidIdentifier(parameterValue))
                     {
-                        ReportSerializedNameDiagnostic(
-                            spc,
-                            field,
-                            parameterValue,
-                            "constructor parameter name is not a valid C# identifier"
-                        );
+                        ReportSerializedNameDiagnostic(spc, field, parameterValue, "constructor parameter name is not a valid C# identifier");
                         return null;
                     }
                     if (!parameterNames.Add(parameterValue))
                     {
-                        ReportSerializedNameDiagnostic(
-                            spc,
-                            field,
-                            parameterValue,
-                            "constructor parameter name is already used"
-                        );
+                        ReportSerializedNameDiagnostic(spc, field, parameterValue, "constructor parameter name is already used");
                         return null;
                     }
                 }
@@ -759,13 +581,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
 
                 foreach (AttributeData attr in field.GetAttributes())
                 {
-                    if (
-                        !string.Equals(
-                            attr.AttributeClass?.ToDisplayString(),
-                            OptionalParameterAttrFullName,
-                            StringComparison.Ordinal
-                        )
-                    )
+                    if (!string.Equals(attr.AttributeClass?.ToDisplayString(), OptionalParameterAttrFullName, StringComparison.Ordinal))
                     {
                         continue;
                     }
@@ -786,39 +602,14 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                             {
                                 defaultExpr = exprStr.Trim();
                                 // Validate expression compatibility with field type
-                                if (
-                                    !IsValidDefaultExpression(
-                                        fieldModel,
-                                        fieldAnchor,
-                                        field,
-                                        defaultExpr
-                                    )
-                                )
+                                if (!IsValidDefaultExpression(fieldModel, fieldAnchor, field, defaultExpr))
                                 {
-                                    Location reportLoc =
-                                        attr.ApplicationSyntaxReference?.GetSyntax()?.GetLocation()
-                                        ?? field.Locations.FirstOrDefault()
-                                        ?? Location.None;
-                                    spc.ReportDiagnostic(
-                                        Diagnostic.Create(
-                                            InvalidOptionalDefaultDiagnostic,
-                                            reportLoc,
-                                            fieldName,
-                                            defaultExpr,
-                                            fieldType
-                                        )
-                                    );
+                                    Location reportLoc = attr.ApplicationSyntaxReference?.GetSyntax()?.GetLocation() ?? field.Locations.FirstOrDefault() ?? Location.None;
+                                    spc.ReportDiagnostic(Diagnostic.Create(InvalidOptionalDefaultDiagnostic, reportLoc, fieldName, defaultExpr, fieldType));
                                 }
                                 else
                                 {
-                                    defaultExpr = QualifyDefaultExpression(
-                                        fieldModel,
-                                        fieldAnchor,
-                                        field,
-                                        defaultExpr,
-                                        parameterTypeFormat,
-                                        spc.CancellationToken
-                                    );
+                                    defaultExpr = QualifyDefaultExpression(fieldModel, fieldAnchor, field, defaultExpr, parameterTypeFormat, spc.CancellationToken);
                                 }
                                 break;
                             }
@@ -834,19 +625,8 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                             defaultExpr = "null";
                             if (!CanUseNullDefault(field.Type))
                             {
-                                Location reportLoc = attr.ApplicationSyntaxReference?.GetSyntax()
-                                    ?.GetLocation()
-                                    ?? field.Locations.FirstOrDefault()
-                                    ?? Location.None;
-                                spc.ReportDiagnostic(
-                                    Diagnostic.Create(
-                                        InvalidOptionalDefaultDiagnostic,
-                                        reportLoc,
-                                        fieldName,
-                                        defaultExpr,
-                                        fieldType
-                                    )
-                                );
+                                Location reportLoc = attr.ApplicationSyntaxReference?.GetSyntax()?.GetLocation() ?? field.Locations.FirstOrDefault() ?? Location.None;
+                                spc.ReportDiagnostic(Diagnostic.Create(InvalidOptionalDefaultDiagnostic, reportLoc, fieldName, defaultExpr, fieldType));
                             }
                         }
                         else if (arg.Kind == TypedConstantKind.Primitive)
@@ -857,28 +637,10 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                             string expressionForValidation = arg.Type is { } constantType
                                 ? $"({constantType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)})({defaultExpr})"
                                 : defaultExpr;
-                            if (
-                                !IsValidDefaultExpression(
-                                    semanticModel,
-                                    anchorPosition,
-                                    field,
-                                    expressionForValidation
-                                )
-                            )
+                            if (!IsValidDefaultExpression(semanticModel, anchorPosition, field, expressionForValidation))
                             {
-                                Location reportLoc = attr.ApplicationSyntaxReference?.GetSyntax()
-                                    ?.GetLocation()
-                                    ?? field.Locations.FirstOrDefault()
-                                    ?? Location.None;
-                                spc.ReportDiagnostic(
-                                    Diagnostic.Create(
-                                        InvalidOptionalDefaultDiagnostic,
-                                        reportLoc,
-                                        fieldName,
-                                        defaultExpr,
-                                        fieldType
-                                    )
-                                );
+                                Location reportLoc = attr.ApplicationSyntaxReference?.GetSyntax()?.GetLocation() ?? field.Locations.FirstOrDefault() ?? Location.None;
+                                spc.ReportDiagnostic(Diagnostic.Create(InvalidOptionalDefaultDiagnostic, reportLoc, fieldName, defaultExpr, fieldType));
                             }
                         }
                     }
@@ -886,82 +648,42 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                     break; // only one DxOptionalParameterAttribute expected
                 }
 
-                bool annotationsEnabled =
-                    (
-                        fieldModel.GetNullableContext(
-                            fieldDeclaration?.Span.Start ?? anchorPosition
-                        ) & NullableContext.AnnotationsEnabled
-                    ) != 0;
-                parameterDetails.Add(
-                    (fieldType, parameterName, isOptional, defaultExpr, annotationsEnabled)
-                );
-                constructorBody.AppendLine(
-                    $"{Indent}{Indent}    this.{fieldIdentifier} = {parameterName};"
-                );
+                bool annotationsEnabled = (fieldModel.GetNullableContext(fieldDeclaration?.Span.Start ?? anchorPosition) & NullableContext.AnnotationsEnabled) != 0;
+                parameterDetails.Add((fieldType, parameterName, isOptional, defaultExpr, annotationsEnabled));
+                constructorBody.AppendLine($"{Indent}{Indent}    this.{fieldIdentifier} = {parameterName};");
                 if (serialized && propertyNames != null)
                 {
-                    string propertyValue =
-                        char.ToUpperInvariant(parameterValue[0]) + parameterValue.Substring(1);
+                    string propertyValue = char.ToUpperInvariant(parameterValue[0]) + parameterValue.Substring(1);
                     string propertyName = EscapeIdentifier(propertyValue);
                     if (
                         !SyntaxFacts.IsValidIdentifier(propertyValue)
                         || !propertyNames.Add(propertyValue)
                         || HasConflictingMember(compilation, typeSymbol, propertyValue)
-                        || (
-                            reservesMessageType
-                            && propertyValue == DxMessageIdGenerator.MessageTypePropertyName
-                        )
+                        || (reservesMessageType && propertyValue == DxMessageIdGenerator.MessageTypePropertyName)
                     )
                     {
-                        ReportSerializedNameDiagnostic(
-                            spc,
-                            field,
-                            propertyValue,
-                            "property name is invalid or conflicts with an existing member"
-                        );
+                        ReportSerializedNameDiagnostic(spc, field, propertyValue, "property name is invalid or conflicts with an existing member");
                         return null;
                     }
                     serializedProperties
                         .AppendLine()
-                        .AppendLine(
-                            annotationsEnabled
-                                ? "#nullable enable annotations"
-                                : "#nullable disable annotations"
-                        )
-                        .AppendLine(
-                            $"{innerIndent}    /// <summary>Gets the serialized value of <c>{fieldName}</c>.</summary>"
-                        )
-                        .AppendLine(
-                            $"{innerIndent}    public {(fieldRequiresUnsafeContext ? "unsafe " : "")}{fieldType} {propertyName} => this.{fieldIdentifier};"
-                        );
+                        .AppendLine(annotationsEnabled ? "#nullable enable annotations" : "#nullable disable annotations")
+                        .AppendLine($"{innerIndent}    /// <summary>Gets the serialized value of <c>{fieldName}</c>.</summary>")
+                        .AppendLine($"{innerIndent}    public {(fieldRequiresUnsafeContext ? "unsafe " : "")}{fieldType} {propertyName} => this.{fieldIdentifier};");
                 }
             }
 
             bool initialAnnotationsEnabled = parameterDetails[0].AnnotationsEnabled;
             bool currentAnnotationsEnabled = initialAnnotationsEnabled;
-            string initialNullableDirective = initialAnnotationsEnabled
-                ? "#nullable enable annotations"
-                : "#nullable disable annotations";
+            string initialNullableDirective = initialAnnotationsEnabled ? "#nullable enable annotations" : "#nullable disable annotations";
 
             for (int i = 0; i < parameterDetails.Count; i++)
             {
-                (
-                    string Type,
-                    string Name,
-                    bool IsOptional,
-                    string? DefaultExpr,
-                    bool AnnotationsEnabled
-                ) p = parameterDetails[i];
+                (string Type, string Name, bool IsOptional, string? DefaultExpr, bool AnnotationsEnabled) p = parameterDetails[i];
                 if (currentAnnotationsEnabled != p.AnnotationsEnabled)
                 {
                     // Retain each field's annotation context in its generated parameter.
-                    constructorParams
-                        .AppendLine()
-                        .AppendLine(
-                            p.AnnotationsEnabled
-                                ? "#nullable enable annotations"
-                                : "#nullable disable annotations"
-                        );
+                    constructorParams.AppendLine().AppendLine(p.AnnotationsEnabled ? "#nullable enable annotations" : "#nullable disable annotations");
                     currentAnnotationsEnabled = p.AnnotationsEnabled;
                 }
                 constructorParams.Append($"{p.Type} {p.Name}");
@@ -991,10 +713,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             // Close containers
             for (int i = 0; i < containers.Count; i++)
             {
-                currentIndent = currentIndent.Substring(
-                    0,
-                    Math.Max(0, currentIndent.Length - Indent.Length)
-                );
+                currentIndent = currentIndent.Substring(0, Math.Max(0, currentIndent.Length - Indent.Length));
                 containersClose.Append(currentIndent).AppendLine("}");
             }
 
@@ -1025,22 +744,14 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             );
         }
 
-        private static (
-            bool RequiresUnsafeContext,
-            bool UseDefaultInitializer,
-            bool Unsupported
-        ) AppendStructInitialization(
+        private static (bool RequiresUnsafeContext, bool UseDefaultInitializer, bool Unsupported) AppendStructInitialization(
             Compilation compilation,
             INamedTypeSymbol typeSymbol,
             StringBuilder body
         )
         {
             // C# 11 supplies auto-defaulting; retain the existing constructor on that path.
-            if (
-                typeSymbol.TypeKind != TypeKind.Struct
-                || compilation is not CSharpCompilation csharp
-                || 1100 <= (int)csharp.LanguageVersion
-            )
+            if (typeSymbol.TypeKind != TypeKind.Struct || compilation is not CSharpCompilation csharp || 1100 <= (int)csharp.LanguageVersion)
             {
                 return (false, false, false);
             }
@@ -1061,20 +772,14 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                     case IFieldSymbol field:
                         /* Public fields are assigned from parameters; fixed buffers do not
                          * participate in constructor definite assignment. */
-                        if (
-                            field.IsFixedSizeBuffer
-                            || field.DeclaredAccessibility == Accessibility.Public
-                        )
+                        if (field.IsFixedSizeBuffer || field.DeclaredAccessibility == Accessibility.Public)
                         {
                             continue;
                         }
                         state = field.AssociatedSymbol ?? field;
                         stateType = field.Type;
                         break;
-                    case IEventSymbol eventSymbol
-                        when eventSymbol.DeclaringSyntaxReferences.Any(reference =>
-                            reference.GetSyntax() is VariableDeclaratorSyntax
-                        ):
+                    case IEventSymbol eventSymbol when eventSymbol.DeclaringSyntaxReferences.Any(reference => reference.GetSyntax() is VariableDeclaratorSyntax):
                         // Roslyn does not expose field-like event backing fields as members.
                         state = eventSymbol;
                         stateType = eventSymbol.Type;
@@ -1084,9 +789,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 }
 
                 bool initialized = state.DeclaringSyntaxReferences.Any(reference =>
-                    reference.GetSyntax()
-                        is VariableDeclaratorSyntax { Initializer: not null }
-                            or PropertyDeclarationSyntax { Initializer: not null }
+                    reference.GetSyntax() is VariableDeclaratorSyntax { Initializer: not null } or PropertyDeclarationSyntax { Initializer: not null }
                 );
                 storage.Add((state, stateType, initialized));
                 if (!state.CanBeReferencedByName)
@@ -1100,9 +803,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
              * initializers. An explicit parameterless constructor would run user code. */
             if (hasOpaqueDefault && hasOpaqueInitializer)
             {
-                bool hasUserDefaultConstructor = typeSymbol.InstanceConstructors.Any(constructor =>
-                    constructor.Parameters.Length == 0 && !constructor.IsImplicitlyDeclared
-                );
+                bool hasUserDefaultConstructor = typeSymbol.InstanceConstructors.Any(constructor => constructor.Parameters.Length == 0 && !constructor.IsImplicitlyDeclared);
                 return (false, !hasUserDefaultConstructor, hasUserDefaultConstructor);
             }
 
@@ -1117,9 +818,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                         continue;
                     }
                     requiresUnsafeContext |= RequiresUnsafeContext(type);
-                    body.AppendLine(
-                        $"{AssignmentIndent}this.{member.ToDisplayString(IdentifierNameFormat)} = default;"
-                    );
+                    body.AppendLine($"{AssignmentIndent}this.{member.ToDisplayString(IdentifierNameFormat)} = default;");
                 }
                 return (requiresUnsafeContext, false, false);
             }
@@ -1256,10 +955,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 return true;
             }
 
-            if (
-                type is INamedTypeSymbol named
-                && named.ConstructedFrom.SpecialType == SpecialType.System_Nullable_T
-            )
+            if (type is INamedTypeSymbol named && named.ConstructedFrom.SpecialType == SpecialType.System_Nullable_T)
             {
                 return true;
             }
@@ -1267,12 +963,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             return false;
         }
 
-        private static bool IsValidDefaultExpression(
-            SemanticModel semanticModel,
-            int anchorPosition,
-            IFieldSymbol field,
-            string expr
-        )
+        private static bool IsValidDefaultExpression(SemanticModel semanticModel, int anchorPosition, IFieldSymbol field, string expr)
         {
             string trimmed = expr.Trim();
             if (string.Equals(trimmed, "default", StringComparison.Ordinal))
@@ -1292,16 +983,8 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 foreach (SyntaxNode node in exprSyntax.DescendantNodesAndSelf())
                 {
                     if (
-                        node
-                            is not InvocationExpressionSyntax
-                            {
-                                Expression: IdentifierNameSyntax name,
-                            }
-                        || !string.Equals(
-                            name.Identifier.ValueText,
-                            "nameof",
-                            StringComparison.Ordinal
-                        )
+                        node is not InvocationExpressionSyntax { Expression: IdentifierNameSyntax name }
+                        || !string.Equals(name.Identifier.ValueText, "nameof", StringComparison.Ordinal)
                     )
                     {
                         continue;
@@ -1313,37 +996,17 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                     */
                     AttributeSyntax binding = SyntaxFactory.Attribute(
                         SyntaxFactory.ParseName("global::" + OptionalParameterAttrFullName),
-                        SyntaxFactory.AttributeArgumentList(
-                            SyntaxFactory.SingletonSeparatedList(
-                                SyntaxFactory.AttributeArgument(exprSyntax)
-                            )
-                        )
+                        SyntaxFactory.AttributeArgumentList(SyntaxFactory.SingletonSeparatedList(SyntaxFactory.AttributeArgument(exprSyntax)))
                     );
-                    if (
-                        !semanticModel.TryGetSpeculativeSemanticModel(
-                            anchorPosition,
-                            binding,
-                            out SemanticModel? expressionModel
-                        )
-                        || expressionModel == null
-                    )
+                    if (!semanticModel.TryGetSpeculativeSemanticModel(anchorPosition, binding, out SemanticModel? expressionModel) || expressionModel == null)
                     {
                         return false;
                     }
 
-                    return expressionModel
-                        .ClassifyConversion(
-                            binding.ArgumentList!.Arguments[0].Expression,
-                            field.Type
-                        )
-                        .IsImplicit;
+                    return expressionModel.ClassifyConversion(binding.ArgumentList!.Arguments[0].Expression, field.Type).IsImplicit;
                 }
 
-                Conversion conversion = semanticModel.ClassifyConversion(
-                    anchorPosition,
-                    exprSyntax,
-                    field.Type
-                );
+                Conversion conversion = semanticModel.ClassifyConversion(anchorPosition, exprSyntax, field.Type);
                 return conversion.IsImplicit;
             }
             catch (ArgumentException)
@@ -1368,9 +1031,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 return expression;
             }
             SyntaxReference? declaration = field.DeclaringSyntaxReferences.FirstOrDefault();
-            FieldDeclarationSyntax? member = declaration
-                ?.GetSyntax(cancellationToken)
-                .FirstAncestorOrSelf<FieldDeclarationSyntax>();
+            FieldDeclarationSyntax? member = declaration?.GetSyntax(cancellationToken).FirstAncestorOrSelf<FieldDeclarationSyntax>();
             if (member?.Parent is not TypeDeclarationSyntax owner)
             {
                 return expression;
@@ -1381,10 +1042,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 nameof can still have a constant value; retain its compiler error before rewriting.
             */
             string methodName = "__dxMessagingOptionalDefault";
-            while (
-                fieldModel.LookupSymbols(fieldAnchor, name: methodName).Length != 0
-                || field.ContainingType.Name == methodName
-            )
+            while (fieldModel.LookupSymbols(fieldAnchor, name: methodName).Length != 0 || field.ContainingType.Name == methodName)
             {
                 methodName += "_";
             }
@@ -1397,19 +1055,11 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             ParameterSyntax parameter = SyntaxFactory
                 .Parameter(SyntaxFactory.Identifier(parameterName))
                 .WithType(SyntaxFactory.ParseTypeName(field.Type.ToDisplayString(typeFormat)))
-                .WithDefault(
-                    SyntaxFactory.EqualsValueClause(SyntaxFactory.ParseExpression(expression))
-                )
+                .WithDefault(SyntaxFactory.EqualsValueClause(SyntaxFactory.ParseExpression(expression)))
                 .WithAdditionalAnnotations(annotation);
             MethodDeclarationSyntax method = SyntaxFactory
-                .MethodDeclaration(
-                    SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.VoidKeyword)),
-                    methodName
-                )
-                .AddModifiers(
-                    SyntaxFactory.Token(SyntaxKind.PrivateKeyword),
-                    SyntaxFactory.Token(SyntaxKind.StaticKeyword)
-                )
+                .MethodDeclaration(SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.VoidKeyword)), methodName)
+                .AddModifiers(SyntaxFactory.Token(SyntaxKind.PrivateKeyword), SyntaxFactory.Token(SyntaxKind.StaticKeyword))
                 .AddParameterListParameters(parameter)
                 .WithBody(SyntaxFactory.Block());
             if (RequiresUnsafeContext(field.Type))
@@ -1417,35 +1067,21 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 method = method.AddModifiers(SyntaxFactory.Token(SyntaxKind.UnsafeKeyword));
             }
             method = method.NormalizeWhitespace();
-            SyntaxList<MemberDeclarationSyntax> members = owner.Members.Replace(
-                member,
-                member.WithoutLeadingTrivia()
-            );
-            members = members.Insert(
-                owner.Members.IndexOf(member),
-                method.WithLeadingTrivia(member.GetLeadingTrivia())
-            );
+            SyntaxList<MemberDeclarationSyntax> members = owner.Members.Replace(member, member.WithoutLeadingTrivia());
+            members = members.Insert(owner.Members.IndexOf(member), method.WithLeadingTrivia(member.GetLeadingTrivia()));
             SyntaxTree tree = fieldModel.SyntaxTree;
-            SyntaxNode root = tree.GetRoot(cancellationToken)
-                .ReplaceNode(owner, owner.WithMembers(members));
+            SyntaxNode root = tree.GetRoot(cancellationToken).ReplaceNode(owner, owner.WithMembers(members));
             SyntaxTree bindingTree = tree.WithRootAndOptions(root, tree.Options);
             Compilation binding = fieldModel.Compilation.ReplaceSyntaxTree(tree, bindingTree);
             SemanticModel model = binding.GetSemanticModel(bindingTree);
-            ParameterSyntax boundParameter = (ParameterSyntax)
-                bindingTree.GetRoot(cancellationToken).GetAnnotatedNodes(annotation).Single();
-            if (
-                model
-                    .GetDiagnostics(boundParameter.Span, cancellationToken)
-                    .Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
-            )
+            ParameterSyntax boundParameter = (ParameterSyntax)bindingTree.GetRoot(cancellationToken).GetAnnotatedNodes(annotation).Single();
+            if (model.GetDiagnostics(boundParameter.Span, cancellationToken).Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
             {
                 return expression;
             }
 
             ExpressionSyntax boundExpression = boundParameter.Default!.Value;
-            return new DefaultExpressionRewriter(model, typeFormat, cancellationToken)
-                .Visit(boundExpression)!
-                .ToFullString();
+            return new DefaultExpressionRewriter(model, typeFormat, cancellationToken).Visit(boundExpression)!.ToFullString();
         }
 
         /// <summary>Retains expression operations while making imported types and constants self-contained.</summary>
@@ -1456,11 +1092,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             private readonly CancellationToken _cancellationToken;
 
             /// <summary>Uses symbols from the validated field-scope optional parameter.</summary>
-            public DefaultExpressionRewriter(
-                SemanticModel model,
-                SymbolDisplayFormat typeFormat,
-                CancellationToken cancellationToken
-            )
+            public DefaultExpressionRewriter(SemanticModel model, SymbolDisplayFormat typeFormat, CancellationToken cancellationToken)
             {
                 _model = model;
                 _typeFormat = typeFormat;
@@ -1474,33 +1106,22 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 if (
                     node is InvocationExpressionSyntax { Expression: IdentifierNameSyntax name }
                     && name.Identifier.ValueText == "nameof"
-                    && _model.GetConstantValue(node, _cancellationToken)
-                        is { HasValue: true, Value: string value }
+                    && _model.GetConstantValue(node, _cancellationToken) is { HasValue: true, Value: string value }
                 )
                 {
-                    return SyntaxFactory
-                        .LiteralExpression(
-                            SyntaxKind.StringLiteralExpression,
-                            SyntaxFactory.Literal(value)
-                        )
-                        .WithTriviaFrom(node);
+                    return SyntaxFactory.LiteralExpression(SyntaxKind.StringLiteralExpression, SyntaxFactory.Literal(value)).WithTriviaFrom(node);
                 }
                 if (node is NameSyntax or MemberAccessExpressionSyntax)
                 {
                     ISymbol? symbol = _model.GetSymbolInfo(node, _cancellationToken).Symbol;
                     if (symbol is IFieldSymbol { IsConst: true } constant)
                     {
-                        string reference =
-                            constant.ContainingType.ToDisplayString(_typeFormat)
-                            + "."
-                            + constant.ToDisplayString(IdentifierNameFormat);
+                        string reference = constant.ContainingType.ToDisplayString(_typeFormat) + "." + constant.ToDisplayString(IdentifierNameFormat);
                         return SyntaxFactory.ParseExpression(reference).WithTriviaFrom(node);
                     }
                     if (symbol is INamedTypeSymbol type)
                     {
-                        return SyntaxFactory
-                            .ParseTypeName(type.ToDisplayString(_typeFormat))
-                            .WithTriviaFrom(node);
+                        return SyntaxFactory.ParseTypeName(type.ToDisplayString(_typeFormat)).WithTriviaFrom(node);
                     }
                 }
                 return base.Visit(node);
@@ -1551,9 +1172,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             {
                 if (syntaxRef.GetSyntax() is TypeDeclarationSyntax tds)
                 {
-                    bool hasPartial = tds.Modifiers.Any(static m =>
-                        m.IsKind(SyntaxKind.PartialKeyword)
-                    );
+                    bool hasPartial = tds.Modifiers.Any(static m => m.IsKind(SyntaxKind.PartialKeyword));
                     if (!hasPartial)
                     {
                         return false;
@@ -1570,8 +1189,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
 
         private sealed class TypeSyntaxReceiver : ISyntaxReceiver
         {
-            public List<TypeDeclarationSyntax> Candidates { get; } =
-                new List<TypeDeclarationSyntax>();
+            public List<TypeDeclarationSyntax> Candidates { get; } = new List<TypeDeclarationSyntax>();
 
             public void OnVisitSyntaxNode(SyntaxNode syntaxNode)
             {

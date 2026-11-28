@@ -49,10 +49,7 @@ namespace DxMessaging.Samples.DI.VContainer
             private int observedScores;
             private float nextEmitTime;
 
-            public ScoreboardService(
-                IMessageBus messageBus,
-                IMessageRegistrationBuilder registrationBuilder
-            )
+            public ScoreboardService(IMessageBus messageBus, IMessageRegistrationBuilder registrationBuilder)
             {
                 this.messageBus = messageBus;
                 lease = registrationBuilder.Build(

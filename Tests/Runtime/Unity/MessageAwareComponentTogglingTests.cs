@@ -30,11 +30,7 @@ namespace DxMessaging.Tests.Runtime.Unity
         [Test]
         public void EmitMessagesWhenDisabledTrueDoesNotKeepDisabledListenerReceiving()
         {
-            GameObject host = new(
-                nameof(EmitMessagesWhenDisabledTrueDoesNotKeepDisabledListenerReceiving),
-                typeof(MessagingComponent),
-                typeof(SimpleMessageAwareComponent)
-            );
+            GameObject host = new(nameof(EmitMessagesWhenDisabledTrueDoesNotKeepDisabledListenerReceiving), typeof(MessagingComponent), typeof(SimpleMessageAwareComponent));
             _spawned.Add(host);
             MessagingComponent messaging = host.GetComponent<MessagingComponent>();
             messaging.emitMessagesWhenDisabled = true;
@@ -54,29 +50,17 @@ namespace DxMessaging.Tests.Runtime.Unity
             */
             listener.enabled = false;
             message.EmitUntargeted();
-            Assert.AreEqual(
-                1,
-                count,
-                "Disabling the listener must stop delivery even when emitMessagesWhenDisabled is true."
-            );
+            Assert.AreEqual(1, count, "Disabling the listener must stop delivery even when emitMessagesWhenDisabled is true.");
 
             listener.enabled = true;
             message.EmitUntargeted();
-            Assert.AreEqual(
-                2,
-                count,
-                "Re-enabling the listener must resume delivery exactly once."
-            );
+            Assert.AreEqual(2, count, "Re-enabling the listener must resume delivery exactly once.");
         }
 
         [Test]
         public void DisabledListenerResumesExactlyOnceAcrossRepeatedToggleCycles()
         {
-            GameObject host = new(
-                nameof(DisabledListenerResumesExactlyOnceAcrossRepeatedToggleCycles),
-                typeof(MessagingComponent),
-                typeof(SimpleMessageAwareComponent)
-            );
+            GameObject host = new(nameof(DisabledListenerResumesExactlyOnceAcrossRepeatedToggleCycles), typeof(MessagingComponent), typeof(SimpleMessageAwareComponent));
             _spawned.Add(host);
             SimpleMessageAwareComponent listener = host.GetComponent<SimpleMessageAwareComponent>();
 
@@ -92,11 +76,7 @@ namespace DxMessaging.Tests.Runtime.Unity
             {
                 listener.enabled = false;
                 message.EmitUntargeted();
-                Assert.AreEqual(
-                    expected,
-                    count,
-                    $"Cycle {cycle}: emit while disabled must not deliver."
-                );
+                Assert.AreEqual(expected, count, $"Cycle {cycle}: emit while disabled must not deliver.");
 
                 listener.enabled = true;
                 message.EmitUntargeted();
@@ -104,8 +84,7 @@ namespace DxMessaging.Tests.Runtime.Unity
                 Assert.AreEqual(
                     expected,
                     count,
-                    $"Cycle {cycle}: emit after re-enable must deliver exactly once. A higher "
-                        + "count means a toggle cycle double-registered the handlers."
+                    $"Cycle {cycle}: emit after re-enable must deliver exactly once. A higher " + "count means a toggle cycle double-registered the handlers."
                 );
             }
         }
@@ -113,17 +92,10 @@ namespace DxMessaging.Tests.Runtime.Unity
         [Test]
         public void MessagingComponentToggleCyclesWithEmitFlagFalseResumeExactlyOnce()
         {
-            GameObject host = new(
-                nameof(MessagingComponentToggleCyclesWithEmitFlagFalseResumeExactlyOnce),
-                typeof(MessagingComponent),
-                typeof(SimpleMessageAwareComponent)
-            );
+            GameObject host = new(nameof(MessagingComponentToggleCyclesWithEmitFlagFalseResumeExactlyOnce), typeof(MessagingComponent), typeof(SimpleMessageAwareComponent));
             _spawned.Add(host);
             MessagingComponent messaging = host.GetComponent<MessagingComponent>();
-            Assert.IsFalse(
-                messaging.emitMessagesWhenDisabled,
-                "Precondition: emitMessagesWhenDisabled defaults to false."
-            );
+            Assert.IsFalse(messaging.emitMessagesWhenDisabled, "Precondition: emitMessagesWhenDisabled defaults to false.");
             SimpleMessageAwareComponent listener = host.GetComponent<SimpleMessageAwareComponent>();
 
             int count = 0;
@@ -138,21 +110,12 @@ namespace DxMessaging.Tests.Runtime.Unity
             {
                 messaging.enabled = false;
                 message.EmitUntargeted();
-                Assert.AreEqual(
-                    expected,
-                    count,
-                    $"Cycle {cycle}: emit while the MessagingComponent is disabled must not deliver."
-                );
+                Assert.AreEqual(expected, count, $"Cycle {cycle}: emit while the MessagingComponent is disabled must not deliver.");
 
                 messaging.enabled = true;
                 message.EmitUntargeted();
                 ++expected;
-                Assert.AreEqual(
-                    expected,
-                    count,
-                    $"Cycle {cycle}: emit after re-enabling the MessagingComponent must deliver "
-                        + "exactly once."
-                );
+                Assert.AreEqual(expected, count, $"Cycle {cycle}: emit after re-enabling the MessagingComponent must deliver " + "exactly once.");
             }
         }
 
@@ -185,8 +148,7 @@ namespace DxMessaging.Tests.Runtime.Unity
                 Assert.AreEqual(
                     expected,
                     count,
-                    $"Cycle {cycle}: emitMessagesWhenDisabled must keep delivery alive while the "
-                        + "MessagingComponent is disabled, exactly once per emit."
+                    $"Cycle {cycle}: emitMessagesWhenDisabled must keep delivery alive while the " + "MessagingComponent is disabled, exactly once per emit."
                 );
 
                 messaging.enabled = true;
@@ -195,8 +157,7 @@ namespace DxMessaging.Tests.Runtime.Unity
                 Assert.AreEqual(
                     expected,
                     count,
-                    $"Cycle {cycle}: re-enabling must deliver exactly once per emit; a higher "
-                        + "count means repeated OnEnable cycles accumulated registrations."
+                    $"Cycle {cycle}: re-enabling must deliver exactly once per emit; a higher " + "count means repeated OnEnable cycles accumulated registrations."
                 );
             }
         }
@@ -204,11 +165,7 @@ namespace DxMessaging.Tests.Runtime.Unity
         [Test]
         public void InactiveGameObjectKeepsReceivingWhenEmitMessagesWhenDisabledIsTrue()
         {
-            GameObject host = new(
-                nameof(InactiveGameObjectKeepsReceivingWhenEmitMessagesWhenDisabledIsTrue),
-                typeof(MessagingComponent),
-                typeof(ManualListenerComponent)
-            );
+            GameObject host = new(nameof(InactiveGameObjectKeepsReceivingWhenEmitMessagesWhenDisabledIsTrue), typeof(MessagingComponent), typeof(ManualListenerComponent));
             _spawned.Add(host);
             MessagingComponent messaging = host.GetComponent<MessagingComponent>();
             messaging.emitMessagesWhenDisabled = true;
@@ -223,11 +180,7 @@ namespace DxMessaging.Tests.Runtime.Unity
 
                 SimpleUntargetedMessage message = new();
                 message.EmitUntargeted();
-                Assert.AreEqual(
-                    1,
-                    count,
-                    "Positive control: listener should receive while active."
-                );
+                Assert.AreEqual(1, count, "Positive control: listener should receive while active.");
 
                 /*
                     The manual listener does not tie its token to the Unity lifecycle, so the only
@@ -237,37 +190,23 @@ namespace DxMessaging.Tests.Runtime.Unity
                 */
                 host.SetActive(false);
                 message.EmitUntargeted();
-                Assert.AreEqual(
-                    2,
-                    count,
-                    "emitMessagesWhenDisabled must keep delivery alive while the GameObject is inactive."
-                );
+                Assert.AreEqual(2, count, "emitMessagesWhenDisabled must keep delivery alive while the GameObject is inactive.");
 
                 host.SetActive(true);
                 message.EmitUntargeted();
                 Assert.AreEqual(3, count, "Reactivation must continue delivering exactly once.");
 
-                Assert.IsTrue(
-                    messaging.Release(listener),
-                    "Releasing the registered listener should succeed."
-                );
+                Assert.IsTrue(messaging.Release(listener), "Releasing the registered listener should succeed.");
             }
         }
 
         [Test]
         public void InactiveGameObjectStopsReceivingWhenEmitMessagesWhenDisabledIsFalse()
         {
-            GameObject host = new(
-                nameof(InactiveGameObjectStopsReceivingWhenEmitMessagesWhenDisabledIsFalse),
-                typeof(MessagingComponent),
-                typeof(ManualListenerComponent)
-            );
+            GameObject host = new(nameof(InactiveGameObjectStopsReceivingWhenEmitMessagesWhenDisabledIsFalse), typeof(MessagingComponent), typeof(ManualListenerComponent));
             _spawned.Add(host);
             MessagingComponent messaging = host.GetComponent<MessagingComponent>();
-            Assert.IsFalse(
-                messaging.emitMessagesWhenDisabled,
-                "Precondition: emitMessagesWhenDisabled defaults to false."
-            );
+            Assert.IsFalse(messaging.emitMessagesWhenDisabled, "Precondition: emitMessagesWhenDisabled defaults to false.");
             ManualListenerComponent listener = host.GetComponent<ManualListenerComponent>();
 
             using (LeakWatcher watcher = LeakWatcher.Watch(label: "InactiveGameObjectFlagFalse"))
@@ -279,29 +218,17 @@ namespace DxMessaging.Tests.Runtime.Unity
 
                 SimpleUntargetedMessage message = new();
                 message.EmitUntargeted();
-                Assert.AreEqual(
-                    1,
-                    count,
-                    "Positive control: listener should receive while active."
-                );
+                Assert.AreEqual(1, count, "Positive control: listener should receive while active.");
 
                 host.SetActive(false);
                 message.EmitUntargeted();
-                Assert.AreEqual(
-                    1,
-                    count,
-                    "Deactivating the GameObject must suspend delivery when the flag is false, "
-                        + "even though the manual token itself stays enabled."
-                );
+                Assert.AreEqual(1, count, "Deactivating the GameObject must suspend delivery when the flag is false, " + "even though the manual token itself stays enabled.");
 
                 host.SetActive(true);
                 message.EmitUntargeted();
                 Assert.AreEqual(2, count, "Reactivating the GameObject must resume delivery.");
 
-                Assert.IsTrue(
-                    messaging.Release(listener),
-                    "Releasing the registered listener should succeed."
-                );
+                Assert.IsTrue(messaging.Release(listener), "Releasing the registered listener should succeed.");
             }
         }
     }

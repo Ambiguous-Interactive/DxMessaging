@@ -24,22 +24,11 @@ namespace DxMessaging.Tests.Runtime.Core
         /// instance, so a wrapper-per-call would defeat the test).
         /// </summary>
         [Test]
-        public void AddSameDelegateDoesNotDuplicateInvocation(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.KindsWithComponentTarget)
-            )]
-                MessageScenario scenario
-        )
+        public void AddSameDelegateDoesNotDuplicateInvocation([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.KindsWithComponentTarget))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(AddSameDelegateDoesNotDuplicateInvocation) + "_" + scenario,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(AddSameDelegateDoesNotDuplicateInvocation) + "_" + scenario, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
-            MessageRegistrationToken token = GetToken(
-                host.GetComponent<EmptyMessageAwareComponent>()
-            );
+            MessageRegistrationToken token = GetToken(host.GetComponent<EmptyMessageAwareComponent>());
 
             int count = 0;
             MessageRegistrationHandle firstHandle;
@@ -55,20 +44,10 @@ namespace DxMessaging.Tests.Runtime.Core
                         count++;
                         if (secondHandle == null)
                         {
-                            secondHandle = ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(
-                                scenario,
-                                token,
-                                host,
-                                local
-                            );
+                            secondHandle = ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(scenario, token, host, local);
                         }
                     };
-                    firstHandle = ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        host,
-                        local
-                    );
+                    firstHandle = ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(scenario, token, host, local);
                     break;
                 }
                 case MessageKind.Broadcast:
@@ -79,48 +58,23 @@ namespace DxMessaging.Tests.Runtime.Core
                         count++;
                         if (secondHandle == null)
                         {
-                            secondHandle =
-                                ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(
-                                    scenario,
-                                    token,
-                                    host,
-                                    local
-                                );
+                            secondHandle = ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(scenario, token, host, local);
                         }
                     };
-                    firstHandle = ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        host,
-                        local
-                    );
+                    firstHandle = ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(scenario, token, host, local);
                     break;
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "MutationDedupeTests only covers component-target kinds."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "MutationDedupeTests only covers component-target kinds.");
                 }
             }
 
             EmitForScenario(scenario, host);
-            Assert.AreEqual(
-                1,
-                count,
-                "[{0}] First emission should invoke the handler once.",
-                scenario.Kind
-            );
+            Assert.AreEqual(1, count, "[{0}] First emission should invoke the handler once.", scenario.Kind);
 
             EmitForScenario(scenario, host);
-            Assert.AreEqual(
-                2,
-                count,
-                "[{0}] Re-registering the same delegate must not duplicate invocation.",
-                scenario.Kind
-            );
+            Assert.AreEqual(2, count, "[{0}] Re-registering the same delegate must not duplicate invocation.", scenario.Kind);
 
             token.RemoveRegistration(firstHandle);
             if (secondHandle.HasValue)
@@ -147,11 +101,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "MutationDedupeTests only covers component-target kinds."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "MutationDedupeTests only covers component-target kinds.");
                 }
             }
         }

@@ -70,10 +70,7 @@ namespace DxMessaging.Core.Messages
             : this()
         {
             _methodName = methodName ?? throw new ArgumentNullException(nameof(methodName));
-            _parameterTypes =
-                parameterTypes == null || parameterTypes.Length == 0
-                    ? Type.EmptyTypes
-                    : (Type[])parameterTypes.Clone();
+            _parameterTypes = parameterTypes == null || parameterTypes.Length == 0 ? Type.EmptyTypes : (Type[])parameterTypes.Clone();
             _hashCode = CalculateHashCode();
         }
 
@@ -212,11 +209,7 @@ namespace DxMessaging.Core.Messages
         /// <param name="method">Method name to invoke on recipients.</param>
         /// <param name="sendMode">Traversal mode for recipient discovery.</param>
         /// <param name="parameters">Arguments passed to the method.</param>
-        public ReflexiveMessage(
-            string method,
-            ReflexiveSendMode sendMode,
-            params object[] parameters
-        )
+        public ReflexiveMessage(string method, ReflexiveSendMode sendMode, params object[] parameters)
         {
             this.method = method;
             this.sendMode = sendMode;
@@ -231,9 +224,7 @@ namespace DxMessaging.Core.Messages
                     object parameter = parameters[i];
                     if (parameter == null)
                     {
-                        throw new ArgumentNullException(
-                            $"Parameter at index {i} is null, cannot resolve type!"
-                        );
+                        throw new ArgumentNullException($"Parameter at index {i} is null, cannot resolve type!");
                     }
                     parameterTypes[i] = parameter.GetType();
                 }
@@ -252,18 +243,11 @@ namespace DxMessaging.Core.Messages
         /// <param name="sendMode">Traversal mode for recipient discovery.</param>
         /// <param name="parameters">Arguments passed to the method.</param>
         /// <param name="parameterTypes">Explicit types for <paramref name="parameters"/> in matching order.</param>
-        public ReflexiveMessage(
-            string method,
-            ReflexiveSendMode sendMode,
-            object[] parameters,
-            Type[] parameterTypes
-        )
+        public ReflexiveMessage(string method, ReflexiveSendMode sendMode, object[] parameters, Type[] parameterTypes)
         {
             if (parameters.Length != parameterTypes.Length)
             {
-                throw new ArgumentException(
-                    $"Parameter length {parameters.Length} does not match parameter length {parameterTypes.Length}"
-                );
+                throw new ArgumentException($"Parameter length {parameters.Length} does not match parameter length {parameterTypes.Length}");
             }
             this.method = method;
             this.sendMode = sendMode;

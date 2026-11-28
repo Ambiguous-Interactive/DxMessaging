@@ -1,22 +1,6 @@
 {
-  "manifestFields": [
-    "schemaVersion",
-    "bracketId",
-    "orientation",
-    "materialityBandPercent",
-    "candidatePaths",
-    "rows"
-  ],
-  "executionProfileFields": [
-    "id",
-    "cpuModel",
-    "source",
-    "selectionPolicy",
-    "selectedEfficiencyClass",
-    "selectedLogicalProcessorIndices",
-    "affinityMask",
-    "priorityClass"
-  ],
+  "manifestFields": ["schemaVersion", "bracketId", "orientation", "materialityBandPercent", "candidatePaths", "rows"],
+  "executionProfileFields": ["id", "cpuModel", "source", "selectionPolicy", "selectedEfficiencyClass", "selectedLogicalProcessorIndices", "affinityMask", "priorityClass"],
   "cliDefaults": {
     "manifest": "",
     "first": "",

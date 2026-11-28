@@ -379,9 +379,7 @@ namespace DxMessaging.Core.DataStructure
             }
             unchecked
             {
-                int adjustedIndex = (int)(
-                    (_position - 1L + longCapacity - (_buffer.Count - 1 - index)) % longCapacity
-                );
+                int adjustedIndex = (int)((_position - 1L + longCapacity - (_buffer.Count - 1 - index)) % longCapacity);
                 return adjustedIndex;
             }
         }
@@ -390,9 +388,7 @@ namespace DxMessaging.Core.DataStructure
         {
             if (_removalActive)
             {
-                throw new InvalidOperationException(
-                    "Cannot recursively remove from the same history buffer."
-                );
+                throw new InvalidOperationException("Cannot recursively remove from the same history buffer.");
             }
         }
 
@@ -400,9 +396,7 @@ namespace DxMessaging.Core.DataStructure
         {
             if (version != _version)
             {
-                throw new InvalidOperationException(
-                    "History changed during a removal callback; the outer removal was not applied."
-                );
+                throw new InvalidOperationException("History changed during a removal callback; the outer removal was not applied.");
             }
         }
 

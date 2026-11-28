@@ -3,17 +3,17 @@
     "dxBridge": {
       "origin": "repository",
       "path": "Tests/Runtime/Comparisons/DxMessagingBridge.cs",
-      "sha256": "12b014ec75de1dd5cc15dc2e26783679116db9512e26c2cdb11dd42128c85693"
+      "sha256": "8cc2a849ca475a2f5da41f7cde47544f79bc13d693a0b4700beaf1a74666e135"
     },
     "mpBridge": {
       "origin": "repository",
       "path": "Tests/Runtime/Comparisons/External/MessagePipeBridge.cs",
-      "sha256": "755d673db89c31314d8a169f252e9074705d28fe567740a3fe8657d205d66279"
+      "sha256": "ee1010493028d8bd264ee3758aad63116ccba99af4ef8387a87b85d467ac30df"
     },
     "scenario": {
       "origin": "repository",
       "path": "Tests/Runtime/Comparisons/ComparisonScenario.cs",
-      "sha256": "a883de6d44cab8ba27d2663625f54e0b18095122d8f6823baa28860ca9a47657"
+      "sha256": "7c2821508e501f3225febe95075faa272c040875910b73db481e730e14387410"
     },
     "payload": {
       "origin": "repository",
@@ -23,62 +23,62 @@
     "harness": {
       "origin": "repository",
       "path": "Tests/Runtime/Comparisons/ComparisonHarness.cs",
-      "sha256": "3aab386ebc131a96656802e09f05f3d6253c963386c526edd10abdc8cd569f74"
+      "sha256": "5cca31d5ec6d0920f39b3292d4c37c7c7e60fa2b04c695c698edbf516b103c9a"
     },
     "topology": {
       "origin": "repository",
       "path": "Tests/Runtime/Comparisons/ComparisonDispatchTopologyTests.cs",
-      "sha256": "6eb8d8882fbe0cbd1cf4ef7afb6118c526bfad824723b4299d96ec96e980b8ce"
+      "sha256": "912b9d8b87238b905c6e52106b2b4a332e5465e72b75fca28516867f625a00e4"
     },
     "twins": {
       "origin": "repository",
       "path": "Tests/Runtime/Comparisons/ComparisonTopologyBenchmarks.cs",
-      "sha256": "b50c51d17ee5bedbaea9345efe2f5e1d44db9761bf0b9d1828061e8eb7e28670"
+      "sha256": "e720decd931517dc0f51b80f171e3a4354193b9667ebf934c0469267c43a20ae"
     },
     "dxBus": {
       "origin": "repository",
       "path": "Runtime/Core/MessageBus/MessageBus.cs",
-      "sha256": "a083a7a4a1a5c315922f7b832a260aaf20146e2679a5f3d9bbb20904eb64394a"
+      "sha256": "d677fb0d990376594a71413762d462476847eb37c0261d0aadad03a388d86ad5"
     },
     "dxInterface": {
       "origin": "repository",
       "path": "Runtime/Core/MessageBus/IMessageBus.cs",
-      "sha256": "798b57c125d3dbecb12213acfb254c1a05acff2ff6ae7e9af69e5badf6e4f182"
+      "sha256": "e9ab30b98f9031c43f05675a8f19929d976b90f337754ff0600f5414b2d9fe23"
     },
     "dxHandler": {
       "origin": "repository",
       "path": "Runtime/Core/MessageHandler.cs",
-      "sha256": "7cfbe02be31e0089059419c2f30420df52cc968471c368ebc1b535b16659d07a"
+      "sha256": "62207acc0840dfcc667e3270a80c16f0cae1236e5fa98ca4b30f3d6847bfa8f0"
     },
     "dxToken": {
       "origin": "repository",
       "path": "Runtime/Core/MessageRegistrationToken.cs",
-      "sha256": "153889994cd4c2e03405e942c54f04a4f67c5fac99bdac73c71068d363b8446b"
+      "sha256": "606305a29e522a8c3dbdd81bd992b6ec89bbb27112007d19996c04d582936de3"
     },
     "dxFlat": {
       "origin": "repository",
       "path": "Runtime/Core/Internal/FlatDispatch.cs",
-      "sha256": "26949f25ab084d1947663da4a7d6253a3c081d332f128894d88911763e50a8f9"
+      "sha256": "efddc4f5db7ed62237579108284802bc0cfc27645cba4cb070f3a79f2ae3f1df"
     },
     "dxPools": {
       "origin": "repository",
       "path": "Runtime/Core/Pooling/DxPools.cs",
-      "sha256": "51bbe21e1ff6c56741d2b0cc20606170ea23c0948866a2e4fb3335355829ec0b"
+      "sha256": "f713b75c9a0eb5a176df7bcb90636cc9d6b5af1c6033851f6f43acdce8a8454c"
     },
     "dxSettings": {
       "origin": "repository",
       "path": "Runtime/Core/Configuration/DxMessagingRuntimeSettings.cs",
-      "sha256": "472b3cca0b6e1a3c5bd4e5dd6a110ef40f5cd4b1570536bc77b80fd716452521"
+      "sha256": "6fcf7a0d1d7e6d94510cdc269bbf6f63581cde221931cdca7d23617ccffcd930"
     },
     "reentrantTests": {
       "origin": "repository",
       "path": "Tests/Runtime/Core/ReentrantEmissionTests.cs",
-      "sha256": "3e963cc8535ccae6c0a33e9c8fe59fff6dc58c166378fd7569cdcf1a7c4cb465"
+      "sha256": "f5599ddf88b9c75166fe3ba4107965646bb155d876a877a0ab237872a43d43d6"
     },
     "characterization": {
       "origin": "repository",
       "path": "Tests/Runtime/Comparisons/External/ExternalComparisonContractTests.cs",
-      "sha256": "96f2262d48db83d80378c47075e6bc8b8663cef83680597a8b3bbf66ef96041c"
+      "sha256": "bc64865fc2d868fc38907c00fb706e14f792c2f4b5f27877ce6c0933c8002dc3"
     },
     "pins": {
       "origin": "repository",
@@ -98,12 +98,12 @@
     "roster": {
       "origin": "repository",
       "path": "scripts/unity/perf-scenario-definitions.json",
-      "sha256": "05ab6cc4f5c8dc1d1da3f6c344b2c9f5b0820ea0b331a2f881ceba885a097a4e"
+      "sha256": "6119859ea57caee96ede808773acd7228d8920766b308279f79750e072ada62d"
     },
     "supported": {
       "origin": "repository",
       "path": "scripts/unity/comparison-supported-scenarios.json",
-      "sha256": "614c74b893dc0ffb4de9edce8401692538c1c07f15d297d405f4461fd33858e7"
+      "sha256": "b409c6f04ef742223ec5bfca7b389023294ea327b915ddb9cfb12adafb6b64b7"
     },
     "mpBroker": {
       "origin": "messagepipe-unity",

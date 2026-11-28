@@ -324,11 +324,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         /// <param name="attempts">How many times to measure (and take the min of). Must be positive.</param>
         /// <param name="prepare">Per-attempt precondition setup, run before each window and never counted. May be <c>null</c>.</param>
         /// <param name="operation">The operation whose allocation floor is measured. Returns diagnostics for that attempt.</param>
-        public static MinimumMeasurement<TDiagnostics> MeasureMinWithDiagnostics<TDiagnostics>(
-            int attempts,
-            Action prepare,
-            Func<TDiagnostics> operation
-        )
+        public static MinimumMeasurement<TDiagnostics> MeasureMinWithDiagnostics<TDiagnostics>(int attempts, Action prepare, Func<TDiagnostics> operation)
         {
             if (attempts <= 0)
             {
@@ -343,11 +339,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             return MeasureMinCore(attempts, prepare, operation);
         }
 
-        private static MinimumMeasurement<TDiagnostics> MeasureMinCore<TDiagnostics>(
-            int attempts,
-            Action prepare,
-            Func<TDiagnostics> operation
-        )
+        private static MinimumMeasurement<TDiagnostics> MeasureMinCore<TDiagnostics>(int attempts, Action prepare, Func<TDiagnostics> operation)
         {
             if (attempts <= 0)
             {
@@ -410,20 +402,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 return new MinimumMeasurement<TDiagnostics>(Unmeasured, Unmeasured, -1, default);
             }
 
-            return new MinimumMeasurement<TDiagnostics>(
-                min,
-                minBytes,
-                minAttemptIndex,
-                minDiagnostics
-            );
+            return new MinimumMeasurement<TDiagnostics>(min, minBytes, minAttemptIndex, minDiagnostics);
         }
 
-        internal static bool ShouldReplaceMinimumAttempt(
-            long candidateAllocations,
-            long candidateBytes,
-            long currentAllocations,
-            long currentBytes
-        )
+        internal static bool ShouldReplaceMinimumAttempt(long candidateAllocations, long candidateBytes, long currentAllocations, long currentBytes)
         {
             if (candidateAllocations < 0)
             {
@@ -461,12 +443,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         /// </summary>
         public readonly struct MinimumMeasurement<TDiagnostics>
         {
-            internal MinimumMeasurement(
-                long gcAllocations,
-                long gcAllocatedBytes,
-                int attemptIndex,
-                TDiagnostics diagnostics
-            )
+            internal MinimumMeasurement(long gcAllocations, long gcAllocatedBytes, int attemptIndex, TDiagnostics diagnostics)
             {
                 GcAllocations = gcAllocations;
                 GcAllocatedBytes = gcAllocatedBytes;
@@ -648,10 +625,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 if (!s_byteRecorder.Valid)
                 {
-                    s_byteRecorder = ProfilerRecorder.StartNew(
-                        ProfilerCategory.Memory,
-                        GcAllocatedInFrameCounter
-                    );
+                    s_byteRecorder = ProfilerRecorder.StartNew(ProfilerCategory.Memory, GcAllocatedInFrameCounter);
                 }
 
                 if (!s_byteRecorder.Valid)

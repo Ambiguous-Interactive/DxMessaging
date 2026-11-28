@@ -16,85 +16,36 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Tests;
 [TestFixture]
 internal sealed class GenericRecordContainerTests
 {
-    private static readonly ImmutableArray<(string Path, string Source)> Contracts =
-        ReadContracts();
+    private static readonly ImmutableArray<(string Path, string Source)> Contracts = ReadContracts();
 
     [TestCaseSource(nameof(Cases))]
-    public void GeneratedMembersPreserveClosedGenericRecordIdentity(
-        string topology,
-        string target,
-        bool constructor,
-        string? message,
-        int language
-    )
+    public void GeneratedMembersPreserveClosedGenericRecordIdentity(string topology, string target, bool constructor, string? message, int language)
     {
-        string context =
-            $"topology={topology}; target={target}; constructor={constructor}; message={message ?? "none"}; language={language}";
-        bool supported = LanguageVersionFacts.TryParse(
-            language.ToString(CultureInfo.InvariantCulture),
-            out LanguageVersion version
-        );
-        Assert.That(
-            supported,
-            Is.True,
-            "The selected compiler must support this profile: " + context
-        );
+        string context = $"topology={topology}; target={target}; constructor={constructor}; message={message ?? "none"}; language={language}";
+        bool supported = LanguageVersionFacts.TryParse(language.ToString(CultureInfo.InvariantCulture), out LanguageVersion version);
+        Assert.That(supported, Is.True, "The selected compiler must support this profile: " + context);
         CSharpParseOptions options = new(version);
-        AssertCompilationExecutes(
-            CreateCompilation(CreateSource(topology, target, constructor, message, true), options),
-            "Handwritten oracle: " + context
-        );
-        CSharpCompilation input = CreateCompilation(
-            CreateSource(topology, target, constructor, message, false),
-            options
-        );
-        GeneratorDriver driver = CSharpGeneratorDriver.Create(
-            new ISourceGenerator[] { new DxAutoConstructorGenerator(), new DxMessageIdGenerator() },
-            parseOptions: options
-        );
-        driver = driver.RunGeneratorsAndUpdateCompilation(
-            input,
-            out Compilation generated,
-            out ImmutableArray<Diagnostic> diagnostics
-        );
+        AssertCompilationExecutes(CreateCompilation(CreateSource(topology, target, constructor, message, true), options), "Handwritten oracle: " + context);
+        CSharpCompilation input = CreateCompilation(CreateSource(topology, target, constructor, message, false), options);
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(new ISourceGenerator[] { new DxAutoConstructorGenerator(), new DxMessageIdGenerator() }, parseOptions: options);
+        driver = driver.RunGeneratorsAndUpdateCompilation(input, out Compilation generated, out ImmutableArray<Diagnostic> diagnostics);
         GeneratorDriverRunResult result = driver.GetRunResult();
         Assert.That(result.Results.Select(run => run.Exception), Has.All.Null, context);
         Assert.That(diagnostics, Is.Empty, context + "\n" + string.Join("\n", diagnostics));
-        Assert.That(
-            result.GeneratedTrees,
-            Has.Length.EqualTo((constructor ? 1 : 0) + (message == null ? 0 : 1)),
-            context
-        );
+        Assert.That(result.GeneratedTrees, Has.Length.EqualTo((constructor ? 1 : 0) + (message == null ? 0 : 1)), context);
         AssertCompilationExecutes(generated, "Generated caller: " + context);
     }
 
     private static IEnumerable<TestCaseData> Cases()
     {
-        foreach (
-            string topology in new[] { "ClassClass", "ClassStruct", "StructClass", "StructStruct" }
-        )
+        foreach (string topology in new[] { "ClassClass", "ClassStruct", "StructClass", "StructStruct" })
         {
-            foreach (
-                string target in new[]
-                {
-                    "class",
-                    "readonly struct",
-                    "record",
-                    "readonly record struct",
-                }
-            )
+            foreach (string target in new[] { "class", "readonly struct", "record", "readonly record struct" })
             {
-                int language =
-                    topology == "ClassClass" && target != "readonly record struct" ? 9 : 10;
+                int language = topology == "ClassClass" && target != "readonly record struct" ? 9 : 10;
                 foreach ((bool constructor, string? message) in Modes())
                 {
-                    yield return new TestCaseData(
-                        topology,
-                        target,
-                        constructor,
-                        message,
-                        language
-                    ).SetName(
+                    yield return new TestCaseData(topology, target, constructor, message, language).SetName(
                         $"GeneratedMembersPreserveClosedGenericRecordIdentity({topology},{target},{constructor},{message ?? "none"},CSharp{language})"
                     );
                 }
@@ -112,13 +63,7 @@ internal sealed class GenericRecordContainerTests
         }
     }
 
-    private static string CreateSource(
-        string topology,
-        string target,
-        bool constructor,
-        string? message,
-        bool manual
-    )
+    private static string CreateSource(string topology, string target, bool constructor, string? message, bool manual)
     {
         (string outer, string inner) = topology switch
         {
@@ -126,11 +71,7 @@ internal sealed class GenericRecordContainerTests
             "ClassStruct" => ("record", "record struct"),
             "StructClass" => ("record struct", "record"),
             "StructStruct" => ("record struct", "record struct"),
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(topology),
-                topology,
-                "Unknown topology"
-            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(topology), topology, "Unknown topology"),
         };
         string declaration = target switch
         {
@@ -142,14 +83,9 @@ internal sealed class GenericRecordContainerTests
         };
         string attributes = manual
             ? ""
-            : (constructor ? "[DxMessaging.Core.Attributes.DxAutoConstructor]" : "")
-                + (message == null ? "" : $"[DxMessaging.Core.Attributes.Dx{message}Message]");
-        string contract =
-            manual && message != null ? $" : DxMessaging.Core.Messages.I{message}Message" : "";
-        string members =
-            manual || !constructor
-                ? "public Packet(T outer, U inner, V target) { OuterValue = outer; InnerValue = inner; TargetValue = target; }"
-                : "";
+            : (constructor ? "[DxMessaging.Core.Attributes.DxAutoConstructor]" : "") + (message == null ? "" : $"[DxMessaging.Core.Attributes.Dx{message}Message]");
+        string contract = manual && message != null ? $" : DxMessaging.Core.Messages.I{message}Message" : "";
+        string members = manual || !constructor ? "public Packet(T outer, U inner, V target) { OuterValue = outer; InnerValue = inner; TargetValue = target; }" : "";
         if (manual && message != null)
         {
             members += "public System.Type MessageType => typeof(Packet<V>);";
@@ -194,17 +130,12 @@ namespace GenericRecordConsumer
 
     private static CSharpCompilation CreateCompilation(string source, CSharpParseOptions options)
     {
-        IEnumerable<SyntaxTree> trees = Contracts.Select(contract =>
-            CSharpSyntaxTree.ParseText(contract.Source, options, contract.Path)
-        );
+        IEnumerable<SyntaxTree> trees = Contracts.Select(contract => CSharpSyntaxTree.ParseText(contract.Source, options, contract.Path));
         return CSharpCompilation.Create(
             "GenericRecordConsumer",
             trees.Append(CSharpSyntaxTree.ParseText(source, options, "Consumer.cs")),
             GeneratorTestUtilities.CompilationReferences,
-            new CSharpCompilationOptions(
-                OutputKind.DynamicallyLinkedLibrary,
-                generalDiagnosticOption: ReportDiagnostic.Error
-            )
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, generalDiagnosticOption: ReportDiagnostic.Error)
         );
     }
 
@@ -217,9 +148,7 @@ namespace GenericRecordConsumer
         }
         if (root == null)
         {
-            throw new DirectoryNotFoundException(
-                "Find the repository containing the real messaging contracts."
-            );
+            throw new DirectoryNotFoundException("Find the repository containing the real messaging contracts.");
         }
         string[] paths =
         {
@@ -245,11 +174,7 @@ namespace GenericRecordConsumer
     private static void AssertCompilationExecutes(Compilation compilation, string context)
     {
         Diagnostic[] diagnostics = compilation.GetDiagnostics().ToArray();
-        Assert.That(
-            diagnostics,
-            Is.Empty,
-            context + "\n" + string.Join("\n", diagnostics.AsEnumerable())
-        );
+        Assert.That(diagnostics, Is.Empty, context + "\n" + string.Join("\n", diagnostics.AsEnumerable()));
         using MemoryStream image = new();
         EmitResult emit = compilation.Emit(image);
         Assert.That(emit.Success, Is.True, context + "\n" + string.Join("\n", emit.Diagnostics));
@@ -258,15 +183,9 @@ namespace GenericRecordConsumer
         try
         {
             Assembly assembly = load.LoadFromStream(image);
-            MethodInfo? verify = assembly
-                .GetType("GenericRecordConsumer.Consumer")
-                ?.GetMethod("Verify");
+            MethodInfo? verify = assembly.GetType("GenericRecordConsumer.Consumer")?.GetMethod("Verify");
             Assert.That(verify, Is.Not.Null, "The explicit caller must be emitted: " + context);
-            Assert.That(
-                verify!.Invoke(null, null),
-                Is.EqualTo(true),
-                "Closed fields and identity: " + context
-            );
+            Assert.That(verify!.Invoke(null, null), Is.EqualTo(true), "Closed fields and identity: " + context);
         }
         finally
         {

@@ -70,13 +70,7 @@ namespace DxMessaging.Editor.Windows
 
         internal MessageMonitorLiveViewState WithSelectedTraceId(long selectedTraceId)
         {
-            return new MessageMonitorLiveViewState(
-                FilterText,
-                ShowUntargeted,
-                ShowTargeted,
-                ShowBroadcast,
-                selectedTraceId
-            );
+            return new MessageMonitorLiveViewState(FilterText, ShowUntargeted, ShowTargeted, ShowBroadcast, selectedTraceId);
         }
 
         /// <summary>
@@ -86,12 +80,7 @@ namespace DxMessaging.Editor.Windows
         /// </summary>
         internal bool ShowsRouteKind(string routeKind)
         {
-            return DxMessagingEditorPalette.ShowsRouteKind(
-                routeKind,
-                ShowUntargeted,
-                ShowTargeted,
-                ShowBroadcast
-            );
+            return DxMessagingEditorPalette.ShowsRouteKind(routeKind, ShowUntargeted, ShowTargeted, ShowBroadcast);
         }
     }
 
@@ -180,10 +169,8 @@ namespace DxMessaging.Editor.Windows
         internal const string DetailName = "dxmessaging-monitor-live-detail";
         internal const string DetailTitleLabelName = "dxmessaging-monitor-live-detail-title";
         internal const string DetailFrameLabelName = "dxmessaging-monitor-live-detail-frame";
-        internal const string DetailStackFoldoutName =
-            "dxmessaging-monitor-live-detail-stack-foldout";
-        internal const string DetailStackFirstFrameLabelName =
-            "dxmessaging-monitor-live-detail-stack-first-frame";
+        internal const string DetailStackFoldoutName = "dxmessaging-monitor-live-detail-stack-foldout";
+        internal const string DetailStackFirstFrameLabelName = "dxmessaging-monitor-live-detail-stack-first-frame";
         internal const string DetailContextLabelName = "dxmessaging-monitor-live-detail-context";
         internal const string FooterName = "dxmessaging-monitor-live-footer";
         internal const string EmptyBodyName = "dxmessaging-monitor-live-empty";
@@ -203,8 +190,7 @@ namespace DxMessaging.Editor.Windows
         /// </summary>
         internal const string LiveModeBadgeText = "LIVE";
 
-        internal const string LiveModeHintText =
-            "Streaming. Repeats of the same message and context merge into one row, and the N column counts them.";
+        internal const string LiveModeHintText = "Streaming. Repeats of the same message and context merge into one row, and the N column counts them.";
 
         /// <summary>
         /// Row height for the virtualized list, matching the <c>.dx-row</c> height in
@@ -287,9 +273,7 @@ namespace DxMessaging.Editor.Windows
             /// </summary>
             internal bool DetailShows(MessageMonitorLiveEntry row)
             {
-                return _detailFirstTraceId == row.FirstTraceId
-                    && _detailLastTraceId == row.LastTraceId
-                    && _detailCount == row.Count;
+                return _detailFirstTraceId == row.FirstTraceId && _detailLastTraceId == row.LastTraceId && _detailCount == row.Count;
             }
 
             internal void RememberDetail(MessageMonitorLiveEntry row)
@@ -429,10 +413,7 @@ namespace DxMessaging.Editor.Windows
         /// filter is the snapshot Monitor's own typed query, so <c>type:</c>, <c>message:</c>,
         /// <c>context:</c> and <c>stack:</c> behave identically in both modes.
         /// </summary>
-        internal static List<MessageMonitorLiveEntry> FilterRows(
-            IReadOnlyList<MessageMonitorLiveEntry> entries,
-            MessageMonitorLiveViewState viewState
-        )
+        internal static List<MessageMonitorLiveEntry> FilterRows(IReadOnlyList<MessageMonitorLiveEntry> entries, MessageMonitorLiveViewState viewState)
         {
             if (entries == null)
             {
@@ -443,10 +424,7 @@ namespace DxMessaging.Editor.Windows
             for (int index = entries.Count - 1; 0 <= index; index--)
             {
                 MessageMonitorLiveEntry row = entries[index];
-                if (
-                    viewState.ShowsRouteKind(row.Entry.RouteKind)
-                    && row.Entry.Matches(viewState.FilterText)
-                )
+                if (viewState.ShowsRouteKind(row.Entry.RouteKind) && row.Entry.Matches(viewState.FilterText))
                 {
                     rows.Add(row);
                 }
@@ -459,10 +437,7 @@ namespace DxMessaging.Editor.Windows
         /// Position of the pinned row in the current filtered list, or 0 (the newest row) when
         /// nothing is pinned or the pinned row has been filtered out or aged out of the log.
         /// </summary>
-        internal static int ResolveSelectedIndex(
-            IReadOnlyList<MessageMonitorLiveEntry> rows,
-            long selectedTraceId
-        )
+        internal static int ResolveSelectedIndex(IReadOnlyList<MessageMonitorLiveEntry> rows, long selectedTraceId)
         {
             if (rows == null)
             {
@@ -509,15 +484,10 @@ namespace DxMessaging.Editor.Windows
         internal static string CreateTraceRangeText(MessageMonitorLiveEntry row)
         {
             string first = row.FirstTraceId.ToString(CultureInfo.InvariantCulture);
-            return row.FirstTraceId == row.LastTraceId
-                ? $"#{first}"
-                : $"#{first}-#{row.LastTraceId.ToString(CultureInfo.InvariantCulture)}";
+            return row.FirstTraceId == row.LastTraceId ? $"#{first}" : $"#{first}-#{row.LastTraceId.ToString(CultureInfo.InvariantCulture)}";
         }
 
-        internal static string CreateEmptyTitleText(
-            MessageMonitorLiveRecorder recorder,
-            bool diagnosticsEnabled
-        )
+        internal static string CreateEmptyTitleText(MessageMonitorLiveRecorder recorder, bool diagnosticsEnabled)
         {
             if (recorder == null)
             {
@@ -537,10 +507,7 @@ namespace DxMessaging.Editor.Windows
             return recorder.Recording ? "Waiting for messages" : "Recording is paused";
         }
 
-        internal static string CreateEmptyBodyText(
-            MessageMonitorLiveRecorder recorder,
-            bool diagnosticsEnabled
-        )
+        internal static string CreateEmptyBodyText(MessageMonitorLiveRecorder recorder, bool diagnosticsEnabled)
         {
             if (recorder == null)
             {
@@ -567,10 +534,7 @@ namespace DxMessaging.Editor.Windows
         /// the retained window is used, how many emissions have been drained, and how many the bus
         /// overwrote before they could be.
         /// </summary>
-        internal static IReadOnlyList<MessageMonitorLiveFooterStat> CreateFooterStats(
-            MessageMonitorLiveRecorder recorder,
-            int shownCount
-        )
+        internal static IReadOnlyList<MessageMonitorLiveFooterStat> CreateFooterStats(MessageMonitorLiveRecorder recorder, int shownCount)
         {
             if (recorder == null)
             {
@@ -579,33 +543,20 @@ namespace DxMessaging.Editor.Windows
 
             return new[]
             {
-                new MessageMonitorLiveFooterStat(
-                    shownCount.ToString(CultureInfo.InvariantCulture),
-                    "shown"
-                ),
+                new MessageMonitorLiveFooterStat(shownCount.ToString(CultureInfo.InvariantCulture), "shown"),
                 new MessageMonitorLiveFooterStat(
                     $"{recorder.Entries.Count.ToString(CultureInfo.InvariantCulture)}/{recorder.Capacity.ToString(CultureInfo.InvariantCulture)}",
                     "buffered"
                 ),
-                new MessageMonitorLiveFooterStat(
-                    recorder.ObservedCount.ToString(CultureInfo.InvariantCulture),
-                    "recorded"
-                ),
-                new MessageMonitorLiveFooterStat(
-                    recorder.MissedCount.ToString(CultureInfo.InvariantCulture),
-                    "missed"
-                ),
+                new MessageMonitorLiveFooterStat(recorder.ObservedCount.ToString(CultureInfo.InvariantCulture), "recorded"),
+                new MessageMonitorLiveFooterStat(recorder.MissedCount.ToString(CultureInfo.InvariantCulture), "missed"),
             };
         }
 
         /// <summary>
         /// Builds one log row for the virtualized list.
         /// </summary>
-        internal static VisualElement CreateRow(
-            MessageMonitorLiveEntry row,
-            int rowIndex,
-            bool selected
-        )
+        internal static VisualElement CreateRow(MessageMonitorLiveEntry row, int rowIndex, bool selected)
         {
             VisualElement element = new();
             element.AddToClassList(RowClassName);
@@ -619,10 +570,7 @@ namespace DxMessaging.Editor.Windows
                 element.style.backgroundColor = DxMessagingEditorPalette.SelectedWash;
             }
 
-            Label time = new(FormatObservedSeconds(row.FirstObservedSeconds))
-            {
-                name = RowTimeLabelName,
-            };
+            Label time = new(FormatObservedSeconds(row.FirstObservedSeconds)) { name = RowTimeLabelName };
             time.AddToClassList(DxMessagingEditorTheme.RowTimeClassName);
             element.Add(time);
 
@@ -688,22 +636,13 @@ namespace DxMessaging.Editor.Windows
                 toolbar, which is how a reader ends up believing live mode is one-way (#344). Both
                 modes now switch from the word that names the mode.
             */
-            Label mode = new(LiveModeBadgeText)
-            {
-                name = ModeBadgeLabelName,
-                tooltip = LiveModeHintText,
-            };
+            Label mode = new(LiveModeBadgeText) { name = ModeBadgeLabelName, tooltip = LiveModeHintText };
             mode.AddToClassList(DxMessagingEditorTheme.TypeBadgeClassName);
             mode.AddToClassList(DxMessagingEditorTheme.TypeBadgeGlobalObserverClassName);
             mode.style.marginRight = 6;
             if (callbacks.OnExitLiveMode != null)
             {
-                DxMessagingEditorSourceLinks.MakeActivatable(
-                    mode,
-                    "Switch back to the snapshot Monitor.",
-                    () => callbacks.OnExitLiveMode.Invoke(),
-                    addLinkClass: false
-                );
+                DxMessagingEditorSourceLinks.MakeActivatable(mode, "Switch back to the snapshot Monitor.", () => callbacks.OnExitLiveMode.Invoke(), addLinkClass: false);
             }
             toolbar.Add(mode);
 
@@ -725,11 +664,8 @@ namespace DxMessaging.Editor.Windows
 
             Toggle record = new("Record") { name = RecordToggleName, value = recorder.Recording };
             record.AddToClassList(DxMessagingEditorTheme.RecordClassName);
-            record.tooltip =
-                "Drain new emissions into the log. The bus keeps buffering while this is off.";
-            record.RegisterValueChangedCallback(changed =>
-                callbacks.OnRecordingChanged?.Invoke(changed.newValue)
-            );
+            record.tooltip = "Drain new emissions into the log. The bus keeps buffering while this is off.";
+            record.RegisterValueChangedCallback(changed => callbacks.OnRecordingChanged?.Invoke(changed.newValue));
             toolbar.Add(record);
 
             /*
@@ -737,25 +673,12 @@ namespace DxMessaging.Editor.Windows
                 reported the toolbar toggles as unlabelled, and a named chip is also the only legend
                 the row colors have.
             */
-            Toggle untargeted = CreateChip(
-                UntargetedChipName,
-                DxMessagingEditorPalette.UntargetedKind,
-                viewState.ShowUntargeted
-            );
-            Toggle targeted = CreateChip(
-                TargetedChipName,
-                DxMessagingEditorPalette.TargetedKind,
-                viewState.ShowTargeted
-            );
-            Toggle broadcast = CreateChip(
-                BroadcastChipName,
-                DxMessagingEditorPalette.BroadcastKind,
-                viewState.ShowBroadcast
-            );
+            Toggle untargeted = CreateChip(UntargetedChipName, DxMessagingEditorPalette.UntargetedKind, viewState.ShowUntargeted);
+            Toggle targeted = CreateChip(TargetedChipName, DxMessagingEditorPalette.TargetedKind, viewState.ShowTargeted);
+            Toggle broadcast = CreateChip(BroadcastChipName, DxMessagingEditorPalette.BroadcastKind, viewState.ShowBroadcast);
             TextField filter = new() { name = FilterFieldName, value = viewState.FilterText };
             filter.AddToClassList(DxMessagingEditorTheme.SearchClassName);
-            filter.tooltip =
-                "Filter the log. Supports type:, message:, context: and stack: prefixes.";
+            filter.tooltip = "Filter the log. Supports type:, message:, context: and stack: prefixes.";
 
             /*
                 Every control reads the live value of every other control, so a change to one never
@@ -764,14 +687,7 @@ namespace DxMessaging.Editor.Windows
             */
             void RaiseStateChanged()
             {
-                callbacks.OnStateChanged?.Invoke(
-                    new MessageMonitorLiveViewState(
-                        filter.value,
-                        untargeted.value,
-                        targeted.value,
-                        broadcast.value
-                    )
-                );
+                callbacks.OnStateChanged?.Invoke(new MessageMonitorLiveViewState(filter.value, untargeted.value, targeted.value, broadcast.value));
             }
 
             untargeted.RegisterValueChangedCallback(_ => RaiseStateChanged());
@@ -822,8 +738,7 @@ namespace DxMessaging.Editor.Windows
             DxMessagingEditorTheme.AddRouteKindChipClasses(chip, routeKind);
             chip.AddToClassList(DxMessagingEditorTheme.ChipWideClassName);
             chip.AddToClassList(DxMessagingEditorTheme.FilterClassName);
-            chip.tooltip =
-                $"This color marks {routeKind} messages in every row. Click to show or hide them.";
+            chip.tooltip = $"This color marks {routeKind} messages in every row. Click to show or hide them.";
 
             /*
                 `.dx-record` hides its checkmark from the stylesheet; `.dx-chip` carries no such rule
@@ -852,9 +767,7 @@ namespace DxMessaging.Editor.Windows
             header.AddToClassList(DxMessagingEditorTheme.ListHeaderClassName);
             header.Add(CreateHeaderColumn("TIME", DxMessagingEditorTheme.ColumnTimeClassName));
             header.Add(CreateHeaderColumn("ROUTE", DxMessagingEditorTheme.ColumnTypeClassName));
-            header.Add(
-                CreateHeaderColumn("MESSAGE", DxMessagingEditorTheme.ColumnMessageClassName)
-            );
+            header.Add(CreateHeaderColumn("MESSAGE", DxMessagingEditorTheme.ColumnMessageClassName));
             header.Add(CreateHeaderColumn("CONTEXT", DxMessagingEditorTheme.ColumnRouteClassName));
             header.Add(CreateHeaderColumn("N", DxMessagingEditorTheme.ColumnCountClassName));
             return header;
@@ -872,11 +785,7 @@ namespace DxMessaging.Editor.Windows
         /// place in the log. The list is built on the first non-empty render and after the log has
         /// been empty, where there is no scroll position left to preserve anyway.
         /// </summary>
-        private static void UpdateList(
-            LiveBodyState state,
-            List<MessageMonitorLiveEntry> rows,
-            int selectedIndex
-        )
+        private static void UpdateList(LiveBodyState state, List<MessageMonitorLiveEntry> rows, int selectedIndex)
         {
             bool selectionChanged = state.SelectedIndex != selectedIndex;
             state.SelectedIndex = selectedIndex;
@@ -936,11 +845,7 @@ namespace DxMessaging.Editor.Windows
                 element.Clear();
                 MessageMonitorLiveEntry entry = state.Rows[index];
                 VisualElement row = CreateRow(entry, index, index == state.SelectedIndex);
-                row.RegisterCallback<ClickEvent>(_ =>
-                    state.Callbacks.OnStateChanged?.Invoke(
-                        state.ViewState.WithSelectedTraceId(entry.FirstTraceId)
-                    )
-                );
+                row.RegisterCallback<ClickEvent>(_ => state.Callbacks.OnStateChanged?.Invoke(state.ViewState.WithSelectedTraceId(entry.FirstTraceId)));
                 element.Add(row);
             };
             list.style.flexGrow = 1;
@@ -970,10 +875,7 @@ namespace DxMessaging.Editor.Windows
         /// Builds the body's four slots on first render and hands back the state they are tracked
         /// in. A body that already carries state keeps every element it has.
         /// </summary>
-        private static LiveBodyState EnsureBodyState(
-            VisualElement body,
-            MessageMonitorLiveViewCallbacks callbacks
-        )
+        private static LiveBodyState EnsureBodyState(VisualElement body, MessageMonitorLiveViewCallbacks callbacks)
         {
             if (body.userData is LiveBodyState existing)
             {
@@ -1016,10 +918,7 @@ namespace DxMessaging.Editor.Windows
             return state;
         }
 
-        private static VisualElement CreateEmptyState(
-            MessageMonitorLiveRecorder recorder,
-            bool diagnosticsEnabled
-        )
+        private static VisualElement CreateEmptyState(MessageMonitorLiveRecorder recorder, bool diagnosticsEnabled)
         {
             VisualElement empty = DxMessagingEditorTheme.CreateEmptyState(
                 CreateEmptyTitleText(recorder, diagnosticsEnabled),
@@ -1039,10 +938,7 @@ namespace DxMessaging.Editor.Windows
             detail.style.flexShrink = 1;
             detail.style.minHeight = 0;
             detail.style.overflow = Overflow.Hidden;
-            DxMessagingEditorTheme.ApplyCompleteBorder(
-                detail,
-                DxMessagingEditorPalette.BorderPanel
-            );
+            DxMessagingEditorTheme.ApplyCompleteBorder(detail, DxMessagingEditorPalette.BorderPanel);
 
             VisualElement head = new();
             head.AddToClassList(DxMessagingEditorTheme.DetailHeadClassName);
@@ -1051,11 +947,7 @@ namespace DxMessaging.Editor.Windows
             Label badge = new(string.IsNullOrEmpty(routeKind) ? "Other" : routeKind);
             DxMessagingEditorTheme.AddRouteKindTypeBadgeClasses(badge, routeKind);
             head.Add(badge);
-            Label title = new(row.Entry.MessageTypeName)
-            {
-                name = DetailTitleLabelName,
-                tooltip = row.Entry.MessageTypeDisplayPath,
-            };
+            Label title = new(row.Entry.MessageTypeName) { name = DetailTitleLabelName, tooltip = row.Entry.MessageTypeDisplayPath };
             title.AddToClassList(DxMessagingEditorTheme.DetailTitleClassName);
             head.Add(title);
             Label frame = new(CreateTraceRangeText(row)) { name = DetailFrameLabelName };
@@ -1076,12 +968,7 @@ namespace DxMessaging.Editor.Windows
                 one row per frame with Unity's own capture frames left out.
             */
             card.Add(DxMessagingMessageMonitorWindow.CreateTypeDetailRow(row.Entry));
-            card.Add(
-                DxMessagingMessageMonitorWindow.CreateContextDetailRow(
-                    row.Entry,
-                    DetailContextLabelName
-                )
-            );
+            card.Add(DxMessagingMessageMonitorWindow.CreateContextDetailRow(row.Entry, DetailContextLabelName));
             card.Add(CreateKeyValue("Count", row.Count.ToString(CultureInfo.InvariantCulture)));
             card.Add(CreateKeyValue("Dispatch", CreateTraceRangeText(row)));
             card.Add(CreateKeyValue("Observed", CreateObservedRangeText(row)));
@@ -1090,13 +977,7 @@ namespace DxMessaging.Editor.Windows
             detailBody.style.flexShrink = 1;
             detailBody.style.minHeight = 0;
             detailBody.Add(card);
-            detailBody.Add(
-                DxMessagingMessageMonitorWindow.CreateStackTraceSection(
-                    row.Entry,
-                    DetailStackFoldoutName,
-                    DetailStackFirstFrameLabelName
-                )
-            );
+            detailBody.Add(DxMessagingMessageMonitorWindow.CreateStackTraceSection(row.Entry, DetailStackFoldoutName, DetailStackFirstFrameLabelName));
             detail.Add(detailBody);
 
             return detail;
@@ -1109,9 +990,7 @@ namespace DxMessaging.Editor.Windows
                 ReSharper disable once CompareOfFloatsByEqualityOperator -- both readings come from
                 the same clock, and a coalesced row copies the earlier reading verbatim.
             */
-            return row.FirstObservedSeconds == row.LastObservedSeconds
-                ? first
-                : $"{first} - {FormatObservedSeconds(row.LastObservedSeconds)}";
+            return row.FirstObservedSeconds == row.LastObservedSeconds ? first : $"{first} - {FormatObservedSeconds(row.LastObservedSeconds)}";
         }
 
         private static VisualElement CreateKeyValue(string key, string value)
@@ -1163,10 +1042,7 @@ namespace DxMessaging.Editor.Windows
             return separator;
         }
 
-        private static VisualElement CreateFooter(
-            MessageMonitorLiveRecorder recorder,
-            int shownCount
-        )
+        private static VisualElement CreateFooter(MessageMonitorLiveRecorder recorder, int shownCount)
         {
             VisualElement footer = new() { name = FooterName };
             footer.AddToClassList(DxMessagingEditorTheme.FooterClassName);
@@ -1187,11 +1063,7 @@ namespace DxMessaging.Editor.Windows
                 and is cut off with an ellipsis rather than wrapping past the fixed-height footer on a
                 narrow window; the full sentence is on the tooltip and the LIVE badge.
             */
-            Label hint = new(LiveModeHintText)
-            {
-                name = ModeHintLabelName,
-                tooltip = LiveModeHintText,
-            };
+            Label hint = new(LiveModeHintText) { name = ModeHintLabelName, tooltip = LiveModeHintText };
             hint.style.flexGrow = 1;
             hint.style.flexShrink = 1;
             hint.style.whiteSpace = WhiteSpace.NoWrap;

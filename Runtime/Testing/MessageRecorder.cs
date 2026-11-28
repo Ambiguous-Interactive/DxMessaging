@@ -24,9 +24,7 @@ namespace DxMessaging.Testing
         public static MessageRecorder<TMessage> Untargeted<TMessage>(IMessageBus bus)
             where TMessage : IUntargetedMessage
         {
-            return new MessageRecorder<TMessage>(bus, static (token, handler) =>
-                token.RegisterUntargeted(handler)
-            );
+            return new MessageRecorder<TMessage>(bus, static (token, handler) => token.RegisterUntargeted(handler));
         }
 
         /// <summary>Records messages delivered to one target on the selected bus.</summary>
@@ -36,15 +34,10 @@ namespace DxMessaging.Testing
         /// <returns>An active recorder owned by the caller.</returns>
         /// <exception cref="ArgumentNullException">The bus is null.</exception>
         /// <exception cref="MessageRegistrationBuildException">Setup failed and the exception's lease owns retryable cleanup.</exception>
-        public static MessageRecorder<TMessage> Targeted<TMessage>(
-            InstanceId target,
-            IMessageBus bus
-        )
+        public static MessageRecorder<TMessage> Targeted<TMessage>(InstanceId target, IMessageBus bus)
             where TMessage : ITargetedMessage
         {
-            return new MessageRecorder<TMessage>(bus, (token, handler) =>
-                token.RegisterTargeted(target, handler)
-            );
+            return new MessageRecorder<TMessage>(bus, (token, handler) => token.RegisterTargeted(target, handler));
         }
 
         /// <summary>Records messages broadcast from one source on the selected bus.</summary>
@@ -54,15 +47,10 @@ namespace DxMessaging.Testing
         /// <returns>An active recorder owned by the caller.</returns>
         /// <exception cref="ArgumentNullException">The bus is null.</exception>
         /// <exception cref="MessageRegistrationBuildException">Setup failed and the exception's lease owns retryable cleanup.</exception>
-        public static MessageRecorder<TMessage> Broadcast<TMessage>(
-            InstanceId source,
-            IMessageBus bus
-        )
+        public static MessageRecorder<TMessage> Broadcast<TMessage>(InstanceId source, IMessageBus bus)
             where TMessage : IBroadcastMessage
         {
-            return new MessageRecorder<TMessage>(bus, (token, handler) =>
-                token.RegisterBroadcast(source, handler)
-            );
+            return new MessageRecorder<TMessage>(bus, (token, handler) => token.RegisterBroadcast(source, handler));
         }
     }
 
@@ -82,10 +70,7 @@ namespace DxMessaging.Testing
         private bool _disposing;
 
         /// <summary>Creates the private subscription lease after validating the explicit bus.</summary>
-        internal MessageRecorder(
-            IMessageBus bus,
-            Action<MessageRegistrationToken, MessageHandler.FastHandler<TMessage>> register
-        )
+        internal MessageRecorder(IMessageBus bus, Action<MessageRegistrationToken, MessageHandler.FastHandler<TMessage>> register)
         {
             if (bus == null)
             {

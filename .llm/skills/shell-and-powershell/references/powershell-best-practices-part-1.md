@@ -19,8 +19,7 @@ $content = '<!-- This has > inside the comment -->'
 $content -match $pattern  # Fails to match correctly!
 ```
 
-The pattern `[^>]*` means "match any character except `>`". When the content itself contains `>`,
-the match terminates prematurely or fails entirely.
+The pattern `[^>]*` means "match any character except `>`". When the content itself contains `>`, the match terminates prematurely or fails entirely.
 
 #### Solution: Use Non-Greedy Quantifiers
 
@@ -31,8 +30,7 @@ $content = '<!-- This has > inside the comment -->'
 $content -match $pattern  # Correctly matches the entire comment
 ```
 
-The `.*?` pattern matches any characters (including `>`) but stops at the first occurrence of the
-closing delimiter `-->`.
+The `.*?` pattern matches any characters (including `>`) but stops at the first occurrence of the closing delimiter `-->`.
 
 #### When to Use Each Pattern
 
@@ -44,10 +42,8 @@ closing delimiter `-->`.
 
 #### When `[^>]*` IS Appropriate: XML Tag Attributes
 
-While `[^>]*` fails for XML/HTML **comments** (where `>` is allowed), it is safe for matching
-XML **tag attributes** in well-formed XML. The `>` character IS allowed unescaped in attribute
-values per XML 1.0 section 2.3's `AttValue` grammar, but the closing `>` of a tag is always
-outside the quoted attribute values (since quotes must be properly matched):
+While `[^>]*` fails for XML/HTML **comments** (where `>` is allowed), it is safe for matching XML **tag attributes** in well-formed XML. The `>` character IS allowed unescaped in
+attribute values per XML 1.0 section 2.3's `AttValue` grammar, but the closing `>` of a tag is always outside the quoted attribute values (since quotes must be properly matched):
 
 ```powershell
 # SAFE: Matching XML tag attributes in well-formed XML
@@ -68,9 +64,8 @@ This distinction applies when:
 
 ### Structural Completeness in XML/SVG Replacements
 
-When using regex to find-and-replace XML/SVG structures, both the pattern and replacement must
-capture complete structural units. Partial matches create fragile code that breaks on formatting
-changes.
+When using regex to find-and-replace XML/SVG structures, both the pattern and replacement must capture complete structural units. Partial matches create fragile code that breaks on
+formatting changes.
 
 #### Problem: Incomplete Structural Boundaries
 
@@ -124,8 +119,8 @@ Comments that document regex patterns must not contain literal examples of match
 $pattern = '<!--\s*banner-version:[\d.]+\s*-->'
 ```
 
-If a script uses this pattern to find and replace version comments in files, and the script file
-itself contains the comment showing the matched format, the script may inadvertently modify itself.
+If a script uses this pattern to find and replace version comments in files, and the script file itself contains the comment showing the matched format, the script may
+inadvertently modify itself.
 
 #### Solution: Abstract Documentation
 

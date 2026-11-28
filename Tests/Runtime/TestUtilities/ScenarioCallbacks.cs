@@ -34,40 +34,19 @@ namespace DxMessaging.Tests.Runtime
             {
                 case MessageKind.Untargeted:
                 {
-                    return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
-                        scenario,
-                        token,
-                        (in SimpleUntargetedMessage _) => onInvoked(),
-                        priority
-                    );
+                    return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(scenario, token, (in SimpleUntargetedMessage _) => onInvoked(), priority);
                 }
                 case MessageKind.Targeted:
                 {
-                    return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        context,
-                        (in SimpleTargetedMessage _) => onInvoked(),
-                        priority
-                    );
+                    return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(scenario, token, context, (in SimpleTargetedMessage _) => onInvoked(), priority);
                 }
                 case MessageKind.Broadcast:
                 {
-                    return ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        context,
-                        (in SimpleBroadcastMessage _) => onInvoked(),
-                        priority
-                    );
+                    return ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(scenario, token, context, (in SimpleBroadcastMessage _) => onInvoked(), priority);
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
@@ -90,34 +69,19 @@ namespace DxMessaging.Tests.Runtime
             {
                 case MessageKind.Untargeted:
                 {
-                    return token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        _ => onInvoked(),
-                        priority: priority
-                    );
+                    return token.RegisterUntargeted<SimpleUntargetedMessage>(_ => onInvoked(), priority: priority);
                 }
                 case MessageKind.Targeted:
                 {
-                    return token.RegisterTargeted<SimpleTargetedMessage>(
-                        context,
-                        _ => onInvoked(),
-                        priority: priority
-                    );
+                    return token.RegisterTargeted<SimpleTargetedMessage>(context, _ => onInvoked(), priority: priority);
                 }
                 case MessageKind.Broadcast:
                 {
-                    return token.RegisterBroadcast<SimpleBroadcastMessage>(
-                        context,
-                        _ => onInvoked(),
-                        priority: priority
-                    );
+                    return token.RegisterBroadcast<SimpleBroadcastMessage>(context, _ => onInvoked(), priority: priority);
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
@@ -138,32 +102,15 @@ namespace DxMessaging.Tests.Runtime
             {
                 case MessageKind.Untargeted:
                 {
-                    return ScenarioHarness.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
-                        scenario,
-                        token,
-                        (in SimpleUntargetedMessage _) => onInvoked(),
-                        priority
-                    );
+                    return ScenarioHarness.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(scenario, token, (in SimpleUntargetedMessage _) => onInvoked(), priority);
                 }
                 case MessageKind.Targeted:
                 {
-                    return ScenarioHarness.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        context,
-                        (in SimpleTargetedMessage _) => onInvoked(),
-                        priority
-                    );
+                    return ScenarioHarness.RegisterTargetedPostProcessor<SimpleTargetedMessage>(scenario, token, context, (in SimpleTargetedMessage _) => onInvoked(), priority);
                 }
                 case MessageKind.Broadcast:
                 {
-                    return ScenarioHarness.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        context,
-                        (in SimpleBroadcastMessage _) => onInvoked(),
-                        priority
-                    );
+                    return ScenarioHarness.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(scenario, token, context, (in SimpleBroadcastMessage _) => onInvoked(), priority);
                 }
                 case MessageKind.TargetedWithoutTargeting:
                 {
@@ -181,11 +128,7 @@ namespace DxMessaging.Tests.Runtime
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
@@ -247,11 +190,7 @@ namespace DxMessaging.Tests.Runtime
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
@@ -273,11 +212,7 @@ namespace DxMessaging.Tests.Runtime
         /// the target (Targeted) or source (Broadcast) and is ignored for Untargeted
         /// scenarios.
         /// </summary>
-        public static void EmitForKind(
-            MessageScenario scenario,
-            IMessageBus messageBus,
-            InstanceId context
-        )
+        public static void EmitForKind(MessageScenario scenario, IMessageBus messageBus, InstanceId context)
         {
             switch (scenario.Kind)
             {
@@ -303,11 +238,7 @@ namespace DxMessaging.Tests.Runtime
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }

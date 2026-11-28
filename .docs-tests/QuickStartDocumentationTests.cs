@@ -43,10 +43,7 @@ internal sealed class QuickStartDocumentationTests
             .ExtractCodeBlocks(path, "csharp")
             .Where(code =>
                 code.Contains("partial struct DamageRequested", StringComparison.Ordinal)
-                || code.Contains(
-                    "class DamageReceiver : MessageAwareComponent",
-                    StringComparison.Ordinal
-                )
+                || code.Contains("class DamageReceiver : MessageAwareComponent", StringComparison.Ordinal)
                 || code.Contains("class Hazard : MonoBehaviour", StringComparison.Ordinal)
             )
             .ToArray();
@@ -59,53 +56,26 @@ internal sealed class QuickStartDocumentationTests
             .EnumerateFiles(runtime, "*.cs", SearchOption.AllDirectories)
             .OrderBy(file => file, StringComparer.Ordinal)
             .Select(file =>
-                CSharpSyntaxTree.ParseText(
-                    File.ReadAllText(file),
-                    UnitySources.Contains(Path.GetRelativePath(runtime, file).Replace('\\', '/'))
-                        ? unity
-                        : portable,
-                    file
-                )
+                CSharpSyntaxTree.ParseText(File.ReadAllText(file), UnitySources.Contains(Path.GetRelativePath(runtime, file).Replace('\\', '/')) ? unity : portable, file)
             );
-        IEnumerable<SyntaxTree> scripts = examples.Select(
-            (example, index) =>
-                CSharpSyntaxTree.ParseText(example, unity, $"{path} example {index + 1}")
-        );
-        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
-            ?? throw new InvalidOperationException("Runtime references are unavailable.");
+        IEnumerable<SyntaxTree> scripts = examples.Select((example, index) => CSharpSyntaxTree.ParseText(example, unity, $"{path} example {index + 1}"));
+        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") ?? throw new InvalidOperationException("Runtime references are unavailable.");
         CSharpCompilation input = CSharpCompilation.Create(
             "PublishedQuickStart",
             production.Concat(scripts).Append(CSharpSyntaxTree.ParseText(Probe, unity, "Probe.cs")),
-            references
-                .Split(Path.PathSeparator)
-                .Select(file => MetadataReference.CreateFromFile(file)),
+            references.Split(Path.PathSeparator).Select(file => MetadataReference.CreateFromFile(file)),
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: true)
         );
-        GeneratorDriver driver = CSharpGeneratorDriver.Create(
-            new ISourceGenerator[] { new DxMessageIdGenerator(), new DxAutoConstructorGenerator() },
-            parseOptions: unity
-        );
-        driver.RunGeneratorsAndUpdateCompilation(
-            input,
-            out Compilation generated,
-            out ImmutableArray<Diagnostic> diagnostics
-        );
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(new ISourceGenerator[] { new DxMessageIdGenerator(), new DxAutoConstructorGenerator() }, parseOptions: unity);
+        driver.RunGeneratorsAndUpdateCompilation(input, out Compilation generated, out ImmutableArray<Diagnostic> diagnostics);
         Assert.That(diagnostics, Is.Empty, string.Join(Environment.NewLine, diagnostics));
 
         using MemoryStream image = new();
         Microsoft.CodeAnalysis.Emit.EmitResult emitted = generated.Emit(image);
-        Assert.That(
-            emitted.Success,
-            Is.True,
-            string.Join(Environment.NewLine, emitted.Diagnostics)
-        );
+        Assert.That(emitted.Success, Is.True, string.Join(Environment.NewLine, emitted.Diagnostics));
         Assert.That(
             emitted.Diagnostics.Where(diagnostic =>
-                diagnostic.Severity == DiagnosticSeverity.Warning
-                && diagnostic.Location.SourceTree?.FilePath.StartsWith(
-                    path,
-                    StringComparison.Ordinal
-                ) == true
+                diagnostic.Severity == DiagnosticSeverity.Warning && diagnostic.Location.SourceTree?.FilePath.StartsWith(path, StringComparison.Ordinal) == true
             ),
             Is.Empty,
             "The three published scripts compile without warnings."
@@ -115,11 +85,7 @@ internal sealed class QuickStartDocumentationTests
         {
             image.Position = 0;
             Assembly assembly = context.LoadFromStream(image);
-            _result = ((int, int, int, (string, bool)[]))
-                assembly
-                    .GetType("QuickStartProbe", throwOnError: true)!
-                    .GetMethod("Run")!
-                    .Invoke(null, null)!;
+            _result = ((int, int, int, (string, bool)[]))assembly.GetType("QuickStartProbe", throwOnError: true)!.GetMethod("Run")!.Invoke(null, null)!;
         }
         finally
         {

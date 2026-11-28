@@ -136,11 +136,7 @@ namespace DxMessaging.Editor.Analyzers
                     information is only retrievable from the OUTGOING mergedReports, so we read it
                     before clearing.
                 */
-                IReadOnlyDictionary<string, ParsedTypeReport>? source = string.Equals(
-                    thisAssemblyKey,
-                    assemblyKey,
-                    StringComparison.OrdinalIgnoreCase
-                )
+                IReadOnlyDictionary<string, ParsedTypeReport>? source = string.Equals(thisAssemblyKey, assemblyKey, StringComparison.OrdinalIgnoreCase)
                     ? latestReportsForAssembly
                     : mergedReports;
                 if (source is null)
@@ -197,10 +193,7 @@ namespace DxMessaging.Editor.Analyzers
                     {
                         existing.DiagnosticIds.Add(id);
                     }
-                    if (
-                        string.IsNullOrEmpty(existing.FilePath)
-                        && !string.IsNullOrEmpty(contribution.FilePath)
-                    )
+                    if (string.IsNullOrEmpty(existing.FilePath) && !string.IsNullOrEmpty(contribution.FilePath))
                     {
                         existing.FilePath = contribution.FilePath;
                         existing.Line = contribution.Line;
@@ -236,10 +229,7 @@ namespace DxMessaging.Editor.Analyzers
             return snapshot;
         }
 
-        private static void MergeReports(
-            Dictionary<string, BaseCallReportEntryDto> snapshot,
-            IReadOnlyDictionary<string, ParsedTypeReport>? reports
-        )
+        private static void MergeReports(Dictionary<string, BaseCallReportEntryDto> snapshot, IReadOnlyDictionary<string, ParsedTypeReport>? reports)
         {
             if (reports is null)
             {
@@ -254,26 +244,14 @@ namespace DxMessaging.Editor.Analyzers
         /// <summary>Keeps the latest compiler diagnostics for each reporting assembly.</summary>
         internal sealed class CompilerReports
         {
-            private readonly List<(
-                string AssemblyPath,
-                IReadOnlyDictionary<string, ParsedTypeReport> Reports
-            )> _reports = new();
+            private readonly List<(string AssemblyPath, IReadOnlyDictionary<string, ParsedTypeReport> Reports)> _reports = new();
 
             /// <summary>Replaces the assembly's report while preserving active assembly order.</summary>
-            internal void Replace(
-                string assemblyPath,
-                IReadOnlyDictionary<string, ParsedTypeReport>? reports
-            )
+            internal void Replace(string assemblyPath, IReadOnlyDictionary<string, ParsedTypeReport>? reports)
             {
                 for (int index = 0; index < _reports.Count; index++)
                 {
-                    if (
-                        !string.Equals(
-                            _reports[index].AssemblyPath,
-                            assemblyPath,
-                            StringComparison.OrdinalIgnoreCase
-                        )
-                    )
+                    if (!string.Equals(_reports[index].AssemblyPath, assemblyPath, StringComparison.OrdinalIgnoreCase))
                     {
                         continue;
                     }
@@ -299,15 +277,11 @@ namespace DxMessaging.Editor.Analyzers
             internal void Clear() => _reports.Clear();
 
             /// <summary>Unions Console rows and the latest reports in their active order.</summary>
-            internal Dictionary<string, BaseCallReportEntryDto> BuildMergedSnapshot(
-                IReadOnlyDictionary<string, ParsedTypeReport>? logEntriesReports
-            )
+            internal Dictionary<string, BaseCallReportEntryDto> BuildMergedSnapshot(IReadOnlyDictionary<string, ParsedTypeReport>? logEntriesReports)
             {
                 Dictionary<string, BaseCallReportEntryDto> snapshot = new(StringComparer.Ordinal);
                 MergeReports(snapshot, logEntriesReports);
-                foreach (
-                    (string _, IReadOnlyDictionary<string, ParsedTypeReport> reports) in _reports
-                )
+                foreach ((string _, IReadOnlyDictionary<string, ParsedTypeReport> reports) in _reports)
                 {
                     MergeReports(snapshot, reports);
                 }
@@ -315,11 +289,7 @@ namespace DxMessaging.Editor.Analyzers
             }
         }
 
-        private static void AddOrMerge(
-            Dictionary<string, BaseCallReportEntryDto> snapshot,
-            string fqn,
-            ParsedTypeReport report
-        )
+        private static void AddOrMerge(Dictionary<string, BaseCallReportEntryDto> snapshot, string fqn, ParsedTypeReport report)
         {
             if (string.IsNullOrEmpty(fqn) || report is null)
             {

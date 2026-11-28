@@ -5,16 +5,14 @@ description: Manual checklist for OpenUPM package metadata after repository tran
 
 # OpenUPM Metadata
 
-OpenUPM indexes Git tags and package metadata to build Unity Package Manager
-versions. DxMessaging must continue to publish as:
+OpenUPM indexes Git tags and package metadata to build Unity Package Manager versions. DxMessaging must continue to publish as:
 
 - Package ID: `com.wallstop-studios.dxmessaging`
 - Repository URL: `https://github.com/Ambiguous-Interactive/DxMessaging.git`
 
 ## Metadata PR
 
-OpenUPM package metadata lives in the `openupm/openupm` repository. Use the
-OpenUPM package add form or edit the package YAML directly.
+OpenUPM package metadata lives in the `openupm/openupm` repository. Use the OpenUPM package add form or edit the package YAML directly.
 
 Verify the metadata includes:
 
@@ -25,17 +23,13 @@ Verify the metadata includes:
 - supported Unity version matching `package.json`
 - root package layout
 
-Open a PR if the metadata still points at the old repository. Use a public PR
-description only. Keep only non-sensitive verification notes in the local
-ignored runbook, such as the public OpenUPM PR URL. Keep npm account notes,
-GitHub account notes, private review status, tokens, recovery codes, and other
-private account metadata in the relevant provider console or approved
-organization password manager.
+Open a PR if the metadata still points at the old repository. Use a public PR description only. Keep only non-sensitive verification notes in the local ignored runbook, such as the
+public OpenUPM PR URL. Keep npm account notes, GitHub account notes, private review status, tokens, recovery codes, and other private account metadata in the relevant provider
+console or approved organization password manager.
 
 ## Tag Requirements
 
-OpenUPM builds from version tags. The release process uses strict `vX.Y.Z`
-tags. Confirm OpenUPM recognizes the next pushed tag after the metadata update.
+OpenUPM builds from version tags. The release process uses strict `vX.Y.Z` tags. Confirm OpenUPM recognizes the next pushed tag after the metadata update.
 
 ## Verification
 

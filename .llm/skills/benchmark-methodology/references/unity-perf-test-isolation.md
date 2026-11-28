@@ -2,7 +2,8 @@
 
 # Unity Perf Test Isolation
 
-> **One-line summary**: Asmdefs whose name matches `Benchmarks|Allocations` are classified as `perf`; `Comparisons` assemblies are a separate external-package opt-in. Both are excluded from default local Unity runs by `scripts/unity/lib/asmdef-discovery.js`.
+> **One-line summary**: Asmdefs whose name matches `Benchmarks|Allocations` are classified as `perf`; `Comparisons` assemblies are a separate external-package opt-in. Both are
+> excluded from default local Unity runs by `scripts/unity/lib/asmdef-discovery.js`.
 
 ## When to Use
 
@@ -29,7 +30,10 @@ const PERF_NAME_REGEX = /(?:Benchmarks|Allocations)/;
 const COMPARISON_NAME_REGEX = /(?:Comparisons)/;
 ```
 
-Any asmdef under `Tests/` whose `name` field contains `Benchmarks` or `Allocations` is classified as `perf`; `Comparisons` is classified as `comparison` because those suites depend on external comparison packages that are not in the default harness manifest. The suites use the package-owned benchmark windows and allocation probes. Generated hosts and test asmdefs do not depend on `com.unity.test-framework.performance` or `Unity.PerformanceTesting`, whose setup and cleanup hooks would add unrelated work. Three things have to be true for the isolation to hold:
+Any asmdef under `Tests/` whose `name` field contains `Benchmarks` or `Allocations` is classified as `perf`; `Comparisons` is classified as `comparison` because those suites depend
+on external comparison packages that are not in the default harness manifest. The suites use the package-owned benchmark windows and allocation probes. Generated hosts and test
+asmdefs do not depend on `com.unity.test-framework.performance` or `Unity.PerformanceTesting`, whose setup and cleanup hooks would add unrelated work. Three things have to be true
+for the isolation to hold:
 
 1. Perf assemblies live under `Tests/Editor/Benchmarks`, `Tests/Editor/Allocations`, `Tests/Runtime/Comparisons`, or `Tests/Runtime/Benchmarks`.
 1. Their asmdef `name` field contains `Benchmarks`, `Allocations`, or `Comparisons` so classification matches.
@@ -49,9 +53,12 @@ Any asmdef under `Tests/` whose `name` field contains `Benchmarks` or `Allocatio
 Consumers of this module:
 
 - `scripts/unity/run-ci-tests.ps1` builds its assembly list at startup and passes it to Unity via `-assemblyNames`.
-- The active workflows under `.github/workflows/unity-*.yml` resolve the list through the `.github/actions/compute-unity-assemblies` composite action, which calls the same asmdef-discovery module -- no hand-maintained lists.
-- The active `unity-benchmarks.yml` passes `include-perf: "true"` to that composite (which calls `defaultIncludeAssemblies(process.cwd(), { includePerf: true })`) and skips integrations plus external comparisons. The `.github/workflows-disabled/*` files are the ubuntu reference mirrors of the active self-hosted Windows workflows.
-- The local [Unity MCP Test Loop](../../unity-mcp-test-loop/references/mcp-test-loop.md) picks its `DxMcpTestRunner.Run` assembly filter by hand; keep that choice consistent with this module's classification.
+- The active workflows under `.github/workflows/unity-*.yml` resolve the list through the `.github/actions/compute-unity-assemblies` composite action, which calls the same
+  asmdef-discovery module -- no hand-maintained lists.
+- The active `unity-benchmarks.yml` passes `include-perf: "true"` to that composite (which calls `defaultIncludeAssemblies(process.cwd(), { includePerf: true })`) and skips
+  integrations plus external comparisons. The `.github/workflows-disabled/*` files are the ubuntu reference mirrors of the active self-hosted Windows workflows.
+- The local [Unity MCP Test Loop](../../unity-mcp-test-loop/references/mcp-test-loop.md) picks its `DxMcpTestRunner.Run` assembly filter by hand; keep that choice consistent with
+  this module's classification.
 
 Because every CI caller goes through the same module, adding a new perf asmdef requires no edits to the workflows or the CI runner script.
 
@@ -75,13 +82,12 @@ Because every CI caller goes through the same module, adding a new perf asmdef r
    node scripts/unity/lib/asmdef-discovery.js
    ```
 
-   The new perf asmdef should be grouped under `[perf]`, NOT in the default
-   `core` include set. To run it locally, drive the benchmark assemblies through
-   `DxMcpTestRunner.Run` over the MCP loop (see
-   [Unity MCP Test Loop](../../unity-mcp-test-loop/references/mcp-test-loop.md)); the default loop run does not pull
-   perf assemblies unless you name them explicitly.
+   The new perf asmdef should be grouped under `[perf]`, NOT in the default `core` include set. To run it locally, drive the benchmark assemblies through `DxMcpTestRunner.Run` over
+   the MCP loop (see [Unity MCP Test Loop](../../unity-mcp-test-loop/references/mcp-test-loop.md)); the default loop run does not pull perf assemblies unless you name them
+   explicitly.
 
-If the asmdef ends up in the `core` bucket instead, the most common cause is the `name` field missing the magic substring. Rename the asmdef (and its file) so the substring is present.
+If the asmdef ends up in the `core` bucket instead, the most common cause is the `name` field missing the magic substring. Rename the asmdef (and its file) so the substring is
+present.
 
 ## Where Perf Actually Runs
 
@@ -90,13 +96,10 @@ If the asmdef ends up in the `core` bucket instead, the most common cause is the
 | `unity-tests.yml`      | PR / nightly manual dispatch | NO             |
 | `unity-benchmarks.yml` | dispatch                     | YES            |
 
-The active `.github/workflows/unity-*.yml` workflows run Unity directly on
-self-hosted Windows runners through `scripts/unity/run-ci-tests.ps1` (benchmarks
-included). The `.github/workflows-disabled/*` files are the ubuntu reference
-mirrors kept for parity, not the live templates. Note: each editor-scoped
-`unity-tests.yml` job runs `standalone` after EditMode and PlayMode; the direct
-runner maps it to `StandaloneWindows64` and configures IL2CPP in the generated project.
-Verify the active workflows still exist any time you edit them:
+The active `.github/workflows/unity-*.yml` workflows run Unity directly on self-hosted Windows runners through `scripts/unity/run-ci-tests.ps1` (benchmarks included). The
+`.github/workflows-disabled/*` files are the ubuntu reference mirrors kept for parity, not the live templates. Note: each editor-scoped `unity-tests.yml` job runs `standalone`
+after EditMode and PlayMode; the direct runner maps it to `StandaloneWindows64` and configures IL2CPP in the generated project. Verify the active workflows still exist any time you
+edit them:
 
 ```bash
 test -e .github/workflows/unity-tests.yml
@@ -105,11 +108,20 @@ test -e .github/workflows/unity-benchmarks.yml
 
 ## Comparison Suites
 
-Comparison asmdefs live under `Tests/Runtime/Comparisons/` (with bridges under `Tests/Runtime/Comparisons/External/` and `Tests/Runtime/Comparisons/UnityAtoms/`) and benchmark against external libraries such as MessagePipe, UniRx, UniTask, Zenject, and Unity Atoms. They are a separate opt-in from `--include-perf`: enable them via `includeComparisons` (the `compute-unity-assemblies` action's `include-comparisons` input, or `run-ci-tests.ps1 -IncludeComparisons`).
+Comparison asmdefs live under `Tests/Runtime/Comparisons/` (with bridges under `Tests/Runtime/Comparisons/External/` and `Tests/Runtime/Comparisons/UnityAtoms/`) and benchmark
+against external libraries such as MessagePipe, UniRx, UniTask, Zenject, and Unity Atoms. They are a separate opt-in from `--include-perf`: enable them via `includeComparisons`
+(the `compute-unity-assemblies` action's `include-comparisons` input, or `run-ci-tests.ps1 -IncludeComparisons`).
 
-The external comparison packages and their required Unity built-in packages are installed from the single source `.github/comparison-packages.json` (registry scopes + PINNED versions + Unity built-ins). `run-ci-tests.ps1 -IncludeComparisons` injects that registry, those pins, and those built-ins into the ephemeral comparison manifest; the committed `.unity-test-project/Packages/manifest.json` and `.unity-test-project/Packages/packages-lock.json` mirror them for local parity. Bump versions/modules in the JSON only; see [Comparison Parity and Package Single Source](../../test-code-quality/references/comparison-parity-and-package-single-source.md).
+The external comparison packages and their required Unity built-in packages are installed from the single source `.github/comparison-packages.json` (registry scopes + PINNED
+versions + Unity built-ins). `run-ci-tests.ps1 -IncludeComparisons` injects that registry, those pins, and those built-ins into the ephemeral comparison manifest; the committed
+`.unity-test-project/Packages/manifest.json` and `.unity-test-project/Packages/packages-lock.json` mirror them for local parity. Bump versions/modules in the JSON only; see
+[Comparison Parity and Package Single Source](../../test-code-quality/references/comparison-parity-and-package-single-source.md).
 
-Comparisons RUN in CI, not only as a manual local manifest step: `perf-numbers.yml` runs isolated internal and comparison matrix entries on nightly or manual dispatch, and the comparison entry alone passes `include-comparisons: true` to the composite. To run them locally, the host project's manifest must already include the external comparison packages; then drive the comparison assemblies through `DxMcpTestRunner.Run` over the MCP loop (see [Unity MCP Test Loop](../../unity-mcp-test-loop/references/mcp-test-loop.md)). Unity compiles each external bridge only when its package is present, because the asmdef `versionDefines` (sourced from `.github/comparison-packages.json`) guard each bridge; the zero-dependency baselines always compile.
+Comparisons RUN in CI, not only as a manual local manifest step: `perf-numbers.yml` runs isolated internal and comparison matrix entries on nightly or manual dispatch, and the
+comparison entry alone passes `include-comparisons: true` to the composite. To run them locally, the host project's manifest must already include the external comparison packages;
+then drive the comparison assemblies through `DxMcpTestRunner.Run` over the MCP loop (see [Unity MCP Test Loop](../../unity-mcp-test-loop/references/mcp-test-loop.md)). Unity
+compiles each external bridge only when its package is present, because the asmdef `versionDefines` (sourced from `.github/comparison-packages.json`) guard each bridge; the
+zero-dependency baselines always compile.
 
 ## Classification Invariants
 

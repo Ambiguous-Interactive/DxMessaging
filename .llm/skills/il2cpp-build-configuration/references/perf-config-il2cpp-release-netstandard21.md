@@ -1,69 +1,45 @@
 # Perf Config: IL2CPP Release, .NET Standard 2.1
 
-> **One-line summary**: The published numbers come from ONE leg: a Standalone
-> IL2CPP player built as a true Release player (`BuildOptions.Development`
-> stripped, Release IL2CPP C++ configuration) against .NET Standard 2.1 with
-> Release code optimization. PlayMode and EditMode remain local/CI test
-> scopes; their numbers are not published.
+> **One-line summary**: The published numbers come from ONE leg: a Standalone IL2CPP player built as a true Release player (`BuildOptions.Development` stripped, Release IL2CPP C++
+> configuration) against .NET Standard 2.1 with Release code optimization. PlayMode and EditMode remain local/CI test scopes; their numbers are not published.
 
 ## Overview
 
-A throughput number is only reproducible if the build profile that produced it
-is fixed. DxMessaging pins Release mode for every Unity test/build and drives
-CI from a single runner, `scripts/unity/run-ci-tests.ps1`.
+A throughput number is only reproducible if the build profile that produced it is fixed. DxMessaging pins Release mode for every Unity test/build and drives CI from a single
+runner, `scripts/unity/run-ci-tests.ps1`.
 
-One leg is published. The headline is a Standalone player built under IL2CPP,
-the ahead-of-time (AOT) backend shipped players actually run, with the
-.NET Standard 2.1 API surface and every Release knob engaged. PlayMode and
-EditMode run the same scenarios for local iteration and for manually dispatched
-per-version benchmark-test coverage in `unity-benchmarks.yml`; their allocation
-counts and bytes are not part of the published workflow.
+One leg is published. The headline is a Standalone player built under IL2CPP, the ahead-of-time (AOT) backend shipped players actually run, with the .NET Standard 2.1 API surface
+and every Release knob engaged. PlayMode and EditMode run the same scenarios for local iteration and for manually dispatched per-version benchmark-test coverage in
+`unity-benchmarks.yml`; their allocation counts and bytes are not part of the published workflow.
 
 ## Problem Statement
 
 Three failure modes make perf numbers meaningless:
 
-- **Unstated or mixed profiles.** A Debug EditMode number and a Release player
-  number in the same table are not comparable. Without a pinned profile a
-  regression and a build-flag change look identical.
-- **A development player posing as Release.** Unity Test Framework's
-  PlayerLauncher injects `BuildOptions.Development` into the build options by
-  default. The resulting player reports `Debug.isDebugBuild == true` (published
-  runs showed "x64 Debug" platform strings until the strip landed) and carries
-  development-build overhead; the C++ configuration is pinned separately so it
-  can never ride on a development default.
-- **Stripped test assemblies.** A default Release player strips managed code,
-  which removes the benchmark assemblies and the `[Preserve]` standalone
-  test-run callback, so the player runs nothing.
+- **Unstated or mixed profiles.** A Debug EditMode number and a Release player number in the same table are not comparable. Without a pinned profile a regression and a build-flag
+  change look identical.
+- **A development player posing as Release.** Unity Test Framework's PlayerLauncher injects `BuildOptions.Development` into the build options by default. The resulting player
+  reports `Debug.isDebugBuild == true` (published runs showed "x64 Debug" platform strings until the strip landed) and carries development-build overhead; the C++ configuration is
+  pinned separately so it can never ride on a development default.
+- **Stripped test assemblies.** A default Release player strips managed code, which removes the benchmark assemblies and the `[Preserve]` standalone test-run callback, so the
+  player runs nothing.
 
 ## Solution: the three Release knobs
 
-`run-ci-tests.ps1` accepts the historical Release switches for compatibility,
-but Release is the unconditional effective mode. The published leg engages all
-three knobs:
+`run-ci-tests.ps1` accepts the historical Release switches for compatibility, but Release is the unconditional effective mode. The published leg engages all three knobs:
 
-1. **`-ReleaseCodeOptimization` (editor compilation).** Adds the editor flag
-   `-releaseCodeOptimization`, which sets
-   `CompilationPipeline.codeOptimization = Release` so test assemblies compile
-   without debug code paths. Every Unity CI leg passes this, including the
-   non-published EditMode/PlayMode legs.
-1. **`-ReleasePlayerBuild` (strip `BuildOptions.Development`).** The generated
-   test-player build modifier must actively CLEAR the flag, because the Unity
-   Test Framework's PlayerLauncher hands `ModifyOptions` a
-   `BuildPlayerOptions` that already carries `BuildOptions.Development`;
-   merely not adding the flag leaves a development player:
+1. **`-ReleaseCodeOptimization` (editor compilation).** Adds the editor flag `-releaseCodeOptimization`, which sets `CompilationPipeline.codeOptimization = Release` so test
+   assemblies compile without debug code paths. Every Unity CI leg passes this, including the non-published EditMode/PlayMode legs.
+1. **`-ReleasePlayerBuild` (strip `BuildOptions.Development`).** The generated test-player build modifier must actively CLEAR the flag, because the Unity Test Framework's
+   PlayerLauncher hands `ModifyOptions` a `BuildPlayerOptions` that already carries `BuildOptions.Development`; merely not adding the flag leaves a development player:
 
    ```text
    playerOptions.options &= ~BuildOptions.Development;
    ```
 
-1. **Release IL2CPP C++ configuration (configurator).** The project
-   configurator pins the native compiler configuration explicitly: an ephemeral
-   CI project has no committed default for the setting, and the pin removes the
-   variable regardless of how the build flags would otherwise influence it.
-   Measured CI runs showed Debug C++ reduces native compile time but makes the
-   standalone test player much slower, so both the correctness leg and the
-   published perf leg stay Release:
+1. **Release IL2CPP C++ configuration (configurator).** The project configurator pins the native compiler configuration explicitly: an ephemeral CI project has no committed default
+   for the setting, and the pin removes the variable regardless of how the build flags would otherwise influence it. Measured CI runs showed Debug C++ reduces native compile time
+   but makes the standalone test player much slower, so both the correctness leg and the published perf leg stay Release:
 
    ```text
    PlayerSettings.SetIl2CppCompilerConfiguration(BuildTargetGroup.Standalone, Il2CppCompilerConfiguration.Release);
@@ -79,8 +55,7 @@ three knobs:
 
 ## .NET Standard 2.1 and stripping
 
-The Standalone leg additionally configures the player from the parameterized
-backend (`ScriptingImplementation.IL2CPP` for the published leg):
+The Standalone leg additionally configures the player from the parameterized backend (`ScriptingImplementation.IL2CPP` for the published leg):
 
 ```text
 PlayerSettings.SetScriptingBackend(BuildTargetGroup.Standalone, ScriptingImplementation.IL2CPP);
@@ -88,50 +63,33 @@ PlayerSettings.SetApiCompatibilityLevel(BuildTargetGroup.Standalone, ApiCompatib
 PlayerSettings.SetManagedStrippingLevel(BuildTargetGroup.Standalone, ManagedStrippingLevel.Disabled);
 ```
 
-`ApiCompatibilityLevel.NET_Standard` is the non-deprecated profile that targets
-.NET Standard 2.1. `ManagedStrippingLevel.Disabled` keeps the test assemblies
-and the `[Preserve]` callback in the player so the standalone benchmark run can
-execute and write results. The runner's `StandaloneScriptingBackend` parameter
-defaults to `IL2CPP` and accepts `Mono2x`, so the same script can build either
-backend; the published leg pins IL2CPP.
+`ApiCompatibilityLevel.NET_Standard` is the non-deprecated profile that targets .NET Standard 2.1. `ManagedStrippingLevel.Disabled` keeps the test assemblies and the `[Preserve]`
+callback in the player so the standalone benchmark run can execute and write results. The runner's `StandaloneScriptingBackend` parameter defaults to `IL2CPP` and accepts `Mono2x`,
+so the same script can build either backend; the published leg pins IL2CPP.
 
-The separate shipping-fidelity cells use Minimal, Low, Medium, and High managed
-stripping and exclude test assemblies. Each cell builds through
-`BuildPipeline.BuildPlayer` instead of Unity Test Framework, then runs positive
-generated-root coverage and an expected missing-root control from the same
-binary.
+The separate shipping-fidelity cells use Minimal, Low, Medium, and High managed stripping and exclude test assemblies. Each cell builds through `BuildPipeline.BuildPlayer` instead
+of Unity Test Framework, then runs positive generated-root coverage and an expected missing-root control from the same binary.
 
 ## Canonical profile
 
-`.github/perf/canonical-il2cpp-profile.v1.json` is the reviewed source of truth
-for the published standalone IL2CPP leg.
-The four shipping-fidelity profiles under `.github/perf/` are the reviewed
-sources of truth for the stripped correctness players. The existing
-`.github/perf/shipping-fidelity-il2cpp-profile.v1.json` remains the High profile.
-Each workflow passes its selected file through `-CanonicalProfilePath`. The
-runner copies the exact bytes under the source filename and writes a SHA-256
-file to the run artifacts, then embeds the profile ID and hash in generated
-editor and player code.
+`.github/perf/canonical-il2cpp-profile.v1.json` is the reviewed source of truth for the published standalone IL2CPP leg. The four shipping-fidelity profiles under `.github/perf/`
+are the reviewed sources of truth for the stripped correctness players. The existing `.github/perf/shipping-fidelity-il2cpp-profile.v1.json` remains the High profile. Each workflow
+passes its selected file through `-CanonicalProfilePath`. The runner copies the exact bytes under the source filename and writes a SHA-256 file to the run artifacts, then embeds
+the profile ID and hash in generated editor and player code.
 
-The profile also pins `Il2CppCodeGeneration.OptimizeSpeed`, incremental GC,
-engine-code stripping, and the final `BuildOptions` flags. Keep these values in
-the JSON file instead of relying on defaults in an ephemeral Unity project.
+The profile also pins `Il2CppCodeGeneration.OptimizeSpeed`, incremental GC, engine-code stripping, and the final `BuildOptions` flags. Keep these values in the JSON file instead of
+relying on defaults in an ephemeral Unity project.
 
 ## Proving the profile
 
 Five JSON evidence files prove a published run used the reviewed profile:
 
-- `configured-profile.json` records the effective player settings after the
-  configurator applies them.
-- `prebuild-profile.json` and `postbuild-profile.json` record the settings in
-  the actual build process before and after Unity builds the player.
-- `build-options-profile.json` records the final options from Unity's
-  post-build `BuildReport`.
+- `configured-profile.json` records the effective player settings after the configurator applies them.
+- `prebuild-profile.json` and `postbuild-profile.json` record the settings in the actual build process before and after Unity builds the player.
+- `build-options-profile.json` records the final options from Unity's post-build `BuildReport`.
 - `runtime-profile.json` records `Debug.isDebugBuild` inside the player.
 
-`validate-il2cpp-profile.ps1` rejects a missing or extra property, a type or
-value mismatch, and a profile hash mismatch. The run cannot publish after any
-of those failures.
+`validate-il2cpp-profile.ps1` rejects a missing or extra property, a type or value mismatch, and a profile hash mismatch. The run cannot publish after any of those failures.
 
 Two diagnostic surfaces remain useful when investigating a failure:
 
@@ -141,80 +99,49 @@ Two diagnostic surfaces remain useful when investigating a failure:
   DXM perf config: backend=..., api=..., codeOpt=..., il2cppConfig=..., il2cppCodeGeneration=...
   ```
 
-  For the published leg that line must show `backend=IL2CPP`,
-  `api=NET_Standard_2_0`, `codeOpt=Release`, and `il2cppConfig=Release`.
+  For the published leg that line must show `backend=IL2CPP`, `api=NET_Standard_2_0`, `codeOpt=Release`, and `il2cppConfig=Release`.
 
-- Each benchmark row encodes the effective platform string. The published leg
-  must read `Standalone IL2CPP x64 Release (WindowsPlayer; ...)`. A published
-  row reading `x64 Debug` means `Debug.isDebugBuild` was true in the player:
-  a configuration bug (the Development flag survived the build), not a code
-  regression.
+- Each benchmark row encodes the effective platform string. The published leg must read `Standalone IL2CPP x64 Release (WindowsPlayer; ...)`. A published row reading `x64 Debug`
+  means `Debug.isDebugBuild` was true in the player: a configuration bug (the Development flag survived the build), not a code regression.
 
 ## CI Wiring
 
-The Performance Numbers workflow (`.github/workflows/perf-numbers.yml`) runs one
-`standalone` matrix cell with `StandaloneScriptingBackend = 'IL2CPP'` on top of
-`ReleasePlayerBuild`, `ReleaseCodeOptimization`, and the canonical profile. The
-regression gate (`render-perf-deltas.js`) compares `--scope Standalone` rows
-against the committed master baseline. The
-manually dispatched `unity-benchmarks.yml` runs the EditMode and PlayMode
-benchmark tests across Unity versions with `-ReleaseCodeOptimization` for
-coverage only.
+The Performance Numbers workflow (`.github/workflows/perf-numbers.yml`) runs one `standalone` matrix cell with `StandaloneScriptingBackend = 'IL2CPP'` on top of
+`ReleasePlayerBuild`, `ReleaseCodeOptimization`, and the canonical profile. The regression gate (`render-perf-deltas.js`) compares `--scope Standalone` rows against the committed
+master baseline. The manually dispatched `unity-benchmarks.yml` runs the EditMode and PlayMode benchmark tests across Unity versions with `-ReleaseCodeOptimization` for coverage
+only.
 
-The Unity Tests workflow runs all four shipping-fidelity profiles on the oldest
-and newest supported editors. Each profile uses an isolated project and
-artifact directory. Its evidence is correctness-only and never enters the
-published benchmark baseline.
+The Unity Tests workflow runs all four shipping-fidelity profiles on the oldest and newest supported editors. Each profile uses an isolated project and artifact directory. Its
+evidence is correctness-only and never enters the published benchmark baseline.
 
-Each shipping cell also writes four diagnostic evidence files. The runner
-validates the build report and both player results fail-closed before it writes
-the cell summary, which only joins values those checks already accepted:
+Each shipping cell also writes four diagnostic evidence files. The runner validates the build report and both player results fail-closed before it writes the cell summary, which
+only joins values those checks already accepted:
 
-- `shipping-build-report.json` comes from the generated builder and the same
-  `BuildReport` as `build-options-profile.json`: build result, Unix epoch start
-  and end, a Stopwatch duration, Unity's reported total time and size, and every
-  build step with its duration. The stamps are integers because
-  `ConvertFrom-Json` rehydrates an ISO 8601 string into a `DateTime`.
-- Both `shipping-positive.json` and `shipping-missing-root-mutant.json` (schema 3) carry a `timings` object. The positive run measures bus construction, root
-  probes, registration, first typed dispatch, the typed and untyped phases, a
-  1,000,000-emit dispatch loop after a discarded warm-up, a forced trim, and
-  teardown. Every phase uses `Stopwatch`; engine start to first script reads
-  `Time.realtimeSinceStartupAsDouble`. The mutant measures none of them and
-  marks each phase `-1`, so a fabricated `0` cannot stand in for work that never
-  ran.
-- `shipping-cell-evidence.json` joins those with the Library cache state, the
-  editor wall clock, player byte count, and `GameAssembly.dll` size. The matrix
-  wrapper copies every completed cell row into `shipping-matrix-evidence.json`
-  at the artifact root and prints one table per endpoint editor. It copies
-  whatever the runner wrote rather than redeclaring the shape, so the two files
-  cannot drift.
+- `shipping-build-report.json` comes from the generated builder and the same `BuildReport` as `build-options-profile.json`: build result, Unix epoch start and end, a Stopwatch
+  duration, Unity's reported total time and size, and every build step with its duration. The stamps are integers because `ConvertFrom-Json` rehydrates an ISO 8601 string into a
+  `DateTime`.
+- Both `shipping-positive.json` and `shipping-missing-root-mutant.json` (schema 3) carry a `timings` object. The positive run measures bus construction, root probes, registration,
+  first typed dispatch, the typed and untyped phases, a 1,000,000-emit dispatch loop after a discarded warm-up, a forced trim, and teardown. Every phase uses `Stopwatch`; engine
+  start to first script reads `Time.realtimeSinceStartupAsDouble`. The mutant measures none of them and marks each phase `-1`, so a fabricated `0` cannot stand in for work that
+  never ran.
+- `shipping-cell-evidence.json` joins those with the Library cache state, the editor wall clock, player byte count, and `GameAssembly.dll` size. The matrix wrapper copies every
+  completed cell row into `shipping-matrix-evidence.json` at the artifact root and prints one table per endpoint editor. It copies whatever the runner wrote rather than redeclaring
+  the shape, so the two files cannot drift.
 
-Treat these values as characterization of one clean build and one fresh player
-launch. The two joined files, `shipping-cell-evidence.json` and
-`shipping-matrix-evidence.json`, carry `measurementClass: "characterization"`;
-the three files above do not, because their exact property lists are validated
-fail-closed and an extra field would be rejected. They are not
-throughput rows and do not use the paired bracket protocol. The dispatch-loop
-rate is a fixed-count average that includes the harness counting each delivery,
-and the semantic cell loops a class message while the cardinality cells loop a
-struct, so only cells sharing a shape are comparable.
+Treat these values as characterization of one clean build and one fresh player launch. The two joined files, `shipping-cell-evidence.json` and `shipping-matrix-evidence.json`,
+carry `measurementClass: "characterization"`; the three files above do not, because their exact property lists are validated fail-closed and an extra field would be rejected. They
+are not throughput rows and do not use the paired bracket protocol. The dispatch-loop rate is a fixed-count average that includes the harness counting each delivery, and the
+semantic cell loops a class message while the cardinality cells loop a struct, so only cells sharing a shape are comparable.
 
 ## Common Pitfalls
 
-- "I will publish the Debug EditMode number; it is close enough." Debug changes
-  the absolute throughput. Publish the Release player leg only.
-- "I will leave default stripping on the player." Default stripping deletes the
-  benchmark assemblies; the player runs nothing. Keep stripping Disabled for the
-  perf leg.
-- "Not setting `BuildOptions.Development` is enough." It is not; the Unity Test
-  Framework injects the flag, so the build modifier must clear it with
-  `&= ~BuildOptions.Development`.
-- "PlayMode and Standalone should report the same throughput." They run
-  different backends (Mono JIT vs IL2CPP AOT) with different codegen, so the
-  numbers differ by design. Read each scope against its own backend.
-- "I will leave a Unity workflow without Release flags because the runner
-  defaults Release." The runner default is the backstop; workflows still spell
-  out Release flags explicitly so YAML drift is visible in review.
+- "I will publish the Debug EditMode number; it is close enough." Debug changes the absolute throughput. Publish the Release player leg only.
+- "I will leave default stripping on the player." Default stripping deletes the benchmark assemblies; the player runs nothing. Keep stripping Disabled for the perf leg.
+- "Not setting `BuildOptions.Development` is enough." It is not; the Unity Test Framework injects the flag, so the build modifier must clear it with `&= ~BuildOptions.Development`.
+- "PlayMode and Standalone should report the same throughput." They run different backends (Mono JIT vs IL2CPP AOT) with different codegen, so the numbers differ by design. Read
+  each scope against its own backend.
+- "I will leave a Unity workflow without Release flags because the runner defaults Release." The runner default is the backstop; workflows still spell out Release flags explicitly
+  so YAML drift is visible in review.
 
 ## See Also
 

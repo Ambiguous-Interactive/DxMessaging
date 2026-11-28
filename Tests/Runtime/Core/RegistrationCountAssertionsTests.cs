@@ -34,15 +34,7 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             StubCountingMessageBus bus = new(untargeted: 3, targeted: 5, broadcast: 7);
 
-            Assert.DoesNotThrow(() =>
-                RegistrationCountAssertions.AssertRegistrationCounts(
-                    bus,
-                    untargeted: 3,
-                    targeted: 5,
-                    broadcast: 7,
-                    context: "match path"
-                )
-            );
+            Assert.DoesNotThrow(() => RegistrationCountAssertions.AssertRegistrationCounts(bus, untargeted: 3, targeted: 5, broadcast: 7, context: "match path"));
         }
 
         public static IEnumerable FailureMessageCases()
@@ -55,14 +47,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 "second component disabled",
                 true,
                 "explicitBus",
-                new[]
-                {
-                    "Targeted: expected 5, actual 4 (delta -1)",
-                    "Untargeted=1, Targeted=4, Broadcast=3",
-                    "second component disabled",
-                    "explicitBus",
-                    "Bucketing reminder",
-                },
+                new[] { "Targeted: expected 5, actual 4 (delta -1)", "Untargeted=1, Targeted=4, Broadcast=3", "second component disabled", "explicitBus", "Bucketing reminder" },
                 new[] { "Untargeted: expected 1, actual 1", "Broadcast: expected 3, actual 3" }
             ).SetName("single targeted mismatch includes explicit bus label");
 
@@ -123,15 +108,7 @@ namespace DxMessaging.Tests.Runtime.Core
         )
         {
             AssertionException exception = Assert.Throws<AssertionException>(() =>
-                RegistrationCountAssertions.AssertRegistrationCounts(
-                    bus,
-                    untargeted,
-                    targeted,
-                    broadcast,
-                    context,
-                    includeBucketingReminder,
-                    busExpression: busExpression
-                )
+                RegistrationCountAssertions.AssertRegistrationCounts(bus, untargeted, targeted, broadcast, context, includeBucketingReminder, busExpression: busExpression)
             );
 
             string message = exception.Message;
@@ -153,19 +130,11 @@ namespace DxMessaging.Tests.Runtime.Core
         public void HelperAutoBusExpressionIsCapabilityDetected()
         {
             bool supportsCallerArgumentExpression = SupportsCallerArgumentExpression();
-            TestContext.Out.WriteLine(
-                $"CallerArgumentExpression auto-capture supported: {supportsCallerArgumentExpression}"
-            );
+            TestContext.Out.WriteLine($"CallerArgumentExpression auto-capture supported: {supportsCallerArgumentExpression}");
             StubCountingMessageBus expectedBusName = new(untargeted: 1, targeted: 4, broadcast: 3);
 
             AssertionException exception = Assert.Throws<AssertionException>(() =>
-                RegistrationCountAssertions.AssertRegistrationCounts(
-                    expectedBusName,
-                    untargeted: 1,
-                    targeted: 5,
-                    broadcast: 3,
-                    context: "auto expression"
-                )
+                RegistrationCountAssertions.AssertRegistrationCounts(expectedBusName, untargeted: 1, targeted: 5, broadcast: 3, context: "auto expression")
             );
 
             if (supportsCallerArgumentExpression)
@@ -182,13 +151,7 @@ namespace DxMessaging.Tests.Runtime.Core
         public void HelperThrowsArgumentNullExceptionForNullBus()
         {
             ArgumentNullException exception = Assert.Throws<ArgumentNullException>(() =>
-                RegistrationCountAssertions.AssertRegistrationCounts(
-                    bus: null,
-                    untargeted: 0,
-                    targeted: 0,
-                    broadcast: 0,
-                    context: "null bus path"
-                )
+                RegistrationCountAssertions.AssertRegistrationCounts(bus: null, untargeted: 0, targeted: 0, broadcast: 0, context: "null bus path")
             );
 
             Assert.AreEqual("bus", exception.ParamName);
@@ -200,11 +163,7 @@ namespace DxMessaging.Tests.Runtime.Core
             return CaptureBusExpression(probeBus) == nameof(probeBus);
         }
 
-        private static string CaptureBusExpression(
-            IMessageBus bus,
-            [System.Runtime.CompilerServices.CallerArgumentExpression("bus")]
-                string busExpression = null
-        )
+        private static string CaptureBusExpression(IMessageBus bus, [System.Runtime.CompilerServices.CallerArgumentExpression("bus")] string busExpression = null)
         {
             return busExpression;
         }

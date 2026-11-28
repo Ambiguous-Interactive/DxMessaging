@@ -32,27 +32,12 @@ internal sealed class DocsSnippetCompilationTests
     public void ReceiverExamplesHaveCompleteClassSyntax(string relativePath, string marker)
     {
         string path = Path.Combine(ResolveRepoRoot(), relativePath);
-        string[] examples = ExtractCodeBlocks(path, "csharp")
-            .Where(source => source.Contains(marker, StringComparison.Ordinal))
-            .ToArray();
+        string[] examples = ExtractCodeBlocks(path, "csharp").Where(source => source.Contains(marker, StringComparison.Ordinal)).ToArray();
         Assert.That(examples, Has.Length.EqualTo(1), path + ": " + marker);
-        SyntaxTree tree = CSharpSyntaxTree.ParseText(
-            examples[0],
-            new CSharpParseOptions(LanguageVersion.CSharp9)
-        );
-        Diagnostic[] errors = tree.GetDiagnostics()
-            .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
-            .ToArray();
-        Assert.That(
-            errors,
-            Is.Empty,
-            path + ": complete class-file syntax\n" + string.Join("\n", errors.AsEnumerable())
-        );
-        Assert.That(
-            tree.GetRoot().DescendantNodes().OfType<GlobalStatementSyntax>(),
-            Is.Empty,
-            path + ": Unity class files cannot contain executable top-level statements"
-        );
+        SyntaxTree tree = CSharpSyntaxTree.ParseText(examples[0], new CSharpParseOptions(LanguageVersion.CSharp9));
+        Diagnostic[] errors = tree.GetDiagnostics().Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error).ToArray();
+        Assert.That(errors, Is.Empty, path + ": complete class-file syntax\n" + string.Join("\n", errors.AsEnumerable()));
+        Assert.That(tree.GetRoot().DescendantNodes().OfType<GlobalStatementSyntax>(), Is.Empty, path + ": Unity class files cannot contain executable top-level statements");
     }
 
     /// <summary>Keep changes made by synchronous listeners pending for the next batch.</summary>
@@ -67,9 +52,7 @@ internal sealed class DocsSnippetCompilationTests
     public void BatchedHealthExamplePreservesListenerChanges(string scenario, int[] expected)
     {
         string path = Path.Combine(ResolveRepoRoot(), "docs/guides/patterns.md");
-        string[] samples = ExtractCodeBlocks(path, "csharp")
-            .Where(source => source.Contains("private bool healthDirty", StringComparison.Ordinal))
-            .ToArray();
+        string[] samples = ExtractCodeBlocks(path, "csharp").Where(source => source.Contains("private bool healthDirty", StringComparison.Ordinal)).ToArray();
         Assert.That(samples, Has.Length.EqualTo(1), path);
         // Execute the actual methods unchanged. Only the synchronous callback and message
         // dependencies are fixtures; this does not qualify Unity dispatch or frame scheduling.
@@ -100,20 +83,12 @@ internal sealed class DocsSnippetCompilationTests
                         => owner.Record(message.Value);
                 }
                 """;
-        string[] references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(
-            Path.PathSeparator
-        );
+        string[] references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator);
         CSharpCompilation compilation = CSharpCompilation.Create(
             "BatchExample_" + Guid.NewGuid().ToString("N"),
-            new[]
-            {
-                CSharpSyntaxTree.ParseText(source, new CSharpParseOptions(LanguageVersion.CSharp9)),
-            },
+            new[] { CSharpSyntaxTree.ParseText(source, new CSharpParseOptions(LanguageVersion.CSharp9)) },
             references.Select(reference => MetadataReference.CreateFromFile(reference)),
-            new CSharpCompilationOptions(
-                OutputKind.DynamicallyLinkedLibrary,
-                generalDiagnosticOption: ReportDiagnostic.Error
-            )
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, generalDiagnosticOption: ReportDiagnostic.Error)
         );
         using MemoryStream image = new();
         Microsoft.CodeAnalysis.Emit.EmitResult emitted = compilation.Emit(image);
@@ -131,10 +106,7 @@ internal sealed class DocsSnippetCompilationTests
             Action<int> listener = _ =>
             {
                 callbacks++;
-                if (
-                    scenario == "reentrant" && callbacks == 1
-                    || scenario == "repeated" && callbacks <= 3
-                )
+                if (scenario == "reentrant" && callbacks == 1 || scenario == "repeated" && callbacks <= 3)
                 {
                     damage.Invoke(example, new object[] { 5 });
                 }
@@ -157,11 +129,7 @@ internal sealed class DocsSnippetCompilationTests
             for (int frame = 1; frame <= 4; frame++)
             {
                 flush.Invoke(example, null);
-                Assert.That(
-                    values,
-                    Is.EqualTo(expected.Take(frame + 1)),
-                    scenario + ": flush " + (frame + 1)
-                );
+                Assert.That(values, Is.EqualTo(expected.Take(frame + 1)), scenario + ": flush " + (frame + 1));
             }
             Assert.That(callbacks, Is.EqualTo(expected.Length), scenario + ": callback count");
         }
@@ -180,10 +148,7 @@ internal sealed class DocsSnippetCompilationTests
     {
         string path = Path.Combine(ResolveRepoRoot(), "docs/guides/patterns.md");
         string[] samples = ExtractCodeBlocks(path, "csharp")
-            .Where(code =>
-                code.Contains("class GameEvent :", StringComparison.Ordinal)
-                && code.Contains("EventBridge : MonoBehaviour", StringComparison.Ordinal)
-            )
+            .Where(code => code.Contains("class GameEvent :", StringComparison.Ordinal) && code.Contains("EventBridge : MonoBehaviour", StringComparison.Ordinal))
             .ToArray();
         Assert.That(samples, Has.Length.EqualTo(1), path);
         ClassDeclarationSyntax[] classes = CSharpSyntaxTree
@@ -191,24 +156,15 @@ internal sealed class DocsSnippetCompilationTests
             .GetRoot()
             .DescendantNodes()
             .OfType<ClassDeclarationSyntax>()
-            .Where(type =>
-                type.Identifier.ValueText == "GameEvent"
-                || type.Identifier.ValueText.EndsWith("EventBridge", StringComparison.Ordinal)
-            )
+            .Where(type => type.Identifier.ValueText == "GameEvent" || type.Identifier.ValueText.EndsWith("EventBridge", StringComparison.Ordinal))
             .ToArray();
         Assert.That(classes, Has.Length.EqualTo(2), "Execute both actual documented classes.");
-        ClassDeclarationSyntax bridgeDeclaration = classes.Single(type =>
-            type.Identifier.ValueText.EndsWith("EventBridge", StringComparison.Ordinal)
-        );
+        ClassDeclarationSyntax bridgeDeclaration = classes.Single(type => type.Identifier.ValueText.EndsWith("EventBridge", StringComparison.Ordinal));
         Assert.That(bridgeDeclaration.Members.OfType<ConstructorDeclarationSyntax>(), Is.Empty);
         // Give the standalone compiler an observable serialized-field assignment. The
         // extracted fields and lifecycle methods stay unchanged; only this fixture constructor is added.
         classes[Array.IndexOf(classes, bridgeDeclaration)] = bridgeDeclaration.AddMembers(
-            SyntaxFactory.ParseMemberDeclaration(
-                "public "
-                    + bridgeDeclaration.Identifier.ValueText
-                    + "(GameEvent initialEvent) { onSceneTransitionSO = initialEvent; }"
-            )!
+            SyntaxFactory.ParseMemberDeclaration("public " + bridgeDeclaration.Identifier.ValueText + "(GameEvent initialEvent) { onSceneTransitionSO = initialEvent; }")!
         );
         // Only class-body subscription ownership is qualified here. The fixtures do not
         // model Unity fake-null, asset destruction, native lifecycle scheduling or bus delivery.
@@ -232,20 +188,12 @@ internal sealed class DocsSnippetCompilationTests
                     public static void Emit(this ref SceneTransitionRequested message) { Count++; }
                 }
                 """;
-        string[] references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(
-            Path.PathSeparator
-        );
+        string[] references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator);
         CSharpCompilation compilation = CSharpCompilation.Create(
             "SoaBridge_" + Guid.NewGuid().ToString("N"),
-            new[]
-            {
-                CSharpSyntaxTree.ParseText(source, new CSharpParseOptions(LanguageVersion.CSharp9)),
-            },
+            new[] { CSharpSyntaxTree.ParseText(source, new CSharpParseOptions(LanguageVersion.CSharp9)) },
             references.Select(reference => MetadataReference.CreateFromFile(reference)),
-            new CSharpCompilationOptions(
-                OutputKind.DynamicallyLinkedLibrary,
-                generalDiagnosticOption: ReportDiagnostic.Error
-            )
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, generalDiagnosticOption: ReportDiagnostic.Error)
         );
         using MemoryStream image = new();
         Microsoft.CodeAnalysis.Emit.EmitResult emitted = compilation.Emit(image);
@@ -255,51 +203,28 @@ internal sealed class DocsSnippetCompilationTests
         {
             image.Position = 0;
             System.Reflection.Assembly assembly = load.LoadFromStream(image);
-            Type bridgeType = assembly.GetType(
-                bridgeDeclaration.Identifier.ValueText,
-                throwOnError: true
-            )!;
+            Type bridgeType = assembly.GetType(bridgeDeclaration.Identifier.ValueText, throwOnError: true)!;
             Type eventType = assembly.GetType("GameEvent", throwOnError: true)!;
             object original = Activator.CreateInstance(eventType)!;
             object replacement = Activator.CreateInstance(eventType)!;
             object bridge = Activator.CreateInstance(bridgeType, new[] { original })!;
             object otherBridge = Activator.CreateInstance(bridgeType, new[] { original })!;
             const System.Reflection.BindingFlags members =
-                System.Reflection.BindingFlags.Instance
-                | System.Reflection.BindingFlags.Public
-                | System.Reflection.BindingFlags.NonPublic;
-            System.Reflection.FieldInfo asset = bridgeType.GetField(
-                "onSceneTransitionSO",
-                members
-            )!;
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic;
+            System.Reflection.FieldInfo asset = bridgeType.GetField("onSceneTransitionSO", members)!;
             System.Reflection.FieldInfo listeners = eventType.GetField("listeners", members)!;
-            System.Reflection.FieldInfo emissions = assembly
-                .GetType("EmissionFixture")!
-                .GetField("Count")!;
+            System.Reflection.FieldInfo emissions = assembly.GetType("EmissionFixture")!.GetField("Count")!;
             System.Reflection.MethodInfo enable = bridgeType.GetMethod("OnEnable", members)!;
             System.Reflection.MethodInfo disable = bridgeType.GetMethod("OnDisable", members)!;
             System.Reflection.MethodInfo raise = eventType.GetMethod("Raise")!;
-            int Count(object publisher) =>
-                ((System.Collections.ICollection)listeners.GetValue(publisher)!).Count;
+            int Count(object publisher) => ((System.Collections.ICollection)listeners.GetValue(publisher)!).Count;
             void AssertCounts(int originalCount, int replacementCount, int emittedCount)
             {
                 Assert.Multiple(() =>
                 {
-                    Assert.That(
-                        Count(original),
-                        Is.EqualTo(originalCount),
-                        referenceChange + ": original listeners"
-                    );
-                    Assert.That(
-                        Count(replacement),
-                        Is.EqualTo(replacementCount),
-                        referenceChange + ": replacement listeners"
-                    );
-                    Assert.That(
-                        emissions.GetValue(null),
-                        Is.EqualTo(emittedCount),
-                        referenceChange + ": emissions"
-                    );
+                    Assert.That(Count(original), Is.EqualTo(originalCount), referenceChange + ": original listeners");
+                    Assert.That(Count(replacement), Is.EqualTo(replacementCount), referenceChange + ": replacement listeners");
+                    Assert.That(emissions.GetValue(null), Is.EqualTo(emittedCount), referenceChange + ": emissions");
                 });
             }
             asset.SetValue(bridge, original);
@@ -348,20 +273,14 @@ internal sealed class DocsSnippetCompilationTests
             {
                 foreach (bool wrongModifier in new[] { false, true })
                 {
-                    yield return new TestCaseData(kind, valueType, wrongModifier).SetName(
-                        $"BusFirst_{kind}_struct{valueType}_wrongModifier{wrongModifier}"
-                    );
+                    yield return new TestCaseData(kind, valueType, wrongModifier).SetName($"BusFirst_{kind}_struct{valueType}_wrongModifier{wrongModifier}");
                 }
             }
         }
     }
 
     [TestCaseSource(nameof(BusFirstModifierCases))]
-    public void SnippetCompilerPreservesProductionBusFirstModifiers(
-        string kind,
-        bool valueType,
-        bool wrongModifier
-    )
+    public void SnippetCompilerPreservesProductionBusFirstModifiers(string kind, bool valueType, bool wrongModifier)
     {
         string context = kind == "Untargeted" ? "" : "new InstanceId(7), ";
         string modifier = valueType != wrongModifier ? "ref " : "";
@@ -378,10 +297,7 @@ internal sealed class DocsSnippetCompilationTests
             + context
             + modifier
             + "message); } }";
-        Diagnostic[] errors = DocsSnippetCompiler
-            .CompileSnippet(source)
-            .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
-            .ToArray();
+        Diagnostic[] errors = DocsSnippetCompiler.CompileSnippet(source).Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error).ToArray();
         if (wrongModifier)
         {
             Assert.That(errors, Has.Length.EqualTo(1), string.Join("\n", errors.AsEnumerable()));
@@ -393,10 +309,7 @@ internal sealed class DocsSnippetCompilationTests
         }
     }
 
-    private static readonly CSharpParseOptions UnityReferenceParseOptions = new(
-        LanguageVersion.CSharp9,
-        preprocessorSymbols: new[] { "UNITY_2021_3_OR_NEWER" }
-    );
+    private static readonly CSharpParseOptions UnityReferenceParseOptions = new(LanguageVersion.CSharp9, preprocessorSymbols: new[] { "UNITY_2021_3_OR_NEWER" });
 
     /// <summary>Keep bus reference declarations aligned with the actual public interface.</summary>
     /// <remarks>2026-10-22: Stub compilation accepted obsolete Action return types in API declarations.</remarks>
@@ -444,19 +357,12 @@ internal sealed class DocsSnippetCompilationTests
             .GetRoot()
             .DescendantNodes()
             .OfType<MethodDeclarationSyntax>()
-            .Where(method =>
-                method.Identifier.ValueText == methodName
-                && method.Parent is TypeDeclarationSyntax owner
-                && owner.Identifier.ValueText == declaringType
-            )
+            .Where(method => method.Identifier.ValueText == methodName && method.Parent is TypeDeclarationSyntax owner && owner.Identifier.ValueText == declaringType)
             .ToArray();
         MethodDeclarationSyntax[] documentedMethods = ExtractCodeBlocks(referencePath, "csharp")
             .SelectMany(snippet =>
                 CSharpSyntaxTree
-                    .ParseText(
-                        "interface ReferenceSignatures {\n" + snippet + "\n}",
-                        UnityReferenceParseOptions
-                    )
+                    .ParseText("interface ReferenceSignatures {\n" + snippet + "\n}", UnityReferenceParseOptions)
                     .GetRoot()
                     .DescendantNodes()
                     .OfType<MethodDeclarationSyntax>()
@@ -471,40 +377,18 @@ internal sealed class DocsSnippetCompilationTests
         }
         foreach (MethodDeclarationSyntax documented in documentedMethods)
         {
-            string[] parameterTypes = documented
-                .ParameterList.Parameters.Select(parameter => SignatureText(parameter.Type))
-                .ToArray();
+            string[] parameterTypes = documented.ParameterList.Parameters.Select(parameter => SignatureText(parameter.Type)).ToArray();
             MethodDeclarationSyntax[] matches = runtimeMethods
-                .Where(method =>
-                    method
-                        .ParameterList.Parameters.Select(parameter => SignatureText(parameter.Type))
-                        .SequenceEqual(parameterTypes)
-                )
+                .Where(method => method.ParameterList.Parameters.Select(parameter => SignatureText(parameter.Type)).SequenceEqual(parameterTypes))
                 .ToArray();
             Assert.That(matches, Has.Length.EqualTo(1), label + " must match one actual overload");
             MethodDeclarationSyntax runtimeMethod = matches[0];
             Assert.Multiple(() =>
             {
-                Assert.That(
-                    SignatureText(documented.ReturnType),
-                    Is.EqualTo(SignatureText(runtimeMethod.ReturnType)),
-                    label + " return type"
-                );
-                Assert.That(
-                    SignatureText(documented.TypeParameterList),
-                    Is.EqualTo(SignatureText(runtimeMethod.TypeParameterList)),
-                    label + " type parameters"
-                );
-                Assert.That(
-                    SignatureText(documented.ParameterList),
-                    Is.EqualTo(SignatureText(runtimeMethod.ParameterList)),
-                    label + " parameters"
-                );
-                Assert.That(
-                    documented.ConstraintClauses.Select(SignatureText),
-                    Is.EqualTo(runtimeMethod.ConstraintClauses.Select(SignatureText)),
-                    label + " constraints"
-                );
+                Assert.That(SignatureText(documented.ReturnType), Is.EqualTo(SignatureText(runtimeMethod.ReturnType)), label + " return type");
+                Assert.That(SignatureText(documented.TypeParameterList), Is.EqualTo(SignatureText(runtimeMethod.TypeParameterList)), label + " type parameters");
+                Assert.That(SignatureText(documented.ParameterList), Is.EqualTo(SignatureText(runtimeMethod.ParameterList)), label + " parameters");
+                Assert.That(documented.ConstraintClauses.Select(SignatureText), Is.EqualTo(runtimeMethod.ConstraintClauses.Select(SignatureText)), label + " constraints");
             });
         }
     }
@@ -512,11 +396,7 @@ internal sealed class DocsSnippetCompilationTests
     private static string SignatureText(SyntaxNode? node)
     {
         // The Unity reference shortens UnityEngine types while retaining their public names.
-        return node?.WithoutTrivia()
-            .NormalizeWhitespace()
-            .ToFullString()
-            .Replace("UnityEngine.", string.Empty, StringComparison.Ordinal)
-            ?? string.Empty;
+        return node?.WithoutTrivia().NormalizeWhitespace().ToFullString().Replace("UnityEngine.", string.Empty, StringComparison.Ordinal) ?? string.Empty;
     }
 
     [TestCase(0)]
@@ -527,18 +407,11 @@ internal sealed class DocsSnippetCompilationTests
     {
         string migrationPath = Path.Combine(ResolveDocsRoot(), "guides", "migration-guide.md");
         string[] samples = System
-            .Text.RegularExpressions.Regex.Matches(
-                File.ReadAllText(migrationPath),
-                @"```csharp\s*\r?\n(?<code>[\s\S]*?)```"
-            )
+            .Text.RegularExpressions.Regex.Matches(File.ReadAllText(migrationPath), @"```csharp\s*\r?\n(?<code>[\s\S]*?)```")
             .Select(match => match.Groups["code"].Value)
             .Where(code => code.Contains("public class LegacyBridge :", StringComparison.Ordinal))
             .ToArray();
-        Assert.That(
-            samples,
-            Has.Length.EqualTo(1),
-            "Expected exactly one documented LegacyBridge sample."
-        );
+        Assert.That(samples, Has.Length.EqualTo(1), "Expected exactly one documented LegacyBridge sample.");
 
         /*
             Execute the documented bridge unchanged. The fixtures supply its publisher,
@@ -582,38 +455,18 @@ internal sealed class DocsSnippetCompilationTests
                 public static void Emit(this ref SomethingHappened message) => Values.Add(message.Value);
             }
             """;
-        string[] platformAssemblies = (
-            (string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!
-        ).Split(Path.PathSeparator);
-        Microsoft.CodeAnalysis.CSharp.CSharpCompilation compilation =
-            Microsoft.CodeAnalysis.CSharp.CSharpCompilation.Create(
-                "MigrationBridgeLifecycle",
-                new[]
-                {
-                    Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(
-                        "using UnityEngine;\n" + samples[0] + "\n" + fixtures
-                    ),
-                },
-                platformAssemblies.Select(path =>
-                    Microsoft.CodeAnalysis.MetadataReference.CreateFromFile(path)
-                ),
-                new Microsoft.CodeAnalysis.CSharp.CSharpCompilationOptions(
-                    Microsoft.CodeAnalysis.OutputKind.DynamicallyLinkedLibrary
-                )
-            );
+        string[] platformAssemblies = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator);
+        Microsoft.CodeAnalysis.CSharp.CSharpCompilation compilation = Microsoft.CodeAnalysis.CSharp.CSharpCompilation.Create(
+            "MigrationBridgeLifecycle",
+            new[] { Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText("using UnityEngine;\n" + samples[0] + "\n" + fixtures) },
+            platformAssemblies.Select(path => Microsoft.CodeAnalysis.MetadataReference.CreateFromFile(path)),
+            new Microsoft.CodeAnalysis.CSharp.CSharpCompilationOptions(Microsoft.CodeAnalysis.OutputKind.DynamicallyLinkedLibrary)
+        );
         using MemoryStream assemblyBytes = new();
         Microsoft.CodeAnalysis.Emit.EmitResult result = compilation.Emit(assemblyBytes);
-        Assert.That(
-            result.Success,
-            Is.True,
-            "The actual bridge sample must compile without ignored errors: "
-                + string.Join("\n", result.Diagnostics)
-        );
+        Assert.That(result.Success, Is.True, "The actual bridge sample must compile without ignored errors: " + string.Join("\n", result.Diagnostics));
         assemblyBytes.Position = 0;
-        System.Runtime.Loader.AssemblyLoadContext loadContext = new(
-            "MigrationBridgeLifecycle",
-            isCollectible: true
-        );
+        System.Runtime.Loader.AssemblyLoadContext loadContext = new("MigrationBridgeLifecycle", isCollectible: true);
         try
         {
             System.Reflection.Assembly assembly = loadContext.LoadFromStream(assemblyBytes);
@@ -623,35 +476,18 @@ internal sealed class DocsSnippetCompilationTests
             object originalPublisher = Activator.CreateInstance(publisherType)!;
             object replacementPublisher = Activator.CreateInstance(publisherType)!;
             const System.Reflection.BindingFlags instanceMembers =
-                System.Reflection.BindingFlags.Instance
-                | System.Reflection.BindingFlags.Public
-                | System.Reflection.BindingFlags.NonPublic;
-            System.Reflection.FieldInfo publisherField = bridgeType.GetField(
-                "legacySystem",
-                instanceMembers
-            )!;
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic;
+            System.Reflection.FieldInfo publisherField = bridgeType.GetField("legacySystem", instanceMembers)!;
             System.Reflection.MethodInfo raise = publisherType.GetMethod("Raise")!;
-            System.Reflection.PropertyInfo subscriptions = publisherType.GetProperty(
-                "SubscriptionCount"
-            )!;
-            IList<int> values =
-                (IList<int>)
-                    assembly.GetType("EmissionFixture")!.GetField("Values")!.GetValue(null)!;
+            System.Reflection.PropertyInfo subscriptions = publisherType.GetProperty("SubscriptionCount")!;
+            IList<int> values = (IList<int>)assembly.GetType("EmissionFixture")!.GetField("Values")!.GetValue(null)!;
             int[] firstExpected = { 11 };
             publisherField.SetValue(bridge, originalPublisher);
             bridgeType.GetMethod("Awake", instanceMembers)?.Invoke(bridge, null);
             bridgeType.GetMethod("OnEnable", instanceMembers)?.Invoke(bridge, null);
-            Assert.That(
-                subscriptions.GetValue(originalPublisher),
-                Is.EqualTo(1),
-                "An enabled bridge needs exactly one subscription."
-            );
+            Assert.That(subscriptions.GetValue(originalPublisher), Is.EqualTo(1), "An enabled bridge needs exactly one subscription.");
             raise.Invoke(originalPublisher, new object[] { 11 });
-            Assert.That(
-                values,
-                Is.EqualTo(firstExpected),
-                "An enabled bridge must forward the original event payload exactly once."
-            );
+            Assert.That(values, Is.EqualTo(firstExpected), "An enabled bridge must forward the original event payload exactly once.");
 
             object? nextPublisher = publisherChange switch
             {
@@ -665,9 +501,7 @@ internal sealed class DocsSnippetCompilationTests
                 publisherType.GetField("IsDestroyed")!.SetValue(originalPublisher, true);
                 Assert.That(ReferenceEquals(originalPublisher, null), Is.False);
                 Assert.That(
-                    publisherType
-                        .BaseType!.GetMethod("IsNullForComparison")!
-                        .Invoke(null, new[] { originalPublisher }),
+                    publisherType.BaseType!.GetMethod("IsNullForComparison")!.Invoke(null, new[] { originalPublisher }),
                     Is.True,
                     "The destroyed publisher keeps its C# event while comparing equal to Unity null."
                 );
@@ -677,16 +511,8 @@ internal sealed class DocsSnippetCompilationTests
             raise.Invoke(replacementPublisher, new object[] { 33 });
             Assert.Multiple(() =>
             {
-                Assert.That(
-                    subscriptions.GetValue(originalPublisher),
-                    Is.EqualTo(0),
-                    "Disable must remove the original subscription after reassignment or publisher destruction."
-                );
-                Assert.That(
-                    values,
-                    Is.EqualTo(firstExpected),
-                    "Disabled bridges must not forward either publisher's events."
-                );
+                Assert.That(subscriptions.GetValue(originalPublisher), Is.EqualTo(0), "Disable must remove the original subscription after reassignment or publisher destruction.");
+                Assert.That(values, Is.EqualTo(firstExpected), "Disabled bridges must not forward either publisher's events.");
             });
 
             bridgeType.GetMethod("OnEnable", instanceMembers)?.Invoke(bridge, null);
@@ -698,29 +524,13 @@ internal sealed class DocsSnippetCompilationTests
                 2 or 3 => new[] { 11 },
                 _ => new[] { 11, 44 },
             };
-            Assert.That(
-                values,
-                Is.EqualTo(expected),
-                "Re-enable must subscribe only to the configured live publisher; null or destroyed publishers forward nothing."
-            );
+            Assert.That(values, Is.EqualTo(expected), "Re-enable must subscribe only to the configured live publisher; null or destroyed publishers forward nothing.");
             bridgeType.GetMethod("OnDisable", instanceMembers)?.Invoke(bridge, null);
-            Assert.That(
-                subscriptions.GetValue(originalPublisher),
-                Is.EqualTo(0),
-                "Final disable must leave no original-publisher subscription."
-            );
-            Assert.That(
-                subscriptions.GetValue(replacementPublisher),
-                Is.EqualTo(0),
-                "Final disable must leave no replacement-publisher subscription."
-            );
+            Assert.That(subscriptions.GetValue(originalPublisher), Is.EqualTo(0), "Final disable must leave no original-publisher subscription.");
+            Assert.That(subscriptions.GetValue(replacementPublisher), Is.EqualTo(0), "Final disable must leave no replacement-publisher subscription.");
             raise.Invoke(originalPublisher, new object[] { 66 });
             raise.Invoke(replacementPublisher, new object[] { 77 });
-            Assert.That(
-                values,
-                Is.EqualTo(expected),
-                "Neither publisher may retain the bridge after final disable."
-            );
+            Assert.That(values, Is.EqualTo(expected), "Neither publisher may retain the bridge after final disable.");
         }
         finally
         {
@@ -733,9 +543,7 @@ internal sealed class DocsSnippetCompilationTests
     public void DocsTestSdkAcceptsAvailableNet10FeatureBands()
     {
         string globalJsonPath = Path.Combine(ResolveRepoRoot(), ".docs-tests", "global.json");
-        using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(
-            File.ReadAllText(globalJsonPath)
-        );
+        using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(globalJsonPath));
         System.Text.Json.JsonElement sdk = document.RootElement.GetProperty("sdk");
 
         Assert.That(
@@ -743,11 +551,7 @@ internal sealed class DocsSnippetCompilationTests
             Is.EqualTo("10.0.100"),
             "The docs test SDK must use the first .NET 10 feature-band floor so Dependabot can run on any available .NET 10 SDK."
         );
-        Assert.That(
-            sdk.GetProperty("rollForward").GetString(),
-            Is.EqualTo("latestFeature"),
-            "The docs test SDK must roll forward across installed .NET 10 feature bands."
-        );
+        Assert.That(sdk.GetProperty("rollForward").GetString(), Is.EqualTo("latestFeature"), "The docs test SDK must roll forward across installed .NET 10 feature bands.");
     }
 
     private static readonly HashSet<string> ContextOnlyDiagnosticIds = new(StringComparer.Ordinal)
@@ -768,23 +572,18 @@ internal sealed class DocsSnippetCompilationTests
     /// </summary>
     private static readonly System.Text.RegularExpressions.Regex HtmlCodeElementRegex = new(
         @"<code(?<attrs>[^>]*)>(?<body>.*?)</code\s*>",
-        System.Text.RegularExpressions.RegexOptions.Compiled
-            | System.Text.RegularExpressions.RegexOptions.IgnoreCase
-            | System.Text.RegularExpressions.RegexOptions.Singleline
+        System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline
     );
 
     /// <summary>Inline presentation markup nested inside a code element.</summary>
     private static readonly System.Text.RegularExpressions.Regex HtmlTagRegex = new(
         @"<[^>]+>",
-        System.Text.RegularExpressions.RegexOptions.Compiled
-            | System.Text.RegularExpressions.RegexOptions.Singleline
+        System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.Singleline
     );
 
     private static readonly System.Text.RegularExpressions.Regex JinjaSetBlockRegex = new(
         @"{%-?\s*set\s+(?<name>[A-Za-z_][A-Za-z0-9_]*)\s*-?%}(?<body>.*?){%-?\s*endset\s*-?%}",
-        System.Text.RegularExpressions.RegexOptions.Compiled
-            | System.Text.RegularExpressions.RegexOptions.IgnoreCase
-            | System.Text.RegularExpressions.RegexOptions.Singleline
+        System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline
     );
 
     private static readonly System.Text.RegularExpressions.Regex TemporaryEmitRegex = new(
@@ -807,34 +606,26 @@ internal sealed class DocsSnippetCompilationTests
         System.Text.RegularExpressions.RegexOptions.Compiled
     );
 
-    private static readonly System.Text.RegularExpressions.Regex LegacyBroadcastRegex = new(
-        @"\.\s*EmitBroadcast\s*\(",
-        System.Text.RegularExpressions.RegexOptions.Compiled
-    );
+    private static readonly System.Text.RegularExpressions.Regex LegacyBroadcastRegex = new(@"\.\s*EmitBroadcast\s*\(", System.Text.RegularExpressions.RegexOptions.Compiled);
 
     private static readonly System.Text.RegularExpressions.Regex NullDelegateAssignmentRegex = new(
         @"(?im)^[^\r\n]*(?:Action\s*<|FastHandler|Interceptor|Callback|Processor|Observer|\bhandler\b)[^\r\n]*=\s*(?:default\s*!?|null)\s*;",
-        System.Text.RegularExpressions.RegexOptions.Compiled
-            | System.Text.RegularExpressions.RegexOptions.IgnoreCase
+        System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.IgnoreCase
     );
 
-    private static readonly System.Text.RegularExpressions.Regex NullRegistrationArgumentRegex =
-        new(
-            @"(?im)^[^\r\n]*\bRegister(?:Untargeted|GameObjectTargeted|ComponentTargeted|Targeted|TargetedWithoutTargeting|GameObjectBroadcast|ComponentBroadcast|Broadcast|BroadcastWithoutSource|GlobalAcceptAll)[A-Za-z0-9_]*(?:<[^>\r\n]+>)?\s*\([^\r\n]*(?:\bnull\b|\bdefault\s*!?\b)[^\r\n]*$",
-            System.Text.RegularExpressions.RegexOptions.Compiled
-                | System.Text.RegularExpressions.RegexOptions.IgnoreCase
-        );
+    private static readonly System.Text.RegularExpressions.Regex NullRegistrationArgumentRegex = new(
+        @"(?im)^[^\r\n]*\bRegister(?:Untargeted|GameObjectTargeted|ComponentTargeted|Targeted|TargetedWithoutTargeting|GameObjectBroadcast|ComponentBroadcast|Broadcast|BroadcastWithoutSource|GlobalAcceptAll)[A-Za-z0-9_]*(?:<[^>\r\n]+>)?\s*\([^\r\n]*(?:\bnull\b|\bdefault\s*!?\b)[^\r\n]*$",
+        System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.IgnoreCase
+    );
 
-    private static readonly System.Text.RegularExpressions.Regex WritableHandlerRegistrationRegex =
-        new(
-            @"(?is)\.\s*Register(?!MessageHandlers\b)(?![A-Za-z0-9_]*Interceptor\b)[A-Za-z0-9_]*(?:<[^;>{}]+>)?\s*\([^;{}]{0,500}?\(\s*ref\s+",
-            System.Text.RegularExpressions.RegexOptions.Compiled
-        );
+    private static readonly System.Text.RegularExpressions.Regex WritableHandlerRegistrationRegex = new(
+        @"(?is)\.\s*Register(?!MessageHandlers\b)(?![A-Za-z0-9_]*Interceptor\b)[A-Za-z0-9_]*(?:<[^;>{}]+>)?\s*\([^;{}]{0,500}?\(\s*ref\s+",
+        System.Text.RegularExpressions.RegexOptions.Compiled
+    );
 
     private static readonly System.Text.RegularExpressions.Regex RegistrationOverrideRegex = new(
         @"protected\s+override\s+void\s+RegisterMessageHandlers\s*\(\s*\)\s*(?:\{(?<body>.*?)\}|(?<body>=>[^;\r\n]*;))",
-        System.Text.RegularExpressions.RegexOptions.Compiled
-            | System.Text.RegularExpressions.RegexOptions.Singleline
+        System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.Singleline
     );
 
     private static readonly System.Text.RegularExpressions.Regex RegistrationBaseCallRegex = new(
@@ -842,41 +633,34 @@ internal sealed class DocsSnippetCompilationTests
         System.Text.RegularExpressions.RegexOptions.Compiled
     );
 
-    private static readonly System.Text.RegularExpressions.Regex PostProcessorRegistrationRegex =
-        new(
-            @"\bRegister[A-Za-z0-9_]*PostProcessor\s*<[^>]+>\s*\((?<arguments>(?:(?!\)\s*;)[\s\S]){0,600}?)\)\s*;",
-            System.Text.RegularExpressions.RegexOptions.Compiled
-        );
+    private static readonly System.Text.RegularExpressions.Regex PostProcessorRegistrationRegex = new(
+        @"\bRegister[A-Za-z0-9_]*PostProcessor\s*<[^>]+>\s*\((?<arguments>(?:(?!\)\s*;)[\s\S]){0,600}?)\)\s*;",
+        System.Text.RegularExpressions.RegexOptions.Compiled
+    );
 
-    private static readonly System.Text.RegularExpressions.Regex AmbiguousPostProcessorOutcomeRegex =
-        new(
-            @"\b(?:Log|Track|Record|Save|Count|Publish|Apply|Show|Update|After)(?![A-Za-z]*(?:Processed|Completed|Dispatch|Message|Request))[A-Za-z]*(?:Damage|Heal|Health|Scene|Level)[A-Za-z]*\b",
-            System.Text.RegularExpressions.RegexOptions.Compiled
-                | System.Text.RegularExpressions.RegexOptions.IgnoreCase
-        );
+    private static readonly System.Text.RegularExpressions.Regex AmbiguousPostProcessorOutcomeRegex = new(
+        @"\b(?:Log|Track|Record|Save|Count|Publish|Apply|Show|Update|After)(?![A-Za-z]*(?:Processed|Completed|Dispatch|Message|Request))[A-Za-z]*(?:Damage|Heal|Health|Scene|Level)[A-Za-z]*\b",
+        System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.IgnoreCase
+    );
 
     private static readonly System.Text.RegularExpressions.Regex UntargetedEntityHealthRegex = new(
         @"(?:DxUntargetedMessage\](?:(?!Dx(?:Untargeted|Targeted|Broadcast)Message).){0,180}?\b(?:struct|class)\s+|RegisterUntargeted(?:PostProcessor|Interceptor)?\s*<\s*)(?<type>Heal(?:Request(?:ed)?)?|HealPlayerRequested|ApplyDamage|DealDamage|DamageMessage|DamageRequested|InflictDamage|TookDamage|DamageTaken|DamageApplied|HealthLost|HealthChanged|HealthReduced|[A-Za-z0-9_]*(?:Damaged|Healed))(?![A-Za-z0-9_])",
-        System.Text.RegularExpressions.RegexOptions.Compiled
-            | System.Text.RegularExpressions.RegexOptions.Singleline
+        System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.Singleline
     );
 
     private static readonly System.Text.RegularExpressions.Regex TargetedHealthOutcomeRegex = new(
         @"(?:DxTargetedMessage\](?:(?!Dx(?:Untargeted|Targeted|Broadcast)Message).){0,180}?\b(?:struct|class)\s+|Register(?:GameObject|Component)?Targeted(?:WithoutTargeting)?(?:PostProcessor|Interceptor)?\s*<\s*)(?<type>TookDamage|DamageTaken|DamageApplied|HealthLost|HealthChanged|HealthReduced|[A-Za-z0-9_]*(?:Damaged|Healed))(?![A-Za-z0-9_])",
-        System.Text.RegularExpressions.RegexOptions.Compiled
-            | System.Text.RegularExpressions.RegexOptions.Singleline
+        System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.Singleline
     );
 
     private static readonly System.Text.RegularExpressions.Regex BroadcastHealthCommandRegex = new(
         @"(?:DxBroadcastMessage\](?:(?!Dx(?:Untargeted|Targeted|Broadcast)Message).){0,180}?\b(?:struct|class)\s+|Register(?:GameObject|Component)?Broadcast(?:WithoutSource)?(?:PostProcessor|Interceptor)?\s*<\s*)(?<type>Heal(?:Request(?:ed)?)?|HealPlayerRequested|ApplyDamage|DealDamage|DamageMessage|DamageRequested|InflictDamage)(?![A-Za-z0-9_])",
-        System.Text.RegularExpressions.RegexOptions.Compiled
-            | System.Text.RegularExpressions.RegexOptions.Singleline
+        System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.Singleline
     );
 
     private static readonly System.Text.RegularExpressions.Regex UntargetedEntityFactRegex = new(
         @"(?:DxUntargetedMessage\](?:(?!Dx(?:Untargeted|Targeted|Broadcast)Message).){0,180}?\b(?:struct|class)\s+|RegisterUntargeted(?:PostProcessor|Interceptor)?\s*<\s*)(?<type>Player(?:Spawned|Died|Moved|Damaged)|ButtonClicked|EntityDamaged)(?![A-Za-z0-9_])",
-        System.Text.RegularExpressions.RegexOptions.Compiled
-            | System.Text.RegularExpressions.RegexOptions.Singleline
+        System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.Singleline
     );
 
     [Test]
@@ -889,20 +673,12 @@ internal sealed class DocsSnippetCompilationTests
         string snippet = ExtractFirstCodeBlock(quickStartPath, "csharp");
         Assert.That(!string.IsNullOrWhiteSpace(snippet), Is.True, "QuickStart snippet not found.");
 
-        var diagnostics = DocsSnippetCompiler
-            .CompileDocSnippet(snippet)
-            .Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
-            .ToArray();
+        var diagnostics = DocsSnippetCompiler.CompileDocSnippet(snippet).Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error).ToArray();
 
         if (diagnostics.Length > 0)
         {
-            string message = string.Join(
-                System.Environment.NewLine,
-                diagnostics.Select(d => d.ToString())
-            );
-            Assert.Fail(
-                $"QuickStart snippet failed to compile:{System.Environment.NewLine}{message}"
-            );
+            string message = string.Join(System.Environment.NewLine, diagnostics.Select(d => d.ToString()));
+            Assert.Fail($"QuickStart snippet failed to compile:{System.Environment.NewLine}{message}");
         }
     }
 
@@ -910,17 +686,13 @@ internal sealed class DocsSnippetCompilationTests
     public void SnippetCompilerPromotesOrdinaryWarningsToErrors()
     {
         Microsoft.CodeAnalysis.Diagnostic[] diagnostics = DocsSnippetCompiler
-            .CompileSnippet(
-                "public sealed class WarningSample { public void Run() { int unused = 42; } }"
-            )
+            .CompileSnippet("public sealed class WarningSample { public void Run() { int unused = 42; } }")
             .ToArray();
 
         Assert.That(
             diagnostics,
             Has.Some.Matches<Microsoft.CodeAnalysis.Diagnostic>(diagnostic =>
-                diagnostic is not null
-                && diagnostic.Id == "CS0219"
-                && diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error
+                diagnostic is not null && diagnostic.Id == "CS0219" && diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error
             ),
             "The snippet compiler must fail documentation builds on ordinary compiler warnings."
         );
@@ -930,38 +702,26 @@ internal sealed class DocsSnippetCompilationTests
     public void SnippetCompilerRejectsUnassignedFields()
     {
         Microsoft.CodeAnalysis.Diagnostic[] diagnostics = DocsSnippetCompiler
-            .CompileSnippet(
-                "public sealed class UnassignedSample { private int value; public int Read() => value; }"
-            )
+            .CompileSnippet("public sealed class UnassignedSample { private int value; public int Read() => value; }")
             .ToArray();
 
         Assert.That(
             diagnostics,
             Has.Some.Matches<Microsoft.CodeAnalysis.Diagnostic>(diagnostic =>
-                diagnostic is not null
-                && diagnostic.Id == "CS0649"
-                && diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error
+                diagnostic is not null && diagnostic.Id == "CS0649" && diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error
             ),
             "Ordinary unassigned fields must remain fatal; externally assigned examples must initialize fields explicitly."
         );
         Assert.That(
             diagnostics,
-            Has.None.Matches<Microsoft.CodeAnalysis.Diagnostic>(diagnostic =>
-                diagnostic is not null && diagnostic.Id == "CS1591"
-            ),
+            Has.None.Matches<Microsoft.CodeAnalysis.Diagnostic>(diagnostic => diagnostic is not null && diagnostic.Id == "CS1591"),
             "CS1591 must remain ignored because standalone snippets and synthetic stubs are not complete public API assemblies."
         );
 
-        diagnostics = DocsSnippetCompiler
-            .CompileDocSnippet(
-                "public sealed class SerializedSample { [SerializeField] private int value; public int Read() => value; }"
-            )
-            .ToArray();
+        diagnostics = DocsSnippetCompiler.CompileDocSnippet("public sealed class SerializedSample { [SerializeField] private int value; public int Read() => value; }").ToArray();
         Assert.That(
             diagnostics,
-            Has.None.Matches<Microsoft.CodeAnalysis.Diagnostic>(diagnostic =>
-                diagnostic is not null && diagnostic.Id == "CS0649"
-            ),
+            Has.None.Matches<Microsoft.CodeAnalysis.Diagnostic>(diagnostic => diagnostic is not null && diagnostic.Id == "CS0649"),
             "Unity-serialized fields are the narrow external-assignment exception."
         );
     }
@@ -970,32 +730,20 @@ internal sealed class DocsSnippetCompilationTests
     public void SnippetCompilerStillRejectsMalformedXmlDocumentation()
     {
         Microsoft.CodeAnalysis.Diagnostic[] diagnostics = DocsSnippetCompiler
-            .CompileSnippet(
-                "/// <summary>Broken <see cref=\"System.String\"></summary>\npublic sealed class BrokenDocumentation { }"
-            )
+            .CompileSnippet("/// <summary>Broken <see cref=\"System.String\"></summary>\npublic sealed class BrokenDocumentation { }")
             .ToArray();
 
         Assert.That(
             diagnostics,
             Has.Some.Matches<Microsoft.CodeAnalysis.Diagnostic>(diagnostic =>
-                diagnostic is not null
-                && diagnostic.Id == "CS1570"
-                && diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error
+                diagnostic is not null && diagnostic.Id == "CS1570" && diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error
             ),
             "Malformed XML documentation must remain fatal even though missing public API comments are outside the snippet contract."
         );
     }
 
-    [TestCase(
-        "public static int Convert() => \"wrong\";",
-        "CS0029",
-        TestName = "Snippet compiler rejects invalid conversions"
-    )]
-    [TestCase(
-        "public static void Accept(int value) { } public static void Run() => Accept(\"wrong\");",
-        "CS1503",
-        TestName = "Snippet compiler rejects invalid argument types"
-    )]
+    [TestCase("public static int Convert() => \"wrong\";", "CS0029", TestName = "Snippet compiler rejects invalid conversions")]
+    [TestCase("public static void Accept(int value) { } public static void Run() => Accept(\"wrong\");", "CS1503", TestName = "Snippet compiler rejects invalid argument types")]
     [TestCase(
         "using DxMessaging.Core.Attributes; [DxAutoConstructor] public partial struct Generated { public int value; } public static class Usage { public static Generated Create() => new Generated(1, 2); }",
         "CS1729",
@@ -1016,9 +764,7 @@ internal sealed class DocsSnippetCompilationTests
         Assert.That(
             diagnostics,
             Has.Some.Matches<Microsoft.CodeAnalysis.Diagnostic>(diagnostic =>
-                diagnostic is not null
-                && diagnostic.Id == diagnosticId
-                && diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error
+                diagnostic is not null && diagnostic.Id == diagnosticId && diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error
             )
         );
     }
@@ -1048,10 +794,7 @@ internal sealed class DocsSnippetCompilationTests
         "CS0509",
         TestName = "MessageHandler documentation stub remains sealed"
     )]
-    public void SnippetCompilerEnforcesReadonlyParameterAndHandlerContracts(
-        string source,
-        string diagnosticId
-    )
+    public void SnippetCompilerEnforcesReadonlyParameterAndHandlerContracts(string source, string diagnosticId)
     {
         Microsoft.CodeAnalysis.Diagnostic[] diagnostics = DocsSnippetCompiler
             .CompileSnippet(source)
@@ -1061,9 +804,7 @@ internal sealed class DocsSnippetCompilationTests
         Assert.That(
             diagnostics,
             Has.Some.Matches<Microsoft.CodeAnalysis.Diagnostic>(diagnostic =>
-                diagnostic is not null
-                && diagnostic.Id == diagnosticId
-                && diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error
+                diagnostic is not null && diagnostic.Id == diagnosticId && diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error
             ),
             $"The readonly contract snippet must report {diagnosticId}."
         );
@@ -1072,11 +813,7 @@ internal sealed class DocsSnippetCompilationTests
     [TestCaseSource(nameof(GetDocumentationSnippets))]
     public void DocumentationSnippetsCompile(string markdownPath, string snippet)
     {
-        Assert.That(
-            snippet,
-            Is.Not.Empty,
-            $"Snippet extracted from {markdownPath} should not be empty."
-        );
+        Assert.That(snippet, Is.Not.Empty, $"Snippet extracted from {markdownPath} should not be empty.");
 
         var diagnostics = DocsSnippetCompiler
             .CompileDocSnippet(snippet)
@@ -1086,24 +823,15 @@ internal sealed class DocsSnippetCompilationTests
 
         if (diagnostics.Length > 0)
         {
-            string message = string.Join(
-                System.Environment.NewLine,
-                diagnostics.Select(d => d.ToString())
-            );
-            Assert.Fail(
-                $"Documentation snippet in {markdownPath} failed to compile:{System.Environment.NewLine}{message}"
-            );
+            string message = string.Join(System.Environment.NewLine, diagnostics.Select(d => d.ToString()));
+            Assert.Fail($"Documentation snippet in {markdownPath} failed to compile:{System.Environment.NewLine}{message}");
         }
     }
 
     [TestCaseSource(nameof(GetHtmlOverrideCSharpSnippets))]
     public void HtmlOverrideCSharpSnippetsCompile(string htmlPath, string snippet)
     {
-        Assert.That(
-            snippet,
-            Is.Not.Empty,
-            $"Snippet extracted from {htmlPath} should not be empty."
-        );
+        Assert.That(snippet, Is.Not.Empty, $"Snippet extracted from {htmlPath} should not be empty.");
 
         var diagnostics = DocsSnippetCompiler
             .CompileDocSnippet(snippet)
@@ -1113,13 +841,8 @@ internal sealed class DocsSnippetCompilationTests
 
         if (diagnostics.Length > 0)
         {
-            string message = string.Join(
-                System.Environment.NewLine,
-                diagnostics.Select(d => d.ToString())
-            );
-            Assert.Fail(
-                $"HTML override snippet in {htmlPath} failed to compile:{System.Environment.NewLine}{message}"
-            );
+            string message = string.Join(System.Environment.NewLine, diagnostics.Select(d => d.ToString()));
+            Assert.Fail($"HTML override snippet in {htmlPath} failed to compile:{System.Environment.NewLine}{message}");
         }
     }
 
@@ -1127,18 +850,13 @@ internal sealed class DocsSnippetCompilationTests
     public void DocumentationDoesNotEmitStructMessagesFromTemporaries()
     {
         var violations = GetTemporaryEmitDocumentationSources()
-            .SelectMany(source =>
-                FindTemporaryEmitViolations(source.Path, source.Text)
-                    .Select(violation => $"{source.Path}:{violation.Line}: {violation.Text}")
-            )
+            .SelectMany(source => FindTemporaryEmitViolations(source.Path, source.Text).Select(violation => $"{source.Path}:{violation.Line}: {violation.Text}"))
             .ToArray();
 
         Assert.That(
             violations,
             Is.Empty,
-            "Docs must assign struct messages to locals before Emit* calls:"
-                + System.Environment.NewLine
-                + string.Join(System.Environment.NewLine, violations)
+            "Docs must assign struct messages to locals before Emit* calls:" + System.Environment.NewLine + string.Join(System.Environment.NewLine, violations)
         );
     }
 
@@ -1150,11 +868,7 @@ internal sealed class DocsSnippetCompilationTests
                 NullDelegateAssignmentRegex
                     .Matches(source.Text)
                     .Cast<System.Text.RegularExpressions.Match>()
-                    .Concat(
-                        NullRegistrationArgumentRegex
-                            .Matches(source.Text)
-                            .Cast<System.Text.RegularExpressions.Match>()
-                    )
+                    .Concat(NullRegistrationArgumentRegex.Matches(source.Text).Cast<System.Text.RegularExpressions.Match>())
                     .Select(match => $"{source.Path}: {match.Value.Trim()}")
             )
             .ToArray();
@@ -1177,9 +891,7 @@ internal sealed class DocsSnippetCompilationTests
                 WritableHandlerRegistrationRegex
                     .Matches(source.Text)
                     .Cast<System.Text.RegularExpressions.Match>()
-                    .Select(match =>
-                        $"{source.Path}:{source.Text[..match.Index].Count(character => character == '\n') + 1}: {match.Value.Trim()}"
-                    )
+                    .Select(match => $"{source.Path}:{source.Text[..match.Index].Count(character => character == '\n') + 1}: {match.Value.Trim()}")
             )
             .ToArray();
 
@@ -1194,10 +906,7 @@ internal sealed class DocsSnippetCompilationTests
     }
 
     [TestCase("token.RegisterUntargeted<T>((ref T message) => Use(message));", true)]
-    [TestCase(
-        "token.RegisterTargetedWithoutTargeting<T>((ref InstanceId target, ref T message) => Use(target, message));",
-        true
-    )]
+    [TestCase("token.RegisterTargetedWithoutTargeting<T>((ref InstanceId target, ref T message) => Use(target, message));", true)]
     [TestCase("token.RegisterBroadcastPostProcessor<T>((ref T message) => Use(message));", true)]
     [TestCase("token.RegisterUntargetedInterceptor<T>((ref T message) => true);", false)]
     [TestCase("token.RegisterUntargeted<T>((in T message) => Use(message));", false)]
@@ -1217,18 +926,14 @@ internal sealed class DocsSnippetCompilationTests
                     .Matches(source.Text)
                     .Cast<System.Text.RegularExpressions.Match>()
                     .Where(match => !RegistrationBaseCallRegex.IsMatch(match.Groups["body"].Value))
-                    .Select(match =>
-                        $"{source.Path}:{source.Text[..match.Index].Count(character => character == '\n') + 1}"
-                    )
+                    .Select(match => $"{source.Path}:{source.Text[..match.Index].Count(character => character == '\n') + 1}")
             )
             .ToArray();
 
         Assert.That(
             violations,
             Is.Empty,
-            "MessageAwareComponent examples must call base.RegisterMessageHandlers():"
-                + System.Environment.NewLine
-                + string.Join(System.Environment.NewLine, violations)
+            "MessageAwareComponent examples must call base.RegisterMessageHandlers():" + System.Environment.NewLine + string.Join(System.Environment.NewLine, violations)
         );
     }
 
@@ -1242,9 +947,7 @@ internal sealed class DocsSnippetCompilationTests
                     .Cast<System.Text.RegularExpressions.Match>()
                     .SelectMany(registration =>
                         FindAmbiguousPostProcessorCallbacks(registration.Groups["arguments"].Value)
-                            .Select(match =>
-                                $"{source.Path}:{source.Text[..registration.Index].Count(character => character == '\n') + 1}: {match.Value}"
-                            )
+                            .Select(match => $"{source.Path}:{source.Text[..registration.Index].Count(character => character == '\n') + 1}: {match.Value}")
                     )
             )
             .ToArray();
@@ -1264,40 +967,24 @@ internal sealed class DocsSnippetCompilationTests
     [TestCase("token.RegisterBroadcastPostProcessor<T>(PublishHealMetric);", true)]
     [TestCase("token.RegisterBroadcastPostProcessor<T>((T m) => SaveDamageTelemetry(m));", true)]
     [TestCase("token.RegisterBroadcastPostProcessor<T>(RecordProcessedDamageRequest);", false)]
-    [TestCase(
-        "token.RegisterTargetedPostProcessor<ApplyDamage>((in ApplyDamage m) => RecordProcessedDamageRequest(m));",
-        false
-    )]
+    [TestCase("token.RegisterTargetedPostProcessor<ApplyDamage>((in ApplyDamage m) => RecordProcessedDamageRequest(m));", false)]
     [TestCase("void RecordDamage() { } // PostProcessor documentation", false)]
     public void PostProcessorSemanticGuardBindsNamesToRegistrations(string source, bool invalid)
     {
         bool actual = PostProcessorRegistrationRegex
             .Matches(source)
             .Cast<System.Text.RegularExpressions.Match>()
-            .Any(registration =>
-                FindAmbiguousPostProcessorCallbacks(registration.Groups["arguments"].Value).Any()
-            );
+            .Any(registration => FindAmbiguousPostProcessorCallbacks(registration.Groups["arguments"].Value).Any());
 
-        Assert.That(
-            actual,
-            Is.EqualTo(invalid),
-            $"Expected post-processor semantic classification {invalid} for: {source}"
-        );
+        Assert.That(actual, Is.EqualTo(invalid), $"Expected post-processor semantic classification {invalid} for: {source}");
     }
 
-    private static IEnumerable<System.Text.RegularExpressions.Match> FindAmbiguousPostProcessorCallbacks(
-        string arguments
-    )
+    private static IEnumerable<System.Text.RegularExpressions.Match> FindAmbiguousPostProcessorCallbacks(string arguments)
     {
         return AmbiguousPostProcessorOutcomeRegex
             .Matches(arguments)
             .Cast<System.Text.RegularExpressions.Match>()
-            .Where(match =>
-                !System.Text.RegularExpressions.Regex.IsMatch(
-                    arguments[..match.Index],
-                    @"\b(?:ref|in|out)\s*$"
-                )
-            );
+            .Where(match => !System.Text.RegularExpressions.Regex.IsMatch(arguments[..match.Index], @"\b(?:ref|in|out)\s*$"));
     }
 
     /// <summary>
@@ -1308,24 +995,13 @@ internal sealed class DocsSnippetCompilationTests
     [TestCase("first-message-untargeted.csharp", "[DxUntargetedMessage]")]
     [TestCase("first-message-targeted.csharp", "[DxTargetedMessage]")]
     [TestCase("first-message-broadcast.csharp", "[DxBroadcastMessage]")]
-    public void HomepageFirstMessageSamplesRequireNoManualSceneReferenceWiring(
-        string sampleName,
-        string expectedAttribute
-    )
+    public void HomepageFirstMessageSamplesRequireNoManualSceneReferenceWiring(string sampleName, string expectedAttribute)
     {
         string snippet = ReadHomepageFirstMessageSample(sampleName);
 
         Assert.That(snippet, Does.Contain(expectedAttribute));
-        Assert.That(
-            HomepageSceneReferenceRegex.IsMatch(snippet),
-            Is.False,
-            "The homepage must not require a serialized or public scene-object reference."
-        );
-        Assert.That(
-            HomepageComponentLookupRegex.IsMatch(snippet),
-            Is.False,
-            "The homepage must not look up a receiver component."
-        );
+        Assert.That(HomepageSceneReferenceRegex.IsMatch(snippet), Is.False, "The homepage must not require a serialized or public scene-object reference.");
+        Assert.That(HomepageComponentLookupRegex.IsMatch(snippet), Is.False, "The homepage must not look up a receiver component.");
         Assert.That(snippet, Does.Not.Contain("GetComponentInParent"));
         Assert.That(snippet, Does.Not.Contain("Button"));
         Assert.That(snippet, Does.Not.Contain("onClick"));
@@ -1335,48 +1011,25 @@ internal sealed class DocsSnippetCompilationTests
     /// Each sample must actually demonstrate the kind its tab is labelled with: registering and
     /// emitting through that kind's API, and no other kind's attribute.
     /// </summary>
-    [TestCase(
-        "first-message-untargeted.csharp",
-        @"Token\.RegisterUntargeted<[^>]+>\(",
-        @"\.EmitUntargeted\(\)"
-    )]
+    [TestCase("first-message-untargeted.csharp", @"Token\.RegisterUntargeted<[^>]+>\(", @"\.EmitUntargeted\(\)")]
     [TestCase(
         "first-message-targeted.csharp",
         @"Token\.RegisterGameObjectTargeted<[^>]+>\(gameObject",
         @"(?s)OnTriggerEnter\(Collider\s+(?<target>\w+)\).*?EmitGameObjectTargeted\(\k<target>\.gameObject\)"
     )]
-    [TestCase(
-        "first-message-broadcast.csharp",
-        @"Token\.RegisterGameObjectBroadcast<[^>]+>\(gameObject",
-        @"\.EmitGameObjectBroadcast\(gameObject\)"
-    )]
-    public void HomepageFirstMessageSamplesDemonstrateTheKindTheyAreLabelledWith(
-        string sampleName,
-        string registrationPattern,
-        string emissionPattern
-    )
+    [TestCase("first-message-broadcast.csharp", @"Token\.RegisterGameObjectBroadcast<[^>]+>\(gameObject", @"\.EmitGameObjectBroadcast\(gameObject\)")]
+    public void HomepageFirstMessageSamplesDemonstrateTheKindTheyAreLabelledWith(string sampleName, string registrationPattern, string emissionPattern)
     {
         string snippet = ReadHomepageFirstMessageSample(sampleName);
 
         Assert.That(snippet, Does.Match(registrationPattern));
         Assert.That(snippet, Does.Match(emissionPattern));
 
-        string[] allAttributes =
-        {
-            "[DxUntargetedMessage]",
-            "[DxTargetedMessage]",
-            "[DxBroadcastMessage]",
-        };
-        string ownAttribute = allAttributes.Single(attribute =>
-            snippet.Contains(attribute, StringComparison.Ordinal)
-        );
+        string[] allAttributes = { "[DxUntargetedMessage]", "[DxTargetedMessage]", "[DxBroadcastMessage]" };
+        string ownAttribute = allAttributes.Single(attribute => snippet.Contains(attribute, StringComparison.Ordinal));
         foreach (string attribute in allAttributes.Where(a => a != ownAttribute))
         {
-            Assert.That(
-                snippet,
-                Does.Not.Contain(attribute),
-                $"`{sampleName}` mixes {attribute} into the {ownAttribute} sample."
-            );
+            Assert.That(snippet, Does.Not.Contain(attribute), $"`{sampleName}` mixes {attribute} into the {ownAttribute} sample.");
         }
     }
 
@@ -1391,25 +1044,14 @@ internal sealed class DocsSnippetCompilationTests
         string docsRoot = ResolveDocsRoot();
         string homepage = File.ReadAllText(Path.Combine(docsRoot, "overrides", "home.html"));
 
-        foreach (
-            string sampleName in new[]
-            {
-                "first-message-untargeted.csharp",
-                "first-message-targeted.csharp",
-                "first-message-broadcast.csharp",
-            }
-        )
+        foreach (string sampleName in new[] { "first-message-untargeted.csharp", "first-message-targeted.csharp", "first-message-broadcast.csharp" })
         {
             Assert.That(
                 File.Exists(Path.Combine(docsRoot, "overrides", "snippets", sampleName)),
                 Is.True,
                 $"The homepage template renders `{sampleName}`, so the sample must exist."
             );
-            Assert.That(
-                homepage,
-                Does.Contain($"highlight_csharp_file(\"{sampleName}\")"),
-                $"`{sampleName}` is not rendered by the homepage template."
-            );
+            Assert.That(homepage, Does.Contain($"highlight_csharp_file(\"{sampleName}\")"), $"`{sampleName}` is not rendered by the homepage template.");
         }
     }
 
@@ -1429,20 +1071,11 @@ internal sealed class DocsSnippetCompilationTests
     [TestCase("TryGetComponent<Collider>(out var collider);", true)]
     [TestCase("[SerializeField] private int Damage;", false)]
     [TestCase("public int Health { get; private set; }", false)]
-    public void HomepageManualWiringGuardClassifiesReferencePatterns(
-        string source,
-        bool expectedViolation
-    )
+    public void HomepageManualWiringGuardClassifiesReferencePatterns(string source, bool expectedViolation)
     {
-        bool actualViolation =
-            HomepageSceneReferenceRegex.IsMatch(source)
-            || HomepageComponentLookupRegex.IsMatch(source);
+        bool actualViolation = HomepageSceneReferenceRegex.IsMatch(source) || HomepageComponentLookupRegex.IsMatch(source);
 
-        Assert.That(
-            actualViolation,
-            Is.EqualTo(expectedViolation),
-            $"Expected violation={expectedViolation} for source: {source}"
-        );
+        Assert.That(actualViolation, Is.EqualTo(expectedViolation), $"Expected violation={expectedViolation} for source: {source}");
     }
 
     [Test]
@@ -1461,9 +1094,7 @@ internal sealed class DocsSnippetCompilationTests
                     pattern
                         .Matches(source.Text)
                         .Cast<System.Text.RegularExpressions.Match>()
-                        .Select(match =>
-                            $"{source.Path}:{source.Text[..match.Index].Count(character => character == '\n') + 1}: {match.Groups["type"].Value}"
-                        )
+                        .Select(match => $"{source.Path}:{source.Text[..match.Index].Count(character => character == '\n') + 1}: {match.Groups["type"].Value}")
                 )
             )
             .ToArray();
@@ -1494,34 +1125,20 @@ internal sealed class DocsSnippetCompilationTests
     [TestCase("token.RegisterBroadcastWithoutSourceInterceptor<TookDamage>(Observe);", false)]
     [TestCase("[DxUntargetedMessage] struct PlayerSpawned { }", true)]
     [TestCase("[DxUntargetedMessage] struct GameStarted { }", false)]
-    public void EntityRouteSemanticGuardDistinguishesCommandsFactsAndGlobals(
-        string source,
-        bool invalid
-    )
+    public void EntityRouteSemanticGuardDistinguishesCommandsFactsAndGlobals(string source, bool invalid)
     {
-        bool actual = new[]
-        {
-            UntargetedEntityHealthRegex,
-            UntargetedEntityFactRegex,
-            TargetedHealthOutcomeRegex,
-            BroadcastHealthCommandRegex,
-        }.Any(pattern => pattern.IsMatch(source));
-
-        Assert.That(
-            actual,
-            Is.EqualTo(invalid),
-            $"Expected entity-route semantic classification {invalid} for: {source}"
+        bool actual = new[] { UntargetedEntityHealthRegex, UntargetedEntityFactRegex, TargetedHealthOutcomeRegex, BroadcastHealthCommandRegex }.Any(pattern =>
+            pattern.IsMatch(source)
         );
+
+        Assert.That(actual, Is.EqualTo(invalid), $"Expected entity-route semantic classification {invalid} for: {source}");
     }
 
     [Test]
     public void BroadcastExamplesUseSelfAsSource()
     {
         var violations = GetBroadcastExampleSources()
-            .SelectMany(source =>
-                FindNonSelfBroadcastSourceViolations(source.Path, source.Text)
-                    .Select(violation => $"{source.Path}:{violation.Line}: {violation.Text}")
-            )
+            .SelectMany(source => FindNonSelfBroadcastSourceViolations(source.Path, source.Text).Select(violation => $"{source.Path}:{violation.Line}: {violation.Text}"))
             .ToArray();
 
         Assert.That(
@@ -1540,22 +1157,12 @@ internal sealed class DocsSnippetCompilationTests
     public void ComposableLifecycleGuideUsesProductionApiContracts()
     {
         string path = Path.Combine(ResolveRepoRoot(), "docs/guides/unity-integration.md");
-        string source = ExtractCodeBlocks(path, "csharp")
-            .Single(block =>
-                block.Contains("class InventoryLifecycleUI", StringComparison.Ordinal)
-            );
+        string source = ExtractCodeBlocks(path, "csharp").Single(block => block.Contains("class InventoryLifecycleUI", StringComparison.Ordinal));
         Diagnostic[] diagnostics = DocsSnippetCompiler
             .CompileSnippet(source)
-            .Where(d =>
-                d.Severity == DiagnosticSeverity.Error || d.Severity == DiagnosticSeverity.Warning
-            )
+            .Where(d => d.Severity == DiagnosticSeverity.Error || d.Severity == DiagnosticSeverity.Warning)
             .ToArray();
-        Assert.That(
-            diagnostics,
-            Is.Empty,
-            "The complete lifecycle example must compile without context-only exclusions: "
-                + string.Join("\n", diagnostics.AsEnumerable())
-        );
+        Assert.That(diagnostics, Is.Empty, "The complete lifecycle example must compile without context-only exclusions: " + string.Join("\n", diagnostics.AsEnumerable()));
     }
 
     private static IEnumerable<TestCaseData> GetDocumentationSnippets()
@@ -1570,9 +1177,7 @@ internal sealed class DocsSnippetCompilationTests
                     continue;
                 }
 
-                yield return new TestCaseData(markdownPath, snippet).SetName(
-                    $"{Path.GetFileName(markdownPath)} csharp #{testIndex++}"
-                );
+                yield return new TestCaseData(markdownPath, snippet).SetName($"{Path.GetFileName(markdownPath)} csharp #{testIndex++}");
             }
         }
     }
@@ -1587,13 +1192,7 @@ internal sealed class DocsSnippetCompilationTests
         }
 
         int testIndex = 0;
-        foreach (
-            string htmlPath in Directory.GetFiles(
-                overridesRoot,
-                "*.html",
-                SearchOption.AllDirectories
-            )
-        )
+        foreach (string htmlPath in Directory.GetFiles(overridesRoot, "*.html", SearchOption.AllDirectories))
         {
             foreach (string snippet in ExtractHtmlCSharpSnippets(htmlPath))
             {
@@ -1602,19 +1201,11 @@ internal sealed class DocsSnippetCompilationTests
                     continue;
                 }
 
-                yield return new TestCaseData(htmlPath, snippet).SetName(
-                    $"{Path.GetFileName(htmlPath)} html #{testIndex++}"
-                );
+                yield return new TestCaseData(htmlPath, snippet).SetName($"{Path.GetFileName(htmlPath)} html #{testIndex++}");
             }
         }
 
-        foreach (
-            string samplePath in Directory.GetFiles(
-                overridesRoot,
-                "*.csharp",
-                SearchOption.AllDirectories
-            )
-        )
+        foreach (string samplePath in Directory.GetFiles(overridesRoot, "*.csharp", SearchOption.AllDirectories))
         {
             string snippet = File.ReadAllText(samplePath);
             if (ShouldSkipSnippet(snippet))
@@ -1622,9 +1213,7 @@ internal sealed class DocsSnippetCompilationTests
                 continue;
             }
 
-            yield return new TestCaseData(samplePath, snippet).SetName(
-                $"{Path.GetFileName(samplePath)} override sample #{testIndex++}"
-            );
+            yield return new TestCaseData(samplePath, snippet).SetName($"{Path.GetFileName(samplePath)} override sample #{testIndex++}");
         }
     }
 
@@ -1633,11 +1222,7 @@ internal sealed class DocsSnippetCompilationTests
     [TestCaseSource(nameof(GetInlineTableSnippets))]
     public void InlineTableSnippetsCompile(string markdownPath, string snippet)
     {
-        Assert.That(
-            snippet,
-            Is.Not.Empty,
-            $"Inline table snippet extracted from {markdownPath} should not be empty."
-        );
+        Assert.That(snippet, Is.Not.Empty, $"Inline table snippet extracted from {markdownPath} should not be empty.");
 
         // Inline snippets are wrapped in a method body so script-mode parsing
         // is consistent with the doc author's intent (a single statement or
@@ -1657,14 +1242,9 @@ internal sealed class DocsSnippetCompilationTests
 
         if (diagnostics.Length > 0)
         {
-            string message = string.Join(
-                System.Environment.NewLine,
-                diagnostics.Select(d => d.ToString())
-            );
+            string message = string.Join(System.Environment.NewLine, diagnostics.Select(d => d.ToString()));
             Assert.Fail(
-                $"Inline table snippet in {markdownPath} failed to compile:"
-                    + $"{System.Environment.NewLine}snippet: {snippet}"
-                    + $"{System.Environment.NewLine}{message}"
+                $"Inline table snippet in {markdownPath} failed to compile:" + $"{System.Environment.NewLine}snippet: {snippet}" + $"{System.Environment.NewLine}{message}"
             );
         }
     }
@@ -1681,9 +1261,7 @@ internal sealed class DocsSnippetCompilationTests
                     continue;
                 }
 
-                yield return new TestCaseData(markdownPath, snippet).SetName(
-                    $"{Path.GetFileName(markdownPath)} inline #{testIndex++}"
-                );
+                yield return new TestCaseData(markdownPath, snippet).SetName($"{Path.GetFileName(markdownPath)} inline #{testIndex++}");
             }
         }
     }
@@ -1695,10 +1273,7 @@ internal sealed class DocsSnippetCompilationTests
         foreach (string rawLine in lines)
         {
             string line = rawLine.TrimEnd();
-            if (
-                line.StartsWith("```", StringComparison.Ordinal)
-                || line.StartsWith("~~~", StringComparison.Ordinal)
-            )
+            if (line.StartsWith("```", StringComparison.Ordinal) || line.StartsWith("~~~", StringComparison.Ordinal))
             {
                 inFence = !inFence;
                 continue;
@@ -1757,10 +1332,7 @@ internal sealed class DocsSnippetCompilationTests
                 }
                 if (runLen == tickCount)
                 {
-                    string content = line.Substring(
-                        openStart + tickCount,
-                        closeStart - openStart - tickCount
-                    );
+                    string content = line.Substring(openStart + tickCount, closeStart - openStart - tickCount);
                     yield return content.Trim();
                     i = j;
                     break;
@@ -1774,10 +1346,7 @@ internal sealed class DocsSnippetCompilationTests
     {
         if (string.IsNullOrWhiteSpace(snippet))
             return false;
-        if (
-            snippet.Contains('{', StringComparison.Ordinal)
-            || snippet.Contains('}', StringComparison.Ordinal)
-        )
+        if (snippet.Contains('{', StringComparison.Ordinal) || snippet.Contains('}', StringComparison.Ordinal))
             return false;
         // Filter out short fragments (bare type names, single identifiers).
         if (snippet.Length < 4)
@@ -1789,21 +1358,10 @@ internal sealed class DocsSnippetCompilationTests
         if (!trimmed.EndsWith(')') && !trimmed.EndsWith(';'))
             return false;
         string statement = trimmed.EndsWith(';') ? snippet : snippet + ";";
-        Microsoft.CodeAnalysis.SyntaxTree syntaxTree =
-            Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(
-                "class InlineSnippet { void Run() { " + statement + " } }"
-            );
+        Microsoft.CodeAnalysis.SyntaxTree syntaxTree = Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText("class InlineSnippet { void Run() { " + statement + " } }");
         if (
-            syntaxTree
-                .GetDiagnostics()
-                .Any(diagnostic =>
-                    diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error
-                )
-            || syntaxTree
-                .GetRoot()
-                .DescendantNodes()
-                .OfType<Microsoft.CodeAnalysis.CSharp.Syntax.LocalFunctionStatementSyntax>()
-                .Any()
+            syntaxTree.GetDiagnostics().Any(diagnostic => diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
+            || syntaxTree.GetRoot().DescendantNodes().OfType<Microsoft.CodeAnalysis.CSharp.Syntax.LocalFunctionStatementSyntax>().Any()
         )
             return false;
         // Skip snippets that look like type-name placeholders.
@@ -1818,8 +1376,7 @@ internal sealed class DocsSnippetCompilationTests
     /// </summary>
     private static bool IsBareTypeNamePlaceholder(string snippet)
     {
-        return snippet.IndexOf(' ', StringComparison.Ordinal) < 0
-            && snippet.IndexOf('.', StringComparison.Ordinal) < 0;
+        return snippet.IndexOf(' ', StringComparison.Ordinal) < 0 && snippet.IndexOf('.', StringComparison.Ordinal) < 0;
     }
 
     // ---- 3.4.3: XML doc <code> block compilation -------------------------
@@ -1827,11 +1384,7 @@ internal sealed class DocsSnippetCompilationTests
     [TestCaseSource(nameof(GetXmlDocCodeBlocks))]
     public void XmlDocCodeBlocksCompile(string sourcePath, string snippet)
     {
-        Assert.That(
-            snippet,
-            Is.Not.Empty,
-            $"XML <code> snippet extracted from {sourcePath} should not be empty."
-        );
+        Assert.That(snippet, Is.Not.Empty, $"XML <code> snippet extracted from {sourcePath} should not be empty.");
 
         var diagnostics = DocsSnippetCompiler
             .CompileDocSnippet(snippet)
@@ -1841,14 +1394,8 @@ internal sealed class DocsSnippetCompilationTests
 
         if (diagnostics.Length > 0)
         {
-            string message = string.Join(
-                System.Environment.NewLine,
-                diagnostics.Select(d => d.ToString())
-            );
-            Assert.Fail(
-                $"XML <code> snippet in {sourcePath} failed to compile:"
-                    + $"{System.Environment.NewLine}{message}"
-            );
+            string message = string.Join(System.Environment.NewLine, diagnostics.Select(d => d.ToString()));
+            Assert.Fail($"XML <code> snippet in {sourcePath} failed to compile:" + $"{System.Environment.NewLine}{message}");
         }
     }
 
@@ -1856,22 +1403,16 @@ internal sealed class DocsSnippetCompilationTests
     [TestCase(".artifacts")]
     [TestCase("obj")]
     [TestCase("bin")]
-    public void DocumentationScansPreserveSourcesUnderGeneratedDirectoryAncestors(
-        string parentDirectory
-    )
+    public void DocumentationScansPreserveSourcesUnderGeneratedDirectoryAncestors(string parentDirectory)
     {
-        string temporaryRoot = Path.Combine(
-            Path.GetTempPath(),
-            "dxm-docs-scan-" + Guid.NewGuid().ToString("N")
-        );
+        string temporaryRoot = Path.Combine(Path.GetTempPath(), "dxm-docs-scan-" + Guid.NewGuid().ToString("N"));
         string repoRoot = Path.Combine(temporaryRoot, parentDirectory, "checkout");
         string[] allowedDirectories = { "", "object", "binary", ".artifacts-extra" };
         string[] generatedDirectories = { ".artifacts", "obj", "bin" };
         List<string> xmlPaths = new();
         List<string> allPaths = new();
         List<string> markdownPaths = new();
-        const string xmlSource =
-            "/// <summary><code>int value = 1;</code></summary>\nclass Sample {}";
+        const string xmlSource = "/// <summary><code>int value = 1;</code></summary>\nclass Sample {}";
         try
         {
             foreach (string root in CSharpScanRoots.Append("Samples~"))
@@ -1904,35 +1445,15 @@ internal sealed class DocsSnippetCompilationTests
             }
             foreach (string directory in generatedDirectories)
             {
-                WriteFixtureFile(
-                    Path.Combine("Samples~", directory, "generated.md"),
-                    "Generated input."
-                );
+                WriteFixtureFile(Path.Combine("Samples~", directory, "generated.md"), "Generated input.");
             }
 
             Assert.Multiple(() =>
             {
-                AssertPaths(
-                    GetXmlDocCodeBlocksFrom(repoRoot).Select(data => (string)data.Arguments[0]!),
-                    xmlPaths,
-                    "XML code blocks"
-                );
-                AssertPaths(
-                    GetTemporaryEmitDocumentationSourcesFrom(repoRoot)
-                        .Select(source => source.Path),
-                    allPaths,
-                    "temporary emit documentation"
-                );
-                AssertPaths(
-                    GetBroadcastExampleSourcesFrom(repoRoot).Select(source => source.Path),
-                    allPaths,
-                    "broadcast examples"
-                );
-                AssertPaths(
-                    EnumeratePublishedMarkdownFilesFrom(repoRoot),
-                    markdownPaths,
-                    "published Markdown"
-                );
+                AssertPaths(GetXmlDocCodeBlocksFrom(repoRoot).Select(data => (string)data.Arguments[0]!), xmlPaths, "XML code blocks");
+                AssertPaths(GetTemporaryEmitDocumentationSourcesFrom(repoRoot).Select(source => source.Path), allPaths, "temporary emit documentation");
+                AssertPaths(GetBroadcastExampleSourcesFrom(repoRoot).Select(source => source.Path), allPaths, "broadcast examples");
+                AssertPaths(EnumeratePublishedMarkdownFilesFrom(repoRoot), markdownPaths, "published Markdown");
             });
         }
         finally
@@ -1950,34 +1471,15 @@ internal sealed class DocsSnippetCompilationTests
             File.WriteAllText(path, text);
         }
 
-        void AssertPaths(
-            IEnumerable<string> actualPaths,
-            IEnumerable<string> expectedPaths,
-            string scan
-        )
+        void AssertPaths(IEnumerable<string> actualPaths, IEnumerable<string> expectedPaths, string scan)
         {
-            string[] actual = actualPaths
-                .Select(path => Path.GetRelativePath(repoRoot, path).Replace('\\', '/'))
-                .OrderBy(path => path, StringComparer.Ordinal)
-                .ToArray();
-            string[] expected = expectedPaths
-                .Select(path => path.Replace('\\', '/'))
-                .OrderBy(path => path, StringComparer.Ordinal)
-                .ToArray();
-            Assert.That(
-                actual,
-                Is.EqualTo(expected),
-                $"[{parentDirectory}] {scan} must retain real sources and exclude generated files inside the checkout."
-            );
+            string[] actual = actualPaths.Select(path => Path.GetRelativePath(repoRoot, path).Replace('\\', '/')).OrderBy(path => path, StringComparer.Ordinal).ToArray();
+            string[] expected = expectedPaths.Select(path => path.Replace('\\', '/')).OrderBy(path => path, StringComparer.Ordinal).ToArray();
+            Assert.That(actual, Is.EqualTo(expected), $"[{parentDirectory}] {scan} must retain real sources and exclude generated files inside the checkout.");
         }
     }
 
-    private static readonly string[] CSharpScanRoots = new[]
-    {
-        "Runtime",
-        "Editor",
-        "SourceGenerators",
-    };
+    private static readonly string[] CSharpScanRoots = new[] { "Runtime", "Editor", "SourceGenerators" };
 
     private static IEnumerable<TestCaseData> GetXmlDocCodeBlocks()
     {
@@ -1992,13 +1494,7 @@ internal sealed class DocsSnippetCompilationTests
             string absRoot = Path.Combine(repoRoot, root);
             if (!Directory.Exists(absRoot))
                 continue;
-            foreach (
-                string sourcePath in Directory.GetFiles(
-                    absRoot,
-                    "*.cs",
-                    SearchOption.AllDirectories
-                )
-            )
+            foreach (string sourcePath in Directory.GetFiles(absRoot, "*.cs", SearchOption.AllDirectories))
             {
                 // Skip generated/cache directories.
                 string normalized = Path.GetRelativePath(repoRoot, sourcePath).Replace('\\', '/');
@@ -2016,9 +1512,7 @@ internal sealed class DocsSnippetCompilationTests
                         continue;
                     if (snippet.Length < 4)
                         continue;
-                    yield return new TestCaseData(sourcePath, snippet).SetName(
-                        $"{Path.GetFileName(sourcePath)} xmldoc #{testIndex++}"
-                    );
+                    yield return new TestCaseData(sourcePath, snippet).SetName($"{Path.GetFileName(sourcePath)} xmldoc #{testIndex++}");
                 }
             }
         }
@@ -2056,12 +1550,7 @@ internal sealed class DocsSnippetCompilationTests
         // comment lines into a single text block. Then locate <code>...</code>
         // and <example><code>...</code></example> regions inside that text.
         var stripped = new System.Text.StringBuilder(content.Length);
-        foreach (
-            string rawLine in content
-                .Replace("\r\n", "\n", StringComparison.Ordinal)
-                .Replace("\r", "\n", StringComparison.Ordinal)
-                .Split('\n')
-        )
+        foreach (string rawLine in content.Replace("\r\n", "\n", StringComparison.Ordinal).Replace("\r", "\n", StringComparison.Ordinal).Split('\n'))
         {
             string trim = rawLine.TrimStart();
             if (trim.StartsWith("///", StringComparison.Ordinal))
@@ -2096,11 +1585,7 @@ internal sealed class DocsSnippetCompilationTests
         string current = TestContext.CurrentContext.TestDirectory;
         while (!string.IsNullOrEmpty(current))
         {
-            if (
-                Directory.Exists(Path.Combine(current, "Runtime"))
-                && Directory.Exists(Path.Combine(current, "Editor"))
-                && File.Exists(Path.Combine(current, "package.json"))
-            )
+            if (Directory.Exists(Path.Combine(current, "Runtime")) && Directory.Exists(Path.Combine(current, "Editor")) && File.Exists(Path.Combine(current, "package.json")))
             {
                 return current;
             }
@@ -2109,9 +1594,7 @@ internal sealed class DocsSnippetCompilationTests
                 break;
             current = parent;
         }
-        throw new DirectoryNotFoundException(
-            "Unable to locate the repository root from the current test directory."
-        );
+        throw new DirectoryNotFoundException("Unable to locate the repository root from the current test directory.");
     }
 
     private static string ExtractFirstCodeBlock(string markdownPath, string infoString)
@@ -2189,10 +1672,7 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
     [TestCase("new Heal(10)\n    .EmitGameObjectTargeted(player);", true)]
     [TestCase("Build(new Heal(10)).EmitGameObjectTargeted(player);", false)]
     [TestCase("Heal heal = new Heal(10); heal.EmitGameObjectTargeted(player);", false)]
-    public void TemporaryEmitPatternDetectsOnlyDirectTemporaryEmitCalls(
-        string text,
-        bool expectedViolation
-    )
+    public void TemporaryEmitPatternDetectsOnlyDirectTemporaryEmitCalls(string text, bool expectedViolation)
     {
         var violations = FindTemporaryEmitViolations("sample.md", text).ToArray();
 
@@ -2216,10 +1696,7 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
     [TestCase("message.EmitFrom(sourceId);", true)]
     [TestCase("message.EmitBroadcast(source);", true)]
     [TestCase("this.EmitBroadcast(new Exploded());", true)]
-    public void BroadcastSourcePatternAllowsOnlySelfSourcesAndApiSignatures(
-        string text,
-        bool expectedViolation
-    )
+    public void BroadcastSourcePatternAllowsOnlySelfSourcesAndApiSignatures(string text, bool expectedViolation)
     {
         var violations = FindNonSelfBroadcastSourceViolations("sample.md", text).ToArray();
 
@@ -2231,10 +1708,7 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
         return ExtractCodeBlocksFromLines(File.ReadLines(markdownPath), infoString);
     }
 
-    private static IEnumerable<string> ExtractCodeBlocksFromLines(
-        IEnumerable<string> lines,
-        string infoString
-    )
+    private static IEnumerable<string> ExtractCodeBlocksFromLines(IEnumerable<string> lines, string infoString)
     {
         bool inBlock = false;
         int containerIndent = 0;
@@ -2245,19 +1719,9 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
         {
             if (!inBlock)
             {
-                string openingLine = StripMarkdownContainerPrefix(
-                        rawLine,
-                        out int openingQuoteDepth,
-                        out int openingIndent
-                    )
-                    .TrimEnd();
+                string openingLine = StripMarkdownContainerPrefix(rawLine, out int openingQuoteDepth, out int openingIndent).TrimEnd();
                 int openingFenceLength = CountLeadingBackticks(openingLine);
-                if (
-                    openingFenceLength >= 3
-                    && openingLine.Length > openingFenceLength
-                    && openingLine[openingFenceLength..]
-                        .StartsWith(infoString, StringComparison.Ordinal)
-                )
+                if (openingFenceLength >= 3 && openingLine.Length > openingFenceLength && openingLine[openingFenceLength..].StartsWith(infoString, StringComparison.Ordinal))
                 {
                     inBlock = true;
                     containerIndent = openingIndent;
@@ -2271,10 +1735,7 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
             string contentLine = StripMarkdownContainerPrefix(rawLine, quoteDepth, containerIndent);
             string line = contentLine.TrimEnd();
             int closingFenceLength = CountLeadingBackticks(line);
-            if (
-                closingFenceLength >= fenceLength
-                && string.IsNullOrWhiteSpace(line[closingFenceLength..])
-            )
+            if (closingFenceLength >= fenceLength && string.IsNullOrWhiteSpace(line[closingFenceLength..]))
             {
                 inBlock = false;
                 string snippet = builder.ToString();
@@ -2289,11 +1750,7 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
         }
     }
 
-    private static string StripMarkdownContainerPrefix(
-        string line,
-        out int quoteDepth,
-        out int containerIndent
-    )
+    private static string StripMarkdownContainerPrefix(string line, out int quoteDepth, out int containerIndent)
     {
         int index = 0;
         quoteDepth = 0;
@@ -2306,11 +1763,7 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
         return line[index..];
     }
 
-    private static string StripMarkdownContainerPrefix(
-        string line,
-        int quoteDepth,
-        int containerIndent
-    )
+    private static string StripMarkdownContainerPrefix(string line, int quoteDepth, int containerIndent)
     {
         int index = 0;
         for (int i = 0; i < quoteDepth; i++)
@@ -2369,20 +1822,14 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
         return ExtractHtmlCSharpSnippetsFromText(htmlPath, File.ReadAllText(htmlPath));
     }
 
-    private static IEnumerable<string> ExtractHtmlCSharpSnippetsFromText(
-        string htmlPath,
-        string html
-    )
+    private static IEnumerable<string> ExtractHtmlCSharpSnippetsFromText(string htmlPath, string html)
     {
         foreach (System.Text.RegularExpressions.Match match in HtmlCodeElementRegex.Matches(html))
         {
             string attrs = match.Groups["attrs"].Value;
             // A code element carries presentation markup - the homepage colors its attribute chips
             // with a span. Strip it before deciding whether the text is C#.
-            string body = DecodeHtmlEntities(
-                    HtmlTagRegex.Replace(match.Groups["body"].Value, string.Empty)
-                )
-                .Trim();
+            string body = DecodeHtmlEntities(HtmlTagRegex.Replace(match.Groups["body"].Value, string.Empty)).Trim();
             if (IsBareTypeNamePlaceholder(body) || !LooksLikeCSharpSnippet(htmlPath, attrs, body))
             {
                 continue;
@@ -2424,25 +1871,15 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
         return GetTemporaryEmitDocumentationSourcesFrom(ResolveRepoRoot());
     }
 
-    private static IEnumerable<(string Path, string Text)> GetTemporaryEmitDocumentationSourcesFrom(
-        string repoRoot
-    )
+    private static IEnumerable<(string Path, string Text)> GetTemporaryEmitDocumentationSourcesFrom(string repoRoot)
     {
         string docsRoot = Path.Combine(repoRoot, "docs");
-        foreach (
-            string markdownPath in Directory.GetFiles(docsRoot, "*.md", SearchOption.AllDirectories)
-        )
+        foreach (string markdownPath in Directory.GetFiles(docsRoot, "*.md", SearchOption.AllDirectories))
         {
             yield return (markdownPath, File.ReadAllText(markdownPath));
         }
 
-        foreach (
-            string csharpPath in Directory.GetFiles(
-                docsRoot,
-                "*.csharp",
-                SearchOption.AllDirectories
-            )
-        )
+        foreach (string csharpPath in Directory.GetFiles(docsRoot, "*.csharp", SearchOption.AllDirectories))
         {
             yield return (csharpPath, File.ReadAllText(csharpPath));
         }
@@ -2450,13 +1887,7 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
         string overridesRoot = Path.Combine(docsRoot, "overrides");
         if (Directory.Exists(overridesRoot))
         {
-            foreach (
-                string htmlPath in Directory.GetFiles(
-                    overridesRoot,
-                    "*.html",
-                    SearchOption.AllDirectories
-                )
-            )
+            foreach (string htmlPath in Directory.GetFiles(overridesRoot, "*.html", SearchOption.AllDirectories))
             {
                 yield return (htmlPath, DecodeHtmlEntities(File.ReadAllText(htmlPath)));
             }
@@ -2496,13 +1927,7 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
                 continue;
             }
 
-            foreach (
-                string sourcePath in Directory.GetFiles(
-                    absRoot,
-                    "*.cs",
-                    SearchOption.AllDirectories
-                )
-            )
+            foreach (string sourcePath in Directory.GetFiles(absRoot, "*.cs", SearchOption.AllDirectories))
             {
                 string normalized = Path.GetRelativePath(repoRoot, sourcePath).Replace('\\', '/');
                 if (
@@ -2528,9 +1953,7 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
         return GetBroadcastExampleSourcesFrom(ResolveRepoRoot());
     }
 
-    private static IEnumerable<(string Path, string Text)> GetBroadcastExampleSourcesFrom(
-        string repoRoot
-    )
+    private static IEnumerable<(string Path, string Text)> GetBroadcastExampleSourcesFrom(string repoRoot)
     {
         string docsRoot = Path.Combine(repoRoot, "docs");
 
@@ -2619,8 +2042,7 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
         string samplesRoot = Path.Combine(repoRoot, "Samples~");
         string readmePath = Path.Combine(repoRoot, "README.md");
 
-        IEnumerable<string> paths = EnumerateTextFiles(docsRoot, "*.md")
-            .Concat(EnumerateTextFiles(docsRoot, "*.markdown"));
+        IEnumerable<string> paths = EnumerateTextFiles(docsRoot, "*.md").Concat(EnumerateTextFiles(docsRoot, "*.markdown"));
         if (File.Exists(readmePath))
         {
             paths = paths.Append(readmePath);
@@ -2632,32 +2054,21 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
         }
         if (Directory.Exists(samplesRoot))
         {
-            paths = paths
-                .Concat(EnumerateTextFiles(samplesRoot, "*.md"))
-                .Concat(EnumerateTextFiles(samplesRoot, "*.markdown"));
+            paths = paths.Concat(EnumerateTextFiles(samplesRoot, "*.md")).Concat(EnumerateTextFiles(samplesRoot, "*.markdown"));
         }
 
         return paths.Distinct(StringComparer.Ordinal).OrderBy(path => path, StringComparer.Ordinal);
     }
 
-    private static IEnumerable<(int Line, string Text)> FindTemporaryEmitViolations(
-        string sourcePath,
-        string text
-    )
+    private static IEnumerable<(int Line, string Text)> FindTemporaryEmitViolations(string sourcePath, string text)
     {
-        string normalized = text.Replace("\r\n", "\n", StringComparison.Ordinal)
-            .Replace("\r", "\n", StringComparison.Ordinal);
+        string normalized = text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace("\r", "\n", StringComparison.Ordinal);
         string[] lines = normalized.Split('\n');
         int lineIndex = 0;
         int lineOffset = 0;
-        foreach (
-            System.Text.RegularExpressions.Match match in TemporaryEmitRegex.Matches(normalized)
-        )
+        foreach (System.Text.RegularExpressions.Match match in TemporaryEmitRegex.Matches(normalized))
         {
-            while (
-                lineIndex < lines.Length - 1
-                && match.Index >= lineOffset + lines[lineIndex].Length + 1
-            )
+            while (lineIndex < lines.Length - 1 && match.Index >= lineOffset + lines[lineIndex].Length + 1)
             {
                 lineOffset += lines[lineIndex].Length + 1;
                 lineIndex++;
@@ -2715,10 +2126,7 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
         if (lineIndex > 0)
         {
             string previous = lines[lineIndex - 1].TrimStart();
-            if (
-                previous.StartsWith("//", StringComparison.Ordinal)
-                && HasNegativeCompileMarker(previous)
-            )
+            if (previous.StartsWith("//", StringComparison.Ordinal) && HasNegativeCompileMarker(previous))
             {
                 return true;
             }
@@ -2727,14 +2135,9 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
         return false;
     }
 
-    private static IEnumerable<(int Line, string Text)> FindNonSelfBroadcastSourceViolations(
-        string sourcePath,
-        string text
-    )
+    private static IEnumerable<(int Line, string Text)> FindNonSelfBroadcastSourceViolations(string sourcePath, string text)
     {
-        string[] lines = text.Replace("\r\n", "\n", StringComparison.Ordinal)
-            .Replace("\r", "\n", StringComparison.Ordinal)
-            .Split('\n');
+        string[] lines = text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace("\r", "\n", StringComparison.Ordinal).Split('\n');
         for (int lineIndex = 0; lineIndex < lines.Length; lineIndex++)
         {
             string line = lines[lineIndex];
@@ -2743,9 +2146,7 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
                 yield return (lineIndex + 1, line.Trim());
             }
 
-            foreach (
-                System.Text.RegularExpressions.Match match in BroadcastSourceRegex.Matches(line)
-            )
+            foreach (System.Text.RegularExpressions.Match match in BroadcastSourceRegex.Matches(line))
             {
                 string method = match.Groups["method"].Value;
                 string source = match.Groups["source"].Value.Trim();
@@ -2773,9 +2174,7 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
             return normalizedSource == "this" || IsApiSignatureBroadcastLine(line);
         }
 
-        return normalizedSource == "gameObject"
-            || normalizedSource == "this"
-            || IsApiSignatureBroadcastLine(line);
+        return normalizedSource == "gameObject" || normalizedSource == "this" || IsApiSignatureBroadcastLine(line);
     }
 
     private static bool IsApiSignatureBroadcastLine(string line)
@@ -2797,8 +2196,7 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
                 return docsDirectory;
             }
 
-            string parentDirectoryPath = Path.GetDirectoryName(currentDirectoryPath)
-                ?? string.Empty;
+            string parentDirectoryPath = Path.GetDirectoryName(currentDirectoryPath) ?? string.Empty;
             if (string.IsNullOrEmpty(parentDirectoryPath))
             {
                 break;
@@ -2807,63 +2205,21 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
             currentDirectoryPath = parentDirectoryPath;
         }
 
-        throw new FileNotFoundException(
-            "Unable to locate docs/getting-started/quick-start.md from the current test directory."
-        );
+        throw new FileNotFoundException("Unable to locate docs/getting-started/quick-start.md from the current test directory.");
     }
 
     [TestCase("", true, TestName = "Empty snippet should be skipped")]
     [TestCase("   ", true, TestName = "Whitespace-only snippet should be skipped")]
-    [TestCase(
-        "var x = 1;\nConsole.WriteLine(x);",
-        false,
-        TestName = "Regular compilable code should not be skipped"
-    )]
-    [TestCase(
-        "public class MyClass { }",
-        false,
-        TestName = "Simple class declaration should not be skipped"
-    )]
-    [TestCase(
-        "// Comment only\nvar x = 1;",
-        false,
-        TestName = "Code with comments should not be skipped"
-    )]
-    [TestCase(
-        "MessageRegistrationHandle RegisterUntargeted<T>(Action<T> handler, int priority = 0)",
-        false,
-        TestName = "Single-line method signatures remain compiler-visible"
-    )]
-    [TestCase(
-        "void Process(string name = null)",
-        false,
-        TestName = "Method signatures with null defaults remain compiler-visible"
-    )]
-    [TestCase(
-        "bool IsEnabled(bool flag = false)",
-        false,
-        TestName = "Method signatures with false defaults remain compiler-visible"
-    )]
-    [TestCase(
-        "void Toggle(bool active = true)",
-        false,
-        TestName = "Method signatures with true defaults remain compiler-visible"
-    )]
-    [TestCase(
-        "MessageRegistrationHandle RegisterUntargeted<T>(\n    Action<T> handler,\n    int priority = 0)",
-        false,
-        TestName = "Multi-line signatures remain compiler-visible"
-    )]
-    [TestCase(
-        "Do something...\nthen continue",
-        false,
-        TestName = "Prose ellipses do not skip snippets"
-    )]
-    [TestCase(
-        "public void Method() { ... }",
-        false,
-        TestName = "Invalid ellipsis bodies remain compiler-visible"
-    )]
+    [TestCase("var x = 1;\nConsole.WriteLine(x);", false, TestName = "Regular compilable code should not be skipped")]
+    [TestCase("public class MyClass { }", false, TestName = "Simple class declaration should not be skipped")]
+    [TestCase("// Comment only\nvar x = 1;", false, TestName = "Code with comments should not be skipped")]
+    [TestCase("MessageRegistrationHandle RegisterUntargeted<T>(Action<T> handler, int priority = 0)", false, TestName = "Single-line method signatures remain compiler-visible")]
+    [TestCase("void Process(string name = null)", false, TestName = "Method signatures with null defaults remain compiler-visible")]
+    [TestCase("bool IsEnabled(bool flag = false)", false, TestName = "Method signatures with false defaults remain compiler-visible")]
+    [TestCase("void Toggle(bool active = true)", false, TestName = "Method signatures with true defaults remain compiler-visible")]
+    [TestCase("MessageRegistrationHandle RegisterUntargeted<T>(\n    Action<T> handler,\n    int priority = 0)", false, TestName = "Multi-line signatures remain compiler-visible")]
+    [TestCase("Do something...\nthen continue", false, TestName = "Prose ellipses do not skip snippets")]
+    [TestCase("public void Method() { ... }", false, TestName = "Invalid ellipsis bodies remain compiler-visible")]
     [TestCase(
         "MessageRegistrationHandle RegisterUntargeted<T>(\n    Action<T> handler,\n    int priority = 0\n)",
         false,
@@ -2884,21 +2240,9 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
         false,
         TestName = "Interceptor signatures remain compiler-visible"
     )]
-    [TestCase(
-        "token.RegisterUntargeted<T>(Action<T> handler, int priority = 0)",
-        false,
-        TestName = "Generic Action placeholders remain compiler-visible"
-    )]
-    [TestCase(
-        "token.RegisterUntargeted<T>(FastHandler<T> handler, int priority = 0)",
-        false,
-        TestName = "FastHandler placeholders remain compiler-visible"
-    )]
-    [TestCase(
-        "token.RegisterGameObjectTargeted<T>(GameObject go, handler, int priority = 0)",
-        false,
-        TestName = "Handler parameter placeholders remain compiler-visible"
-    )]
+    [TestCase("token.RegisterUntargeted<T>(Action<T> handler, int priority = 0)", false, TestName = "Generic Action placeholders remain compiler-visible")]
+    [TestCase("token.RegisterUntargeted<T>(FastHandler<T> handler, int priority = 0)", false, TestName = "FastHandler placeholders remain compiler-visible")]
+    [TestCase("token.RegisterGameObjectTargeted<T>(GameObject go, handler, int priority = 0)", false, TestName = "Handler parameter placeholders remain compiler-visible")]
     [TestCase(
         "token.RegisterTargetedWithoutTargeting<T>(FastHandlerWithContext<T> handler, int priority = 0)",
         false,
@@ -2909,63 +2253,19 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
         false,
         TestName = "Bus interceptor placeholders remain compiler-visible"
     )]
-    [TestCase(
-        "token.RegisterTargeted<T>(InstanceId id, handler, int priority = 0)",
-        false,
-        TestName = "Targeted handler placeholders remain compiler-visible"
-    )]
-    [TestCase(
-        "token.RegisterBroadcast<T>(InstanceId id, handler, int priority = 0)",
-        false,
-        TestName = "Broadcast handler placeholders remain compiler-visible"
-    )]
+    [TestCase("token.RegisterTargeted<T>(InstanceId id, handler, int priority = 0)", false, TestName = "Targeted handler placeholders remain compiler-visible")]
+    [TestCase("token.RegisterBroadcast<T>(InstanceId id, handler, int priority = 0)", false, TestName = "Broadcast handler placeholders remain compiler-visible")]
     [TestCase("int x = 0;", false, TestName = "Assignment with zero should not be skipped")]
     [TestCase("var priority = 0;", false, TestName = "Variable assignment should not be skipped")]
-    [TestCase(
-        "int priority = 0;\nConsole.WriteLine(priority);",
-        false,
-        TestName = "Variable assignment with usage should not be skipped"
-    )]
-    [TestCase(
-        "bool isEnabled = false;\nif (isEnabled) { DoSomething(); }",
-        false,
-        TestName = "Boolean assignment with conditional should not be skipped"
-    )]
-    [TestCase(
-        "string name = null;\nname = GetName();",
-        false,
-        TestName = "Null assignment with reassignment should not be skipped"
-    )]
-    [TestCase(
-        "public void Process()\n{\n    int count = 0;\n}",
-        false,
-        TestName = "Method with local variable initialization should not be skipped"
-    )]
-    [TestCase(
-        "Action<int> handler = x => Console.WriteLine(x);",
-        false,
-        TestName = "Lambda assignment should not be skipped"
-    )]
-    [TestCase(
-        "var result = Calculate(value, 0);",
-        false,
-        TestName = "Method call with zero argument should not be skipped"
-    )]
-    [TestCase(
-        "// This example will not compile.\nnew void OnEnable() { }",
-        true,
-        TestName = "Explicit negative compilation examples should be skipped"
-    )]
-    [TestCase(
-        "// WRONG but valid C# should still be compiled.\nint value = 1;",
-        false,
-        TestName = "Pedagogical wrong labels do not skip compilable examples"
-    )]
-    [TestCase(
-        "// Manual implementation.\nint value = 1;",
-        false,
-        TestName = "Manual labels do not skip compilable examples"
-    )]
+    [TestCase("int priority = 0;\nConsole.WriteLine(priority);", false, TestName = "Variable assignment with usage should not be skipped")]
+    [TestCase("bool isEnabled = false;\nif (isEnabled) { DoSomething(); }", false, TestName = "Boolean assignment with conditional should not be skipped")]
+    [TestCase("string name = null;\nname = GetName();", false, TestName = "Null assignment with reassignment should not be skipped")]
+    [TestCase("public void Process()\n{\n    int count = 0;\n}", false, TestName = "Method with local variable initialization should not be skipped")]
+    [TestCase("Action<int> handler = x => Console.WriteLine(x);", false, TestName = "Lambda assignment should not be skipped")]
+    [TestCase("var result = Calculate(value, 0);", false, TestName = "Method call with zero argument should not be skipped")]
+    [TestCase("// This example will not compile.\nnew void OnEnable() { }", true, TestName = "Explicit negative compilation examples should be skipped")]
+    [TestCase("// WRONG but valid C# should still be compiled.\nint value = 1;", false, TestName = "Pedagogical wrong labels do not skip compilable examples")]
+    [TestCase("// Manual implementation.\nint value = 1;", false, TestName = "Manual labels do not skip compilable examples")]
     public void ShouldSkipSnippetUsesOnlyExplicitNegativeMarkers(string snippet, bool expectedSkip)
     {
         bool actualSkip = ShouldSkipSnippet(snippet);
@@ -2983,14 +2283,7 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
             return true;
         }
 
-        if (
-            snippet
-                .Split('\n')
-                .Any(line =>
-                    line.TrimStart().StartsWith("//", StringComparison.Ordinal)
-                    && HasNegativeCompileMarker(line)
-                )
-        )
+        if (snippet.Split('\n').Any(line => line.TrimStart().StartsWith("//", StringComparison.Ordinal) && HasNegativeCompileMarker(line)))
         {
             return true;
         }

@@ -36,13 +36,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         {
                             foreach (int count in new[] { 2, 8 })
                             {
-                                yield return new TestCaseData(
-                                    scenario,
-                                    reset,
-                                    fast,
-                                    throwing,
-                                    count
-                                ).SetName(
+                                yield return new TestCaseData(scenario, reset, fast, throwing, count).SetName(
                                     $"HistoricalPostRouteOwnership_{scenario.Kind}_Reset{reset}_Fast{fast}_Throw{throwing}_Count{count}"
                                 );
                             }
@@ -53,24 +47,9 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [TestCaseSource(nameof(Cases))]
-        public void HistoricalPostCallbacksRetainOnlyTheirValidSnapshotOwners(
-            MessageScenario scenario,
-            int reset,
-            bool fast,
-            bool throwing,
-            int count
-        )
+        public void HistoricalPostCallbacksRetainOnlyTheirValidSnapshotOwners(MessageScenario scenario, int reset, bool fast, bool throwing, int count)
         {
-            string label =
-                scenario
-                + ",reset="
-                + reset
-                + ",fast="
-                + fast
-                + ",throwing="
-                + throwing
-                + ",count="
-                + count;
+            string label = scenario + ",reset=" + reset + ",fast=" + fast + ",throwing=" + throwing + ",count=" + count;
             using CaseState state = new CaseState(label);
             MessageBus bus = state.Bus;
             MessageKind kind = scenario.Kind;
@@ -142,9 +121,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 oldEntryCount = (int)Field(oldFlat, "count");
                 _ = bus.Trim(force: true);
                 activeTrimBeforePreserved =
-                    History(bus).Count == beforeChildHistory
-                    && ReferenceEquals(oldFlat, Field(oldSnapshot, "flat"))
-                    && ReferencesPresent(oldEntries, oldEntryCount);
+                    History(bus).Count == beforeChildHistory && ReferenceEquals(oldFlat, Field(oldSnapshot, "flat")) && ReferencesPresent(oldEntries, oldEntryCount);
 
                 if (reset == 1)
                 {
@@ -159,9 +136,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     for (int index = 0; index < count; ++index)
                     {
                         int capturedIndex = index;
-                        _ = RegisterPost(fresh, kind, fast, destination, () =>
-                            Record("X" + capturedIndex)
-                        );
+                        _ = RegisterPost(fresh, kind, fast, destination, () => Record("X" + capturedIndex));
                     }
                     RegisterWithout(fresh, kind, fast, () => Record("fresh-without"));
                     RegisterChildInterceptor(fresh);
@@ -178,18 +153,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
 
                 afterChildHistory = History(bus)?.Count ?? 0;
-                parentOwnershipCorrect =
-                    reset == 0
-                        ? ReferenceEquals(oldFlat, Field(oldSnapshot, "flat"))
-                        : Field(oldSnapshot, "flat") == null;
-                parentArrayStateCorrect =
-                    reset == 0
-                        ? ReferencesPresent(oldEntries, oldEntryCount)
-                        : ReferencesCleared(oldEntries, oldEntryCount);
-                object retainedSnapshot =
-                    afterChildHistory == 1 ? Field(History(bus)[0], "snapshot") : null;
-                object retainedFlat =
-                    retainedSnapshot == null ? null : Field(retainedSnapshot, "flat");
+                parentOwnershipCorrect = reset == 0 ? ReferenceEquals(oldFlat, Field(oldSnapshot, "flat")) : Field(oldSnapshot, "flat") == null;
+                parentArrayStateCorrect = reset == 0 ? ReferencesPresent(oldEntries, oldEntryCount) : ReferencesCleared(oldEntries, oldEntryCount);
+                object retainedSnapshot = afterChildHistory == 1 ? Field(History(bus)[0], "snapshot") : null;
+                object retainedFlat = retainedSnapshot == null ? null : Field(retainedSnapshot, "flat");
                 if (retainedSnapshot != null)
                 {
                     object empty = typeof(MessageBus)
@@ -201,14 +168,8 @@ namespace DxMessaging.Tests.Runtime.Core
                     retainedHasRegistrations = (bool)Field(retainedSnapshot, "hasRegistrations");
                     retainedSnapshotStateCorrect =
                         reset == 2
-                            ? retainedIsEmpty
-                                && retainedFlat == null
-                                && retainedEntryCount == 0
-                                && !retainedHasRegistrations
-                            : !retainedIsEmpty
-                                && retainedFlat != null
-                                && retainedEntryCount == count
-                                && retainedHasRegistrations;
+                            ? retainedIsEmpty && retainedFlat == null && retainedEntryCount == 0 && !retainedHasRegistrations
+                            : !retainedIsEmpty && retainedFlat != null && retainedEntryCount == count && retainedHasRegistrations;
                 }
                 _ = bus.Trim(force: true);
                 activeTrimAfterPreserved =
@@ -225,9 +186,7 @@ namespace DxMessaging.Tests.Runtime.Core
             for (int index = 1; index < count; ++index)
             {
                 int capturedIndex = index;
-                last = RegisterPost(token, kind, fast, destination, () =>
-                    Record("tail" + capturedIndex)
-                );
+                last = RegisterPost(token, kind, fast, destination, () => Record("tail" + capturedIndex));
             }
             RegisterWithout(token, kind, fast, () => Record("W"));
             RegisterInterceptor(token, kind, (ref InstanceId route, ref ProbeMessage message) =>
@@ -288,10 +247,8 @@ namespace DxMessaging.Tests.Runtime.Core
             bool afterDrainDeferred = (bool)Field(bus, "_hasDeferredResetTeardown");
             long afterDrainLease = (long)Field(bus, "_activeDispatchLeaseId");
             long afterDrainScopedEmission = (long)Field(bus, "_scopedEmissionId");
-            bool afterDrainOldOwnerReleased =
-                oldSnapshot != null && Field(oldSnapshot, "flat") == null;
-            bool afterDrainOldEntriesCleared =
-                oldEntries != null && ReferencesCleared(oldEntries, oldEntryCount);
+            bool afterDrainOldOwnerReleased = oldSnapshot != null && Field(oldSnapshot, "flat") == null;
+            bool afterDrainOldEntriesCleared = oldEntries != null && ReferencesCleared(oldEntries, oldEntryCount);
             calls.Clear();
             phase = "next";
             Emit(bus, kind, origin);
@@ -359,186 +316,73 @@ namespace DxMessaging.Tests.Runtime.Core
             }
             Assert.That(beforeChildHistory, Is.EqualTo(1), label + ": parent history before child");
             Assert.That(afterChildHistory, Is.EqualTo(1), label + ": compacted parent history");
-            Assert.That(
-                oldEntryCount,
-                Is.EqualTo(count),
-                label + ": original populated entry count"
-            );
+            Assert.That(oldEntryCount, Is.EqualTo(count), label + ": original populated entry count");
             Assert.That(childHistoryCounts, Is.Not.Empty, label + ": child callback observations");
-            Assert.That(
-                childHistoryCounts,
-                Is.All.EqualTo(reset == 2 ? 3 : 2),
-                label + ": exact child capture count"
-            );
-            Assert.That(
-                activeTrimBeforePreserved,
-                Is.True,
-                label + ": active trim preserves original parent"
-            );
-            Assert.That(
-                activeTrimAfterPreserved,
-                Is.True,
-                label + ": active trim preserves retained parent"
-            );
-            Assert.That(
-                retainedSnapshotStateCorrect,
-                Is.True,
-                label + ": exact retained empty/populated snapshot state"
-            );
-            Assert.That(
-                parentOwnershipCorrect,
-                Is.True,
-                label + ": parent lifetime at child return"
-            );
-            Assert.That(
-                parentArrayStateCorrect,
-                Is.True,
-                label + ": parent array lifetime at child return"
-            );
-            Assert.That(
-                afterDrainOldEntriesCleared,
-                Is.True,
-                label + ": old populated array scrubbed at final exit"
-            );
+            Assert.That(childHistoryCounts, Is.All.EqualTo(reset == 2 ? 3 : 2), label + ": exact child capture count");
+            Assert.That(activeTrimBeforePreserved, Is.True, label + ": active trim preserves original parent");
+            Assert.That(activeTrimAfterPreserved, Is.True, label + ": active trim preserves retained parent");
+            Assert.That(retainedSnapshotStateCorrect, Is.True, label + ": exact retained empty/populated snapshot state");
+            Assert.That(parentOwnershipCorrect, Is.True, label + ": parent lifetime at child return");
+            Assert.That(parentArrayStateCorrect, Is.True, label + ": parent array lifetime at child return");
+            Assert.That(afterDrainOldEntriesCleared, Is.True, label + ": old populated array scrubbed at final exit");
             Assert.That(afterDrainHistory, Is.Zero, label + ": no history after final exit");
             Assert.That(afterDrainDepth, Is.Zero, label + ": dispatch depth after final exit");
             Assert.That(afterDrainDeferred, Is.False, label + ": deferred flag after final exit");
-            Assert.That(
-                afterDrainLease,
-                Is.Zero,
-                label + ": no active lease identity after final exit"
-            );
-            Assert.That(
-                afterDrainScopedEmission,
-                Is.Zero,
-                label + ": idle scoped emission identity after final exit"
-            );
-            Assert.That(
-                afterDrainOldOwnerReleased,
-                Is.True,
-                label + ": old snapshot owner released at final exit"
-            );
-            Assert.That(
-                beforeCleanupLive,
-                Is.EqualTo(count + 3),
-                label + ": live registrations before cleanup"
-            );
-            Assert.That(
-                afterTokenCleanupLive,
-                Is.EqualTo(reset == 1 ? count + 2 : 0),
-                label + ": valid or generation-invalidated cleanup"
-            );
-            Assert.That(
-                afterCleanupCalls,
-                Is.EqualTo(expectedAfterCleanupCalls),
-                label + ": mixed-generation callback identity after cleanup"
-            );
-            Assert.That(
-                afterCleanupEmitLive,
-                Is.EqualTo(afterTokenCleanupLive),
-                label + ": cleanup emission preserves registration count"
-            );
+            Assert.That(afterDrainLease, Is.Zero, label + ": no active lease identity after final exit");
+            Assert.That(afterDrainScopedEmission, Is.Zero, label + ": idle scoped emission identity after final exit");
+            Assert.That(afterDrainOldOwnerReleased, Is.True, label + ": old snapshot owner released at final exit");
+            Assert.That(beforeCleanupLive, Is.EqualTo(count + 3), label + ": live registrations before cleanup");
+            Assert.That(afterTokenCleanupLive, Is.EqualTo(reset == 1 ? count + 2 : 0), label + ": valid or generation-invalidated cleanup");
+            Assert.That(afterCleanupCalls, Is.EqualTo(expectedAfterCleanupCalls), label + ": mixed-generation callback identity after cleanup");
+            Assert.That(afterCleanupEmitLive, Is.EqualTo(afterTokenCleanupLive), label + ": cleanup emission preserves registration count");
             Assert.That(afterCleanup, Is.Zero, label + ": counters after explicit owned cleanup");
         }
 
         private static object Field(object value, string name) =>
-            value
-                .GetType()
-                .GetField(
-                    name,
-                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
-                )
-                .GetValue(value);
+            value.GetType().GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic).GetValue(value);
 
-        private static IList History(MessageBus bus) =>
-            (IList)Field(bus, "_postRouteSnapshotHistory");
+        private static IList History(MessageBus bus) => (IList)Field(bus, "_postRouteSnapshotHistory");
 
         private static bool ReferencesPresent(Array values, int count) =>
-            0 < count
-            && Enumerable
-                .Range(0, count)
-                .All(index =>
-                    Field(values.GetValue(index), "handler") != null
-                    && Field(values.GetValue(index), "invoker") != null
-                );
+            0 < count && Enumerable.Range(0, count).All(index => Field(values.GetValue(index), "handler") != null && Field(values.GetValue(index), "invoker") != null);
 
         private static bool ReferencesCleared(Array values, int count) =>
-            Enumerable
-                .Range(0, count)
-                .All(index =>
-                    Field(values.GetValue(index), "handler") == null
-                    && Field(values.GetValue(index), "invoker") == null
-                );
+            Enumerable.Range(0, count).All(index => Field(values.GetValue(index), "handler") == null && Field(values.GetValue(index), "invoker") == null);
 
-        private static MessageRegistrationHandle RegisterPost(
-            MessageRegistrationToken owner,
-            MessageKind kind,
-            bool fast,
-            InstanceId context,
-            Action callback
-        ) =>
+        private static MessageRegistrationHandle RegisterPost(MessageRegistrationToken owner, MessageKind kind, bool fast, InstanceId context, Action callback) =>
             kind == MessageKind.Targeted
                 ? fast
-                    ? owner.RegisterTargetedPostProcessor<ProbeMessage>(
-                        context,
-                        (in ProbeMessage _) => callback()
-                    )
+                    ? owner.RegisterTargetedPostProcessor<ProbeMessage>(context, (in ProbeMessage _) => callback())
                     : owner.RegisterTargetedPostProcessor<ProbeMessage>(context, _ => callback())
                 : fast
-                    ? owner.RegisterBroadcastPostProcessor<ProbeMessage>(
-                        context,
-                        (in ProbeMessage _) => callback()
-                    )
+                    ? owner.RegisterBroadcastPostProcessor<ProbeMessage>(context, (in ProbeMessage _) => callback())
                     : owner.RegisterBroadcastPostProcessor<ProbeMessage>(context, _ => callback());
 
-        private static void RegisterWithout(
-            MessageRegistrationToken owner,
-            MessageKind kind,
-            bool fast,
-            Action callback
-        )
+        private static void RegisterWithout(MessageRegistrationToken owner, MessageKind kind, bool fast, Action callback)
         {
             if (kind == MessageKind.Targeted)
             {
                 _ = fast
-                    ? owner.RegisterTargetedWithoutTargetingPostProcessor<ProbeMessage>(
-                        (in InstanceId _, in ProbeMessage __) => callback()
-                    )
-                    : owner.RegisterTargetedWithoutTargetingPostProcessor<ProbeMessage>(
-                        (_, __) => callback()
-                    );
+                    ? owner.RegisterTargetedWithoutTargetingPostProcessor<ProbeMessage>((in InstanceId _, in ProbeMessage __) => callback())
+                    : owner.RegisterTargetedWithoutTargetingPostProcessor<ProbeMessage>((_, __) => callback());
             }
             else
             {
                 _ = fast
-                    ? owner.RegisterBroadcastWithoutSourcePostProcessor<ProbeMessage>(
-                        (in InstanceId _, in ProbeMessage __) => callback()
-                    )
-                    : owner.RegisterBroadcastWithoutSourcePostProcessor<ProbeMessage>(
-                        (_, __) => callback()
-                    );
+                    ? owner.RegisterBroadcastWithoutSourcePostProcessor<ProbeMessage>((in InstanceId _, in ProbeMessage __) => callback())
+                    : owner.RegisterBroadcastWithoutSourcePostProcessor<ProbeMessage>((_, __) => callback());
             }
         }
 
-        private static void RegisterInterceptor(
-            MessageRegistrationToken owner,
-            MessageKind kind,
-            Interceptor callback
-        )
+        private static void RegisterInterceptor(MessageRegistrationToken owner, MessageKind kind, Interceptor callback)
         {
             if (kind == MessageKind.Targeted)
             {
-                _ = owner.RegisterTargetedInterceptor<ProbeMessage>(
-                    (ref InstanceId route, ref ProbeMessage message) =>
-                        callback(ref route, ref message)
-                );
+                _ = owner.RegisterTargetedInterceptor<ProbeMessage>((ref InstanceId route, ref ProbeMessage message) => callback(ref route, ref message));
             }
             else
             {
-                _ = owner.RegisterBroadcastInterceptor<ProbeMessage>(
-                    (ref InstanceId route, ref ProbeMessage message) =>
-                        callback(ref route, ref message)
-                );
+                _ = owner.RegisterBroadcastInterceptor<ProbeMessage>((ref InstanceId route, ref ProbeMessage message) => callback(ref route, ref message));
             }
         }
 

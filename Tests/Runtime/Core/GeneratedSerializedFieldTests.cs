@@ -15,14 +15,9 @@ namespace DxMessaging.Tests.Runtime.Core
         [TestCase(-1, true)]
         [TestCase(int.MaxValue, false)]
         [TestCase(int.MinValue, true)]
-        public void GeneratedGettersAndConstructorRetainSerializedStorage(
-            int count,
-            bool explicitLabel
-        )
+        public void GeneratedGettersAndConstructorRetainSerializedStorage(int count, bool explicitLabel)
         {
-            Settings settings = explicitLabel
-                ? new Settings(count: count, mode: ScreenMode.Play, label: "manual")
-                : new Settings(count: count, mode: ScreenMode.Play);
+            Settings settings = explicitLabel ? new Settings(count: count, mode: ScreenMode.Play, label: "manual") : new Settings(count: count, mode: ScreenMode.Play);
             string expectedLabel = explicitLabel ? "manual" : "unset";
             string context = $"count={count}, explicitLabel={explicitLabel}";
             Assert.That(settings.Count, Is.EqualTo(count), context);
@@ -30,18 +25,8 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.That(settings.Label, Is.EqualTo(expectedLabel), context);
 
             string json = JsonUtility.ToJson(settings);
-            Assert.That(
-                json,
-                Does.Contain("\"_count\"").And.Contain("\"_mode\"").And.Contain("\"_label\""),
-                context
-            );
-            Assert.That(
-                json,
-                Does.Not.Contain("\"Count\"")
-                    .And.Not.Contain("\"Mode\"")
-                    .And.Not.Contain("\"Label\""),
-                context
-            );
+            Assert.That(json, Does.Contain("\"_count\"").And.Contain("\"_mode\"").And.Contain("\"_label\""), context);
+            Assert.That(json, Does.Not.Contain("\"Count\"").And.Not.Contain("\"Mode\"").And.Not.Contain("\"Label\""), context);
             Settings restored = JsonUtility.FromJson<Settings>(json);
             Assert.That(restored.Count, Is.EqualTo(count), context);
             Assert.That(restored.Mode, Is.EqualTo(ScreenMode.Play), context);
@@ -54,11 +39,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Settings restored = JsonUtility.FromJson<Settings>("{\"_count\":17,\"_mode\":1}");
             Assert.That(restored.Count, Is.EqualTo(17));
             Assert.That(restored.Mode, Is.EqualTo(ScreenMode.Play));
-            Assert.That(
-                restored.Label,
-                Is.Null,
-                "Unity restores storage without invoking the optional-argument constructor."
-            );
+            Assert.That(restored.Label, Is.Null, "Unity restores storage without invoking the optional-argument constructor.");
             Assert.That(new Settings(count: 17, mode: ScreenMode.Play).Label, Is.EqualTo("unset"));
         }
 
@@ -74,17 +55,10 @@ namespace DxMessaging.Tests.Runtime.Core
             }
             foreach (string name in new[] { "_count", "_mode", "_label" })
             {
-                FieldInfo field = type.GetField(
-                    name,
-                    BindingFlags.NonPublic | BindingFlags.Instance
-                );
+                FieldInfo field = type.GetField(name, BindingFlags.NonPublic | BindingFlags.Instance);
                 Assert.That(field, Is.Not.Null, name);
                 Assert.That(field.IsPrivate, Is.True, name);
-                Assert.That(
-                    field.GetCustomAttributes(typeof(SerializeField), false),
-                    Has.Length.EqualTo(1),
-                    name
-                );
+                Assert.That(field.GetCustomAttributes(typeof(SerializeField), false), Has.Length.EqualTo(1), name);
             }
         }
 
@@ -96,9 +70,7 @@ namespace DxMessaging.Tests.Runtime.Core
             string context = $"count={count}";
             Assert.That(settings.Count, Is.EqualTo(count), context);
             Assert.That(settings.Sentinel, Is.EqualTo(73), context);
-            ExistingGetters restored = JsonUtility.FromJson<ExistingGetters>(
-                JsonUtility.ToJson(settings)
-            );
+            ExistingGetters restored = JsonUtility.FromJson<ExistingGetters>(JsonUtility.ToJson(settings));
             Assert.That(restored.Count, Is.EqualTo(count), context);
         }
 

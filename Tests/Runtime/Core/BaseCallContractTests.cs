@@ -79,10 +79,7 @@ namespace DxMessaging.Tests.Runtime.Core
         /// produce handler invocations.
         /// </summary>
         [UnityTest]
-        public IEnumerator OmitBaseAwakeYieldsNoTokenAndNoDispatch(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public IEnumerator OmitBaseAwakeYieldsNoTokenAndNoDispatch([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             /*
                 Expect the self-check breadcrumb BEFORE the action that triggers it
@@ -90,19 +87,12 @@ namespace DxMessaging.Tests.Runtime.Core
             */
             ExpectMissingBaseAwakeBreadcrumbIfCompiled();
 
-            GameObject host = new(
-                nameof(OmitBaseAwakeYieldsNoTokenAndNoDispatch) + scenario.Kind,
-                typeof(MissingBaseAwakeComponent)
-            );
+            GameObject host = new(nameof(OmitBaseAwakeYieldsNoTokenAndNoDispatch) + scenario.Kind, typeof(MissingBaseAwakeComponent));
             _spawned.Add(host);
 
             MissingBaseAwakeComponent component = host.GetComponent<MissingBaseAwakeComponent>();
             Assert.IsNotNull(component, "[{0}] Component should be present.", scenario.Kind);
-            Assert.IsNull(
-                component.Token,
-                "[{0}] Token must remain null when base.Awake() is skipped.",
-                scenario.Kind
-            );
+            Assert.IsNull(component.Token, "[{0}] Token must remain null when base.Awake() is skipped.", scenario.Kind);
 
             /*
                 Calling through a null token throws NullReferenceException.
@@ -111,10 +101,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 the registration", which a thrown exception satisfies.
             */
             Assert.Throws<System.NullReferenceException>(
-                () =>
-                    _ = component.Token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (in SimpleUntargetedMessage _) => { }
-                    ),
+                () => _ = component.Token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => { }),
                 "[{0}] Registering through a null token must throw, not silently no-op.",
                 scenario.Kind
             );
@@ -133,13 +120,7 @@ namespace DxMessaging.Tests.Runtime.Core
             EmitDirectly(scenario, host);
 
             IMessageBus bus = MessageHandler.MessageBus;
-            AssertRegistrationCounts(
-                bus,
-                untargeted: 0,
-                targeted: 0,
-                broadcast: 0,
-                context: $"OmitBaseAwake[{scenario.Kind}] no registrations should exist"
-            );
+            AssertRegistrationCounts(bus, untargeted: 0, targeted: 0, broadcast: 0, context: $"OmitBaseAwake[{scenario.Kind}] no registrations should exist");
 
             yield break;
         }
@@ -150,40 +131,22 @@ namespace DxMessaging.Tests.Runtime.Core
         /// the registered handler does not fire.
         /// </summary>
         [Test]
-        public void OmitBaseOnEnableLeavesHandlerDisabled(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void OmitBaseOnEnableLeavesHandlerDisabled([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(OmitBaseOnEnableLeavesHandlerDisabled) + scenario.Kind,
-                typeof(MissingBaseOnEnableComponent)
-            );
+            GameObject host = new(nameof(OmitBaseOnEnableLeavesHandlerDisabled) + scenario.Kind, typeof(MissingBaseOnEnableComponent));
             _spawned.Add(host);
 
-            MissingBaseOnEnableComponent component =
-                host.GetComponent<MissingBaseOnEnableComponent>();
+            MissingBaseOnEnableComponent component = host.GetComponent<MissingBaseOnEnableComponent>();
             MessageRegistrationToken token = GetToken(component);
-            Assert.IsNotNull(
-                token,
-                "[{0}] Token must be created because base.Awake() still runs.",
-                scenario.Kind
-            );
+            Assert.IsNotNull(token, "[{0}] Token must be created because base.Awake() still runs.", scenario.Kind);
 
             int handlerInvocations = 0;
-            MessageRegistrationHandle handle = RegisterCounter(scenario, token, host, () =>
-                handlerInvocations++
-            );
+            MessageRegistrationHandle handle = RegisterCounter(scenario, token, host, () => handlerInvocations++);
             try
             {
                 EmitDirectly(scenario, host);
 
-                Assert.AreEqual(
-                    0,
-                    handlerInvocations,
-                    "[{0}] Handler must not fire while the token is never enabled.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(0, handlerInvocations, "[{0}] Handler must not fire while the token is never enabled.", scenario.Kind);
             }
             finally
             {
@@ -197,30 +160,17 @@ namespace DxMessaging.Tests.Runtime.Core
         /// ostensibly off.
         /// </summary>
         [Test]
-        public void OmitBaseOnDisableLeavesHandlerLive(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void OmitBaseOnDisableLeavesHandlerLive([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(OmitBaseOnDisableLeavesHandlerLive) + scenario.Kind,
-                typeof(MissingBaseOnDisableComponent)
-            );
+            GameObject host = new(nameof(OmitBaseOnDisableLeavesHandlerLive) + scenario.Kind, typeof(MissingBaseOnDisableComponent));
             _spawned.Add(host);
 
-            MissingBaseOnDisableComponent component =
-                host.GetComponent<MissingBaseOnDisableComponent>();
+            MissingBaseOnDisableComponent component = host.GetComponent<MissingBaseOnDisableComponent>();
             MessageRegistrationToken token = GetToken(component);
-            Assert.IsNotNull(
-                token,
-                "[{0}] Token must be created because base.Awake() still runs.",
-                scenario.Kind
-            );
+            Assert.IsNotNull(token, "[{0}] Token must be created because base.Awake() still runs.", scenario.Kind);
 
             int handlerInvocations = 0;
-            MessageRegistrationHandle handle = RegisterCounter(scenario, token, host, () =>
-                handlerInvocations++
-            );
+            MessageRegistrationHandle handle = RegisterCounter(scenario, token, host, () => handlerInvocations++);
             try
             {
                 /*
@@ -230,12 +180,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 component.enabled = false;
                 EmitDirectly(scenario, host);
 
-                Assert.AreEqual(
-                    1,
-                    handlerInvocations,
-                    "[{0}] Handler must still fire because the token was never disabled.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(1, handlerInvocations, "[{0}] Handler must still fire because the token was never disabled.", scenario.Kind);
             }
             finally
             {
@@ -253,56 +198,24 @@ namespace DxMessaging.Tests.Runtime.Core
         /// destroy the host to prove the owner still drains the retained token.
         /// </remarks>
         [UnityTest]
-        public IEnumerator OmitBaseOnDisableAndOnDestroyLeaksRegistration(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public IEnumerator OmitBaseOnDisableAndOnDestroyLeaksRegistration([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            using LeakWatcher watcher = new(
-                bus: MessageHandler.MessageBus,
-                label: scenario.DisplayName
-            );
-            GameObject host = new(
-                nameof(OmitBaseOnDisableAndOnDestroyLeaksRegistration) + scenario.Kind,
-                typeof(MissingBaseOnDestroyComponent)
-            );
+            using LeakWatcher watcher = new(bus: MessageHandler.MessageBus, label: scenario.DisplayName);
+            GameObject host = new(nameof(OmitBaseOnDisableAndOnDestroyLeaksRegistration) + scenario.Kind, typeof(MissingBaseOnDestroyComponent));
             _spawned.Add(host);
-            MissingBaseOnDestroyComponent component =
-                host.GetComponent<MissingBaseOnDestroyComponent>();
+            MissingBaseOnDestroyComponent component = host.GetComponent<MissingBaseOnDestroyComponent>();
             MessageRegistrationToken token = GetToken(component);
             Assert.IsNotNull(token, "[{0}] base.Awake() must create the token.", scenario.Kind);
-            Assert.AreEqual(
-                OptedInStringMessageHandlerCount,
-                watcher.Snapshot,
-                "[{0}] Spawn must install all opted-in handlers. {1}",
-                scenario.Kind,
-                watcher.DescribeDelta()
-            );
+            Assert.AreEqual(OptedInStringMessageHandlerCount, watcher.Snapshot, "[{0}] Spawn must install all opted-in handlers. {1}", scenario.Kind, watcher.DescribeDelta());
 
             _ = RegisterCounter(scenario, token, host, () => { });
             const int expectedLeak = OptedInStringMessageHandlerCount + 1;
-            Assert.AreEqual(
-                expectedLeak,
-                watcher.Snapshot,
-                "[{0}] Control must include defaults and the user registration. {1}",
-                scenario.Kind,
-                watcher.DescribeDelta()
-            );
+            Assert.AreEqual(expectedLeak, watcher.Snapshot, "[{0}] Control must include defaults and the user registration. {1}", scenario.Kind, watcher.DescribeDelta());
 
             UnityEngine.Object.Destroy(component);
             yield return null;
-            Assert.That(
-                component == null,
-                Is.True,
-                "[{0}] Listener must be destroyed.",
-                scenario.Kind
-            );
-            Assert.That(
-                host != null,
-                Is.True,
-                "[{0}] Messaging owner must survive listener destruction.",
-                scenario.Kind
-            );
+            Assert.That(component == null, Is.True, "[{0}] Listener must be destroyed.", scenario.Kind);
+            Assert.That(host != null, Is.True, "[{0}] Messaging owner must survive listener destruction.", scenario.Kind);
             Assert.AreEqual(
                 expectedLeak,
                 watcher.LeakedRegistrations,
@@ -311,33 +224,14 @@ namespace DxMessaging.Tests.Runtime.Core
                 expectedLeak,
                 watcher.DescribeDelta()
             );
-            Assert.IsTrue(
-                token.Enabled,
-                "[{0}] Missing listener cleanup must leave its token enabled.",
-                scenario.Kind
-            );
+            Assert.IsTrue(token.Enabled, "[{0}] Missing listener cleanup must leave its token enabled.", scenario.Kind);
 
             UnityEngine.Object.Destroy(host);
             _spawned.Remove(host);
             yield return null;
-            Assert.That(
-                host == null,
-                Is.True,
-                "[{0}] Messaging owner must be destroyed.",
-                scenario.Kind
-            );
-            Assert.IsFalse(
-                token.Enabled,
-                "[{0}] Owner destruction must dispose the retained token.",
-                scenario.Kind
-            );
-            Assert.AreEqual(
-                0,
-                watcher.LeakedRegistrations,
-                "[{0}] Owner destruction must remove defaults and user registrations. {1}",
-                scenario.Kind,
-                watcher.DescribeDelta()
-            );
+            Assert.That(host == null, Is.True, "[{0}] Messaging owner must be destroyed.", scenario.Kind);
+            Assert.IsFalse(token.Enabled, "[{0}] Owner destruction must dispose the retained token.", scenario.Kind);
+            Assert.AreEqual(0, watcher.LeakedRegistrations, "[{0}] Owner destruction must remove defaults and user registrations. {1}", scenario.Kind, watcher.DescribeDelta());
         }
 
         /// <summary>
@@ -353,10 +247,7 @@ namespace DxMessaging.Tests.Runtime.Core
         /// documents why that test's fixture must skip both base calls.
         /// </summary>
         [UnityTest]
-        public IEnumerator OnDisableDuringDestroyMasksOnDestroyLeak(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public IEnumerator OnDisableDuringDestroyMasksOnDestroyLeak([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             /*
                 Construct the watcher BEFORE spawning the host so the baseline
@@ -371,26 +262,14 @@ namespace DxMessaging.Tests.Runtime.Core
                 be removed by the inherited OnDisable during the destroy
                 lifecycle, so the final delta is exactly 0.
             */
-            using LeakWatcher watcher = new(
-                bus: MessageHandler.MessageBus,
-                throwOnLeak: false,
-                label: scenario.DisplayName
-            );
+            using LeakWatcher watcher = new(bus: MessageHandler.MessageBus, throwOnLeak: false, label: scenario.DisplayName);
 
-            GameObject host = new(
-                nameof(OnDisableDuringDestroyMasksOnDestroyLeak) + scenario.Kind,
-                typeof(MissingBaseOnDestroyOnlyComponent)
-            );
+            GameObject host = new(nameof(OnDisableDuringDestroyMasksOnDestroyLeak) + scenario.Kind, typeof(MissingBaseOnDestroyOnlyComponent));
             _spawned.Add(host);
 
-            MissingBaseOnDestroyOnlyComponent component =
-                host.GetComponent<MissingBaseOnDestroyOnlyComponent>();
+            MissingBaseOnDestroyOnlyComponent component = host.GetComponent<MissingBaseOnDestroyOnlyComponent>();
             MessageRegistrationToken token = GetToken(component);
-            Assert.IsNotNull(
-                token,
-                "[{0}] Token must be created because base.Awake() still runs.",
-                scenario.Kind
-            );
+            Assert.IsNotNull(token, "[{0}] Token must be created because base.Awake() still runs.", scenario.Kind);
 
             int snapshotAfterSpawn = watcher.Snapshot;
             Assert.AreEqual(
@@ -404,13 +283,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             _ = RegisterCounter(scenario, token, host, () => { });
-            Assert.AreEqual(
-                snapshotAfterSpawn + 1,
-                watcher.Snapshot,
-                "[{0}] Bus must reflect the new registration before destroy. {1}",
-                scenario.Kind,
-                watcher.DescribeDelta()
-            );
+            Assert.AreEqual(snapshotAfterSpawn + 1, watcher.Snapshot, "[{0}] Bus must reflect the new registration before destroy. {1}", scenario.Kind, watcher.DescribeDelta());
 
             /*
                 Destroy only the listener, so owner cleanup cannot mask a missing OnDisable.
@@ -428,18 +301,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 yield return null;
             }
 
-            Assert.That(
-                component == null,
-                Is.True,
-                "[{0}] Listener must be destroyed.",
-                scenario.Kind
-            );
-            Assert.That(
-                host != null,
-                Is.True,
-                "[{0}] Messaging owner must survive this negative control.",
-                scenario.Kind
-            );
+            Assert.That(component == null, Is.True, "[{0}] Listener must be destroyed.", scenario.Kind);
+            Assert.That(host != null, Is.True, "[{0}] Messaging owner must survive this negative control.", scenario.Kind);
 
             Assert.AreEqual(
                 0,
@@ -464,8 +327,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 untargeted: 0,
                 targeted: 0,
                 broadcast: 0,
-                context: $"InheritedOnDisableMasksBrokenOnDestroy[{scenario.Kind}] "
-                    + $"after destroy. {watcher.DescribeDelta()}"
+                context: $"InheritedOnDisableMasksBrokenOnDestroy[{scenario.Kind}] " + $"after destroy. {watcher.DescribeDelta()}"
             );
 
             yield break;
@@ -489,34 +351,20 @@ namespace DxMessaging.Tests.Runtime.Core
         /// only when the scenario registers a broadcast counter.
         /// </summary>
         [UnityTest]
-        public IEnumerator OmitBaseOnDisableAndOnDestroyLeaksOptedInHandlersToo(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public IEnumerator OmitBaseOnDisableAndOnDestroyLeaksOptedInHandlersToo([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             /*
                 Watch from before spawn so the per-counter accounting is
                 anchored to a fresh bus.
             */
-            using LeakWatcher watcher = new(
-                bus: MessageHandler.MessageBus,
-                label: scenario.DisplayName
-            );
+            using LeakWatcher watcher = new(bus: MessageHandler.MessageBus, label: scenario.DisplayName);
 
-            GameObject host = new(
-                nameof(OmitBaseOnDisableAndOnDestroyLeaksOptedInHandlersToo) + scenario.Kind,
-                typeof(MissingBaseOnDestroyComponent)
-            );
+            GameObject host = new(nameof(OmitBaseOnDisableAndOnDestroyLeaksOptedInHandlersToo) + scenario.Kind, typeof(MissingBaseOnDestroyComponent));
             _spawned.Add(host);
 
-            MissingBaseOnDestroyComponent component =
-                host.GetComponent<MissingBaseOnDestroyComponent>();
+            MissingBaseOnDestroyComponent component = host.GetComponent<MissingBaseOnDestroyComponent>();
             MessageRegistrationToken token = GetToken(component);
-            Assert.IsNotNull(
-                token,
-                "[{0}] Token must be created because base.Awake() still runs.",
-                scenario.Kind
-            );
+            Assert.IsNotNull(token, "[{0}] Token must be created because base.Awake() still runs.", scenario.Kind);
 
             _ = RegisterCounter(scenario, token, host, () => { });
 
@@ -527,18 +375,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 yield return null;
             }
 
-            Assert.That(
-                component == null,
-                Is.True,
-                "[{0}] Listener must be destroyed.",
-                scenario.Kind
-            );
-            Assert.That(
-                host != null,
-                Is.True,
-                "[{0}] Messaging owner must survive listener destruction.",
-                scenario.Kind
-            );
+            Assert.That(component == null, Is.True, "[{0}] Listener must be destroyed.", scenario.Kind);
+            Assert.That(host != null, Is.True, "[{0}] Messaging owner must survive listener destruction.", scenario.Kind);
             IMessageBus bus = MessageHandler.MessageBus;
 
             /*
@@ -565,26 +403,14 @@ namespace DxMessaging.Tests.Runtime.Core
                 untargeted: expectedUntargeted,
                 targeted: expectedTargeted,
                 broadcast: expectedBroadcast,
-                context: $"OmitBaseOnDisableAndOnDestroyLeaksDefaultHandlersToo[{scenario.Kind}] "
-                    + $"after destroy. {deltaDescription}"
+                context: $"OmitBaseOnDisableAndOnDestroyLeaksDefaultHandlersToo[{scenario.Kind}] " + $"after destroy. {deltaDescription}"
             );
 
             UnityEngine.Object.Destroy(host);
             _spawned.Remove(host);
             yield return null;
-            Assert.That(
-                host == null,
-                Is.True,
-                "[{0}] Messaging owner must be destroyed.",
-                scenario.Kind
-            );
-            AssertRegistrationCounts(
-                bus,
-                untargeted: 0,
-                targeted: 0,
-                broadcast: 0,
-                context: $"OwnerCleanupAfterMissingBaseCalls[{scenario.Kind}]. {watcher.DescribeDelta()}"
-            );
+            Assert.That(host == null, Is.True, "[{0}] Messaging owner must be destroyed.", scenario.Kind);
+            AssertRegistrationCounts(bus, untargeted: 0, targeted: 0, broadcast: 0, context: $"OwnerCleanupAfterMissingBaseCalls[{scenario.Kind}]. {watcher.DescribeDelta()}");
         }
 
         /// <summary>
@@ -602,20 +428,12 @@ namespace DxMessaging.Tests.Runtime.Core
         [UnityTest]
         public IEnumerator OnDisableDuringDestroyDeregistersOptedInStringHandlers()
         {
-            using LeakWatcher watcher = new(
-                bus: MessageHandler.MessageBus,
-                throwOnLeak: false,
-                label: nameof(OnDisableDuringDestroyDeregistersOptedInStringHandlers)
-            );
+            using LeakWatcher watcher = new(bus: MessageHandler.MessageBus, throwOnLeak: false, label: nameof(OnDisableDuringDestroyDeregistersOptedInStringHandlers));
 
-            GameObject host = new(
-                nameof(OnDisableDuringDestroyDeregistersOptedInStringHandlers),
-                typeof(MissingBaseOnDestroyOnlyComponent)
-            );
+            GameObject host = new(nameof(OnDisableDuringDestroyDeregistersOptedInStringHandlers), typeof(MissingBaseOnDestroyOnlyComponent));
             _spawned.Add(host);
 
-            MissingBaseOnDestroyOnlyComponent component =
-                host.GetComponent<MissingBaseOnDestroyOnlyComponent>();
+            MissingBaseOnDestroyOnlyComponent component = host.GetComponent<MissingBaseOnDestroyOnlyComponent>();
             Assert.IsNotNull(GetToken(component), "Token must be created.");
 
             /*
@@ -625,12 +443,7 @@ namespace DxMessaging.Tests.Runtime.Core
             InstanceId hostId = host;
 
             // Sanity: spawning installs exactly the opted-in handler count.
-            Assert.AreEqual(
-                OptedInStringMessageHandlerCount,
-                watcher.Snapshot,
-                "Spawn must add exactly the opted-in handler count. {0}",
-                watcher.DescribeDelta()
-            );
+            Assert.AreEqual(OptedInStringMessageHandlerCount, watcher.Snapshot, "Spawn must add exactly the opted-in handler count. {0}", watcher.DescribeDelta());
 
             UnityEngine.Object.Destroy(component);
 
@@ -640,22 +453,16 @@ namespace DxMessaging.Tests.Runtime.Core
             }
 
             Assert.That(component == null, Is.True, "Listener must be destroyed.");
-            Assert.That(
-                host != null,
-                Is.True,
-                "Messaging owner must survive this negative control."
-            );
+            Assert.That(host != null, Is.True, "Messaging owner must survive this negative control.");
             IMessageBus bus = MessageHandler.MessageBus;
             Assert.Zero(
                 bus.RegisteredTargeted,
-                "Opted-in StringMessage Targeted handlers must be removed by "
-                    + "the inherited base.OnDisable() during destroy. {0}",
+                "Opted-in StringMessage Targeted handlers must be removed by " + "the inherited base.OnDisable() during destroy. {0}",
                 watcher.DescribeDelta()
             );
             Assert.Zero(
                 bus.RegisteredUntargeted,
-                "Opted-in GlobalStringMessage Untargeted handler must be removed "
-                    + "by the inherited base.OnDisable() during destroy. {0}",
+                "Opted-in GlobalStringMessage Untargeted handler must be removed " + "by the inherited base.OnDisable() during destroy. {0}",
                 watcher.DescribeDelta()
             );
 
@@ -676,8 +483,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     StringMessage stringMessage = new("after-destroy");
                     bus.UntypedTargetedBroadcast(hostId, stringMessage);
                 },
-                "Targeted broadcast against the destroyed listener's host id must not "
-                    + "throw and must dispatch to nobody."
+                "Targeted broadcast against the destroyed listener's host id must not " + "throw and must dispatch to nobody."
             );
             Assert.DoesNotThrow(
                 () =>
@@ -691,8 +497,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(
                 0,
                 watcher.LeakedRegistrations,
-                "No registrations may remain after the inherited base.OnDisable "
-                    + "drains the token during destroy. {0}",
+                "No registrations may remain after the inherited base.OnDisable " + "drains the token during destroy. {0}",
                 watcher.DescribeDelta()
             );
 
@@ -709,18 +514,11 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void OmitBaseRegisterMessageHandlersDoesNotRegisterOptedInStringHandlers()
         {
-            GameObject host = new(
-                nameof(OmitBaseRegisterMessageHandlersDoesNotRegisterOptedInStringHandlers),
-                typeof(MissingBaseRegisterMessageHandlersComponent)
-            );
+            GameObject host = new(nameof(OmitBaseRegisterMessageHandlersDoesNotRegisterOptedInStringHandlers), typeof(MissingBaseRegisterMessageHandlersComponent));
             _spawned.Add(host);
 
-            MissingBaseRegisterMessageHandlersComponent component =
-                host.GetComponent<MissingBaseRegisterMessageHandlersComponent>();
-            Assert.IsNotNull(
-                GetToken(component),
-                "Token must exist because base.Awake() still runs."
-            );
+            MissingBaseRegisterMessageHandlersComponent component = host.GetComponent<MissingBaseRegisterMessageHandlersComponent>();
+            Assert.IsNotNull(GetToken(component), "Token must exist because base.Awake() still runs.");
 
             /*
                 Emit the opted-in handler messages: a component-targeted StringMessage
@@ -732,11 +530,7 @@ namespace DxMessaging.Tests.Runtime.Core
             GlobalStringMessage globalMessage = new("global-payload");
             globalMessage.EmitUntargeted();
 
-            Assert.AreEqual(
-                0,
-                component.defaultHandlerInvocations,
-                "Opted-in base-class string handlers must not fire when base.RegisterMessageHandlers() is skipped."
-            );
+            Assert.AreEqual(0, component.defaultHandlerInvocations, "Opted-in base-class string handlers must not fire when base.RegisterMessageHandlers() is skipped.");
 
             /*
                 Confirm the user's own registration (added inside the override)
@@ -745,11 +539,7 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleUntargetedMessage userMessage = new();
             userMessage.EmitUntargeted();
 
-            Assert.AreEqual(
-                1,
-                component.userHandlerInvocations,
-                "User-registered handler in the override must still fire because the token is created."
-            );
+            Assert.AreEqual(1, component.userHandlerInvocations, "User-registered handler in the override must still fire because the token is created.");
         }
 
         /// <summary>
@@ -759,10 +549,7 @@ namespace DxMessaging.Tests.Runtime.Core
         /// disabled, and the bus returns to baseline on destroy.
         /// </summary>
         [UnityTest]
-        public IEnumerator CorrectSubclassingPassesAllChecks(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public IEnumerator CorrectSubclassingPassesAllChecks([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             /*
                 Construct the watcher BEFORE spawning the host so the baseline is
@@ -778,14 +565,10 @@ namespace DxMessaging.Tests.Runtime.Core
             */
             using (LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName))
             {
-                GameObject host = new(
-                    nameof(CorrectSubclassingPassesAllChecks) + scenario.Kind,
-                    typeof(CorrectBaseCallContractComponent)
-                );
+                GameObject host = new(nameof(CorrectSubclassingPassesAllChecks) + scenario.Kind, typeof(CorrectBaseCallContractComponent));
                 _spawned.Add(host);
 
-                CorrectBaseCallContractComponent component =
-                    host.GetComponent<CorrectBaseCallContractComponent>();
+                CorrectBaseCallContractComponent component = host.GetComponent<CorrectBaseCallContractComponent>();
                 MessageRegistrationToken token = GetToken(component);
                 Assert.IsNotNull(token, "[{0}] Token must be created.", scenario.Kind);
                 Assert.AreEqual(
@@ -797,26 +580,14 @@ namespace DxMessaging.Tests.Runtime.Core
                 );
 
                 int handlerInvocations = 0;
-                MessageRegistrationHandle handle = RegisterCounter(scenario, token, host, () =>
-                    handlerInvocations++
-                );
+                MessageRegistrationHandle handle = RegisterCounter(scenario, token, host, () => handlerInvocations++);
 
                 EmitDirectly(scenario, host);
-                Assert.AreEqual(
-                    1,
-                    handlerInvocations,
-                    "[{0}] Handler must fire while the component is enabled.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(1, handlerInvocations, "[{0}] Handler must fire while the component is enabled.", scenario.Kind);
 
                 component.enabled = false;
                 EmitDirectly(scenario, host);
-                Assert.AreEqual(
-                    1,
-                    handlerInvocations,
-                    "[{0}] Handler must not fire after the component is disabled.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(1, handlerInvocations, "[{0}] Handler must not fire after the component is disabled.", scenario.Kind);
 
                 token.RemoveRegistration(handle);
                 UnityEngine.Object.Destroy(host);
@@ -826,12 +597,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     yield return null;
                 }
 
-                Assert.AreEqual(
-                    0,
-                    watcher.LeakedRegistrations,
-                    "[{0}] Correct base-call chaining must leave no leaked registrations.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(0, watcher.LeakedRegistrations, "[{0}] Correct base-call chaining must leave no leaked registrations.", scenario.Kind);
             }
 
             yield break;
@@ -853,20 +619,13 @@ namespace DxMessaging.Tests.Runtime.Core
             */
             ExpectMissingBaseAwakeBreadcrumbIfCompiled();
 
-            GameObject correctHost = new(
-                nameof(MultipleSubclassesDoNotCrossContaminate) + "_Correct",
-                typeof(CorrectBaseCallContractComponent)
-            );
+            GameObject correctHost = new(nameof(MultipleSubclassesDoNotCrossContaminate) + "_Correct", typeof(CorrectBaseCallContractComponent));
             _spawned.Add(correctHost);
 
-            GameObject brokenHost = new(
-                nameof(MultipleSubclassesDoNotCrossContaminate) + "_Broken",
-                typeof(MissingBaseAwakeComponent)
-            );
+            GameObject brokenHost = new(nameof(MultipleSubclassesDoNotCrossContaminate) + "_Broken", typeof(MissingBaseAwakeComponent));
             _spawned.Add(brokenHost);
 
-            CorrectBaseCallContractComponent correct =
-                correctHost.GetComponent<CorrectBaseCallContractComponent>();
+            CorrectBaseCallContractComponent correct = correctHost.GetComponent<CorrectBaseCallContractComponent>();
             MissingBaseAwakeComponent broken = brokenHost.GetComponent<MissingBaseAwakeComponent>();
 
             Assert.IsNotNull(GetToken(correct), "Correct host must have a token.");
@@ -875,11 +634,7 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleUntargetedMessage message = new();
             message.EmitUntargeted();
 
-            Assert.AreEqual(
-                1,
-                correct.userHandlerInvocations,
-                "Correct host must receive the message."
-            );
+            Assert.AreEqual(1, correct.userHandlerInvocations, "Correct host must receive the message.");
             /*
                 The broken host has no token and no registration, so it cannot
                 observe a counter increment; assert via the only public surface
@@ -888,48 +643,25 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.IsNull(broken.Token, "Broken host must remain unable to register handlers.");
         }
 
-        private static MessageRegistrationHandle RegisterCounter(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            InstanceId target,
-            System.Action onInvoked
-        )
+        private static MessageRegistrationHandle RegisterCounter(MessageScenario scenario, MessageRegistrationToken token, InstanceId target, System.Action onInvoked)
         {
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
                 {
-                    return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
-                        scenario,
-                        token,
-                        (in SimpleUntargetedMessage _) => onInvoked()
-                    );
+                    return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(scenario, token, (in SimpleUntargetedMessage _) => onInvoked());
                 }
                 case MessageKind.Targeted:
                 {
-                    return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        target,
-                        (in SimpleTargetedMessage _) => onInvoked()
-                    );
+                    return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(scenario, token, target, (in SimpleTargetedMessage _) => onInvoked());
                 }
                 case MessageKind.Broadcast:
                 {
-                    return ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        target,
-                        (in SimpleBroadcastMessage _) => onInvoked()
-                    );
+                    return ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(scenario, token, target, (in SimpleBroadcastMessage _) => onInvoked());
                 }
                 default:
                 {
-                    throw new System.ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new System.ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
@@ -965,11 +697,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 default:
                 {
-                    throw new System.ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new System.ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }

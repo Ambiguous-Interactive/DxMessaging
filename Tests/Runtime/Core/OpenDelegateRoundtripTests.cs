@@ -25,10 +25,7 @@ namespace DxMessaging.Tests.Runtime.Core
             public int value;
         }
 
-        private delegate void OpenRefInvoker<TTarget, TPayload>(
-            TTarget target,
-            ref TPayload payload
-        );
+        private delegate void OpenRefInvoker<TTarget, TPayload>(TTarget target, ref TPayload payload);
 
         private sealed class StructReceiver
         {
@@ -55,53 +52,30 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void OpenInstanceDelegateOverRefValueTypeParameterRoundTrips()
         {
-            MethodInfo method = typeof(StructReceiver).GetMethod(
-                nameof(StructReceiver.Handle),
-                BindingFlags.Public | BindingFlags.Instance
-            );
+            MethodInfo method = typeof(StructReceiver).GetMethod(nameof(StructReceiver.Handle), BindingFlags.Public | BindingFlags.Instance);
             Assert.IsNotNull(method, "Proof setup: Handle(ref StructPayload) must exist.");
 
             OpenRefInvoker<StructReceiver, StructPayload> invoker =
-                (OpenRefInvoker<StructReceiver, StructPayload>)
-                    Delegate.CreateDelegate(
-                        typeof(OpenRefInvoker<StructReceiver, StructPayload>),
-                        firstArgument: null,
-                        method
-                    );
+                (OpenRefInvoker<StructReceiver, StructPayload>)Delegate.CreateDelegate(typeof(OpenRefInvoker<StructReceiver, StructPayload>), firstArgument: null, method);
 
             StructReceiver receiver = new();
             StructPayload payload = new() { value = 21 };
             invoker(receiver, ref payload);
             invoker(receiver, ref payload);
 
-            Assert.AreEqual(
-                21 + 22,
-                receiver.observed,
-                "Open-instance invocation must call the bound method with the live target."
-            );
-            Assert.AreEqual(
-                23,
-                payload.value,
-                "ref value-type payload mutations must round-trip through the open delegate."
-            );
+            Assert.AreEqual(21 + 22, receiver.observed, "Open-instance invocation must call the bound method with the live target.");
+            Assert.AreEqual(23, payload.value, "ref value-type payload mutations must round-trip through the open delegate.");
         }
 
         [Test]
         public void OpenInstanceDelegateOverRefReferenceParameterRoundTrips()
         {
-            MethodInfo method = typeof(ReferenceReceiver).GetMethod(
-                nameof(ReferenceReceiver.Handle),
-                BindingFlags.Public | BindingFlags.Instance
-            );
+            MethodInfo method = typeof(ReferenceReceiver).GetMethod(nameof(ReferenceReceiver.Handle), BindingFlags.Public | BindingFlags.Instance);
             Assert.IsNotNull(method, "Proof setup: Handle(ref ReferencePayload) must exist.");
 
             OpenRefInvoker<ReferenceReceiver, ReferencePayload> invoker =
                 (OpenRefInvoker<ReferenceReceiver, ReferencePayload>)
-                    Delegate.CreateDelegate(
-                        typeof(OpenRefInvoker<ReferenceReceiver, ReferencePayload>),
-                        firstArgument: null,
-                        method
-                    );
+                    Delegate.CreateDelegate(typeof(OpenRefInvoker<ReferenceReceiver, ReferencePayload>), firstArgument: null, method);
 
             ReferenceReceiver receiver = new();
             ReferencePayload payload = new() { value = 5 };

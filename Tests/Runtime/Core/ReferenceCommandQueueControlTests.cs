@@ -68,14 +68,10 @@ namespace DxMessaging.Tests.Runtime.Core
         public void DrainResetAndDisposeClearCapturedDelegates()
         {
             ReferenceCommandQueueControl queue = new(2);
-            FieldInfo ringField = typeof(ReferenceCommandQueueControl).GetField(
-                "_ring",
-                BindingFlags.NonPublic | BindingFlags.Instance
-            );
+            FieldInfo ringField = typeof(ReferenceCommandQueueControl).GetField("_ring", BindingFlags.NonPublic | BindingFlags.Instance);
             Assert.That(ringField, Is.Not.Null);
             object ring = ringField.GetValue(queue);
-            FieldInfo slotsField = ring.GetType()
-                .GetField("_items", BindingFlags.NonPublic | BindingFlags.Instance);
+            FieldInfo slotsField = ring.GetType().GetField("_items", BindingFlags.NonPublic | BindingFlags.Instance);
             Assert.That(slotsField, Is.Not.Null);
             Action[] slots = (Action[])slotsField.GetValue(ring);
             Holder holder = new();

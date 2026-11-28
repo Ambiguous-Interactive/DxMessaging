@@ -48,10 +48,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
 
         internal void Record(string messageTech, long operationsPerSecond, bool allocating)
         {
-            string formattedOperations = operationsPerSecond.ToString(
-                "N0",
-                CultureInfo.InvariantCulture
-            );
+            string formattedOperations = operationsPerSecond.ToString("N0", CultureInfo.InvariantCulture);
             Debug.Log($"| {messageTech} | {formattedOperations} | {(allocating ? "Yes" : "No")} |");
             _entries.Add(new BenchmarkEntry(messageTech, operationsPerSecond, allocating));
         }
@@ -65,9 +62,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
                     return;
                 }
 
-                Debug.Log(
-                    BenchmarkDocumentation.BuildLogBlock(_sectionName, _headingPrefix, _entries)
-                );
+                Debug.Log(BenchmarkDocumentation.BuildLogBlock(_sectionName, _headingPrefix, _entries));
             }
             finally
             {
@@ -98,11 +93,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             return null;
         }
 
-        internal static string BuildLogBlock(
-            string sectionName,
-            string headingPrefix,
-            IReadOnlyList<BenchmarkEntry> entries
-        )
+        internal static string BuildLogBlock(string sectionName, string headingPrefix, IReadOnlyList<BenchmarkEntry> entries)
         {
             StringBuilder builder = new();
             if (!string.IsNullOrEmpty(sectionName))

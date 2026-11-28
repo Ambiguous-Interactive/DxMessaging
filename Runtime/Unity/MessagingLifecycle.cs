@@ -21,11 +21,7 @@ namespace DxMessaging.Unity
         private bool _disposing;
 
         /// <summary>Captures the exact token validated and retained by the component factory.</summary>
-        internal MessagingLifecycle(
-            MessagingComponent component,
-            MonoBehaviour listener,
-            MessageRegistrationToken token
-        )
+        internal MessagingLifecycle(MessagingComponent component, MonoBehaviour listener, MessageRegistrationToken token)
         {
             _component = component;
             _listener = listener;
@@ -34,8 +30,7 @@ namespace DxMessaging.Unity
 
         /// <summary>Gets the captured token for handler configuration until final cleanup succeeds.</summary>
         /// <exception cref="ObjectDisposedException">Final disposal has completed.</exception>
-        public MessageRegistrationToken Token =>
-            _token ?? throw new ObjectDisposedException(nameof(MessagingLifecycle));
+        public MessageRegistrationToken Token => _token ?? throw new ObjectDisposedException(nameof(MessagingLifecycle));
 
         /// <summary>Gets whether final cleanup completed and released the retained owner references.</summary>
         public bool IsDisposed => _token == null;
@@ -50,14 +45,9 @@ namespace DxMessaging.Unity
             {
                 throw new ObjectDisposedException(nameof(MessagingLifecycle));
             }
-            if (
-                !_component.TryGetToken(_listener, out MessageRegistrationToken current)
-                || !ReferenceEquals(current, token)
-            )
+            if (!_component.TryGetToken(_listener, out MessageRegistrationToken current) || !ReferenceEquals(current, token))
             {
-                throw new InvalidOperationException(
-                    "The lifecycle token was released or replaced. Create a new lifecycle for this listener."
-                );
+                throw new InvalidOperationException("The lifecycle token was released or replaced. Create a new lifecycle for this listener.");
             }
             token.Enable();
         }
@@ -85,11 +75,7 @@ namespace DxMessaging.Unity
             _disposing = true;
             try
             {
-                bool ownsCachedToken =
-                    _component._registeredListeners.TryGetValue(
-                        _listener,
-                        out MessageRegistrationToken current
-                    ) && ReferenceEquals(current, token);
+                bool ownsCachedToken = _component._registeredListeners.TryGetValue(_listener, out MessageRegistrationToken current) && ReferenceEquals(current, token);
                 if (ownsCachedToken)
                 {
                     _component.Release(_listener);
@@ -98,14 +84,7 @@ namespace DxMessaging.Unity
                 {
                     token.Dispose();
                 }
-                if (
-                    !token.Enabled
-                    && token._metadata.Count == 0
-                    && (
-                        !_component._registeredListeners.TryGetValue(_listener, out current)
-                        || !ReferenceEquals(current, token)
-                    )
-                )
+                if (!token.Enabled && token._metadata.Count == 0 && (!_component._registeredListeners.TryGetValue(_listener, out current) || !ReferenceEquals(current, token)))
                 {
                     _token = null;
                     _listener = null;

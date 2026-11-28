@@ -47,10 +47,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     continue;
                 }
 
-                if (
-                    string.IsNullOrEmpty(name)
-                    || !name.StartsWith(PackageAssemblyPrefix, StringComparison.Ordinal)
-                )
+                if (string.IsNullOrEmpty(name) || !name.StartsWith(PackageAssemblyPrefix, StringComparison.Ordinal))
                 {
                     continue;
                 }
@@ -74,8 +71,7 @@ namespace DxMessaging.Tests.Runtime.Core
             unreadable.Sort(StringComparer.Ordinal);
 
             Assert.That(
-                optimized.Contains(RuntimeAssemblyName)
-                    || unoptimized.Contains(RuntimeAssemblyName),
+                optimized.Contains(RuntimeAssemblyName) || unoptimized.Contains(RuntimeAssemblyName),
                 Is.True,
                 $"'{RuntimeAssemblyName}' carried no readable DebuggableAttribute, so this "
                     + "contract verified nothing about the runtime package. "
@@ -117,11 +113,7 @@ namespace DxMessaging.Tests.Runtime.Core
             return false;
         }
 
-        private static string Describe(
-            IReadOnlyList<string> optimized,
-            IReadOnlyList<string> unoptimized,
-            bool enforced
-        )
+        private static string Describe(IReadOnlyList<string> optimized, IReadOnlyList<string> unoptimized, bool enforced)
         {
             StringBuilder message = new();
             if (enforced)
@@ -134,10 +126,7 @@ namespace DxMessaging.Tests.Runtime.Core
             }
             else
             {
-                message.Append(
-                    "Reported, not enforced: this run is not in batch mode. "
-                        + $"{optimized.Count} optimized, {unoptimized.Count} unoptimized"
-                );
+                message.Append("Reported, not enforced: this run is not in batch mode. " + $"{optimized.Count} optimized, {unoptimized.Count} unoptimized");
                 if (unoptimized.Count == 0)
                 {
                     return message.Append('.').ToString();

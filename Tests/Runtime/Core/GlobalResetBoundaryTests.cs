@@ -42,14 +42,7 @@ namespace DxMessaging.Tests.Runtime.Core
                             {
                                 foreach (int behavior in new[] { 2, 3, 4 })
                                 {
-                                    yield return Case(
-                                        scenario,
-                                        fast,
-                                        sameHandler,
-                                        count,
-                                        position,
-                                        behavior
-                                    );
+                                    yield return Case(scenario, fast, sameHandler, count, position, behavior);
                                 }
                             }
                         }
@@ -58,53 +51,17 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private static TestCaseData Case(
-            MessageScenario scenario,
-            bool fast,
-            bool sameHandler,
-            int count,
-            int position,
-            int behavior
-        )
+        private static TestCaseData Case(MessageScenario scenario, bool fast, bool sameHandler, int count, int position, int behavior)
         {
             return new TestCaseData(scenario, fast, sameHandler, count, position, behavior).SetName(
-                "GlobalReset_"
-                    + scenario
-                    + "_fast"
-                    + fast
-                    + "_shared"
-                    + sameHandler
-                    + "_count"
-                    + count
-                    + "_position"
-                    + position
-                    + "_behavior"
-                    + behavior
+                "GlobalReset_" + scenario + "_fast" + fast + "_shared" + sameHandler + "_count" + count + "_position" + position + "_behavior" + behavior
             );
         }
 
         [TestCaseSource(nameof(GlobalCases))]
-        public void GlobalResetStopsOldDeliveryAndKeepsFreshRegistrations(
-            MessageScenario scenario,
-            bool fast,
-            bool sameHandler,
-            int count,
-            int resetPosition,
-            int behavior
-        )
+        public void GlobalResetStopsOldDeliveryAndKeepsFreshRegistrations(MessageScenario scenario, bool fast, bool sameHandler, int count, int resetPosition, int behavior)
         {
-            string label =
-                scenario
-                + ",fast="
-                + fast
-                + ",shared="
-                + sameHandler
-                + ",count="
-                + count
-                + ",position="
-                + resetPosition
-                + ",behavior="
-                + behavior;
+            string label = scenario + ",fast=" + fast + ",shared=" + sameHandler + ",count=" + count + ",position=" + resetPosition + ",behavior=" + behavior;
             using CaseState state = new CaseState(scenario, fast, sameHandler, count);
             InvalidOperationException failure = new InvalidOperationException(label);
             bool nested = behavior == 2 || behavior == 4;
@@ -179,31 +136,11 @@ namespace DxMessaging.Tests.Runtime.Core
             int afterValidCleanup = state.LiveRegistrations;
             AssertAll(() =>
             {
-                Assert.That(
-                    observed,
-                    throwing ? Is.SameAs(failure) : Is.Null,
-                    label + ": preserve the exact callback exception or complete normally."
-                );
-                Assert.That(
-                    first,
-                    Is.EqualTo(expected),
-                    label + ": the invalidated emission must stop at the resetting callback."
-                );
-                Assert.That(
-                    second,
-                    Is.EqualTo(expectedSecond),
-                    label + ": a separate fresh emission must retain order and callbacks."
-                );
-                Assert.That(
-                    afterOriginalCleanup,
-                    Is.EqualTo(behavior == 0 ? 0 : 3),
-                    label + ": stale original cleanup must preserve all fresh registrations."
-                );
-                Assert.That(
-                    afterValidCleanup,
-                    Is.Zero,
-                    label + ": valid cleanup must reach zero before maintenance."
-                );
+                Assert.That(observed, throwing ? Is.SameAs(failure) : Is.Null, label + ": preserve the exact callback exception or complete normally.");
+                Assert.That(first, Is.EqualTo(expected), label + ": the invalidated emission must stop at the resetting callback.");
+                Assert.That(second, Is.EqualTo(expectedSecond), label + ": a separate fresh emission must retain order and callbacks.");
+                Assert.That(afterOriginalCleanup, Is.EqualTo(behavior == 0 ? 0 : 3), label + ": stale original cleanup must preserve all fresh registrations.");
+                Assert.That(afterValidCleanup, Is.Zero, label + ": valid cleanup must reach zero before maintenance.");
             });
         }
 
@@ -220,36 +157,17 @@ namespace DxMessaging.Tests.Runtime.Core
                         {
                             yield return PreservedCase(scenario, sameHandler, style, count, -1, 0);
                             int[] order = ExpectedGlobalOrder(count, sameHandler, style);
-                            HashSet<int> positions = new HashSet<int>
-                            {
-                                order[0],
-                                order[count / 2],
-                                order[count - 1],
-                            };
+                            HashSet<int> positions = new HashSet<int> { order[0], order[count / 2], order[count - 1] };
                             foreach (int position in positions)
                             {
-                                yield return PreservedCase(
-                                    scenario,
-                                    sameHandler,
-                                    style,
-                                    count,
-                                    position,
-                                    1
-                                );
+                                yield return PreservedCase(scenario, sameHandler, style, count, position, 1);
                             }
                         }
                         foreach (int count in new[] { 2, 8 })
                         {
                             foreach (int behavior in new[] { 2, 3, 4 })
                             {
-                                yield return PreservedCase(
-                                    scenario,
-                                    sameHandler,
-                                    style,
-                                    count,
-                                    0,
-                                    behavior
-                                );
+                                yield return PreservedCase(scenario, sameHandler, style, count, 0, behavior);
                             }
                         }
                     }
@@ -257,35 +175,10 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private static TestCaseData PreservedCase(
-            MessageScenario scenario,
-            bool sameHandler,
-            int style,
-            int count,
-            int position,
-            int behavior
-        )
+        private static TestCaseData PreservedCase(MessageScenario scenario, bool sameHandler, int style, int count, int position, int behavior)
         {
-            return new TestCaseData(
-                scenario,
-                sameHandler,
-                style,
-                count,
-                position,
-                behavior
-            ).SetName(
-                "PreservedReset_"
-                    + scenario
-                    + "_shared"
-                    + sameHandler
-                    + "_style"
-                    + style
-                    + "_count"
-                    + count
-                    + "_position"
-                    + position
-                    + "_behavior"
-                    + behavior
+            return new TestCaseData(scenario, sameHandler, style, count, position, behavior).SetName(
+                "PreservedReset_" + scenario + "_shared" + sameHandler + "_style" + style + "_count" + count + "_position" + position + "_behavior" + behavior
             );
         }
 
@@ -306,27 +199,9 @@ namespace DxMessaging.Tests.Runtime.Core
 
         /// <summary>Exercises the public generation-only reset used to preserve custom bus storage.</summary>
         [TestCaseSource(nameof(PreservedCases))]
-        public void PreservedStorageResetStopsEveryCallbackAndKeepsLaterDelivery(
-            MessageScenario scenario,
-            bool sameHandler,
-            int style,
-            int count,
-            int resetPosition,
-            int behavior
-        )
+        public void PreservedStorageResetStopsEveryCallbackAndKeepsLaterDelivery(MessageScenario scenario, bool sameHandler, int style, int count, int resetPosition, int behavior)
         {
-            string label =
-                scenario
-                + ",shared="
-                + sameHandler
-                + ",style="
-                + style
-                + ",count="
-                + count
-                + ",position="
-                + resetPosition
-                + ",behavior="
-                + behavior;
+            string label = scenario + ",shared=" + sameHandler + ",style=" + style + ",count=" + count + ",position=" + resetPosition + ",behavior=" + behavior;
             using CaseState state = new CaseState(scenario, style == 1, sameHandler, count);
             bool reset = false;
             bool nested = behavior == 2 || behavior == 4;
@@ -402,38 +277,17 @@ namespace DxMessaging.Tests.Runtime.Core
             state.Bus.ResetState();
             AssertAll(() =>
             {
-                Assert.That(
-                    observed,
-                    throwing ? Is.SameAs(failure) : Is.Null,
-                    label + ": retain callback exception identity or complete normally."
-                );
-                Assert.That(
-                    first,
-                    Is.EqualTo(expectedFirst),
-                    label + ": generation-only reset must stop within a shared handler too."
-                );
-                Assert.That(
-                    second,
-                    Is.EqualTo(full),
-                    label + ": the next emission must preserve all original registrations."
-                );
-                Assert.That(
-                    afterOriginalCleanup,
-                    Is.EqualTo(behavior == 0 ? 0 : initialLive),
-                    label + ": invalidated handles must leave preserved storage unchanged."
-                );
-                Assert.That(
-                    state.LiveRegistrations,
-                    Is.Zero,
-                    label + ": explicit owned-bus reset must clear preserved registrations."
-                );
+                Assert.That(observed, throwing ? Is.SameAs(failure) : Is.Null, label + ": retain callback exception identity or complete normally.");
+                Assert.That(first, Is.EqualTo(expectedFirst), label + ": generation-only reset must stop within a shared handler too.");
+                Assert.That(second, Is.EqualTo(full), label + ": the next emission must preserve all original registrations.");
+                Assert.That(afterOriginalCleanup, Is.EqualTo(behavior == 0 ? 0 : initialLive), label + ": invalidated handles must leave preserved storage unchanged.");
+                Assert.That(state.LiveRegistrations, Is.Zero, label + ": explicit owned-bus reset must clear preserved registrations.");
             });
         }
 
         [Test]
         public void OtherResetOriginsKeepTheirPhaseBoundary(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
             [Values(false, true)] bool fast,
             [Values(false, true)] bool interceptor
         )
@@ -469,35 +323,18 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 Assert.That(
                     first,
-                    Is.EqualTo(
-                        interceptor
-                            ? new[] { "interceptor" }
-                            : new[] { "global-0", "global-1", "typed-first" }
-                    ),
+                    Is.EqualTo(interceptor ? new[] { "interceptor" } : new[] { "global-0", "global-1", "typed-first" }),
                     label + ": existing reset origins must stop remaining old phases."
                 );
-                Assert.That(
-                    second,
-                    Is.EqualTo(new[] { "fresh-global", "fresh-handler", "fresh-post" }),
-                    label + ": next emission must deliver fresh callbacks once."
-                );
-                Assert.That(
-                    afterStale,
-                    Is.EqualTo(3),
-                    label + ": stale cleanup must preserve all three replacements."
-                );
-                Assert.That(
-                    state.LiveRegistrations,
-                    Is.Zero,
-                    label + ": valid cleanup must finish before maintenance."
-                );
+                Assert.That(second, Is.EqualTo(new[] { "fresh-global", "fresh-handler", "fresh-post" }), label + ": next emission must deliver fresh callbacks once.");
+                Assert.That(afterStale, Is.EqualTo(3), label + ": stale cleanup must preserve all three replacements.");
+                Assert.That(state.LiveRegistrations, Is.Zero, label + ": valid cleanup must finish before maintenance.");
             });
         }
 
         [Test]
         public void GlobalPeerActivityRemainsLiveWithinTheFrozenWalk(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
             [Values(false, true)] bool fast,
             [Values(false, true)] bool activate
         )
@@ -531,16 +368,8 @@ namespace DxMessaging.Tests.Runtime.Core
                     Is.EqualTo(activate ? new[] { "global-0", "global-1" } : new[] { "global-0" }),
                     label + ": a prior callback's activity change must affect the peer live."
                 );
-                Assert.That(
-                    second,
-                    Is.EqualTo(new[] { "global-0", "global-1" }),
-                    label + ": later activation must preserve both global registrations."
-                );
-                Assert.That(
-                    state.LiveRegistrations,
-                    Is.Zero,
-                    label + ": global cleanup must finish before maintenance."
-                );
+                Assert.That(second, Is.EqualTo(new[] { "global-0", "global-1" }), label + ": later activation must preserve both global registrations.");
+                Assert.That(state.LiveRegistrations, Is.Zero, label + ": global cleanup must finish before maintenance.");
             });
         }
 
@@ -556,21 +385,11 @@ namespace DxMessaging.Tests.Runtime.Core
             }
             else
             {
-                token.RegisterGlobalAcceptAll(
-                    acceptAllUntargeted: _ => call(),
-                    acceptAllTargeted: (_, _) => call(),
-                    acceptAllBroadcast: (_, _) => call()
-                );
+                token.RegisterGlobalAcceptAll(acceptAllUntargeted: _ => call(), acceptAllTargeted: (_, _) => call(), acceptAllBroadcast: (_, _) => call());
             }
         }
 
-        private static void RegisterTyped(
-            MessageRegistrationToken token,
-            MessageScenario scenario,
-            Action call,
-            bool post,
-            int priority
-        )
+        private static void RegisterTyped(MessageRegistrationToken token, MessageScenario scenario, Action call, bool post, int priority)
         {
             MessageHandler.FastHandler<ProbeMessage> callback = (in ProbeMessage _) => call();
             switch (scenario.Kind)
@@ -578,12 +397,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 case MessageKind.Untargeted:
                     if (post)
                     {
-                        ScenarioHarness.RegisterUntargetedPostProcessor(
-                            scenario,
-                            token,
-                            callback,
-                            priority
-                        );
+                        ScenarioHarness.RegisterUntargetedPostProcessor(scenario, token, callback, priority);
                     }
                     else
                     {
@@ -593,45 +407,21 @@ namespace DxMessaging.Tests.Runtime.Core
                 case MessageKind.Targeted:
                     if (post)
                     {
-                        ScenarioHarness.RegisterTargetedPostProcessor(
-                            scenario,
-                            token,
-                            Context,
-                            callback,
-                            priority
-                        );
+                        ScenarioHarness.RegisterTargetedPostProcessor(scenario, token, Context, callback, priority);
                     }
                     else
                     {
-                        ScenarioHarness.RegisterTargeted(
-                            scenario,
-                            token,
-                            Context,
-                            callback,
-                            priority
-                        );
+                        ScenarioHarness.RegisterTargeted(scenario, token, Context, callback, priority);
                     }
                     break;
                 case MessageKind.Broadcast:
                     if (post)
                     {
-                        ScenarioHarness.RegisterBroadcastPostProcessor(
-                            scenario,
-                            token,
-                            Context,
-                            callback,
-                            priority
-                        );
+                        ScenarioHarness.RegisterBroadcastPostProcessor(scenario, token, Context, callback, priority);
                     }
                     else
                     {
-                        ScenarioHarness.RegisterBroadcast(
-                            scenario,
-                            token,
-                            Context,
-                            callback,
-                            priority
-                        );
+                        ScenarioHarness.RegisterBroadcast(scenario, token, Context, callback, priority);
                     }
                     break;
                 default:
@@ -639,11 +429,7 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private static void RegisterInterceptor(
-            MessageRegistrationToken token,
-            MessageScenario scenario,
-            Action call
-        )
+        private static void RegisterInterceptor(MessageRegistrationToken token, MessageScenario scenario, Action call)
         {
             bool Scalar(ref ProbeMessage _)
             {
@@ -680,10 +466,7 @@ namespace DxMessaging.Tests.Runtime.Core
 #endif
         }
 
-        private readonly struct ProbeMessage
-            : IUntargetedMessage,
-                ITargetedMessage,
-                IBroadcastMessage
+        private readonly struct ProbeMessage : IUntargetedMessage, ITargetedMessage, IBroadcastMessage
         {
             public Type MessageType => typeof(ProbeMessage);
         }
@@ -713,13 +496,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Tokens = new MessageRegistrationToken[count];
                 for (int index = 0; index < count; ++index)
                 {
-                    Handlers[index] =
-                        sameHandler && 0 < index
-                            ? Handlers[0]
-                            : new MessageHandler(new InstanceId(3100 + index), Bus)
-                            {
-                                active = true,
-                            };
+                    Handlers[index] = sameHandler && 0 < index ? Handlers[0] : new MessageHandler(new InstanceId(3100 + index), Bus) { active = true };
                     Tokens[index] = MessageRegistrationToken.Create(Handlers[index], Bus);
                 }
             }
@@ -745,20 +522,8 @@ namespace DxMessaging.Tests.Runtime.Core
                     false,
                     0
                 );
-                RegisterTyped(
-                    Tokens[Tokens.Length - 1],
-                    _scenario,
-                    () => Calls.Add("typed-peer"),
-                    false,
-                    1
-                );
-                RegisterTyped(
-                    Tokens[Tokens.Length - 1],
-                    _scenario,
-                    () => Calls.Add("post-old"),
-                    true,
-                    0
-                );
+                RegisterTyped(Tokens[Tokens.Length - 1], _scenario, () => Calls.Add("typed-peer"), false, 1);
+                RegisterTyped(Tokens[Tokens.Length - 1], _scenario, () => Calls.Add("post-old"), true, 0);
             }
 
             internal void RegisterFresh()

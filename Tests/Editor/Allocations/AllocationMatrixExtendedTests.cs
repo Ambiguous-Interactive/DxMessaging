@@ -65,9 +65,7 @@ namespace DxMessaging.Tests.Editor.Allocations
                 {
                     foreach (bool featured in new[] { false, true })
                     {
-                        yield return new TestCaseData(scenario, fast, featured).SetName(
-                            $"TypedWithoutContextAllocation_{scenario.Kind}_Fast{fast}_Featured{featured}"
-                        );
+                        yield return new TestCaseData(scenario, fast, featured).SetName($"TypedWithoutContextAllocation_{scenario.Kind}_Fast{fast}_Featured{featured}");
                     }
                 }
             }
@@ -75,11 +73,7 @@ namespace DxMessaging.Tests.Editor.Allocations
 
         /// <summary>Checks both handle phases after warming fast and featured dispatch plans.</summary>
         [TestCaseSource(nameof(TypedWithoutContextAllocationCases))]
-        public void TypedAndWithoutContextHandlePhasesRemainAllocationFree(
-            MessageScenario scenario,
-            bool fast,
-            bool featured
-        )
+        public void TypedAndWithoutContextHandlePhasesRemainAllocationFree(MessageScenario scenario, bool fast, bool featured)
         {
             RunWithFreshHarness(scenario, (token, bus) =>
             {
@@ -92,22 +86,13 @@ namespace DxMessaging.Tests.Editor.Allocations
                     {
                         if (fast)
                         {
-                            _ = token.RegisterTargeted<SimpleTargetedMessage>(
-                                StableTarget,
-                                (in SimpleTargetedMessage _) => ++primaryCalls
-                            );
-                            _ = token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(
-                                (in InstanceId _, in SimpleTargetedMessage __) => ++variantCalls
-                            );
+                            _ = token.RegisterTargeted<SimpleTargetedMessage>(StableTarget, (in SimpleTargetedMessage _) => ++primaryCalls);
+                            _ = token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>((in InstanceId _, in SimpleTargetedMessage __) => ++variantCalls);
                         }
                         else
                         {
-                            _ = token.RegisterTargeted<SimpleTargetedMessage>(StableTarget, _ =>
-                                ++primaryCalls
-                            );
-                            _ = token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(
-                                (_, __) => ++variantCalls
-                            );
+                            _ = token.RegisterTargeted<SimpleTargetedMessage>(StableTarget, _ => ++primaryCalls);
+                            _ = token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>((_, __) => ++variantCalls);
                         }
                         break;
                     }
@@ -115,30 +100,19 @@ namespace DxMessaging.Tests.Editor.Allocations
                     {
                         if (fast)
                         {
-                            _ = token.RegisterBroadcast<SimpleBroadcastMessage>(
-                                StableSource,
-                                (in SimpleBroadcastMessage _) => ++primaryCalls
-                            );
-                            _ = token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>(
-                                (in InstanceId _, in SimpleBroadcastMessage __) => ++variantCalls
-                            );
+                            _ = token.RegisterBroadcast<SimpleBroadcastMessage>(StableSource, (in SimpleBroadcastMessage _) => ++primaryCalls);
+                            _ = token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>((in InstanceId _, in SimpleBroadcastMessage __) => ++variantCalls);
                         }
                         else
                         {
-                            _ = token.RegisterBroadcast<SimpleBroadcastMessage>(StableSource, _ =>
-                                ++primaryCalls
-                            );
-                            _ = token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>(
-                                (_, __) => ++variantCalls
-                            );
+                            _ = token.RegisterBroadcast<SimpleBroadcastMessage>(StableSource, _ => ++primaryCalls);
+                            _ = token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>((_, __) => ++variantCalls);
                         }
                         break;
                     }
                     default:
                     {
-                        throw new InvalidOperationException(
-                            $"Unhandled MessageKind {scenario.Kind}."
-                        );
+                        throw new InvalidOperationException($"Unhandled MessageKind {scenario.Kind}.");
                     }
                 }
                 if (featured)
@@ -148,11 +122,7 @@ namespace DxMessaging.Tests.Editor.Allocations
                 Action emit = BuildEmitClosure(scenario, bus);
                 AllocationAssertions.AssertNoAllocations("TypedWithoutContext-" + label, emit);
                 Assert.That(0 < primaryCalls, Is.True, label + ": keyed callbacks ran");
-                Assert.That(
-                    variantCalls,
-                    Is.EqualTo(primaryCalls),
-                    label + ": both handle phases must deliver once per emission"
-                );
+                Assert.That(variantCalls, Is.EqualTo(primaryCalls), label + ": both handle phases must deliver once per emission");
             });
         }
 
@@ -164,10 +134,7 @@ namespace DxMessaging.Tests.Editor.Allocations
         /// </summary>
         [Test]
         [Category("Allocation")]
-        public void EmitClassMessageIsZeroAlloc(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void EmitClassMessageIsZeroAlloc([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             RunWithFreshHarness(scenario, (token, bus) =>
             {
@@ -191,11 +158,7 @@ namespace DxMessaging.Tests.Editor.Allocations
         [Test]
         [Category("Allocation")]
         public void AllocationAcrossInterceptorAndPostProcessor(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.WithAtLeastOneFeatureToggle)
-            )]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.WithAtLeastOneFeatureToggle))] MessageScenario scenario
         )
         {
             RunWithFreshHarness(scenario, (token, bus) =>
@@ -213,10 +176,7 @@ namespace DxMessaging.Tests.Editor.Allocations
 
                 string interceptorTag = scenario.UseInterceptor ? "I+" : "I-";
                 string postProcessorTag = scenario.UsePostProcessor ? "P+" : "P-";
-                AllocationAssertions.AssertNoAllocations(
-                    $"EmitInterceptorPostProcessor-{interceptorTag}{postProcessorTag}-{scenario.Kind}",
-                    emit
-                );
+                AllocationAssertions.AssertNoAllocations($"EmitInterceptorPostProcessor-{interceptorTag}{postProcessorTag}-{scenario.Kind}", emit);
             });
         }
 
@@ -228,10 +188,7 @@ namespace DxMessaging.Tests.Editor.Allocations
         /// </summary>
         [Test]
         [Category("Allocation")]
-        public void LongRunningRegistrationChurn1000Cycles(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void LongRunningRegistrationChurn1000Cycles([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             /*
                 Budget: per-cycle worst case is dominated by closure +
@@ -331,10 +288,7 @@ namespace DxMessaging.Tests.Editor.Allocations
         /// </summary>
         [Test]
         [Category("Allocation")]
-        public void GlobalAcceptAllAllocationIsZeroSteadyState(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void GlobalAcceptAllAllocationIsZeroSteadyState([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             RunWithFreshHarness(scenario, (token, bus) =>
             {
@@ -346,15 +300,8 @@ namespace DxMessaging.Tests.Editor.Allocations
                 */
                 Action emit = BuildClassEmitClosure(scenario, bus);
                 RegisterClassHandler(scenario, token);
-                _ = token.RegisterGlobalAcceptAll(
-                    AcceptAllUntargeted,
-                    AcceptAllTargeted,
-                    AcceptAllBroadcast
-                );
-                AllocationAssertions.AssertNoAllocations(
-                    $"EmitGlobalAcceptAll-{scenario.Kind}",
-                    emit
-                );
+                _ = token.RegisterGlobalAcceptAll(AcceptAllUntargeted, AcceptAllTargeted, AcceptAllBroadcast);
+                AllocationAssertions.AssertNoAllocations($"EmitGlobalAcceptAll-{scenario.Kind}", emit);
             });
         }
 
@@ -362,8 +309,7 @@ namespace DxMessaging.Tests.Editor.Allocations
         [Test]
         [Category("Allocation")]
         public void GlobalSnapshotsRemainAllocationFreeAfterNestedMutation(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
             [Values(0, 1, 2)] int shape,
             [Values(3, 8)] int count
         )
@@ -386,11 +332,7 @@ namespace DxMessaging.Tests.Editor.Allocations
                             (in InstanceId _, in IBroadcastMessage __) => callback()
                         );
                     }
-                    return token.RegisterGlobalAcceptAll(
-                        _ => callback(),
-                        (_, _) => callback(),
-                        (_, _) => callback()
-                    );
+                    return token.RegisterGlobalAcceptAll(_ => callback(), (_, _) => callback(), (_, _) => callback());
                 }
                 RegisterSnapshotCallback(shape != 0, () =>
                 {
@@ -411,11 +353,7 @@ namespace DxMessaging.Tests.Editor.Allocations
                 emit();
                 int before = callbacks;
                 AllocationAssertions.AssertNoAllocations("GlobalSnapshots-" + label, emit);
-                Assert.That(
-                    before < callbacks,
-                    Is.True,
-                    label + ": measured dispatch delivered peers"
-                );
+                Assert.That(before < callbacks, Is.True, label + ": measured dispatch delivered peers");
             });
         }
 
@@ -431,10 +369,7 @@ namespace DxMessaging.Tests.Editor.Allocations
         /// </summary>
         [Test]
         [Category("Allocation")]
-        public void GlobalAcceptAllStructMessageBudgetIsBounded(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void GlobalAcceptAllStructMessageBudgetIsBounded([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             /*
                 128 bytes/emit covers struct-to-interface boxes up to 64 bytes
@@ -461,11 +396,7 @@ namespace DxMessaging.Tests.Editor.Allocations
             {
                 Action emit = BuildEmitClosure(scenario, bus);
                 RegisterStructHandler(scenario, token);
-                _ = token.RegisterGlobalAcceptAll(
-                    AcceptAllUntargeted,
-                    AcceptAllTargeted,
-                    AcceptAllBroadcast
-                );
+                _ = token.RegisterGlobalAcceptAll(AcceptAllUntargeted, AcceptAllTargeted, AcceptAllBroadcast);
 
                 /*
                     Warm: settle any one-shot allocations (delegate caches,
@@ -523,10 +454,7 @@ namespace DxMessaging.Tests.Editor.Allocations
             });
         }
 
-        private void RunWithFreshHarness(
-            MessageScenario scenario,
-            Action<MessageRegistrationToken, MessageBus> body
-        )
+        private void RunWithFreshHarness(MessageScenario scenario, Action<MessageRegistrationToken, MessageBus> body)
         {
             if (scenario == null)
             {
@@ -553,42 +481,21 @@ namespace DxMessaging.Tests.Editor.Allocations
             }
         }
 
-        private static MessageRegistrationHandle RegisterStructHandler(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            int priority = 0
-        )
+        private static MessageRegistrationHandle RegisterStructHandler(MessageScenario scenario, MessageRegistrationToken token, int priority = 0)
         {
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
                 {
-                    return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
-                        scenario,
-                        token,
-                        NoOpUntargeted,
-                        priority: priority
-                    );
+                    return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(scenario, token, NoOpUntargeted, priority: priority);
                 }
                 case MessageKind.Targeted:
                 {
-                    return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        StableTarget,
-                        NoOpTargeted,
-                        priority: priority
-                    );
+                    return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(scenario, token, StableTarget, NoOpTargeted, priority: priority);
                 }
                 case MessageKind.Broadcast:
                 {
-                    return ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        StableSource,
-                        NoOpBroadcast,
-                        priority: priority
-                    );
+                    return ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(scenario, token, StableSource, NoOpBroadcast, priority: priority);
                 }
                 default:
                 {
@@ -597,10 +504,7 @@ namespace DxMessaging.Tests.Editor.Allocations
             }
         }
 
-        private static MessageRegistrationHandle RegisterClassHandler(
-            MessageScenario scenario,
-            MessageRegistrationToken token
-        )
+        private static MessageRegistrationHandle RegisterClassHandler(MessageScenario scenario, MessageRegistrationToken token)
         {
             switch (scenario.Kind)
             {
@@ -610,17 +514,11 @@ namespace DxMessaging.Tests.Editor.Allocations
                 }
                 case MessageKind.Targeted:
                 {
-                    return token.RegisterTargeted<ClassTargetedMessage>(
-                        StableTarget,
-                        NoOpClassTargeted
-                    );
+                    return token.RegisterTargeted<ClassTargetedMessage>(StableTarget, NoOpClassTargeted);
                 }
                 case MessageKind.Broadcast:
                 {
-                    return token.RegisterBroadcast<ClassBroadcastMessage>(
-                        StableSource,
-                        NoOpClassBroadcast
-                    );
+                    return token.RegisterBroadcast<ClassBroadcastMessage>(StableSource, NoOpClassBroadcast);
                 }
                 default:
                 {
@@ -629,36 +527,21 @@ namespace DxMessaging.Tests.Editor.Allocations
             }
         }
 
-        private static MessageRegistrationHandle RegisterAllowingInterceptor(
-            MessageScenario scenario,
-            MessageRegistrationToken token
-        )
+        private static MessageRegistrationHandle RegisterAllowingInterceptor(MessageScenario scenario, MessageRegistrationToken token)
         {
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
                 {
-                    return ScenarioHarness.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(
-                        scenario,
-                        token,
-                        AllowUntargeted
-                    );
+                    return ScenarioHarness.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(scenario, token, AllowUntargeted);
                 }
                 case MessageKind.Targeted:
                 {
-                    return ScenarioHarness.RegisterTargetedInterceptor<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        AllowTargeted
-                    );
+                    return ScenarioHarness.RegisterTargetedInterceptor<SimpleTargetedMessage>(scenario, token, AllowTargeted);
                 }
                 case MessageKind.Broadcast:
                 {
-                    return ScenarioHarness.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        AllowBroadcast
-                    );
+                    return ScenarioHarness.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(scenario, token, AllowBroadcast);
                 }
                 default:
                 {
@@ -667,38 +550,21 @@ namespace DxMessaging.Tests.Editor.Allocations
             }
         }
 
-        private static MessageRegistrationHandle RegisterPostProcessor(
-            MessageScenario scenario,
-            MessageRegistrationToken token
-        )
+        private static MessageRegistrationHandle RegisterPostProcessor(MessageScenario scenario, MessageRegistrationToken token)
         {
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
                 {
-                    return ScenarioHarness.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
-                        scenario,
-                        token,
-                        NoOpUntargeted
-                    );
+                    return ScenarioHarness.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(scenario, token, NoOpUntargeted);
                 }
                 case MessageKind.Targeted:
                 {
-                    return ScenarioHarness.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        StableTarget,
-                        NoOpTargeted
-                    );
+                    return ScenarioHarness.RegisterTargetedPostProcessor<SimpleTargetedMessage>(scenario, token, StableTarget, NoOpTargeted);
                 }
                 case MessageKind.Broadcast:
                 {
-                    return ScenarioHarness.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        StableSource,
-                        NoOpBroadcast
-                    );
+                    return ScenarioHarness.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(scenario, token, StableSource, NoOpBroadcast);
                 }
                 default:
                 {
@@ -767,10 +633,7 @@ namespace DxMessaging.Tests.Editor.Allocations
 
         private static void AcceptAllTargeted(in InstanceId target, in ITargetedMessage message) { }
 
-        private static void AcceptAllBroadcast(
-            in InstanceId source,
-            in IBroadcastMessage message
-        ) { }
+        private static void AcceptAllBroadcast(in InstanceId source, in IBroadcastMessage message) { }
 
         private static void NoOpUntargeted(in SimpleUntargetedMessage message) { }
 
@@ -794,10 +657,7 @@ namespace DxMessaging.Tests.Editor.Allocations
             return true;
         }
 
-        private static bool AllowBroadcast(
-            ref InstanceId source,
-            ref SimpleBroadcastMessage message
-        )
+        private static bool AllowBroadcast(ref InstanceId source, ref SimpleBroadcastMessage message)
         {
             return true;
         }

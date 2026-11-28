@@ -40,12 +40,7 @@ namespace DxMessaging.Tests.Editor
                 {
                     if (readerHeld)
                     {
-                        reader = new FileStream(
-                            path,
-                            FileMode.Open,
-                            FileAccess.Read,
-                            FileShare.Read
-                        );
+                        reader = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
                         Assert.That(reader.CanRead, Is.True);
                         Assert.That(reader.Length, Is.EqualTo(baseline.LongLength));
                     }
@@ -76,19 +71,10 @@ namespace DxMessaging.Tests.Editor
                         cleanupError = error;
                     }
                 }
-                bool restored =
-                    File.Exists(path) && baseline.SequenceEqual(File.ReadAllBytes(path));
+                bool restored = File.Exists(path) && baseline.SequenceEqual(File.ReadAllBytes(path));
                 bool modifiedUnchanged = File.GetLastWriteTimeUtc(path) == modified;
-                int nativeError =
-                    constructorError == null ? 0 : Innermost(constructorError).HResult & 65535;
-                bool passed =
-                    constructorError == null
-                    && cleanupError == null
-                    && scopeCreated
-                    && sourceReadable
-                    && sourceExact
-                    && restored
-                    && modifiedUnchanged;
+                int nativeError = constructorError == null ? 0 : Innermost(constructorError).HResult & 65535;
+                bool passed = constructorError == null && cleanupError == null && scopeCreated && sourceReadable && sourceExact && restored && modifiedUnchanged;
                 string observation =
                     $"reader={readerHeld}; cycle={cycle}; leaseDeleteError={leaseDeleteError}; oracleCopy=True; sourceReadable={sourceReadable}; sourceExact={sourceExact}; restored={restored}; modifiedUnchanged={modifiedUnchanged}; scopeCreated={scopeCreated}; constructorError={constructorError?.GetType().FullName ?? "none"}; nativeError={nativeError}; cleanupError={cleanupError?.GetType().FullName ?? "none"}; passed={passed}";
                 TestContext.Out.WriteLine("DXM_COMPILER_INPUT_READABLE_BACKUP " + observation);
@@ -119,10 +105,7 @@ namespace DxMessaging.Tests.Editor
 
         private static void AssertIndependentCopyOracle()
         {
-            string root = Path.Combine(
-                Path.GetTempPath(),
-                "DxmReadableBackup" + Guid.NewGuid().ToString("N")
-            );
+            string root = Path.Combine(Path.GetTempPath(), "DxmReadableBackup" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(root);
             try
             {
@@ -130,27 +113,15 @@ namespace DxMessaging.Tests.Editor
                 string backup = Path.Combine(root, ".input.rsp.backup");
                 byte[] expected = { 7, 11, 13, 17 };
                 File.WriteAllBytes(original, expected);
-                using (
-                    FileStream reader = new(
-                        original,
-                        FileMode.Open,
-                        FileAccess.Read,
-                        FileShare.Read
-                    )
-                )
+                using (FileStream reader = new(original, FileMode.Open, FileAccess.Read, FileShare.Read))
                 {
                     Assert.That(reader.CanRead, Is.True);
-                    Assert.That(
-                        EditorCompilerInputFailureDiagnostics.Probe(original).Error,
-                        Is.EqualTo(32)
-                    );
+                    Assert.That(EditorCompilerInputFailureDiagnostics.Probe(original).Error, Is.EqualTo(32));
                     File.Copy(original, backup);
                     CollectionAssert.AreEqual(expected, File.ReadAllBytes(original));
                     CollectionAssert.AreEqual(expected, File.ReadAllBytes(backup));
                 }
-                TestContext.Out.WriteLine(
-                    "DXM_COMPILER_INPUT_READABLE_BACKUP_ORACLE copy=True; readerDeleteError=32; originalExact=True; backupExact=True"
-                );
+                TestContext.Out.WriteLine("DXM_COMPILER_INPUT_READABLE_BACKUP_ORACLE copy=True; readerDeleteError=32; originalExact=True; backupExact=True");
             }
             finally
             {

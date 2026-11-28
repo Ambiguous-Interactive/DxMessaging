@@ -95,19 +95,11 @@ namespace DxMessaging.Tests.Runtime.Core
                     the v4 handles must likewise be UNEQUAL so a consumer that stores handles in a
                     set/map and deregisters per-unique-handle does not under-deregister (leak).
                 */
-                MessageBusRegistration first = bus.RegisterUntargeted<SimpleUntargetedMessage>(
-                    handler
-                );
-                MessageBusRegistration second = bus.RegisterUntargeted<SimpleUntargetedMessage>(
-                    handler
-                );
+                MessageBusRegistration first = bus.RegisterUntargeted<SimpleUntargetedMessage>(handler);
+                MessageBusRegistration second = bus.RegisterUntargeted<SimpleUntargetedMessage>(handler);
                 try
                 {
-                    Assert.AreNotEqual(
-                        first,
-                        second,
-                        "Two refcount registrations must mint unequal handles."
-                    );
+                    Assert.AreNotEqual(first, second, "Two refcount registrations must mint unequal handles.");
                     Assert.IsTrue(first != second);
                 }
                 finally
@@ -125,11 +117,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
         [Test]
         public void DispatchStateStaysLazyUntilFirstEmission(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext)
-            )]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext))] MessageScenario scenario
         )
         {
             MessageBus bus = new MessageBus { DiagnosticsMode = false };
@@ -139,43 +127,20 @@ namespace DxMessaging.Tests.Runtime.Core
             int calls = 0;
             InstanceId context = new InstanceId(405);
 
-            using (
-                new LeakWatcher(
-                    bus,
-                    label: nameof(DispatchStateStaysLazyUntilFirstEmission) + ":" + scenario
-                )
-            )
+            using (new LeakWatcher(bus, label: nameof(DispatchStateStaysLazyUntilFirstEmission) + ":" + scenario))
             {
                 try
                 {
                     _ = RegisterCountingSink(scenario, token, context, () => ++calls);
-                    Assert.IsFalse(
-                        HasDispatchState(bus, scenario, context),
-                        "[{0}] Registration must not allocate dispatch state before a matching emission.",
-                        scenario
-                    );
+                    Assert.IsFalse(HasDispatchState(bus, scenario, context), "[{0}] Registration must not allocate dispatch state before a matching emission.", scenario);
 
                     EmitForScenario(scenario, bus, context);
-                    Assert.AreEqual(
-                        1,
-                        calls,
-                        "[{0}] The first emission must build and use the snapshot.",
-                        scenario
-                    );
-                    Assert.IsTrue(
-                        HasDispatchState(bus, scenario, context),
-                        "[{0}] The first emission must materialize dispatch state.",
-                        scenario
-                    );
+                    Assert.AreEqual(1, calls, "[{0}] The first emission must build and use the snapshot.", scenario);
+                    Assert.IsTrue(HasDispatchState(bus, scenario, context), "[{0}] The first emission must materialize dispatch state.", scenario);
 
                     _ = RegisterCountingSink(scenario, token, context, () => calls += 10);
                     EmitForScenario(scenario, bus, context);
-                    Assert.AreEqual(
-                        12,
-                        calls,
-                        "[{0}] A registration after first emission must dirty and rebuild the existing state.",
-                        scenario
-                    );
+                    Assert.AreEqual(12, calls, "[{0}] A registration after first emission must dirty and rebuild the existing state.", scenario);
                 }
                 finally
                 {
@@ -186,77 +151,40 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private static bool HasDispatchState(
-            MessageBus bus,
-            MessageScenario scenario,
-            InstanceId context
-        )
+        private static bool HasDispatchState(MessageBus bus, MessageScenario scenario, InstanceId context)
         {
             RegistrationMethod method = GetRegistrationMethod(scenario);
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
-                    return MessageBusInspection.HasDispatchState<SimpleUntargetedMessage>(
-                        bus,
-                        method,
-                        context
-                    );
+                    return MessageBusInspection.HasDispatchState<SimpleUntargetedMessage>(bus, method, context);
                 case MessageKind.Targeted:
                 case MessageKind.TargetedWithoutTargeting:
-                    return MessageBusInspection.HasDispatchState<SimpleTargetedMessage>(
-                        bus,
-                        method,
-                        context
-                    );
+                    return MessageBusInspection.HasDispatchState<SimpleTargetedMessage>(bus, method, context);
                 case MessageKind.Broadcast:
                 case MessageKind.BroadcastWithoutSource:
-                    return MessageBusInspection.HasDispatchState<SimpleBroadcastMessage>(
-                        bus,
-                        method,
-                        context
-                    );
+                    return MessageBusInspection.HasDispatchState<SimpleBroadcastMessage>(bus, method, context);
                 default:
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
             }
         }
 
-        private static MessageRegistrationHandle RegisterCountingSink(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            InstanceId context,
-            Action onInvoked
-        )
+        private static MessageRegistrationHandle RegisterCountingSink(MessageScenario scenario, MessageRegistrationToken token, InstanceId context, Action onInvoked)
         {
             if (scenario.UsePostProcessor)
             {
                 switch (scenario.Kind)
                 {
                     case MessageKind.Untargeted:
-                        return token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
-                            (in SimpleUntargetedMessage _) => onInvoked()
-                        );
+                        return token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => onInvoked());
                     case MessageKind.Targeted:
-                        return token.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
-                            context,
-                            (in SimpleTargetedMessage _) => onInvoked()
-                        );
+                        return token.RegisterTargetedPostProcessor<SimpleTargetedMessage>(context, (in SimpleTargetedMessage _) => onInvoked());
                     case MessageKind.Broadcast:
-                        return token.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(
-                            context,
-                            (in SimpleBroadcastMessage _) => onInvoked()
-                        );
+                        return token.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(context, (in SimpleBroadcastMessage _) => onInvoked());
                     case MessageKind.TargetedWithoutTargeting:
-                        return token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>(
-                            (in InstanceId _, in SimpleTargetedMessage __) => onInvoked()
-                        );
+                        return token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>((in InstanceId _, in SimpleTargetedMessage __) => onInvoked());
                     case MessageKind.BroadcastWithoutSource:
-                        return token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(
-                            (in InstanceId _, in SimpleBroadcastMessage __) => onInvoked()
-                        );
+                        return token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>((in InstanceId _, in SimpleBroadcastMessage __) => onInvoked());
                     default:
                         throw UnsupportedScenario(scenario);
                 }
@@ -265,27 +193,15 @@ namespace DxMessaging.Tests.Runtime.Core
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
-                    return token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (in SimpleUntargetedMessage _) => onInvoked()
-                    );
+                    return token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => onInvoked());
                 case MessageKind.Targeted:
-                    return token.RegisterTargeted<SimpleTargetedMessage>(
-                        context,
-                        (in SimpleTargetedMessage _) => onInvoked()
-                    );
+                    return token.RegisterTargeted<SimpleTargetedMessage>(context, (in SimpleTargetedMessage _) => onInvoked());
                 case MessageKind.Broadcast:
-                    return token.RegisterBroadcast<SimpleBroadcastMessage>(
-                        context,
-                        (in SimpleBroadcastMessage _) => onInvoked()
-                    );
+                    return token.RegisterBroadcast<SimpleBroadcastMessage>(context, (in SimpleBroadcastMessage _) => onInvoked());
                 case MessageKind.TargetedWithoutTargeting:
-                    return token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(
-                        (in InstanceId _, in SimpleTargetedMessage __) => onInvoked()
-                    );
+                    return token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>((in InstanceId _, in SimpleTargetedMessage __) => onInvoked());
                 case MessageKind.BroadcastWithoutSource:
-                    return token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>(
-                        (in InstanceId _, in SimpleBroadcastMessage __) => onInvoked()
-                    );
+                    return token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>((in InstanceId _, in SimpleBroadcastMessage __) => onInvoked());
                 default:
                     throw UnsupportedScenario(scenario);
             }
@@ -296,35 +212,21 @@ namespace DxMessaging.Tests.Runtime.Core
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
-                    return scenario.UsePostProcessor
-                        ? RegistrationMethod.UntargetedPostProcessor
-                        : RegistrationMethod.Untargeted;
+                    return scenario.UsePostProcessor ? RegistrationMethod.UntargetedPostProcessor : RegistrationMethod.Untargeted;
                 case MessageKind.Targeted:
-                    return scenario.UsePostProcessor
-                        ? RegistrationMethod.TargetedPostProcessor
-                        : RegistrationMethod.Targeted;
+                    return scenario.UsePostProcessor ? RegistrationMethod.TargetedPostProcessor : RegistrationMethod.Targeted;
                 case MessageKind.Broadcast:
-                    return scenario.UsePostProcessor
-                        ? RegistrationMethod.BroadcastPostProcessor
-                        : RegistrationMethod.Broadcast;
+                    return scenario.UsePostProcessor ? RegistrationMethod.BroadcastPostProcessor : RegistrationMethod.Broadcast;
                 case MessageKind.TargetedWithoutTargeting:
-                    return scenario.UsePostProcessor
-                        ? RegistrationMethod.TargetedWithoutTargetingPostProcessor
-                        : RegistrationMethod.TargetedWithoutTargeting;
+                    return scenario.UsePostProcessor ? RegistrationMethod.TargetedWithoutTargetingPostProcessor : RegistrationMethod.TargetedWithoutTargeting;
                 case MessageKind.BroadcastWithoutSource:
-                    return scenario.UsePostProcessor
-                        ? RegistrationMethod.BroadcastWithoutSourcePostProcessor
-                        : RegistrationMethod.BroadcastWithoutSource;
+                    return scenario.UsePostProcessor ? RegistrationMethod.BroadcastWithoutSourcePostProcessor : RegistrationMethod.BroadcastWithoutSource;
                 default:
                     throw UnsupportedScenario(scenario);
             }
         }
 
-        private static void EmitForScenario(
-            MessageScenario scenario,
-            IMessageBus bus,
-            InstanceId context
-        )
+        private static void EmitForScenario(MessageScenario scenario, IMessageBus bus, InstanceId context)
         {
             switch (scenario.Kind)
             {
@@ -349,11 +251,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
         private static ArgumentOutOfRangeException UnsupportedScenario(MessageScenario scenario)
         {
-            return new ArgumentOutOfRangeException(
-                nameof(scenario),
-                scenario.Kind,
-                "Unsupported message kind."
-            );
+            return new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
         }
     }
 }

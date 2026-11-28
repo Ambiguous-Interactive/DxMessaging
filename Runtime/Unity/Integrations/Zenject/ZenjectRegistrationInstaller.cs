@@ -35,9 +35,7 @@ namespace DxMessaging.Unity.Integrations.Zenject
             }
 
             IMessageBus messageBus = context.Container.Resolve<IMessageBus>();
-            return new MessageRegistrationBuilder(
-                new ContainerMessageBusProvider(context.Container, messageBus)
-            );
+            return new MessageRegistrationBuilder(new ContainerMessageBusProvider(context.Container, messageBus));
         }
 
         /// <summary>Adapts a Zenject container and its optional cached bus to IMessageBusProvider.</summary>
@@ -92,10 +90,7 @@ namespace DxMessaging.Unity.Integrations.Zenject
             {
                 throw new ArgumentNullException(nameof(container));
             }
-            container
-                .BindInterfacesAndSelfTo<MessageBus>()
-                .FromMethod(_ => new MessageBus())
-                .AsSingle();
+            container.BindInterfacesAndSelfTo<MessageBus>().FromMethod(_ => new MessageBus()).AsSingle();
         }
 
         /// <summary>
@@ -105,10 +100,7 @@ namespace DxMessaging.Unity.Integrations.Zenject
         /// </summary>
         /// <param name="container">Container receiving the registration.</param>
         /// <param name="factory">Delegate that constructs the <see cref="MessageBus"/> instance using the inject context.</param>
-        public static void BindDxMessagingBus(
-            this DiContainer container,
-            Func<InjectContext, MessageBus> factory
-        )
+        public static void BindDxMessagingBus(this DiContainer container, Func<InjectContext, MessageBus> factory)
         {
             if (container == null)
             {
@@ -137,10 +129,7 @@ namespace DxMessaging.Unity.Integrations.Zenject
             {
                 throw new ArgumentNullException(nameof(clock));
             }
-            container
-                .BindInterfacesAndSelfTo<MessageBus>()
-                .FromMethod(_ => MessageBus.CreateForInternalUse(clock))
-                .AsSingle();
+            container.BindInterfacesAndSelfTo<MessageBus>().FromMethod(_ => MessageBus.CreateForInternalUse(clock)).AsSingle();
         }
     }
 #endif

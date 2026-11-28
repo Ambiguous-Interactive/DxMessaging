@@ -15,20 +15,10 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Tests;
 [TestFixture]
 internal sealed class NameofOptionalDefaultsTests
 {
-    private sealed record Case(
-        string Type,
-        string Expression,
-        object? Expected,
-        bool Valid = true,
-        bool RequiresDiagnostic = false
-    );
+    private sealed record Case(string Type, string Expression, object? Expected, bool Valid = true, bool RequiresDiagnostic = false);
 
     [TestCaseSource(nameof(Cases))]
-    public void NameofDefaultsPreserveValidConstantsAndRejectInvalidDefaults(
-        string name,
-        string target,
-        bool split
-    )
+    public void NameofDefaultsPreserveValidConstantsAndRejectInvalidDefaults(string name, string target, bool split)
     {
         string context = $"name={name}, target={target}, split={split}";
         Case item = GetCase(name);
@@ -40,11 +30,7 @@ internal sealed class NameofOptionalDefaultsTests
         }
         else
         {
-            Assert.That(
-                manual.GetDiagnostics().Any(d => d.Severity == DiagnosticSeverity.Error),
-                Is.True,
-                "The independent compiler rejects this invalid default: " + context
-            );
+            Assert.That(manual.GetDiagnostics().Any(d => d.Severity == DiagnosticSeverity.Error), Is.True, "The independent compiler rejects this invalid default: " + context);
         }
 
         (first, second) = CreateSources(item, target, split, manual: false);
@@ -52,21 +38,9 @@ internal sealed class NameofOptionalDefaultsTests
             generators: new ISourceGenerator[] { new DxAutoConstructorGenerator() },
             parseOptions: new CSharpParseOptions(LanguageVersion.CSharp9)
         );
-        driver = driver.RunGeneratorsAndUpdateCompilation(
-            CreateCompilation(first, second),
-            out Compilation generated,
-            out ImmutableArray<Diagnostic> diagnostics
-        );
-        Assert.That(
-            driver.GetRunResult().Results.Select(run => run.Exception),
-            Has.All.Null,
-            "The generator must preserve normal compiler diagnostics: " + context
-        );
-        Assert.That(
-            driver.GetRunResult().GeneratedTrees,
-            Has.Length.EqualTo(1),
-            "Retain the generated constructor: " + context
-        );
+        driver = driver.RunGeneratorsAndUpdateCompilation(CreateCompilation(first, second), out Compilation generated, out ImmutableArray<Diagnostic> diagnostics);
+        Assert.That(driver.GetRunResult().Results.Select(run => run.Exception), Has.All.Null, "The generator must preserve normal compiler diagnostics: " + context);
+        Assert.That(driver.GetRunResult().GeneratedTrees, Has.Length.EqualTo(1), "Retain the generated constructor: " + context);
         if (item.Valid)
         {
             Assert.That(diagnostics, Is.Empty, context + "\n" + string.Join("\n", diagnostics));
@@ -74,25 +48,13 @@ internal sealed class NameofOptionalDefaultsTests
         }
         else
         {
-            Assert.That(
-                generated.GetDiagnostics().Any(d => d.Severity == DiagnosticSeverity.Error),
-                Is.True,
-                "Invalid defaults must remain compiler errors: " + context
-            );
+            Assert.That(generated.GetDiagnostics().Any(d => d.Severity == DiagnosticSeverity.Error), Is.True, "Invalid defaults must remain compiler errors: " + context);
             Assert.That(
                 diagnostics.Count(d => d.Id == "DXMSG005"),
                 Is.EqualTo(item.RequiresDiagnostic ? 1 : 0),
-                "Retain conversion diagnostics without converting other compiler failures into generator crashes: "
-                    + context
+                "Retain conversion diagnostics without converting other compiler failures into generator crashes: " + context
             );
-            Assert.That(
-                diagnostics.All(d => d.Id == "DXMSG005"),
-                Is.True,
-                "Do not emit unrelated diagnostics: "
-                    + context
-                    + "\n"
-                    + string.Join("\n", diagnostics)
-            );
+            Assert.That(diagnostics.All(d => d.Id == "DXMSG005"), Is.True, "Do not emit unrelated diagnostics: " + context + "\n" + string.Join("\n", diagnostics));
         }
     }
 
@@ -122,9 +84,7 @@ internal sealed class NameofOptionalDefaultsTests
             {
                 foreach (bool split in new[] { false, true })
                 {
-                    yield return new TestCaseData(name, target, split).SetName(
-                        $"NameofDefaultsPreserveValidConstantsAndRejectInvalidDefaults({name},{target},{split})"
-                    );
+                    yield return new TestCaseData(name, target, split).SetName($"NameofDefaultsPreserveValidConstantsAndRejectInvalidDefaults({name},{target},{split})");
                 }
             }
         }
@@ -138,51 +98,22 @@ internal sealed class NameofOptionalDefaultsTests
             "GenericType" => new("string", "nameof(System.Collections.Generic.List<int>)", "List"),
             "EnumMember" => new("string", "nameof(Mode.Other)", "Other"),
             "Concat" => new("string", "nameof(DefaultValue) + \"Suffix\"", "DefaultValueSuffix"),
-            "ConditionalString" => new(
-                "string",
-                "nameof(DefaultValue) == \"DefaultValue\" ? \"ok\" : \"wrong\"",
-                "ok"
-            ),
-            "ConditionalByte" => new(
-                "byte",
-                "nameof(DefaultValue) == \"DefaultValue\" ? 7 : 256",
-                7
-            ),
-            "ConditionalEnum" => new(
-                "Mode",
-                "nameof(DefaultValue) == \"DefaultValue\" ? Mode.Other : Mode.Zero",
-                37
-            ),
+            "ConditionalString" => new("string", "nameof(DefaultValue) == \"DefaultValue\" ? \"ok\" : \"wrong\"", "ok"),
+            "ConditionalByte" => new("byte", "nameof(DefaultValue) == \"DefaultValue\" ? 7 : 256", 7),
+            "ConditionalEnum" => new("Mode", "nameof(DefaultValue) == \"DefaultValue\" ? Mode.Other : Mode.Zero", 37),
             "WrongType" => new("int", "nameof(DefaultValue)", null, false, true),
-            "OutOfRangeByte" => new(
-                "byte",
-                "nameof(DefaultValue) != \"DefaultValue\" ? 7 : 256",
-                null,
-                false,
-                true
-            ),
+            "OutOfRangeByte" => new("byte", "nameof(DefaultValue) != \"DefaultValue\" ? 7 : 256", null, false, true),
             "MissingName" => new("string", "nameof(MissingMember)", null, false),
             "NonconstantCall" => new("string", "nameof(DefaultValue).ToString()", null, false),
             "LiteralWord" => new("string", "\"nameof\"", "nameof"),
             "OrdinaryConstant" => new("int", "DefaultValue", 37),
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(name),
-                name,
-                "Unknown expression shape"
-            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(name), name, "Unknown expression shape"),
         };
 
-    private static (string First, string? Second) CreateSources(
-        Case item,
-        string target,
-        bool split,
-        bool manual
-    )
+    private static (string First, string? Second) CreateSources(Case item, string target, bool split, bool manual)
     {
         string declaration = target == "class" ? "partial class" : "readonly partial struct";
-        string constructor = manual
-            ? $"public Packet(int Required, {item.Type} Value = {item.Expression}) {{ this.Required = Required; this.Value = Value; }}"
-            : "";
+        string constructor = manual ? $"public Packet(int Required, {item.Type} Value = {item.Expression}) {{ this.Required = Required; this.Value = Value; }}" : "";
         string fields = $$"""
 public enum Mode { Zero = 0, Other = 37 }
 public const int DefaultValue = 37;
@@ -228,31 +159,14 @@ namespace NameofDefaults
 
     private static CSharpCompilation CreateCompilation(string first, string? second)
     {
-        CSharpCompilation compilation =
-            GeneratorTestUtilities.CreateAutoConstructorCompilationFromShippedAttributes(first);
-        return second == null
-            ? compilation
-            : compilation.AddSyntaxTrees(
-                CSharpSyntaxTree.ParseText(
-                    second,
-                    new CSharpParseOptions(LanguageVersion.CSharp9),
-                    "Fields.cs"
-                )
-            );
+        CSharpCompilation compilation = GeneratorTestUtilities.CreateAutoConstructorCompilationFromShippedAttributes(first);
+        return second == null ? compilation : compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(second, new CSharpParseOptions(LanguageVersion.CSharp9), "Fields.cs"));
     }
 
-    private static void AssertCallerExecutes(
-        Compilation compilation,
-        object expected,
-        string context
-    )
+    private static void AssertCallerExecutes(Compilation compilation, object expected, string context)
     {
         Diagnostic[] diagnostics = compilation.GetDiagnostics().ToArray();
-        Assert.That(
-            diagnostics,
-            Is.Empty,
-            context + "\n" + string.Join("\n", diagnostics.AsEnumerable())
-        );
+        Assert.That(diagnostics, Is.Empty, context + "\n" + string.Join("\n", diagnostics.AsEnumerable()));
         using MemoryStream image = new();
         EmitResult emit = compilation.Emit(image);
         Assert.That(emit.Success, Is.True, context + "\n" + string.Join("\n", emit.Diagnostics));
@@ -264,24 +178,10 @@ namespace NameofDefaults
             MethodInfo? read = assembly.GetType("NameofDefaults.Consumer")?.GetMethod("Read");
             Assert.That(read, Is.Not.Null, "The caller must be emitted: " + context);
             object[] values = (object[])read!.Invoke(null, null)!;
-            Assert.That(
-                values[0],
-                Is.EqualTo(42),
-                "Omitted calls use the generated constructor: " + context
-            );
-            object actual = values[1].GetType().IsEnum
-                ? Convert.ToInt32(values[1], System.Globalization.CultureInfo.InvariantCulture)
-                : values[1];
-            Assert.That(
-                actual,
-                Is.EqualTo(expected),
-                "Preserve the exact default value: " + context
-            );
-            Assert.That(
-                values[2],
-                Is.EqualTo(99),
-                "Explicit calls keep their required argument: " + context
-            );
+            Assert.That(values[0], Is.EqualTo(42), "Omitted calls use the generated constructor: " + context);
+            object actual = values[1].GetType().IsEnum ? Convert.ToInt32(values[1], System.Globalization.CultureInfo.InvariantCulture) : values[1];
+            Assert.That(actual, Is.EqualTo(expected), "Preserve the exact default value: " + context);
+            Assert.That(values[2], Is.EqualTo(99), "Explicit calls keep their required argument: " + context);
         }
         finally
         {

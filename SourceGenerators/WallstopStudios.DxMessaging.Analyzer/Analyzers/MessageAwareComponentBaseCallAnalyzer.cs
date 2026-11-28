@@ -69,18 +69,15 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
 
         private const string Category = "DxMessaging";
 
-        private const string MessageAwareComponentFullName =
-            "DxMessaging.Unity.MessageAwareComponent";
+        private const string MessageAwareComponentFullName = "DxMessaging.Unity.MessageAwareComponent";
 
-        private const string IgnoreAttributeFullName =
-            "DxMessaging.Core.Attributes.DxIgnoreMissingBaseCallAttribute";
+        private const string IgnoreAttributeFullName = "DxMessaging.Core.Attributes.DxIgnoreMissingBaseCallAttribute";
 
         private const string RegisterForStringMessagesPropertyName = "RegisterForStringMessages";
 
         private const string RegisterMessageHandlersMethodName = "RegisterMessageHandlers";
 
-        private const string MissingBaseCallTitle =
-            "Missing base call in MessageAwareComponent override";
+        private const string MissingBaseCallTitle = "Missing base call in MessageAwareComponent override";
 
         /*
             G1: generic fallback retained as a safety net. The analyzer normally selects the
@@ -93,19 +90,17 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
         private const string MissingBaseCallMessageFormat =
             "'{0}' overrides MessageAwareComponent.{1} but does not call base.{1}(); the messaging system may not function correctly on this component";
 
-        private const string HelpLinkBase =
-            "https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/docs/reference/analyzers.md#";
+        private const string HelpLinkBase = "https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/docs/reference/analyzers.md#";
 
-        internal static readonly ImmutableHashSet<string> GuardedMethodNames =
-            ImmutableHashSet.Create(
-                "Awake",
-                "OnEnable",
-                "OnDisable",
-                "OnDestroy",
-                "OnApplicationFocus",
-                "OnApplicationPause",
-                RegisterMessageHandlersMethodName
-            );
+        internal static readonly ImmutableHashSet<string> GuardedMethodNames = ImmutableHashSet.Create(
+            "Awake",
+            "OnEnable",
+            "OnDisable",
+            "OnDestroy",
+            "OnApplicationFocus",
+            "OnApplicationPause",
+            RegisterMessageHandlersMethodName
+        );
 
         /// <summary>
         /// Guarded methods whose canonical Unity signature takes a single <c>bool</c>
@@ -121,8 +116,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
         /// <c>OnApplicationPause(bool)</c> on a subclass today hides nothing and must stay
         /// silent (see <see cref="HidesInheritedMember"/>).
         /// </summary>
-        internal static readonly ImmutableHashSet<string> GuardedMethodsWithBoolSignature =
-            ImmutableHashSet.Create("OnApplicationFocus", "OnApplicationPause");
+        internal static readonly ImmutableHashSet<string> GuardedMethodsWithBoolSignature = ImmutableHashSet.Create("OnApplicationFocus", "OnApplicationPause");
 
         /// <summary>
         /// Lifecycle methods that <see cref="MessageAwareComponent"/> declares as virtual but whose
@@ -131,8 +125,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
         /// <c>GuardedMethodListMatchesAllVirtualLifecycleMethodsOnPublicBaseClasses</c> uses this
         /// allow-list to assert that any other virtual lifecycle method MUST be guarded.
         /// </summary>
-        internal static readonly ImmutableHashSet<string> AllowListIntentionallyUnguarded =
-            ImmutableHashSet.Create("OnApplicationQuit");
+        internal static readonly ImmutableHashSet<string> AllowListIntentionallyUnguarded = ImmutableHashSet.Create("OnApplicationQuit");
 
         /// <summary>
         /// Per-method consequence text for DXMSG006. Each entry tells the user precisely what
@@ -142,10 +135,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
         /// rather than generic. ASCII-only by policy. New guarded methods MUST add an entry here
         /// or the meta-test will fail.
         /// </summary>
-        internal static readonly ImmutableDictionary<
-            string,
-            string
-        > MissingBaseCallMessageFormatsByMethod = new[]
+        internal static readonly ImmutableDictionary<string, string> MissingBaseCallMessageFormatsByMethod = new[]
         {
             new KeyValuePair<string, string>(
                 "Awake",
@@ -239,13 +229,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
         );
 
         public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics { get; } =
-            ImmutableArray.Create(
-                MissingBaseCallDescriptor,
-                NewModifierDescriptor,
-                OptedOutDescriptor,
-                MissingModifierDescriptor,
-                BrokenChainDescriptor
-            );
+            ImmutableArray.Create(MissingBaseCallDescriptor, NewModifierDescriptor, OptedOutDescriptor, MissingModifierDescriptor, BrokenChainDescriptor);
 
         public override void Initialize(AnalysisContext context)
         {
@@ -256,10 +240,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
 
             context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
             context.EnableConcurrentExecution();
-            context.RegisterSyntaxNodeAction(
-                AnalyzeMethodDeclaration,
-                SyntaxKind.MethodDeclaration
-            );
+            context.RegisterSyntaxNodeAction(AnalyzeMethodDeclaration, SyntaxKind.MethodDeclaration);
         }
 
         private static void AnalyzeMethodDeclaration(SyntaxNodeAnalysisContext context)
@@ -275,10 +256,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                 return;
             }
 
-            if (
-                context.SemanticModel.GetDeclaredSymbol(methodDecl, context.CancellationToken)
-                is not IMethodSymbol methodSymbol
-            )
+            if (context.SemanticModel.GetDeclaredSymbol(methodDecl, context.CancellationToken) is not IMethodSymbol methodSymbol)
             {
                 return;
             }
@@ -298,15 +276,9 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                 return;
             }
 
-            bool hasNewModifier = methodDecl.Modifiers.Any(static m =>
-                m.IsKind(SyntaxKind.NewKeyword)
-            );
-            bool hasOverrideModifier = methodDecl.Modifiers.Any(static m =>
-                m.IsKind(SyntaxKind.OverrideKeyword)
-            );
-            bool hasStaticModifier = methodDecl.Modifiers.Any(static m =>
-                m.IsKind(SyntaxKind.StaticKeyword)
-            );
+            bool hasNewModifier = methodDecl.Modifiers.Any(static m => m.IsKind(SyntaxKind.NewKeyword));
+            bool hasOverrideModifier = methodDecl.Modifiers.Any(static m => m.IsKind(SyntaxKind.OverrideKeyword));
+            bool hasStaticModifier = methodDecl.Modifiers.Any(static m => m.IsKind(SyntaxKind.StaticKeyword));
 
             /*
                 DXMSG009: when neither 'override' nor 'new' is present, C# treats the method as
@@ -368,10 +340,8 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                 override chain, so `static new` gets neither diagnostic -- DXMSG007's remedy
                 ("replace with 'override'") would be impossible to follow.
             */
-            bool wouldFireNewModifier =
-                hasNewModifier && !hasStaticModifier && hidesInheritedMember;
-            bool wouldFireMissingBase =
-                hasOverrideModifier && !ContainsBaseInvocation(methodDecl, methodName);
+            bool wouldFireNewModifier = hasNewModifier && !hasStaticModifier && hidesInheritedMember;
+            bool wouldFireMissingBase = hasOverrideModifier && !ContainsBaseInvocation(methodDecl, methodName);
 
             /*
                 Pre-compute the DXMSG010 (broken transitive chain) check. Only relevant when this
@@ -380,14 +350,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                 location. We compute it here so the opt-out branches can lower it to DXMSG008 too.
             */
             IMethodSymbol? brokenChainAncestor = null;
-            bool wouldFireBrokenChain =
-                hasOverrideModifier
-                && !wouldFireMissingBase
-                && !ChainReachesMessageAwareComponent(
-                    methodSymbol,
-                    methodName,
-                    out brokenChainAncestor
-                );
+            bool wouldFireBrokenChain = hasOverrideModifier && !wouldFireMissingBase && !ChainReachesMessageAwareComponent(methodSymbol, methodName, out brokenChainAncestor);
 
             /*
                 Opt-out via attribute on the method or the class. We still want the user to see that
@@ -396,53 +359,25 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
             */
             if (HasIgnoreAttribute(methodSymbol) || HasIgnoreAttribute(containingType))
             {
-                if (
-                    wouldFireMissingBase
-                    || wouldFireNewModifier
-                    || wouldFireMissingModifier
-                    || wouldFireBrokenChain
-                )
+                if (wouldFireMissingBase || wouldFireNewModifier || wouldFireMissingModifier || wouldFireBrokenChain)
                 {
-                    ReportOnce(
-                        context,
-                        Diagnostic.Create(
-                            OptedOutDescriptor,
-                            methodDecl.Identifier.GetLocation(),
-                            containingType.ToDisplayString(),
-                            "[DxIgnoreMissingBaseCall]"
-                        )
-                    );
+                    ReportOnce(context, Diagnostic.Create(OptedOutDescriptor, methodDecl.Identifier.GetLocation(), containingType.ToDisplayString(), "[DxIgnoreMissingBaseCall]"));
                 }
                 return;
             }
 
             // Opt-out via project-wide ignore list (sidecar AdditionalFile).
-            ImmutableHashSet<string> ignoreList = IgnoreListReader.Load(
-                context.Options,
-                context.CancellationToken
-            );
+            ImmutableHashSet<string> ignoreList = IgnoreListReader.Load(context.Options, context.CancellationToken);
             string fullyQualifiedTypeName = containingType.ToDisplayString(
-                SymbolDisplayFormat.FullyQualifiedFormat.WithGlobalNamespaceStyle(
-                    SymbolDisplayGlobalNamespaceStyle.Omitted
-                )
+                SymbolDisplayFormat.FullyQualifiedFormat.WithGlobalNamespaceStyle(SymbolDisplayGlobalNamespaceStyle.Omitted)
             );
             if (ignoreList.Contains(fullyQualifiedTypeName))
             {
-                if (
-                    wouldFireMissingBase
-                    || wouldFireNewModifier
-                    || wouldFireMissingModifier
-                    || wouldFireBrokenChain
-                )
+                if (wouldFireMissingBase || wouldFireNewModifier || wouldFireMissingModifier || wouldFireBrokenChain)
                 {
                     ReportOnce(
                         context,
-                        Diagnostic.Create(
-                            OptedOutDescriptor,
-                            methodDecl.Identifier.GetLocation(),
-                            containingType.ToDisplayString(),
-                            IgnoreListReader.IgnoreFileName
-                        )
+                        Diagnostic.Create(OptedOutDescriptor, methodDecl.Identifier.GetLocation(), containingType.ToDisplayString(), IgnoreListReader.IgnoreFileName)
                     );
                 }
                 return;
@@ -455,15 +390,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                     specific diagnostic so the inspector overlay (which scopes to DXMSG006/007/009)
                     also shows the warning above the user's component.
                 */
-                ReportOnce(
-                    context,
-                    Diagnostic.Create(
-                        MissingModifierDescriptor,
-                        methodDecl.Identifier.GetLocation(),
-                        containingType.ToDisplayString(),
-                        methodName
-                    )
-                );
+                ReportOnce(context, Diagnostic.Create(MissingModifierDescriptor, methodDecl.Identifier.GetLocation(), containingType.ToDisplayString(), methodName));
                 return;
             }
 
@@ -483,15 +410,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                     'new' on a guarded name is a known footgun: the user is hiding the lifecycle
                     method instead of participating in the override chain. Stop after reporting.
                 */
-                ReportOnce(
-                    context,
-                    Diagnostic.Create(
-                        NewModifierDescriptor,
-                        methodDecl.Identifier.GetLocation(),
-                        containingType.ToDisplayString(),
-                        methodName
-                    )
-                );
+                ReportOnce(context, Diagnostic.Create(NewModifierDescriptor, methodDecl.Identifier.GetLocation(), containingType.ToDisplayString(), methodName));
                 return;
             }
 
@@ -533,18 +452,8 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                 adding a guarded method without populating the dictionary still produces a usable
                 (if generic) diagnostic. The meta-test forces the dictionary to stay aligned.
             */
-            string consequenceFormat = MissingBaseCallMessageFormatsByMethod.TryGetValue(
-                methodName,
-                out string? perMethodFormat
-            )
-                ? perMethodFormat
-                : MissingBaseCallMessageFormat;
-            string formattedMessage = string.Format(
-                System.Globalization.CultureInfo.InvariantCulture,
-                consequenceFormat,
-                typeDisplay,
-                methodName
-            );
+            string consequenceFormat = MissingBaseCallMessageFormatsByMethod.TryGetValue(methodName, out string? perMethodFormat) ? perMethodFormat : MissingBaseCallMessageFormat;
+            string formattedMessage = string.Format(System.Globalization.CultureInfo.InvariantCulture, consequenceFormat, typeDisplay, methodName);
 
             /*
                 Smart-case: lower DXMSG006 to Info when the class also overrides
@@ -553,13 +462,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                 string-id overload of Diagnostic.Create, which lets us specify an effective severity
                 without registering a duplicate descriptor for the same id.
             */
-            if (
-                string.Equals(
-                    methodName,
-                    RegisterMessageHandlersMethodName,
-                    StringComparison.Ordinal
-                ) && ClassOverridesRegisterForStringMessagesAsFalse(containingType)
-            )
+            if (string.Equals(methodName, RegisterMessageHandlersMethodName, StringComparison.Ordinal) && ClassOverridesRegisterForStringMessagesAsFalse(containingType))
             {
                 Diagnostic loweredDiagnostic = Diagnostic.Create(
                     id: MissingBaseCallDiagnosticId,
@@ -618,10 +521,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
         /// diagnostic, and coverage resumes automatically if a future release adds those hooks to
         /// <see cref="MessageAwareComponent"/>.
         /// </summary>
-        private static bool HidesInheritedMember(
-            INamedTypeSymbol containingType,
-            IMethodSymbol methodSymbol
-        )
+        private static bool HidesInheritedMember(INamedTypeSymbol containingType, IMethodSymbol methodSymbol)
         {
             INamedTypeSymbol? baseType = containingType.BaseType;
             while (baseType is not null)
@@ -646,10 +546,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
             return false;
         }
 
-        private static bool ParametersMatch(
-            ImmutableArray<IParameterSymbol> left,
-            ImmutableArray<IParameterSymbol> right
-        )
+        private static bool ParametersMatch(ImmutableArray<IParameterSymbol> left, ImmutableArray<IParameterSymbol> right)
         {
             if (left.Length != right.Length)
             {
@@ -688,10 +585,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
             the leak-safe form of that pattern: entries die with their key, so nothing is pinned.
         */
 #pragma warning disable RS1008
-        private static readonly ConditionalWeakTable<
-            Compilation,
-            ConcurrentDictionary<string, byte>
-        > ReportedDiagnosticKeys = new();
+        private static readonly ConditionalWeakTable<Compilation, ConcurrentDictionary<string, byte>> ReportedDiagnosticKeys = new();
 #pragma warning restore RS1008
 
         private static void ReportOnce(SyntaxNodeAnalysisContext context, Diagnostic diagnostic)
@@ -704,12 +598,8 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
             Location? location = diagnostic.Location;
             string filePath = location?.SourceTree?.FilePath ?? string.Empty;
             LinePositionSpan span = location?.GetLineSpan().Span ?? default;
-            string key =
-                $"{diagnostic.Id}|{filePath}|{span.Start.Line}:{span.Start.Character}-{span.End.Line}:{span.End.Character}";
-            ConcurrentDictionary<string, byte> seenForCompilation = ReportedDiagnosticKeys.GetValue(
-                context.Compilation,
-                static _ => new()
-            );
+            string key = $"{diagnostic.Id}|{filePath}|{span.Start.Line}:{span.Start.Character}-{span.End.Line}:{span.End.Character}";
+            ConcurrentDictionary<string, byte> seenForCompilation = ReportedDiagnosticKeys.GetValue(context.Compilation, static _ => new());
             if (!seenForCompilation.TryAdd(key, 0))
             {
                 return;
@@ -727,11 +617,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                 INamedTypeSymbol normalized = current.OriginalDefinition;
                 if (
                     string.Equals(
-                        normalized.ToDisplayString(
-                            SymbolDisplayFormat.FullyQualifiedFormat.WithGlobalNamespaceStyle(
-                                SymbolDisplayGlobalNamespaceStyle.Omitted
-                            )
-                        ),
+                        normalized.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat.WithGlobalNamespaceStyle(SymbolDisplayGlobalNamespaceStyle.Omitted)),
                         MessageAwareComponentFullName,
                         System.StringComparison.Ordinal
                     )
@@ -757,11 +643,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
 
                 if (
                     string.Equals(
-                        attrClass.ToDisplayString(
-                            SymbolDisplayFormat.FullyQualifiedFormat.WithGlobalNamespaceStyle(
-                                SymbolDisplayGlobalNamespaceStyle.Omitted
-                            )
-                        ),
+                        attrClass.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat.WithGlobalNamespaceStyle(SymbolDisplayGlobalNamespaceStyle.Omitted)),
                         IgnoreAttributeFullName,
                         System.StringComparison.Ordinal
                     )
@@ -789,14 +671,9 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
         /// <c>BaseCallInsideLocalFunctionIsAcceptedAsGoodFaith</c> and
         /// <c>HelperIndirectionFalsePositiveStillFires</c> tests for the policy edges.
         /// </remarks>
-        private static bool ContainsBaseInvocation(
-            MethodDeclarationSyntax method,
-            string methodName
-        )
+        private static bool ContainsBaseInvocation(MethodDeclarationSyntax method, string methodName)
         {
-            IEnumerable<InvocationExpressionSyntax> invocations = method
-                .DescendantNodes()
-                .OfType<InvocationExpressionSyntax>();
+            IEnumerable<InvocationExpressionSyntax> invocations = method.DescendantNodes().OfType<InvocationExpressionSyntax>();
 
             foreach (InvocationExpressionSyntax invocation in invocations)
             {
@@ -810,13 +687,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                     continue;
                 }
 
-                if (
-                    string.Equals(
-                        memberAccess.Name.Identifier.ValueText,
-                        methodName,
-                        System.StringComparison.Ordinal
-                    )
-                )
+                if (string.Equals(memberAccess.Name.Identifier.ValueText, methodName, System.StringComparison.Ordinal))
                 {
                     return true;
                 }
@@ -852,11 +723,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
         /// diagnostics share a single textual policy so users get consistent results.
         /// </para>
         /// </remarks>
-        private static bool ChainReachesMessageAwareComponent(
-            IMethodSymbol methodSymbol,
-            string methodName,
-            out IMethodSymbol? firstBrokenLink
-        )
+        private static bool ChainReachesMessageAwareComponent(IMethodSymbol methodSymbol, string methodName, out IMethodSymbol? firstBrokenLink)
         {
             firstBrokenLink = null;
             HashSet<IMethodSymbol> visited = new(SymbolEqualityComparer.Default);
@@ -870,18 +737,8 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                 }
 
                 // If we've reached MessageAwareComponent itself, the chain terminates correctly.
-                string containingFqn = containing.ToDisplayString(
-                    SymbolDisplayFormat.FullyQualifiedFormat.WithGlobalNamespaceStyle(
-                        SymbolDisplayGlobalNamespaceStyle.Omitted
-                    )
-                );
-                if (
-                    string.Equals(
-                        containingFqn,
-                        MessageAwareComponentFullName,
-                        System.StringComparison.Ordinal
-                    )
-                )
+                string containingFqn = containing.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat.WithGlobalNamespaceStyle(SymbolDisplayGlobalNamespaceStyle.Omitted));
+                if (string.Equals(containingFqn, MessageAwareComponentFullName, System.StringComparison.Ordinal))
                 {
                     return true;
                 }
@@ -934,9 +791,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
         /// more-derived override returns anything other than literal <c>false</c>, the smart-case
         /// is NOT applied even if a less-derived override returns literal <c>false</c>.
         /// </summary>
-        private static bool ClassOverridesRegisterForStringMessagesAsFalse(
-            INamedTypeSymbol containingType
-        )
+        private static bool ClassOverridesRegisterForStringMessagesAsFalse(INamedTypeSymbol containingType)
         {
             INamedTypeSymbol? current = containingType;
             while (current is not null)
@@ -947,11 +802,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                 */
                 if (
                     string.Equals(
-                        current.OriginalDefinition.ToDisplayString(
-                            SymbolDisplayFormat.FullyQualifiedFormat.WithGlobalNamespaceStyle(
-                                SymbolDisplayGlobalNamespaceStyle.Omitted
-                            )
-                        ),
+                        current.OriginalDefinition.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat.WithGlobalNamespaceStyle(SymbolDisplayGlobalNamespaceStyle.Omitted)),
                         MessageAwareComponentFullName,
                         System.StringComparison.Ordinal
                     )
@@ -960,9 +811,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                     break;
                 }
 
-                foreach (
-                    ISymbol member in current.GetMembers(RegisterForStringMessagesPropertyName)
-                )
+                foreach (ISymbol member in current.GetMembers(RegisterForStringMessagesPropertyName))
                 {
                     if (member is not IPropertySymbol propertySymbol)
                     {
@@ -1067,8 +916,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
 
         private static bool IsFalseLiteral(ExpressionSyntax? expression)
         {
-            return expression is LiteralExpressionSyntax literal
-                && literal.IsKind(SyntaxKind.FalseLiteralExpression);
+            return expression is LiteralExpressionSyntax literal && literal.IsKind(SyntaxKind.FalseLiteralExpression);
         }
 
         /*

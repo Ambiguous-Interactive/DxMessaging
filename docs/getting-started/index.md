@@ -116,16 +116,16 @@ flowchart TD
 
 ### Unity Samples (Importable!)
 
-For a UPM install, use the **Samples** tab on the DxMessaging package. For a classic asset
-package, open `Assets/WallstopStudios/DxMessaging/Samples`.
-See [installation instructions](install.md#from-releases) for both formats.
+For a UPM install, use the **Samples** tab on the DxMessaging package. For a classic asset package, open `Assets/WallstopStudios/DxMessaging/Samples`. See
+[installation instructions](install.md#from-releases) for both formats.
 
 - **[Mini Combat](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Samples~/Mini%20Combat/README.md)** - Interactive combat demo with Heal/Damage messages
   - Perfect first example to understand message flow
   - Shows Targeted and Broadcast messages in action
   - Complete working scene you can play with
 
-- **[UI Buttons + Inspector](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Samples~/UI%20Buttons%20%2B%20Inspector/README.md)** - Zero-setup button and diagnostics scene
+- **[UI Buttons + Inspector](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Samples~/UI%20Buttons%20%2B%20Inspector/README.md)** - Zero-setup button and
+  diagnostics scene
   - Emit typed and GameObject-targeted messages from the Game view
   - Compare typed handlers with accept-all diagnostic observation
   - Inspect token-local diagnostics that are disposed with the observer
@@ -160,7 +160,8 @@ From [Common Patterns](../guides/patterns.md):
 - **Debug message flow** - Use [Diagnostics](../guides/diagnostics.md)
 - **Optimize performance** - Read [Performance Tips](../architecture/design-and-architecture.md#performance-optimizations)
 - **Isolate tests** - Create [Local Bus Islands](../guides/patterns.md#6-local-bus-islands)
-- **Use dependency injection** - [DxMessaging + Zenject](../integrations/zenject.md), [DxMessaging + VContainer](../integrations/vcontainer.md), [DxMessaging + Reflex](../integrations/reflex.md)
+- **Use dependency injection** - [DxMessaging + Zenject](../integrations/zenject.md), [DxMessaging + VContainer](../integrations/vcontainer.md),
+  [DxMessaging + Reflex](../integrations/reflex.md)
 - **Configure buses at runtime** - See [Runtime Configuration](../advanced/runtime-configuration.md)
 - **Use message bus providers** - Learn [Message Bus Providers](../advanced/message-bus-providers.md)
 

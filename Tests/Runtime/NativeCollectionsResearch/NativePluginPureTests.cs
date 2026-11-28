@@ -19,24 +19,8 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
         private readonly List<NativePluginLibrary> _libraries = new();
         private static readonly int[] Producers = { 0, 1, -1, int.MinValue, int.MaxValue, 17 };
         private static readonly int[] Sequences = { 0, 1, -1, int.MaxValue, int.MinValue, 29 };
-        private static readonly long[] Values =
-        {
-            0,
-            1,
-            -1,
-            long.MinValue,
-            long.MaxValue,
-            81985529216486895L,
-        };
-        private static readonly long[] Simple =
-        {
-            0,
-            99,
-            -99,
-            9223371830696345599L,
-            -9223371830696345698L,
-            81985529216488573L,
-        };
+        private static readonly long[] Values = { 0, 1, -1, long.MinValue, long.MaxValue, 81985529216486895L };
+        private static readonly long[] Simple = { 0, 99, -99, 9223371830696345599L, -9223371830696345698L, 81985529216488573L };
         private static readonly long[] Mixed =
         {
             6392512781046991133L,
@@ -48,11 +32,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
         };
 
         private static string Binary(string name = "libdxm_native_plugin.dylib") =>
-            Path.Combine(
-                Path.GetDirectoryName(Application.dataPath),
-                "Packages/com.wallstop-studios.dxmessaging/.artifacts/perf-lab/505-native-plugin-s388/native",
-                name
-            );
+            Path.Combine(Path.GetDirectoryName(Application.dataPath), "Packages/com.wallstop-studios.dxmessaging/.artifacts/perf-lab/505-native-plugin-s388/native", name);
 
         [OneTimeSetUp]
         public void RequireActualBinaryIdentity()
@@ -61,15 +41,10 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
             Assert.That(File.Exists(path), Is.True, path);
             using SHA256 hash = SHA256.Create();
             using FileStream stream = File.OpenRead(path);
-            string actual = BitConverter
-                .ToString(hash.ComputeHash(stream))
-                .Replace("-", "")
-                .ToLowerInvariant();
+            string actual = BitConverter.ToString(hash.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
             string expected = File.ReadAllText(Binary("library.sha256")).Trim();
             Assert.That(actual, Is.EqualTo(expected));
-            TestContext.WriteLine(
-                $"Native plugin identity: path={path};sha256={actual}; ARM64 compiler evidence retained separately."
-            );
+            TestContext.WriteLine($"Native plugin identity: path={path};sha256={actual}; ARM64 compiler evidence retained separately.");
         }
 
         [TearDown]
@@ -82,10 +57,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                 {
                     owner.Dispose();
                     owner.Dispose();
-                    Assert.That(
-                        owner.Input.IsCreated || owner.Output.IsCreated || owner.Modes.IsCreated,
-                        Is.False
-                    );
+                    Assert.That(owner.Input.IsCreated || owner.Output.IsCreated || owner.Modes.IsCreated, Is.False);
                     Assert.That(owner.ReleaseCount, Is.EqualTo(3));
                     AssertClosed(owner.Library);
                 }
@@ -142,10 +114,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
         private static void Guards(NativePluginPureOwner owner)
         {
             Assert.That(owner.Input[0].Value, Is.EqualTo(NativePluginPureOwner.Guard));
-            Assert.That(
-                owner.Input[owner.Count + 1].Value,
-                Is.EqualTo(NativePluginPureOwner.Guard)
-            );
+            Assert.That(owner.Input[owner.Count + 1].Value, Is.EqualTo(NativePluginPureOwner.Guard));
             Assert.That(owner.Input[0].Producer, Is.EqualTo(-1));
             Assert.That(owner.Input[owner.Count + 1].Sequence, Is.EqualTo(-2));
             Assert.That(owner.Output[0], Is.EqualTo(NativePluginPureOwner.Guard));
@@ -182,11 +151,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
         {
             NativePluginPureOwner owner = Create(count);
             NativeNumericPayload[] original = owner.Input.ToArray();
-            long[] expected = original
-                .Skip(1)
-                .Take(count)
-                .Select(payload => PureBatchKernels.Compute(payload, rounds))
-                .ToArray();
+            long[] expected = original.Skip(1).Take(count).Select(payload => PureBatchKernels.Compute(payload, rounds)).ToArray();
             owner.Run(path, batch, rounds);
             long[] actual = owner.Output.ToArray().Skip(1).Take(count).ToArray();
             CollectionAssert.AreEqual(expected, actual);
@@ -202,11 +167,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
         }
 
         [Test]
-        public void IndependentSignedGoldenVectorsMatch(
-            [Values] NativePluginPath path,
-            [Values(0, 3)] int rounds,
-            [Values(0, 1, 2, 3, 4, 5)] int vector
-        )
+        public void IndependentSignedGoldenVectorsMatch([Values] NativePluginPath path, [Values(0, 3)] int rounds, [Values(0, 1, 2, 3, 4, 5)] int vector)
         {
             NativePluginPureOwner owner = Create(1);
             owner.Input[1] = new NativeNumericPayload
@@ -217,29 +178,16 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
             };
             owner.Run(path, 1, rounds);
             Assert.That(owner.Output[1], Is.EqualTo(rounds == 0 ? Simple[vector] : Mixed[vector]));
-            Assert.That(
-                owner.Output[1],
-                Is.EqualTo(PureBatchKernels.Compute(owner.Input[1], rounds))
-            );
+            Assert.That(owner.Output[1], Is.EqualTo(PureBatchKernels.Compute(owner.Input[1], rounds)));
             Modes(owner, path, 1);
             Guards(owner);
-            TestContext.WriteLine(
-                $"Native plugin golden: path={path};vector={vector};rounds={rounds};value={owner.Output[1]}"
-            );
+            TestContext.WriteLine($"Native plugin golden: path={path};vector={vector};rounds={rounds};value={owner.Output[1]}");
         }
 
         [Test]
         public void MaximumRoundsMatchFrozenSignedVectors([Values(0, 1, 2, 3, 4, 5)] int vector)
         {
-            long[] expected =
-            {
-                -4786109065817771447L,
-                2087148930895262372L,
-                -449705407519791139L,
-                -7771358583956589301L,
-                -4743555500161493718L,
-                -8903653924201765931L,
-            };
+            long[] expected = { -4786109065817771447L, 2087148930895262372L, -449705407519791139L, -7771358583956589301L, -4743555500161493718L, -8903653924201765931L };
             NativePluginPureOwner owner = Create(1);
             owner.Input[1] = new NativeNumericPayload
             {
@@ -252,37 +200,17 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
             Assert.That(owner.Output[1], Is.EqualTo(PureBatchKernels.Compute(owner.Input[1], 64)));
             Modes(owner, NativePluginPath.NativeBatch, 256);
             Guards(owner);
-            TestContext.WriteLine(
-                $"Native plugin golden: path=NativeBatch;vector={vector};rounds=64;value={owner.Output[1]}"
-            );
+            TestContext.WriteLine($"Native plugin golden: path=NativeBatch;vector={vector};rounds=64;value={owner.Output[1]}");
         }
 
         [Test]
         public void ActualNativeLayoutMatchesManagedBlittablePayload()
         {
             NativePluginPureOwner owner = Create(0);
-            Assert.That(
-                UnsafeUtility.SizeOf<NativeNumericPayload>(),
-                Is.EqualTo(owner.Library.Layout(0))
-            );
-            Assert.That(
-                Marshal
-                    .OffsetOf<NativeNumericPayload>(nameof(NativeNumericPayload.Producer))
-                    .ToInt32(),
-                Is.EqualTo(owner.Library.Layout(1))
-            );
-            Assert.That(
-                Marshal
-                    .OffsetOf<NativeNumericPayload>(nameof(NativeNumericPayload.Sequence))
-                    .ToInt32(),
-                Is.EqualTo(owner.Library.Layout(2))
-            );
-            Assert.That(
-                Marshal
-                    .OffsetOf<NativeNumericPayload>(nameof(NativeNumericPayload.Value))
-                    .ToInt32(),
-                Is.EqualTo(owner.Library.Layout(3))
-            );
+            Assert.That(UnsafeUtility.SizeOf<NativeNumericPayload>(), Is.EqualTo(owner.Library.Layout(0)));
+            Assert.That(Marshal.OffsetOf<NativeNumericPayload>(nameof(NativeNumericPayload.Producer)).ToInt32(), Is.EqualTo(owner.Library.Layout(1)));
+            Assert.That(Marshal.OffsetOf<NativeNumericPayload>(nameof(NativeNumericPayload.Sequence)).ToInt32(), Is.EqualTo(owner.Library.Layout(2)));
+            Assert.That(Marshal.OffsetOf<NativeNumericPayload>(nameof(NativeNumericPayload.Value)).ToInt32(), Is.EqualTo(owner.Library.Layout(3)));
             Assert.That(owner.Library.Layout(99), Is.EqualTo(-1));
             TestContext.WriteLine("Native plugin layout: stride=16;producer=0;sequence=4;value=8");
         }
@@ -295,9 +223,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                 failure == 0 ? "missing.dylib"
                 : failure == 1 ? "libdxm_missing_export.dylib"
                 : "libdxm_bad_abi.dylib";
-            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
-                library.Load(Binary(name))
-            );
+            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() => library.Load(Binary(name)));
             string expected =
                 failure == 0 ? "open failed"
                 : failure == 1 ? "export is missing"
@@ -308,16 +234,13 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
         }
 
         [Test]
-        public void RawNativeValidationRejectsBeforeAnyWrite(
-            [Values(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14)] int invalid
-        )
+        public void RawNativeValidationRejectsBeforeAnyWrite([Values(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14)] int invalid)
         {
             NativePluginPureOwner owner = Create(4);
             NativeNumericPayload[] original = owner.Input.ToArray();
             long[] outputBefore = owner.Output.ToArray();
             int[] modesBefore = owner.Modes.ToArray();
-            NativeNumericPayload* input =
-                (NativeNumericPayload*)owner.Input.GetUnsafeReadOnlyPtr() + 1;
+            NativeNumericPayload* input = (NativeNumericPayload*)owner.Input.GetUnsafeReadOnlyPtr() + 1;
             long* output = (long*)owner.Output.GetUnsafePtr() + 1;
             int* mode = (int*)owner.Modes.GetUnsafePtr() + 1;
             int count = 4,
@@ -372,18 +295,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                     mode = (int*)output;
                     break;
             }
-            Assert.That(
-                owner.Library.Invoke(
-                    count,
-                    input,
-                    output,
-                    mode,
-                    rounds,
-                    inputCapacity,
-                    outputCapacity
-                ),
-                Is.EqualTo(1)
-            );
+            Assert.That(owner.Library.Invoke(count, input, output, mode, rounds, inputCapacity, outputCapacity), Is.EqualTo(1));
             CollectionAssert.AreEqual(original, owner.Input.ToArray());
             CollectionAssert.AreEqual(outputBefore, owner.Output.ToArray());
             CollectionAssert.AreEqual(modesBefore, owner.Modes.ToArray());
@@ -412,10 +324,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                     owner.Run(path, 4, rounds);
                     Assert.Throws<InvalidOperationException>(() => owner.Run(path, 4, rounds));
                     for (int i = 0; i < owner.Count; ++i)
-                        Assert.That(
-                            owner.Output[i + 1],
-                            Is.EqualTo(PureBatchKernels.Compute(original[i + 1], rounds))
-                        );
+                        Assert.That(owner.Output[i + 1], Is.EqualTo(PureBatchKernels.Compute(original[i + 1], rounds)));
                     Modes(owner, path, 4);
                     Guards(owner);
                 }
@@ -432,15 +341,11 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
             owner.Dispose();
             AssertClosed(owner.Library);
             Assert.That(owner.ReleaseCount, Is.EqualTo(3));
-            Assert.Throws<ObjectDisposedException>(() =>
-                owner.Run(NativePluginPath.NativeBatch, 1, 0)
-            );
+            Assert.Throws<ObjectDisposedException>(() => owner.Run(NativePluginPath.NativeBatch, 1, 0));
             Assert.Throws<ObjectDisposedException>(() => owner.Reset());
             Assert.Throws<ObjectDisposedException>(() => owner.Library.Layout(0));
             Assert.Throws<ObjectDisposedException>(() => owner.Library.Load(Binary()));
-            Assert.Throws<ObjectDisposedException>(() =>
-                owner.Library.Invoke(0, null, null, null, 0, 0, 0)
-            );
+            Assert.Throws<ObjectDisposedException>(() => owner.Library.Invoke(0, null, null, null, 0, 0, 0));
         }
 
         [Test]
@@ -450,29 +355,19 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
             long[] output = owner.Output.ToArray();
             int[] modes = owner.Modes.ToArray();
             foreach (int batch in new[] { -1, 0, 257 })
-                Assert.Throws<ArgumentOutOfRangeException>(() =>
-                    owner.Run(NativePluginPath.NativeBatch, batch, 0)
-                );
+                Assert.Throws<ArgumentOutOfRangeException>(() => owner.Run(NativePluginPath.NativeBatch, batch, 0));
             foreach (int rounds in new[] { -1, 65 })
-                Assert.Throws<ArgumentOutOfRangeException>(() =>
-                    owner.Run(NativePluginPath.NativeBatch, 1, rounds)
-                );
+                Assert.Throws<ArgumentOutOfRangeException>(() => owner.Run(NativePluginPath.NativeBatch, 1, rounds));
             Assert.Throws<ArgumentOutOfRangeException>(() => owner.Run((NativePluginPath)99, 1, 0));
-            Assert.Throws<ArgumentOutOfRangeException>(() =>
-                new NativePluginPureOwner(-1, Binary())
-            );
-            Assert.Throws<ArgumentOutOfRangeException>(() =>
-                new NativePluginPureOwner(4097, Binary())
-            );
+            Assert.Throws<ArgumentOutOfRangeException>(() => new NativePluginPureOwner(-1, Binary()));
+            Assert.Throws<ArgumentOutOfRangeException>(() => new NativePluginPureOwner(4097, Binary()));
             CollectionAssert.AreEqual(output, owner.Output.ToArray());
             CollectionAssert.AreEqual(modes, owner.Modes.ToArray());
             Assert.That(owner.Entries, Is.EqualTo(0));
         }
 
         [Test]
-        public void ForeignThreadOperationsRejectBeforeNativeAccess(
-            [Values(0, 1, 2, 3)] int operation
-        )
+        public void ForeignThreadOperationsRejectBeforeNativeAccess([Values(0, 1, 2, 3)] int operation)
         {
             NativePluginPureOwner owner = Create(4);
             Exception caught = null;
@@ -535,16 +430,11 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
             Assert.That(UnsafeUtility.IsBlittable<ManagedReferencePayload>(), Is.False);
             ManagedReferencePayload managed = new() { Reference = new object() };
             Assert.That(managed.Reference, Is.Not.Null);
-            TestContext.WriteLine(
-                "Native ABI has only primitive counts and pointers to the closed numeric payload; no generic object payload accepted."
-            );
+            TestContext.WriteLine("Native ABI has only primitive counts and pointers to the closed numeric payload; no generic object payload accepted.");
         }
 
         [Test]
-        public void OneOwnerReleaseDoesNotInvalidateAnotherLiveReference(
-            [Values(NativePluginPath.NativeBatch, NativePluginPath.NativeScalar)]
-                NativePluginPath path
-        )
+        public void OneOwnerReleaseDoesNotInvalidateAnotherLiveReference([Values(NativePluginPath.NativeBatch, NativePluginPath.NativeScalar)] NativePluginPath path)
         {
             NativePluginPureOwner first = Create(17);
             NativePluginPureOwner second = Create(17);

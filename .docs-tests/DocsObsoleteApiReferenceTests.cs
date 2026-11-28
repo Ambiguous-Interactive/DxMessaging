@@ -49,9 +49,7 @@ internal sealed class DocsObsoleteApiReferenceTests
     // this suite, e.g. PublicSurfaceContractTests.AllReflectableTypes).
     private static readonly Lazy<string> RepoRoot = new(ResolveRepoRoot);
 
-    private static readonly Lazy<IReadOnlyList<ObsoleteMember>> ObsoleteMembers = new(() =>
-        CollectObsoleteMembers(RepoRoot.Value)
-    );
+    private static readonly Lazy<IReadOnlyList<ObsoleteMember>> ObsoleteMembers = new(() => CollectObsoleteMembers(RepoRoot.Value));
 
     [Test]
     public void PublishedDocsDoNotReferenceObsoleteApis()
@@ -62,25 +60,16 @@ internal sealed class DocsObsoleteApiReferenceTests
         Assert.That(
             obsoleteMembers,
             Is.Not.Empty,
-            "No [Obsolete] members were discovered by scanning Runtime/ and Editor/. The Roslyn "
-                + "scan or attribute detection is broken; a passing guard here would be vacuous."
+            "No [Obsolete] members were discovered by scanning Runtime/ and Editor/. The Roslyn " + "scan or attribute detection is broken; a passing guard here would be vacuous."
         );
 
         string docsRoot = Path.Combine(repoRoot, "docs");
-        Assert.That(
-            Directory.Exists(docsRoot),
-            Is.True,
-            $"Unable to locate docs root at {docsRoot}."
-        );
+        Assert.That(Directory.Exists(docsRoot), Is.True, $"Unable to locate docs root at {docsRoot}.");
 
         var violations = new List<string>();
         // Ordered so the failure message is deterministic across machines/filesystems
         // (Directory.GetFiles order is OS-dependent); members are pre-sorted in CollectObsoleteMembers.
-        foreach (
-            string markdownPath in Directory
-                .GetFiles(docsRoot, "*.md", SearchOption.AllDirectories)
-                .OrderBy(path => path, StringComparer.Ordinal)
-        )
+        foreach (string markdownPath in Directory.GetFiles(docsRoot, "*.md", SearchOption.AllDirectories).OrderBy(path => path, StringComparer.Ordinal))
         {
             string[] lines = File.ReadAllLines(markdownPath);
             string relativePath = Path.GetRelativePath(repoRoot, markdownPath).Replace('\\', '/');
@@ -93,13 +82,8 @@ internal sealed class DocsObsoleteApiReferenceTests
                         continue;
                     }
 
-                    string hint = string.IsNullOrEmpty(member.Message)
-                        ? "."
-                        : $" -- {member.Message}";
-                    violations.Add(
-                        $"{relativePath}:{lineIndex + 1} references obsolete API "
-                            + $"'{member.QualifiedName}'{hint}"
-                    );
+                    string hint = string.IsNullOrEmpty(member.Message) ? "." : $" -- {member.Message}";
+                    violations.Add($"{relativePath}:{lineIndex + 1} references obsolete API " + $"'{member.QualifiedName}'{hint}");
                 }
             }
         }
@@ -121,9 +105,7 @@ internal sealed class DocsObsoleteApiReferenceTests
         // Anchors the Roslyn scan against the obsolete members that exist today, so a regression
         // that silently stops discovering obsolete members cannot make the docs guard pass
         // vacuously. Update this list only when the corresponding member is un-obsoleted/removed.
-        HashSet<string> discovered = ObsoleteMembers
-            .Value.Select(member => member.QualifiedName)
-            .ToHashSet(StringComparer.Ordinal);
+        HashSet<string> discovered = ObsoleteMembers.Value.Select(member => member.QualifiedName).ToHashSet(StringComparer.Ordinal);
 
         Assert.Multiple(() =>
         {
@@ -141,41 +123,27 @@ internal sealed class DocsObsoleteApiReferenceTests
     [TestCase(".artifacts")]
     [TestCase("obj")]
     [TestCase("bin")]
-    public void ObsoleteMemberScanUsesRepositoryRelativeGeneratedDirectoryExclusions(
-        string parentDirectory
-    )
+    public void ObsoleteMemberScanUsesRepositoryRelativeGeneratedDirectoryExclusions(string parentDirectory)
     {
-        string temporaryRoot = Path.Combine(
-            Path.GetTempPath(),
-            "dxm-obsolete-worktree-" + Guid.NewGuid().ToString("N")
-        );
+        string temporaryRoot = Path.Combine(Path.GetTempPath(), "dxm-obsolete-worktree-" + Guid.NewGuid().ToString("N"));
         string repoRoot = Path.Combine(temporaryRoot, parentDirectory, "checkout");
         string runtimeRoot = Path.Combine(repoRoot, "Runtime");
         try
         {
             Directory.CreateDirectory(runtimeRoot);
-            File.WriteAllText(
-                Path.Combine(runtimeRoot, "RealApi.cs"),
-                "class RealApi { [System.Obsolete] public int OldValue; }"
-            );
+            File.WriteAllText(Path.Combine(runtimeRoot, "RealApi.cs"), "class RealApi { [System.Obsolete] public int OldValue; }");
             foreach (string generatedDirectory in GeneratedDirectoryNames)
             {
                 string generatedRoot = Path.Combine(runtimeRoot, generatedDirectory);
                 Directory.CreateDirectory(generatedRoot);
-                File.WriteAllText(
-                    Path.Combine(generatedRoot, "GeneratedApi.cs"),
-                    "class GeneratedApi { [System.Obsolete] public int OldValue; }"
-                );
+                File.WriteAllText(Path.Combine(generatedRoot, "GeneratedApi.cs"), "class GeneratedApi { [System.Obsolete] public int OldValue; }");
             }
 
-            string[] discovered = CollectObsoleteMembers(repoRoot)
-                .Select(member => member.QualifiedName)
-                .ToArray();
+            string[] discovered = CollectObsoleteMembers(repoRoot).Select(member => member.QualifiedName).ToArray();
             Assert.That(
                 discovered,
                 Is.EqualTo(ExpectedFixtureObsoleteMembers),
-                "An enclosing generated-directory name must preserve real sources; repository-local "
-                    + "generated directories must still be excluded."
+                "An enclosing generated-directory name must preserve real sources; repository-local " + "generated directories must still be excluded."
             );
         }
         finally
@@ -197,18 +165,12 @@ internal sealed class DocsObsoleteApiReferenceTests
         Directory.CreateDirectory(runtimeRoot);
         try
         {
-            File.WriteAllText(
-                Path.Combine(runtimeRoot, "Probe.cs"),
-                "public class Probe { [System.Obsolete] public void Removed() { } }"
-            );
+            File.WriteAllText(Path.Combine(runtimeRoot, "Probe.cs"), "public class Probe { [System.Obsolete] public void Removed() { } }");
             foreach (string excluded in new[] { "obj", "bin", ".artifacts" })
             {
                 string generatedRoot = Path.Combine(runtimeRoot, excluded);
                 Directory.CreateDirectory(generatedRoot);
-                File.WriteAllText(
-                    Path.Combine(generatedRoot, "Generated.cs"),
-                    "public class Generated { [System.Obsolete] public void Ignored() { } }"
-                );
+                File.WriteAllText(Path.Combine(generatedRoot, "Generated.cs"), "public class Generated { [System.Obsolete] public void Ignored() { } }");
             }
 
             Assert.That(
@@ -237,13 +199,7 @@ internal sealed class DocsObsoleteApiReferenceTests
                 continue;
             }
 
-            foreach (
-                string sourcePath in Directory.GetFiles(
-                    absoluteRoot,
-                    "*.cs",
-                    SearchOption.AllDirectories
-                )
-            )
+            foreach (string sourcePath in Directory.GetFiles(absoluteRoot, "*.cs", SearchOption.AllDirectories))
             {
                 string normalized = Path.GetRelativePath(repoRoot, sourcePath).Replace('\\', '/');
                 if (
@@ -255,14 +211,8 @@ internal sealed class DocsObsoleteApiReferenceTests
                     continue;
                 }
 
-                SyntaxNode syntaxRoot = CSharpSyntaxTree
-                    .ParseText(File.ReadAllText(sourcePath))
-                    .GetRoot();
-                foreach (
-                    MemberDeclarationSyntax member in syntaxRoot
-                        .DescendantNodes()
-                        .OfType<MemberDeclarationSyntax>()
-                )
+                SyntaxNode syntaxRoot = CSharpSyntaxTree.ParseText(File.ReadAllText(sourcePath)).GetRoot();
+                foreach (MemberDeclarationSyntax member in syntaxRoot.DescendantNodes().OfType<MemberDeclarationSyntax>())
                 {
                     AttributeSyntax? obsoleteAttribute = FindObsoleteAttribute(member);
                     if (obsoleteAttribute is null)
@@ -270,9 +220,7 @@ internal sealed class DocsObsoleteApiReferenceTests
                         continue;
                     }
 
-                    string? enclosingType = member
-                        .Parent?.FirstAncestorOrSelf<BaseTypeDeclarationSyntax>()
-                        ?.Identifier.Text;
+                    string? enclosingType = member.Parent?.FirstAncestorOrSelf<BaseTypeDeclarationSyntax>()?.Identifier.Text;
                     if (string.IsNullOrEmpty(enclosingType))
                     {
                         // Top-level / type-level obsoletes are not referenced as `Type.Member`.
@@ -289,9 +237,7 @@ internal sealed class DocsObsoleteApiReferenceTests
             }
         }
 
-        return byQualifiedName
-            .Values.OrderBy(member => member.QualifiedName, StringComparer.Ordinal)
-            .ToList();
+        return byQualifiedName.Values.OrderBy(member => member.QualifiedName, StringComparer.Ordinal).ToList();
     }
 
     private static AttributeSyntax? FindObsoleteAttribute(MemberDeclarationSyntax member)
@@ -350,10 +296,7 @@ internal sealed class DocsObsoleteApiReferenceTests
     private static string ExtractObsoleteMessage(AttributeSyntax attribute)
     {
         AttributeArgumentSyntax? firstArgument = attribute.ArgumentList?.Arguments.FirstOrDefault();
-        if (
-            firstArgument?.Expression is LiteralExpressionSyntax literal
-            && literal.IsKind(SyntaxKind.StringLiteralExpression)
-        )
+        if (firstArgument?.Expression is LiteralExpressionSyntax literal && literal.IsKind(SyntaxKind.StringLiteralExpression))
         {
             return literal.Token.ValueText;
         }
@@ -366,11 +309,7 @@ internal sealed class DocsObsoleteApiReferenceTests
         string current = TestContext.CurrentContext.TestDirectory;
         while (!string.IsNullOrEmpty(current))
         {
-            if (
-                Directory.Exists(Path.Combine(current, "Runtime"))
-                && Directory.Exists(Path.Combine(current, "Editor"))
-                && File.Exists(Path.Combine(current, "package.json"))
-            )
+            if (Directory.Exists(Path.Combine(current, "Runtime")) && Directory.Exists(Path.Combine(current, "Editor")) && File.Exists(Path.Combine(current, "package.json")))
             {
                 return current;
             }
@@ -384,9 +323,7 @@ internal sealed class DocsObsoleteApiReferenceTests
             current = parent;
         }
 
-        throw new DirectoryNotFoundException(
-            "Unable to locate the repository root from the current test directory."
-        );
+        throw new DirectoryNotFoundException("Unable to locate the repository root from the current test directory.");
     }
 
     private sealed class ObsoleteMember
@@ -401,10 +338,7 @@ internal sealed class DocsObsoleteApiReferenceTests
             // leading one rejects a longer type name (`XIMessageBus.GlobalDiagnosticsMode`). A
             // preceding namespace qualifier (`Core.MessageBus.IMessageBus.GlobalDiagnosticsMode`)
             // still matches -- that is the same obsolete member -- because `.` is not a word char.
-            ReferenceRegex = new Regex(
-                @"(?<![A-Za-z0-9_])" + Regex.Escape(qualifiedName) + @"(?![A-Za-z0-9_])",
-                RegexOptions.Compiled
-            );
+            ReferenceRegex = new Regex(@"(?<![A-Za-z0-9_])" + Regex.Escape(qualifiedName) + @"(?![A-Za-z0-9_])", RegexOptions.Compiled);
         }
 
         public string QualifiedName { get; }

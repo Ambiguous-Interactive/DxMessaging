@@ -6,18 +6,15 @@
 
 ## Do I need to use attributes or source generators
 
-- No. You can implement `IUntargetedMessage<T>`, `ITargetedMessage<T>`, or `IBroadcastMessage<T>` directly (recommended for structs). Attributes are optional and help tooling/source-gen.
+- No. You can implement `IUntargetedMessage<T>`, `ITargetedMessage<T>`, or `IBroadcastMessage<T>` directly (recommended for structs). Attributes are optional and help
+  tooling/source-gen.
 
 ## Do I need an assembly definition for the source generator to work?
 
-No. The package's generators reach Unity's default `Assembly-CSharp` and
-assemblies that directly reference `WallstopStudios.DxMessaging.Attributes` in 4.0.
-Keep the runtime reference when using messaging APIs. Apply a route attribute and mark the
-message and its containing declarations `partial` when you want generated
-members. A handwritten route-interface implementation without generator
-attributes does not require `partial`. See
-[Troubleshooting](troubleshooting.md#source-generator-did-not-generate-emit-or-handler-methods)
-for missing interfaces, constructors or emission helpers.
+No. The package's generators reach Unity's default `Assembly-CSharp` and assemblies that directly reference `WallstopStudios.DxMessaging.Attributes` in 4.0. Keep the runtime
+reference when using messaging APIs. Apply a route attribute and mark the message and its containing declarations `partial` when you want generated members. A handwritten
+route-interface implementation without generator attributes does not require `partial`. See
+[Troubleshooting](troubleshooting.md#source-generator-did-not-generate-emit-or-handler-methods) for missing interfaces, constructors or emission helpers.
 
 ## Which message type should I use?
 
@@ -27,23 +24,16 @@ for missing interfaces, constructors or emission helpers.
 
 ## Does DxMessaging allocate memory? Is dispatch zero-GC?
 
-Ordinary typed steady-state struct dispatch has a regression contract of zero managed
-allocations. This assumes the selected route, registrations, callbacks and required buffers have
-warmed up and stay stable. A first message of a type is not a universal warmup boundary. Adding
-registrations can invalidate cached snapshots; a later emission may build a new snapshot or
-interceptor array after that message type has already emitted. Compiling with IL2CPP does not
-remove those data structures.
+Ordinary typed steady-state struct dispatch has a regression contract of zero managed allocations. This assumes the selected route, registrations, callbacks and required buffers
+have warmed up and stay stable. A first message of a type is not a universal warmup boundary. Adding registrations can invalidate cached snapshots; a later emission may build a new
+snapshot or interceptor array after that message type has already emitted. Compiling with IL2CPP does not remove those data structures.
 
-The readonly by-reference (`FastHandler`) overloads pass the struct by reference. The by-value
-`Action<T>` overloads pass a value copy; copying a struct does not itself box it. Constructing a
-class message allocates its instance. A struct is boxed when it reaches a global accept-all
-handler or user code upcasts it to a non-generic interface. Emission-site stack-trace capture
-allocates while enabled. User callbacks can also allocate independently of the bus.
+The readonly by-reference (`FastHandler`) overloads pass the struct by reference. The by-value `Action<T>` overloads pass a value copy; copying a struct does not itself box it.
+Constructing a class message allocates its instance. A struct is boxed when it reaches a global accept-all handler or user code upcasts it to a non-generic interface. Emission-site
+stack-trace capture allocates while enabled. User callbacks can also allocate independently of the bus.
 
-Registration and deregistration have separate allocation and retained memory costs. Register
-long-lived subscriptions during setup instead of recreating them every frame. See
-[Performance](../architecture/performance.md) for measured scenario results and
-[Troubleshooting](troubleshooting.md#allocations-and-boxing) for allocation checks.
+Registration and deregistration have separate allocation and retained memory costs. Register long-lived subscriptions during setup instead of recreating them every frame. See
+[Performance](../architecture/performance.md) for measured scenario results and [Troubleshooting](troubleshooting.md#allocations-and-boxing) for allocation checks.
 
 ## How do I enforce ordering?
 
@@ -57,33 +47,27 @@ long-lived subscriptions during setup instead of recreating them every frame. Se
 
 Enable Editor diagnostics, then choose the view that answers your question:
 
-- Use [Message Monitor](../guides/diagnostics.md#message-monitor) to confirm that
-  a message emitted, inspect its route kind and context, and open its captured
-  call site.
-- For loaded-scene `MessagingComponent` receivers, use
-  [Flow Graph](../guides/diagnostics.md#flow-graph) to check whether a receiver
-  registered for that message and whether the route has delivered calls. Direct
-  bus or token registrations outside those components require bus logs or
-  registration counters instead.
-- Use the [Inspector overlay](../guides/inspector-overlay.md) when a
-  `MessageAwareComponent` may have missed a required base lifecycle call.
+- Use [Message Monitor](../guides/diagnostics.md#message-monitor) to confirm that a message emitted, inspect its route kind and context, and open its captured call site.
+- For loaded-scene `MessagingComponent` receivers, use [Flow Graph](../guides/diagnostics.md#flow-graph) to check whether a receiver registered for that message and whether the
+  route has delivered calls. Direct bus or token registrations outside those components require bus logs or registration counters instead.
+- Use the [Inspector overlay](../guides/inspector-overlay.md) when a `MessageAwareComponent` may have missed a required base lifecycle call.
 
-Start with Message Monitor. If the emission exists but a loaded-scene component
-receiver does not, move to Flow Graph to distinguish a missing registration from
-a route that has not delivered. The
-[Diagnostics guide](../guides/diagnostics.md) explains the tool scope, toggles,
-filters, trace capture, and release-build cost.
+Start with Message Monitor. If the emission exists but a loaded-scene component receiver does not, move to Flow Graph to distinguish a missing registration from a route that has
+not delivered. The [Diagnostics guide](../guides/diagnostics.md) explains the tool scope, toggles, filters, trace capture, and release-build cost.
 
 ## My MessageAwareComponent subclass does not receive messages. What is wrong?
 
-The most common cause is forgetting to call `base.Awake()` (or `base.OnEnable()`, `base.OnDisable()`, `base.OnDestroy()`, `base.RegisterMessageHandlers()`) when you override one of those methods. The framework's setup runs in those base calls; without them, your registration token is never created or your handlers never enable. The Roslyn analyzer flags this as DXMSG006. See [Inheritance and base calls](../getting-started/quick-start.md#important-inheritance-and-base-calls) for the full list of guarded methods.
+The most common cause is forgetting to call `base.Awake()` (or `base.OnEnable()`, `base.OnDisable()`, `base.OnDestroy()`, `base.RegisterMessageHandlers()`) when you override one of
+those methods. The framework's setup runs in those base calls; without them, your registration token is never created or your handlers never enable. The Roslyn analyzer flags this
+as DXMSG006. See [Inheritance and base calls](../getting-started/quick-start.md#important-inheritance-and-base-calls) for the full list of guarded methods.
 
 ## What happens if I register a listener inside a message handler?
 
 - The newly registered listener will **not** run for the current message emission. It will only become active starting with the **next** message emission.
 - This is called "snapshot semantics" -- when a message is emitted, DxMessaging takes a snapshot of all current listeners and uses that frozen list for the entire emission.
 - This applies to all listener types (handlers, interceptors, post-processors) and all message categories (Untargeted, Targeted, Broadcast).
-- This behavior prevents infinite loops and ensures predictable execution order. See [Interceptors & Ordering](../concepts/interceptors-and-ordering.md#snapshot-semantics-frozen-listener-lists) for details and examples.
+- This behavior prevents infinite loops and ensures predictable execution order. See
+  [Interceptors & Ordering](../concepts/interceptors-and-ordering.md#snapshot-semantics-frozen-listener-lists) for details and examples.
 
 ## Do I need a global bus?
 
@@ -91,11 +75,14 @@ The most common cause is forgetting to call `base.Awake()` (or `base.OnEnable()`
 
 ## Can I use DxMessaging with a dependency injection container?
 
-- Yes. Installers ship for VContainer, Zenject, and Reflex; see [Integrations](../integrations/index.md). They wire the message bus into the container so your message-aware types resolve and register through it instead of reaching for the global bus.
+- Yes. Installers ship for VContainer, Zenject, and Reflex; see [Integrations](../integrations/index.md). They wire the message bus into the container so your message-aware types
+  resolve and register through it instead of reaching for the global bus.
 
 ## How do I unit-test code that sends or receives messages?
 
-- Construct a dedicated `MessageBus` per test and pass it to the participants instead of using the global bus. Enable the registration token before emitting, assert that your handler observed the message, and dispose the token during cleanup. A local bus isolates routing; it does not make the runtime thread-safe. Run Unity messaging tests on the main thread and avoid concurrent access to shared settings or pools.
+- Construct a dedicated `MessageBus` per test and pass it to the participants instead of using the global bus. Enable the registration token before emitting, assert that your
+  handler observed the message, and dispose the token during cleanup. A local bus isolates routing; it does not make the runtime thread-safe. Run Unity messaging tests on the main
+  thread and avoid concurrent access to shared settings or pools.
 
 ## Is this compatible with Unity's SendMessage/UnityEvents
 
@@ -103,13 +90,9 @@ The most common cause is forgetting to call `base.Awake()` (or `base.OnEnable()`
 
 ## Why is my game retaining memory across scenes?
 
-- Each scene introduces new `InstanceId`s and sometimes new message types,
-  which add empty slots on the bus when their handlers tear down. Idle
-  eviction will reclaim them eventually; for deterministic cleanup call
-  `MessageHandler.TrimAll(force: true)` on scene unload (or
-  `bus.Trim(force: true)` for a non-global bus). See the
-  [Memory Reclamation guide](../guides/memory-reclamation.md) for the full
-  pattern.
+- Each scene introduces new `InstanceId`s and sometimes new message types, which add empty slots on the bus when their handlers tear down. Idle eviction will reclaim them
+  eventually; for deterministic cleanup call `MessageHandler.TrimAll(force: true)` on scene unload (or `bus.Trim(force: true)` for a non-global bus). See the
+  [Memory Reclamation guide](../guides/memory-reclamation.md) for the full pattern.
 
 ---
 

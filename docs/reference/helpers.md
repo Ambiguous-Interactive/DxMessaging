@@ -2,7 +2,8 @@
 
 ## What Are Source Generators
 
-**Source generators** are a C# feature (introduced in C# 9.0) that **automatically write code for you at compile time**. Think of them as smart code wizards that look at your code, see what you need, and generate the boilerplate automatically.
+**Source generators** are a C# feature (introduced in C# 9.0) that **automatically write code for you at compile time**. Think of them as smart code wizards that look at your code,
+see what you need, and generate the boilerplate automatically.
 
 ### In plain English
 
@@ -18,7 +19,9 @@
 
 ## DxMessaging Attributes (Your Code Wizards)
 
-The attributes live in `WallstopStudios.DxMessaging.Attributes`. Unity assembly definitions that use them must reference this assembly. Shared rules that only need constructors and optional arguments can enable `noEngineReferences` and omit the messaging runtime. Message generation still needs the runtime interfaces. See the [4.0 migration steps](../guides/migration-guide.md#reference-the-dedicated-attributes-assembly) for existing assemblies.
+The attributes live in `WallstopStudios.DxMessaging.Attributes`. Unity assembly definitions that use them must reference this assembly. Shared rules that only need constructors and
+optional arguments can enable `noEngineReferences` and omit the messaging runtime. Message generation still needs the runtime interfaces. See the
+[4.0 migration steps](../guides/migration-guide.md#reference-the-dedicated-attributes-assembly) for existing assemblies.
 
 Use the attributes below to declare message types, generate constructors, and set optional defaults:
 
@@ -106,10 +109,8 @@ public VideoSettingsChanged(int width, int height)
 
 #### Serialized fields and read-only properties (4.0.0)
 
-Use `IncludeSerializedFields = true` to include declared instance fields marked with
-`UnityEngine.SerializeField`, at any accessibility. Set `GenerateSerializedProperties = true`
-to also generate their public read-only getters. The property option also enables those
-fields in the constructor; both options default to `false`.
+Use `IncludeSerializedFields = true` to include declared instance fields marked with `UnityEngine.SerializeField`, at any accessibility. Set `GenerateSerializedProperties = true`
+to also generate their public read-only getters. The property option also enables those fields in the constructor; both options default to `false`.
 
 For example, this handwritten form repeats its serialized field list:
 
@@ -158,46 +159,31 @@ public static class ScreenPrefabExamples
 }
 ```
 
-The generated properties are `Screen` and `Prefab`. Serialized constructor parameters omit
-all leading underscores; property names uppercase the first remaining character using invariant
-casing. C# keyword parameter names are escaped, so `_class` becomes `@class`. Existing public
-fields that are not marked with `SerializeField` keep their parameter names.
+The generated properties are `Screen` and `Prefab`. Serialized constructor parameters omit all leading underscores; property names uppercase the first remaining character using
+invariant casing. C# keyword parameter names are escaped, so `_class` becomes `@class`. Existing public fields that are not marked with `SerializeField` keep their parameter names.
 
-To retain existing handwritten getters, enable only `IncludeSerializedFields`. Static fields,
-constants, fixed-size buffers, and compiler-generated backing fields are excluded. The options select fields by the
-Unity attribute's full type name; an unrelated attribute called `SerializeField` does not opt in.
+To retain existing handwritten getters, enable only `IncludeSerializedFields`. Static fields, constants, fixed-size buffers, and compiler-generated backing fields are excluded. The
+options select fields by the Unity attribute's full type name; an unrelated attribute called `SerializeField` does not opt in.
 
-Keep serialized field names when migrating existing assets. Unity continues to serialize those
-fields, while generated getters add no storage. C# constructor calls apply optional defaults;
-Unity deserialization and `default(T)` keep their existing construction rules.
-[`DXMSG016`](analyzers.md#dxmsg016-serialized-field-generates-an-invalid-or-conflicting-name)
-reports invalid names, duplicate parameter names, and property names that conflict with a type
-or an existing accessible member. Rename the conflicting field/member or keep explicit code.
-[`DXMSG017`](analyzers.md#dxmsg017-serialized-field-type-cannot-be-exposed-by-generated-members)
-reports field types that cannot appear in the generated public signatures. Make those types
-accessible or write the constructor and properties explicitly with suitable access levels.
+Keep serialized field names when migrating existing assets. Unity continues to serialize those fields, while generated getters add no storage. C# constructor calls apply optional
+defaults; Unity deserialization and `default(T)` keep their existing construction rules.
+[`DXMSG016`](analyzers.md#dxmsg016-serialized-field-generates-an-invalid-or-conflicting-name) reports invalid names, duplicate parameter names, and property names that conflict
+with a type or an existing accessible member. Rename the conflicting field/member or keep explicit code.
+[`DXMSG017`](analyzers.md#dxmsg017-serialized-field-type-cannot-be-exposed-by-generated-members) reports field types that cannot appear in the generated public signatures. Make
+those types accessible or write the constructor and properties explicitly with suitable access levels.
 
 #### Constructor restrictions
 
-> **Fixed in v4.0.0:** Generated constructors retain the required unsafe context
-> for pointer parameters, preserve `void*` syntax, and accept valid `null` pointer
-> defaults. The consumer assembly must enable unsafe compilation. Function-pointer
-> signatures also need support from your Unity version and scripting backend; the
-> generator does not add that support. Unity 2021.3.45f1 and 6000.5.2f1 IL2CPP
-> converters failed on the function-pointer array shapes tested here. On
-> 2021.3.45f1, single-dimensional and jagged function-pointer arrays failed,
-> while `int[][]`, `int*[][]`, and a scalar function-pointer field converted in
-> the same profile. Keep function-pointer arrays out of IL2CPP builds unless
-> your Unity version converts them.
+> **Fixed in v4.0.0:** Generated constructors retain the required unsafe context for pointer parameters, preserve `void*` syntax, and accept valid `null` pointer defaults. The
+> consumer assembly must enable unsafe compilation. Function-pointer signatures also need support from your Unity version and scripting backend; the generator does not add that
+> support. Unity 2021.3.45f1 and 6000.5.2f1 IL2CPP converters failed on the function-pointer array shapes tested here. On 2021.3.45f1, single-dimensional and jagged
+> function-pointer arrays failed, while `int[][]`, `int*[][]`, and a scalar function-pointer field converted in the same profile. Keep function-pointer arrays out of IL2CPP builds
+> unless your Unity version converts them.
 
-**Fixed in v4.0.0:** Constructor and property generation skip fixed-size buffers.
-Initialize buffer elements before reading them.
+**Fixed in v4.0.0:** Constructor and property generation skip fixed-size buffers. Initialize buffer elements before reading them.
 
-**Fixed in v4.0.0:** Generated struct constructors initialize other excluded
-instance fields and auto-property backing storage to their type defaults. Existing
-field, auto-property, and field-like event initializers retain their values and
-execute once. For types without a primary constructor, user parameterless constructors
-are not invoked.
+**Fixed in v4.0.0:** Generated struct constructors initialize other excluded instance fields and auto-property backing storage to their type defaults. Existing field,
+auto-property, and field-like event initializers retain their values and execute once. For types without a primary constructor, user parameterless constructors are not invoked.
 
 For example, this constructor takes only `amount`; `PreviousAmount` starts at zero:
 
@@ -212,34 +198,25 @@ public readonly partial struct DamageState
 }
 ```
 
-When compiling as C# 10, a struct that mixes initialized and uninitialized explicit-interface
-auto-properties with a user parameterless constructor needs an explicit choice.
-Add an initializer to every explicit-interface auto-property, use named backing
-fields, or remove `[DxAutoConstructor]` and write the constructor yourself.
-[`DXMSG011`](analyzers.md#dxmsg011-cannot-preserve-explicit-interface-struct-initializers)
-identifies this combination. This restriction does not affect classes or C# 11
-or later language versions. It does not change the supported Unity floor.
+When compiling as C# 10, a struct that mixes initialized and uninitialized explicit-interface auto-properties with a user parameterless constructor needs an explicit choice. Add an
+initializer to every explicit-interface auto-property, use named backing fields, or remove `[DxAutoConstructor]` and write the constructor yourself.
+[`DXMSG011`](analyzers.md#dxmsg011-cannot-preserve-explicit-interface-struct-initializers) identifies this combination. This restriction does not affect classes or C# 11 or later
+language versions. It does not change the supported Unity floor.
 
-**Fixed in v4.0.0:** A type whose primary constructor takes parameters now receives
-[`DXMSG012`](analyzers.md#dxmsg012-cannot-infer-primary-constructor-arguments)
-instead of an invalid generated secondary constructor. Remove `[DxAutoConstructor]`
-and write the constructor with an explicit `this(...)` chain to supply the primary
-constructor arguments. For an empty primary parameter list, the generator adds the
-required `this()` chain automatically. No diagnostic is needed when the type has no selected instance fields.
-Ordinary non-positional records and nested types inside positional containers remain supported.
+**Fixed in v4.0.0:** A type whose primary constructor takes parameters now receives [`DXMSG012`](analyzers.md#dxmsg012-cannot-infer-primary-constructor-arguments) instead of an
+invalid generated secondary constructor. Remove `[DxAutoConstructor]` and write the constructor with an explicit `this(...)` chain to supply the primary constructor arguments. For
+an empty primary parameter list, the generator adds the required `this()` chain automatically. No diagnostic is needed when the type has no selected instance fields. Ordinary
+non-positional records and nested types inside positional containers remain supported.
 
-**Breaking change in v4.0.0:** A record class with one selected field of its own
-record type receives
-[`DXMSG013`](analyzers.md#dxmsg013-field-constructor-conflicts-with-record-copy-constructor).
-That constructor signature belongs to the record copy constructor. Earlier versions
-could silently change `with` results for sealed records. Remove `[DxAutoConstructor]`
-and use an init-only property with an object initializer, or write a construction
-API with a different signature. Ordinary classes and record constructors with other
-field types or multiple fields retain their behavior.
+**Breaking change in v4.0.0:** A record class with one selected field of its own record type receives
+[`DXMSG013`](analyzers.md#dxmsg013-field-constructor-conflicts-with-record-copy-constructor). That constructor signature belongs to the record copy constructor. Earlier versions
+could silently change `with` results for sealed records. Remove `[DxAutoConstructor]` and use an init-only property with an object initializer, or write a construction API with a
+different signature. Ordinary classes and record constructors with other field types or multiple fields retain their behavior.
 
 ### 3. `[DxOptionalParameter]` - Optional Constructor Parameters
 
-The `DxOptionalParameterAttribute` marks a field as optional when used with `[DxAutoConstructor]`. The source generator emits a constructor parameter with a default value for annotated fields, making it easy to create messages with sensible defaults.
+The `DxOptionalParameterAttribute` marks a field as optional when used with `[DxAutoConstructor]`. The source generator emits a constructor parameter with a default value for
+annotated fields, making it easy to create messages with sensible defaults.
 
 #### How It Works with DxAutoConstructor
 
@@ -292,16 +269,12 @@ var settings3 = new SettingsChanged(0.8f, 2, fullscreen: true);  // brightness=1
 var settings4 = new SettingsChanged(0.8f, 2, brightness: 50);    // fullscreen=false
 ```
 
-For a struct without an explicit parameterless constructor, `new Message()` and
-`default(Message)` initialize fields to zero, `false`, or `null`. They do not apply
-defaults from a generated constructor with optional parameters. Pass at least one
-argument, including a named argument, to select that constructor. A required field
-also makes this choice explicit at the call site.
+For a struct without an explicit parameterless constructor, `new Message()` and `default(Message)` initialize fields to zero, `false`, or `null`. They do not apply defaults from a
+generated constructor with optional parameters. Pass at least one argument, including a named argument, to select that constructor. A required field also makes this choice explicit
+at the call site.
 
-> **IL2CPP string defaults:** Unity IL2CPP replaces unpaired surrogate code units in
-> string literals with U+FFFD. Generated and handwritten optional defaults are C#
-> parameter defaults, so they are literals. If an unpaired surrogate must survive,
-> construct the string from a `char[]` at runtime and pass it explicitly.
+> **IL2CPP string defaults:** Unity IL2CPP replaces unpaired surrogate code units in string literals with U+FFFD. Generated and handwritten optional defaults are C# parameter
+> defaults, so they are literals. If an unpaired surrogate must survive, construct the string from a `char[]` at runtime and pass it explicitly.
 
 #### Supported Default Value Types
 
@@ -402,31 +375,25 @@ public readonly partial struct DefaultExamples
 }
 ```
 
-Optional defaults follow C# implicit constant conversions. For example, `[DxOptionalParameter(7)]`
-sets a `byte` field's default, and `[DxOptionalParameter(0)]` sets an enum field's default.
-Values must fit the field type. The `Expression` property follows the same conversion rules.
-The supplied constant keeps its numeric type: `[DxOptionalParameter(7)]` can default a `byte`
-field, but `[DxOptionalParameter(7.0)]` cannot. The latter is a `double` constant.
+Optional defaults follow C# implicit constant conversions. For example, `[DxOptionalParameter(7)]` sets a `byte` field's default, and `[DxOptionalParameter(0)]` sets an enum
+field's default. Values must fit the field type. The `Expression` property follows the same conversion rules. The supplied constant keeps its numeric type:
+`[DxOptionalParameter(7)]` can default a `byte` field, but `[DxOptionalParameter(7.0)]` cannot. The latter is a `double` constant.
 
-Use constants such as `float.NaN`, `double.PositiveInfinity`, and `double.NegativeInfinity`
-as attribute arguments when these values are appropriate defaults. Signed zero keeps its sign.
+Use constants such as `float.NaN`, `double.PositiveInfinity`, and `double.NegativeInfinity` as attribute arguments when these values are appropriate defaults. Signed zero keeps its
+sign.
 
-Use well-formed UTF-16 for string defaults in IL2CPP builds. The Unity 6000.5.2f1 Windows x64
-converter stored an isolated surrogate in a string literal as the replacement character
-(`U+FFFD`). Both handwritten and generated constructor calls supplied the same replacement
-value. The tested supplementary string pair and isolated `char` values were preserved in
-the converter output. [Conversion evidence](https://github.com/Ambiguous-Interactive/DxMessaging/issues/765#issuecomment-7141499685).
+Use well-formed UTF-16 for string defaults in IL2CPP builds. The Unity 6000.5.2f1 Windows x64 converter stored an isolated surrogate in a string literal as the replacement
+character (`U+FFFD`). Both handwritten and generated constructor calls supplied the same replacement value. The tested supplementary string pair and isolated `char` values were
+preserved in the converter output. [Conversion evidence](https://github.com/Ambiguous-Interactive/DxMessaging/issues/765#issuecomment-7141499685).
 
-Constructor parameters retain nullable field annotations, including nullable array and list elements.
-Fields declared with nullable annotations disabled retain that caller contract.
-Parameters from enabled contexts keep their nullable or nonnullable checks.
+Constructor parameters retain nullable field annotations, including nullable array and list elements. Fields declared with nullable annotations disabled retain that caller
+contract. Parameters from enabled contexts keep their nullable or nonnullable checks.
 
 > **Changed in 4.0.0:** Generated constructors retain nullable annotations and preserve valid constant conversions, numeric types, non-finite defaults, and signed zero.
 
 #### Nullable value defaults
 
-Use a nullable value type when an omitted value differs from zero. A null default
-leaves `HasValue` false; supplying zero keeps it true.
+Use a nullable value type when an omitted value differs from zero. A null default leaves `HasValue` false; supplying zero keeps it true.
 
 ```csharp
 using DxMessaging.Core.Attributes;
@@ -451,13 +418,15 @@ public static class ProgressExample
 }
 ```
 
-`[DxOptionalParameter(Expression = "null")]` and the type default from
-`[DxOptionalParameter]` also leave a nullable value absent. An explicit null default
-on a nonnullable value type, such as `int`, produces `DXMSG005`.
+`[DxOptionalParameter(Expression = "null")]` and the type default from `[DxOptionalParameter]` also leave a nullable value absent. An explicit null default on a nonnullable value
+type, such as `int`, produces `DXMSG005`.
 
 #### Advanced: Custom Constant Expressions
 
-Use the `Expression` property for compile-time constants that cannot be passed directly to an attribute constructor, such as enum values or named constants. The generator resolves the expression in the field's own declaration scope, including imports, aliases, and `using static` directives. It qualifies bound names for the generated file and preserves the original string returned by `nameof`. Ordinary C# optional-parameter rules still apply. Use `[DxOptionalParameter]` without an expression when a struct should use its default value.
+Use the `Expression` property for compile-time constants that cannot be passed directly to an attribute constructor, such as enum values or named constants. The generator resolves
+the expression in the field's own declaration scope, including imports, aliases, and `using static` directives. It qualifies bound names for the generated file and preserves the
+original string returned by `nameof`. Ordinary C# optional-parameter rules still apply. Use `[DxOptionalParameter]` without an expression when a struct should use its default
+value.
 
 > **Fixed in v4.0.0:** Valid `nameof(...)` defaults no longer abort constructor generation on Roslyn 5.9. Composed expressions keep their C# constant values and conversion rules.
 
@@ -728,20 +697,16 @@ public readonly partial struct PlayerDamaged : IMessage, IBroadcastMessage
 
 ## Advanced: Manual Implementation (When Attributes Aren't Enough)
 
-If you omit a route attribute, implement the route interface and provide
-`MessageType` yourself. You can use `[DxAutoConstructor]` independently to generate
-the constructor, or write it by hand.
+If you omit a route attribute, implement the route interface and provide `MessageType` yourself. You can use `[DxAutoConstructor]` independently to generate the constructor, or
+write it by hand.
 
 ### Generated and Manual Message Interfaces
 
-The message attributes generate `IMessage`, the non-generic route interface, and
-a concrete `MessageType` property. The bus and emission helpers use generic
-methods to pass struct messages by reference. Generated messages do not need a
-generic route interface for those calls.
+The message attributes generate `IMessage`, the non-generic route interface, and a concrete `MessageType` property. The bus and emission helpers use generic methods to pass struct
+messages by reference. Generated messages do not need a generic route interface for those calls.
 
-For a handwritten message, you can implement `IUntargetedMessage<T>`,
-`ITargetedMessage<T>`, or `IBroadcastMessage<T>`. Those interfaces provide
-`MessageType` through their default implementation.
+For a handwritten message, you can implement `IUntargetedMessage<T>`, `ITargetedMessage<T>`, or `IBroadcastMessage<T>`. Those interfaces provide `MessageType` through their default
+implementation.
 
 ```csharp
 [DxTargetedMessage]
@@ -754,15 +719,14 @@ public readonly partial struct Heal
 
 ### Closed generic messages on IL2CPP
 
-Use an assembly-level `DxAotMessage` attribute for each closed generic message
-that can reach an untyped dispatch API before typed registration or emission.
-The attribute is available in 4.0.0 and accepts one concrete message `Type`.
-See [generic messages on IL2CPP](../concepts/message-types.md#generic-messages-on-il2cpp)
-for the complete setup and visibility requirements.
+Use an assembly-level `DxAotMessage` attribute for each closed generic message that can reach an untyped dispatch API before typed registration or emission. The attribute is
+available in 4.0.0 and accepts one concrete message `Type`. See [generic messages on IL2CPP](../concepts/message-types.md#generic-messages-on-il2cpp) for the complete setup and
+visibility requirements.
 
 ### "Do I HAVE to use attributes?"
 
-Technically no -- but without them you must write the constructor, interface implementation, and `MessageType` property yourself (for speed, you can optionally leave this off, but it might box on certain call paths). Leaving the attributes on keeps everything consistent for the whole team.
+Technically no -- but without them you must write the constructor, interface implementation, and `MessageType` property yourself (for speed, you can optionally leave this off, but
+it might box on certain call paths). Leaving the attributes on keeps everything consistent for the whole team.
 
 ```csharp
 [DxUntargetedMessage]
@@ -789,7 +753,8 @@ public readonly partial struct ComplexMessage
 }
 ```
 
-If you truly must write a custom constructor, drop `[DxAutoConstructor]` for that type but keep the `[DxUntargetedMessage]`/`[DxTargetedMessage]` attribute so the interface plumbing stays consistent.
+If you truly must write a custom constructor, drop `[DxAutoConstructor]` for that type but keep the `[DxUntargetedMessage]`/`[DxTargetedMessage]` attribute so the interface
+plumbing stays consistent.
 
 ### "Can I mix attribute-based and manual messages?"
 
@@ -873,8 +838,7 @@ msg.Emit(testBus);
 - Subsystem isolation (UI has own bus)
 - Sandboxing (mod systems, untrusted code)
 
-The token starts disabled. Enable it before emitting, and dispose it at the end of its ownership
-scope. A local bus isolates routing but still shares runtime settings and pools.
+The token starts disabled. Enable it before emitting, and dispose it at the end of its ownership scope. A local bus isolates routing but still shares runtime settings and pools.
 
 ## Attributes Quick Reference
 
@@ -1144,14 +1108,12 @@ public readonly partial struct MyMessage : IMessage, IUntargetedMessage
 
 ### "Can I see the generated code?"
 
-Use your IDE's generated-source view when available. Visual Studio exposes
-generator output under the project's analyzer dependencies. Navigation to a
-generated member can also open its generated declaration.
+Use your IDE's generated-source view when available. Visual Studio exposes generator output under the project's analyzer dependencies. Navigation to a generated member can also
+open its generated declaration.
 
-A missing `.g.cs` file on disk does not prove that generation failed. In .NET SDK
-projects, writing those files requires
-[`EmitCompilerGeneratedFiles`](https://learn.microsoft.com/en-us/dotnet/core/project-sdk/msbuild-props#emitcompilergeneratedfiles).
-For Unity compilation failures, start with the Console diagnostics below.
+A missing `.g.cs` file on disk does not prove that generation failed. In .NET SDK projects, writing those files requires
+[`EmitCompilerGeneratedFiles`](https://learn.microsoft.com/en-us/dotnet/core/project-sdk/msbuild-props#emitcompilergeneratedfiles). For Unity compilation failures, start with the
+Console diagnostics below.
 
 ### "What if I want custom constructor logic?"
 
@@ -1172,7 +1134,8 @@ public readonly partial struct ComplexMessage
 }
 ```
 
-If you truly need to hand-craft the constructor, drop `[DxAutoConstructor]` for that specific type but keep the `[DxUntargetedMessage]`/`[DxTargetedMessage]` attribute so the interface implementation is still generated.
+If you truly need to hand-craft the constructor, drop `[DxAutoConstructor]` for that specific type but keep the `[DxUntargetedMessage]`/`[DxTargetedMessage]` attribute so the
+interface implementation is still generated.
 
 ### "Do attributes affect runtime performance?"
 
@@ -1195,24 +1158,18 @@ public readonly partial struct MessageA
 
 ## Troubleshooting Source Generators
 
-Start with the first compiler error in Unity's Console. Confirm the installed
-DxMessaging version and use a [supported Unity version](compatibility.md).
+Start with the first compiler error in Unity's Console. Confirm the installed DxMessaging version and use a [supported Unity version](compatibility.md).
 
 ### Missing interfaces or MessageType
 
-Apply the matching route attribute and mark the message declaration `partial`.
-Every containing declaration must also be `partial` for a nested message.
-`DXMSG003` identifies a non-partial containing type. A handwritten implementation
-without generator attributes does not need `partial` unless you split its
-declaration across files.
+Apply the matching route attribute and mark the message declaration `partial`. Every containing declaration must also be `partial` for a nested message. `DXMSG003` identifies a
+non-partial containing type. A handwritten implementation without generator attributes does not need `partial` unless you split its declaration across files.
 
 ### Missing constructor
 
-`[DxAutoConstructor]` uses eligible public instance fields in source-file compilation
-order, then declaration order within each file. Use named arguments for split partial
-types when you do not control file order. You can opt in to eligible serialized fields.
-Constructor generation skips static fields, fixed-size buffers, and properties.
-A type with no eligible fields gets no generated field constructor.
+`[DxAutoConstructor]` uses eligible public instance fields in source-file compilation order, then declaration order within each file. Use named arguments for split partial types
+when you do not control file order. You can opt in to eligible serialized fields. Constructor generation skips static fields, fixed-size buffers, and properties. A type with no
+eligible fields gets no generated field constructor.
 
 ```csharp
 using DxMessaging.Core.Attributes;
@@ -1229,17 +1186,13 @@ public readonly partial struct WithData
 
 ### Missing Emit or handler methods
 
-`Emit` helpers are extension methods in `DxMessaging.Core.Extensions`; import
-that namespace and implement the matching route contract. The generators do not
-create emission or handler methods. See the
-[emission troubleshooting steps](troubleshooting.md#source-generator-did-not-generate-emit-or-handler-methods).
+`Emit` helpers are extension methods in `DxMessaging.Core.Extensions`; import that namespace and implement the matching route contract. The generators do not create emission or
+handler methods. See the [emission troubleshooting steps](troubleshooting.md#source-generator-did-not-generate-emit-or-handler-methods).
 
 ### Reporting a compiler failure
 
-After fixing the first diagnostic, let Unity finish recompiling. If generation
-still fails, keep the compiler output and prepare a minimal message declaration,
-including any containing types. Include the Unity version, DxMessaging version,
-first diagnostic and declaration in a
+After fixing the first diagnostic, let Unity finish recompiling. If generation still fails, keep the compiler output and prepare a minimal message declaration, including any
+containing types. Include the Unity version, DxMessaging version, first diagnostic and declaration in a
 [bug report](https://github.com/Ambiguous-Interactive/DxMessaging/issues/new?template=bug_report.yml).
 
 ## Related Documentation

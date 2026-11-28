@@ -31,9 +31,7 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 foreach (ReceiverShape shape in Enum.GetValues(typeof(ReceiverShape)))
                 {
-                    yield return new TestCaseData(isPublic, shape).SetName(
-                        $"ReflexiveOpenGeneric_public{isPublic}_{shape}"
-                    );
+                    yield return new TestCaseData(isPublic, shape).SetName($"ReflexiveOpenGeneric_public{isPublic}_{shape}");
                 }
             }
         }
@@ -46,8 +44,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [TestCaseSource(nameof(Cases))]
         public void OnlyCallableReceiverMethodsDeliver(bool isPublic, ReceiverShape shape)
         {
-            DxMessagingRuntimeSettings settings =
-                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            DxMessagingRuntimeSettings settings = ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
             try
             {
                 settings._bufferMaxDistinctEntries = 4;
@@ -57,17 +54,14 @@ namespace DxMessaging.Tests.Runtime.Core
                 try
                 {
                     string method = (isPublic ? "Public" : "Private") + shape;
-                    bool expectsDelivery =
-                        shape != ReceiverShape.GenericOnly
-                        && shape != ReceiverShape.GenericParameterUsed;
+                    bool expectsDelivery = shape != ReceiverShape.GenericOnly && shape != ReceiverShape.GenericParameterUsed;
                     AssertReceiverMetadata(method, isPublic, shape);
                     for (int cycle = 0; cycle < 10; ++cycle)
                     {
                         bus.ResetState();
                         GameObject host = new("OpenGeneric" + cycle);
                         _spawned.Add(host);
-                        ReflexiveOpenGenericReceiver receiver =
-                            host.AddComponent<ReflexiveOpenGenericReceiver>();
+                        ReflexiveOpenGenericReceiver receiver = host.AddComponent<ReflexiveOpenGenericReceiver>();
                         Assert.That(host.GetComponents<MonoBehaviour>(), Has.Length.EqualTo(1));
                         List<string> deliveries = new();
                         bool validArguments = true;
@@ -89,12 +83,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         int secondDeliveries = deliveries.Count;
                         string secondTrace = string.Join(",", deliveries);
                         deliveries.Clear();
-                        ReflexiveMessage recovery = new(
-                            nameof(ReflexiveOpenGenericReceiver.ReceiveRecovery),
-                            ReflexiveSendMode.Flat,
-                            7,
-                            11
-                        );
+                        ReflexiveMessage recovery = new(nameof(ReflexiveOpenGenericReceiver.ReceiveRecovery), ReflexiveSendMode.Flat, 7, 11);
                         Exception recoveryError = EmitAndCapture(ref recovery, target, bus);
                         int recoveryCache = MessageBusInspection.ReflexiveMethodCacheCount(bus);
                         int expectedCache = expectsDelivery ? 1 : 0;
@@ -148,11 +137,7 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private static void AssertReceiverMetadata(
-            string method,
-            bool isPublic,
-            ReceiverShape shape
-        )
+        private static void AssertReceiverMetadata(string method, bool isPublic, ReceiverShape shape)
         {
             BindingFlags flags = BindingFlags.Instance | BindingFlags.DeclaredOnly;
             flags |= isPublic ? BindingFlags.Public : BindingFlags.NonPublic;
@@ -174,10 +159,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     ++genericDefinitions;
                     Assert.That(candidate.ContainsGenericParameters, Is.True);
                     Assert.That(candidate.GetGenericArguments(), Has.Length.EqualTo(1));
-                    Assert.That(
-                        parameters[0].ParameterType.IsGenericParameter,
-                        Is.EqualTo(shape == ReceiverShape.GenericParameterUsed)
-                    );
+                    Assert.That(parameters[0].ParameterType.IsGenericParameter, Is.EqualTo(shape == ReceiverShape.GenericParameterUsed));
                     if (shape != ReceiverShape.GenericParameterUsed)
                     {
                         Assert.That(parameters[0].ParameterType, Is.EqualTo(typeof(int)));
@@ -190,8 +172,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     Assert.That(parameters[0].ParameterType, Is.EqualTo(typeof(int)));
                 }
             }
-            bool mixed =
-                shape == ReceiverShape.GenericFirst || shape == ReceiverShape.ConcreteFirst;
+            bool mixed = shape == ReceiverShape.GenericFirst || shape == ReceiverShape.ConcreteFirst;
             int expectedGeneric = shape == ReceiverShape.ConcreteOnly ? 0 : 1;
             int expectedConcrete = mixed || shape == ReceiverShape.ConcreteOnly ? 1 : 0;
             Assert.That(definitions, Is.EqualTo(mixed ? 2 : 1));
@@ -202,11 +183,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
-        private static Exception EmitAndCapture(
-            ref ReflexiveMessage message,
-            InstanceId target,
-            MessageBus bus
-        )
+        private static Exception EmitAndCapture(ref ReflexiveMessage message, InstanceId target, MessageBus bus)
         {
             try
             {

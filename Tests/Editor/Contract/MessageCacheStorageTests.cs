@@ -21,24 +21,13 @@ namespace DxMessaging.Tests.Editor.Contract
         [Test]
         public void NewCacheUsesEmptyArrayBackedStorage()
         {
-            FieldInfo values = typeof(MessageCache<object>).GetField(
-                "_values",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
+            FieldInfo values = typeof(MessageCache<object>).GetField("_values", BindingFlags.Instance | BindingFlags.NonPublic);
             Assert.That(values, Is.Not.Null, "MessageCache<T>._values was renamed.");
-            Assert.That(
-                values.FieldType,
-                Is.EqualTo(typeof(object[])),
-                "MessageCache<T> must use a sparse array rather than eagerly allocating a List<T>."
-            );
+            Assert.That(values.FieldType, Is.EqualTo(typeof(object[])), "MessageCache<T> must use a sparse array rather than eagerly allocating a List<T>.");
 
             MessageCache<object> cache = new MessageCache<object>();
             object[] storage = (object[])values.GetValue(cache);
-            Assert.That(
-                storage,
-                Is.SameAs(Array.Empty<object>()),
-                "A new MessageCache<T> must share Array.Empty<T>() until its first stored value."
-            );
+            Assert.That(storage, Is.SameAs(Array.Empty<object>()), "A new MessageCache<T> must share Array.Empty<T>() until its first stored value.");
         }
 
         [Test]
@@ -102,17 +91,11 @@ namespace DxMessaging.Tests.Editor.Contract
             {
                 MessageHelperIndexer<OverflowMessage>.SequentialId = int.MaxValue;
 
-                InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
-                    cache.Set<OverflowMessage>(new Box("overflow"))
-                );
+                InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() => cache.Set<OverflowMessage>(new Box("overflow")));
 
                 StringAssert.Contains("supported capacity", exception.Message);
                 Assert.That(cache, Is.Empty, "A rejected index must not change cache enumeration.");
-                Assert.That(
-                    cache.TryGetValue<OverflowMessage>(out _),
-                    Is.False,
-                    "A rejected index must not leave a partial cache entry."
-                );
+                Assert.That(cache.TryGetValue<OverflowMessage>(out _), Is.False, "A rejected index must not leave a partial cache entry.");
             }
             finally
             {
@@ -122,9 +105,7 @@ namespace DxMessaging.Tests.Editor.Contract
 
         [TestCase(false)]
         [TestCase(true)]
-        public void NewTypeAssignmentRemainsUnpublishedWhenCapacityGrowthIsRejected(
-            bool useGetOrAdd
-        )
+        public void NewTypeAssignmentRemainsUnpublishedWhenCapacityGrowthIsRejected(bool useGetOrAdd)
         {
             const int FirstUnsupportedIndex = 1 << 30;
             MessageCache<Box> cache = new MessageCache<Box>();
@@ -148,10 +129,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 });
 
                 Assert.That(MessageHelperIndexer.TotalMessages, Is.EqualTo(FirstUnsupportedIndex));
-                Assert.That(
-                    MessageHelperIndexer<UnassignedOverflowMessage>.SequentialId,
-                    Is.EqualTo(-1)
-                );
+                Assert.That(MessageHelperIndexer<UnassignedOverflowMessage>.SequentialId, Is.EqualTo(-1));
                 Assert.That(cache, Is.Empty, "A rejected assignment must leave the cache empty.");
                 Assert.That(cache.TryGetValue<UnassignedOverflowMessage>(out _), Is.False);
             }
@@ -170,10 +148,7 @@ namespace DxMessaging.Tests.Editor.Contract
         [Test]
         public void StickyValuesUseTheSharedSparseIndexAndReleaseTheirArray()
         {
-            FieldInfo holder = typeof(MessageBus).GetField(
-                "_stickyValues",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
+            FieldInfo holder = typeof(MessageBus).GetField("_stickyValues", BindingFlags.Instance | BindingFlags.NonPublic);
             Assert.That(holder, Is.Not.Null, "The sticky store field was renamed.");
             MessageBus bus = new MessageBus();
             Assert.That(holder.GetValue(bus), Is.Null, "An idle bus owns no sticky storage.");
@@ -182,54 +157,28 @@ namespace DxMessaging.Tests.Editor.Contract
             bus.EmitSticky(ref first);
             object store = holder.GetValue(bus);
             Assert.That(store, Is.Not.Null, "Publication creates the sparse store.");
-            FieldInfo values = store
-                .GetType()
-                .GetField("_values", BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo values = store.GetType().GetField("_values", BindingFlags.Instance | BindingFlags.NonPublic);
             Assert.That(values, Is.Not.Null, "The sticky store keeps a values array.");
-            Assert.That(
-                values.FieldType.IsArray,
-                Is.True,
-                "Sticky values must use sparse indexed storage, not a dictionary."
-            );
+            Assert.That(values.FieldType.IsArray, Is.True, "Sticky values must use sparse indexed storage, not a dictionary.");
             int firstIndex = MessageHelperIndexer<StickyFirstMessage>.SequentialId;
             Array firstArray = (Array)values.GetValue(store);
-            Assert.That(
-                firstIndex,
-                Is.GreaterThanOrEqualTo(0),
-                "Publication assigns the shared id."
-            );
+            Assert.That(firstIndex, Is.GreaterThanOrEqualTo(0), "Publication assigns the shared id.");
             Assert.That(firstArray.Length, Is.GreaterThan(firstIndex));
-            Assert.That(
-                firstArray.GetValue(firstIndex),
-                Is.Not.Null,
-                "The published value occupies the shared type index."
-            );
+            Assert.That(firstArray.GetValue(firstIndex), Is.Not.Null, "The published value occupies the shared type index.");
 
             StickySecondMessage second = new StickySecondMessage(23);
             bus.EmitSticky(ref second);
             Assert.That(bus.ClearLatest<StickyFirstMessage>(), Is.True);
-            Assert.That(
-                holder.GetValue(bus),
-                Is.Not.Null,
-                "Clearing one type keeps the store for the other."
-            );
+            Assert.That(holder.GetValue(bus), Is.Not.Null, "Clearing one type keeps the store for the other.");
             Assert.That(bus.TryGetLatest(out StickySecondMessage retained), Is.True);
             Assert.That(retained.Value, Is.EqualTo(23));
 
             Assert.That(bus.ClearLatest<StickySecondMessage>(), Is.True);
-            Assert.That(
-                holder.GetValue(bus),
-                Is.Null,
-                "The last clear releases the array immediately without a sweep."
-            );
+            Assert.That(holder.GetValue(bus), Is.Null, "The last clear releases the array immediately without a sweep.");
 
             StickyThirdMessage third = new StickyThirdMessage(29);
             bus.EmitSticky(ref third);
-            Assert.That(
-                bus.TryGetLatest(out StickyThirdMessage republished),
-                Is.True,
-                "A dropped store is recreated on the next publication."
-            );
+            Assert.That(bus.TryGetLatest(out StickyThirdMessage republished), Is.True, "A dropped store is recreated on the next publication.");
             Assert.That(republished.Value, Is.EqualTo(29));
         }
 

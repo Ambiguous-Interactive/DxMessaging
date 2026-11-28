@@ -33,13 +33,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         {
                             foreach (bool fast in new[] { false, true })
                             {
-                                yield return new TestCaseData(
-                                    debug,
-                                    trigger,
-                                    action,
-                                    withoutTargeting,
-                                    fast
-                                ).SetName(
+                                yield return new TestCaseData(debug, trigger, action, withoutTargeting, fast).SetName(
                                     $"ReflexiveLogReset_debug{debug}_{trigger}_{action}_without{withoutTargeting}_fast{fast}"
                                 );
                             }
@@ -59,13 +53,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
         /// <summary>Checks cancellation from diagnostic callbacks and delivery on the next emission.</summary>
         [TestCaseSource(nameof(Cases))]
-        public void ResetFromLoggerStopsCurrentEmissionAndPreservesNext(
-            bool debug,
-            LogLevel trigger,
-            string action,
-            bool withoutTargeting,
-            bool fast
-        )
+        public void ResetFromLoggerStopsCurrentEmissionAndPreservesNext(bool debug, LogLevel trigger, string action, bool withoutTargeting, bool fast)
         {
             using Scope scope = new Scope(debug, trigger, action, withoutTargeting, fast);
             scope.EmitTwice();
@@ -77,21 +65,13 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.That(scope.OldFirst, Is.EqualTo(reset ? 0 : 1), report);
             Assert.That(scope.FreshFirst, Is.Zero, report);
             Assert.That(scope.OldSecond, Is.EqualTo(cleared ? 0 : 1), report);
-            Assert.That(
-                scope.FreshSecond,
-                Is.EqualTo(triggered && action == "ResetFresh" ? 1 : 0),
-                report
-            );
+            Assert.That(scope.FreshSecond, Is.EqualTo(triggered && action == "ResetFresh" ? 1 : 0), report);
             if (reset)
             {
                 Assert.That(scope.GenerationAfter, Is.Not.EqualTo(scope.GenerationBefore), report);
                 if (trigger == LogLevel.Warn)
                 {
-                    Assert.That(
-                        scope.FirstLogs,
-                        Is.EqualTo(1),
-                        report + "; canceled warning must stop further reflexive work/logging"
-                    );
+                    Assert.That(scope.FirstLogs, Is.EqualTo(1), report + "; canceled warning must stop further reflexive work/logging");
                 }
             }
         }
@@ -101,8 +81,7 @@ namespace DxMessaging.Tests.Runtime.Core
             private static readonly InstanceId Context = new InstanceId(771);
             private readonly bool _savedDebug = MessagingDebug.enabled;
             private readonly Action<LogLevel, string> _savedLog = MessagingDebug.LogFunction;
-            private readonly DiagnosticsTarget _savedDiagnostics =
-                IMessageBus.GlobalDiagnosticsTargets;
+            private readonly DiagnosticsTarget _savedDiagnostics = IMessageBus.GlobalDiagnosticsTargets;
             private readonly BusType _bus = new BusType { DiagnosticsMode = false };
             private readonly bool _debug;
             private readonly LogLevel _trigger;
@@ -125,16 +104,9 @@ namespace DxMessaging.Tests.Runtime.Core
             internal int FirstLogs;
             internal long GenerationBefore;
             internal long GenerationAfter;
-            internal string Report =>
-                $"debug={_debug}, trigger={_trigger}, action={_action}, without={_withoutTargeting}, fast={_fast}; trace={string.Join(",", _trace)}";
+            internal string Report => $"debug={_debug}, trigger={_trigger}, action={_action}, without={_withoutTargeting}, fast={_fast}; trace={string.Join(",", _trace)}";
 
-            internal Scope(
-                bool debug,
-                LogLevel trigger,
-                string action,
-                bool withoutTargeting,
-                bool fast
-            )
+            internal Scope(bool debug, LogLevel trigger, string action, bool withoutTargeting, bool fast)
             {
                 _debug = debug;
                 _trigger = trigger;
@@ -156,11 +128,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 MessagingDebug.enabled = _debug;
                 MessagingDebug.LogFunction = ReceiveLog;
                 _armed = true;
-                ReflexiveMessage message = new ReflexiveMessage(
-                    "NoMatchingHierarchyReceiver",
-                    ReflexiveSendMode.Flat,
-                    Array.Empty<object>()
-                );
+                ReflexiveMessage message = new ReflexiveMessage("NoMatchingHierarchyReceiver", ReflexiveSendMode.Flat, Array.Empty<object>());
                 InstanceId target = Context;
                 _trace.Add("first-start");
                 _bus.TargetedBroadcast(ref target, ref message);
@@ -178,10 +146,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             private MessageRegistrationToken CreateToken(int ownerId, Action callback)
             {
-                MessageHandler handler = new MessageHandler(new InstanceId(ownerId), _bus)
-                {
-                    active = true,
-                };
+                MessageHandler handler = new MessageHandler(new InstanceId(ownerId), _bus) { active = true };
                 MessageRegistrationToken token = MessageRegistrationToken.Create(handler, _bus);
                 try
                 {
@@ -189,30 +154,20 @@ namespace DxMessaging.Tests.Runtime.Core
                     {
                         if (_fast)
                         {
-                            token.RegisterTargetedWithoutTargeting<ReflexiveMessage>(
-                                (in InstanceId context, in ReflexiveMessage message) => callback()
-                            );
+                            token.RegisterTargetedWithoutTargeting<ReflexiveMessage>((in InstanceId context, in ReflexiveMessage message) => callback());
                         }
                         else
                         {
-                            token.RegisterTargetedWithoutTargeting<ReflexiveMessage>(
-                                (InstanceId context, ReflexiveMessage message) => callback()
-                            );
+                            token.RegisterTargetedWithoutTargeting<ReflexiveMessage>((InstanceId context, ReflexiveMessage message) => callback());
                         }
                     }
                     else if (_fast)
                     {
-                        token.RegisterTargeted<ReflexiveMessage>(
-                            Context,
-                            (in ReflexiveMessage message) => callback()
-                        );
+                        token.RegisterTargeted<ReflexiveMessage>(Context, (in ReflexiveMessage message) => callback());
                     }
                     else
                     {
-                        token.RegisterTargeted<ReflexiveMessage>(
-                            Context,
-                            (ReflexiveMessage message) => callback()
-                        );
+                        token.RegisterTargeted<ReflexiveMessage>(Context, (ReflexiveMessage message) => callback());
                     }
                     token.Enable();
                     return token;

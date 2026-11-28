@@ -14,10 +14,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
     /// </summary>
     public static class ZeroDependencyComparisonRoster
     {
-        public static readonly IReadOnlyList<(
-            string key,
-            Func<IMessagingTechBridge> factory
-        )> Bridges = new (string key, Func<IMessagingTechBridge> factory)[]
+        public static readonly IReadOnlyList<(string key, Func<IMessagingTechBridge> factory)> Bridges = new (string key, Func<IMessagingTechBridge> factory)[]
         {
             ("DxMessaging", () => new DxMessagingBridge()),
             ("CsEvent", () => new CsharpEventBridge()),

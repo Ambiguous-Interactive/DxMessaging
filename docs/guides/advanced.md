@@ -2,7 +2,8 @@
 
 Short intro
 
-This page covers advanced patterns: manual lifetimes, token control, Unity integration switches, string message defaults, and safety tips. If you're new, start with Quick Start, then return here as you scale up.
+This page covers advanced patterns: manual lifetimes, token control, Unity integration switches, string message defaults, and safety tips. If you're new, start with Quick Start,
+then return here as you scale up.
 
 Table of contents
 
@@ -23,26 +24,20 @@ Lifecycles and tokens
 - Enable/Disable
   - Call `token.Enable()` in `OnEnable` and `token.Disable()` in `OnDisable`.
   - Idempotent; repeated calls are safe.
-  - Removing a staged handle from a custom-bus registration callback keeps that entry inactive
-    during the current replay. A replacement staged on a disabled token activates on
-    the next Disable/Enable cycle.
-  - If a custom bus rejects a registration on an enabled token before changing its registrations,
-    that call leaves no staged entry to replay later.
-  - A failed `Enable()` keeps registrations that you staged before enabling the token. If `Enabled` is
-    false, retry `Enable()` after the bus recovers, or remove those handles. If rollback leaves
-    `Enabled` true, finish cleanup with `Disable()` before enabling again.
+  - Removing a staged handle from a custom-bus registration callback keeps that entry inactive during the current replay. A replacement staged on a disabled token activates on the
+    next Disable/Enable cycle.
+  - If a custom bus rejects a registration on an enabled token before changing its registrations, that call leaves no staged entry to replay later.
+  - A failed `Enable()` keeps registrations that you staged before enabling the token. If `Enabled` is false, retry `Enable()` after the bus recovers, or remove those handles. If
+    rollback leaves `Enabled` true, finish cleanup with `Disable()` before enabling again.
 - Clearing
-  - `token.UnregisterAll()` removes current registrations and clears token-local diagnostics when
-    cleanup finishes.
-  - Custom-bus deregistration callbacks may call token cleanup again. In-flight cleanup runs once;
-    a failed action keeps its original handle retryable, even if a callback clears or reuses its slot.
-  - In 4.0, cleanup applies only to the registrations selected when that pass starts. Registrations
-    accepted by a callback, including reactivation of a staged handle, keep the token enabled for
-    another cleanup pass. Call `UnregisterAll()` again after the callback stops adding registrations.
+  - `token.UnregisterAll()` removes current registrations and clears token-local diagnostics when cleanup finishes.
+  - Custom-bus deregistration callbacks may call token cleanup again. In-flight cleanup runs once; a failed action keeps its original handle retryable, even if a callback clears or
+    reuses its slot.
+  - In 4.0, cleanup applies only to the registrations selected when that pass starts. Registrations accepted by a callback, including reactivation of a staged handle, keep the
+    token enabled for another cleanup pass. Call `UnregisterAll()` again after the callback stops adding registrations.
   - `token.RemoveRegistration(handle)` removes a single registration.
-  - `token.AsDisposable(handle)` returns a copy-safe concrete value type. Keep that concrete type
-    to avoid `IDisposable` boxing. Only the first successful removal has an effect; a failed removal
-    remains retryable through any copy.
+  - `token.AsDisposable(handle)` returns a copy-safe concrete value type. Keep that concrete type to avoid `IDisposable` boxing. Only the first successful removal has an effect; a
+    failed removal remains retryable through any copy.
 - Diagnostics
   - `token.DiagnosticMode = true` to record per-registration call counts and emissions.
 
@@ -136,30 +131,22 @@ messaging.ToggleMessageHandler(false); // suspends delivery despite the flag
 messaging.ToggleMessageHandler(true); // resumes delivery
 ```
 
-While `emitMessagesWhenDisabled` is true, Unity enable/disable callbacks never toggle the
-handler: disabling the component keeps emission alive, and re-enabling does not
-revert an explicit `ToggleMessageHandler(false)`. Explicit toggle calls are the
-single source of truth until the flag is cleared. One ordering to know: if the
-lifecycle already deactivated the handler (component disabled with the flag
-clear) and you then set the flag while disabled, re-enabling does not
-reactivate it -- call `ToggleMessageHandler(true)` to resume.
+While `emitMessagesWhenDisabled` is true, Unity enable/disable callbacks never toggle the handler: disabling the component keeps emission alive, and re-enabling does not revert an
+explicit `ToggleMessageHandler(false)`. Explicit toggle calls are the single source of truth until the flag is cleared. One ordering to know: if the lifecycle already deactivated
+the handler (component disabled with the flag clear) and you then set the flag while disabled, re-enabling does not reactivate it -- call `ToggleMessageHandler(true)` to resume.
 
-**Fixed in v4.0.0:** Initial handler activity follows the component and host enable state
-unless disabled delivery is opted in. Destroying an initialized messaging owner deactivates
-its shared handler and disposes its owned tokens. See [manual lifecycle cleanup](unity-integration.md#messagingcomponent)
-for cleanup failures and hosts that have never been active.
+**Fixed in v4.0.0:** Initial handler activity follows the component and host enable state unless disabled delivery is opted in. Destroying an initialized messaging owner
+deactivates its shared handler and disposes its owned tokens. See [manual lifecycle cleanup](unity-integration.md#messagingcomponent) for cleanup failures and hosts that have never
+been active.
 
 Re-register after release (opt-in)
 
-When cleanup completes, `MessagingComponent.Release` removes the listener's cached token; by default
-the listener stays unregistered across later enable/disable cycles. Override
-`ReregisterOnEnableAfterRelease` on a `MessageAwareComponent` to opt into
-automatic recovery: the next enable re-creates the token and replays
-`RegisterMessageHandlers` exactly once.
+When cleanup completes, `MessagingComponent.Release` removes the listener's cached token; by default the listener stays unregistered across later enable/disable cycles. Override
+`ReregisterOnEnableAfterRelease` on a `MessageAwareComponent` to opt into automatic recovery: the next enable re-creates the token and replays `RegisterMessageHandlers` exactly
+once.
 
-> **Fixed in v4.0.0:** A retained reference can release a listener after Unity destroys it.
-> `Release` disposes the token and removes the cached listener before returning `true`.
-> A nested release or new work accepted during cleanup returns `false` and keeps the cleanup owner cached.
+> **Fixed in v4.0.0:** A retained reference can release a listener after Unity destroys it. `Release` disposes the token and removes the cached listener before returning `true`. A
+> nested release or new work accepted during cleanup returns `false` and keeps the cleanup owner cached.
 
 ```csharp
 using DxMessaging.Unity;
@@ -195,7 +182,8 @@ MessageHandler.SetGlobalMessageBus(localBus);
 
 ## Temporarily override the global bus
 
-When legacy shorthands or static helpers must run against a scoped bus (for example inside an integration test), use `MessageHandler.OverrideGlobalMessageBus` to push a temporary override that restores automatically:
+When legacy shorthands or static helpers must run against a scoped bus (for example inside an integration test), use `MessageHandler.OverrideGlobalMessageBus` to push a temporary
+override that restores automatically:
 
 ```csharp
 using DxMessaging.Core.MessageBus;
@@ -210,20 +198,17 @@ using (MessageHandler.OverrideGlobalMessageBus(testBus))
 // previous global bus restored here
 ```
 
-The concrete scope allocates no managed objects after previously used nesting
-depths have been established and is safe to copy. Do not store it as
-`IDisposable`, which boxes the value. Nested scopes restore the nearest active
-parent even when disposed out of order. An explicit `SetGlobalMessageBus`,
-`ResetGlobalMessageBus`, or `DxMessagingStaticState.Reset` invalidates older
-scopes instead of letting them restore stale state. The scope throws for
-`null`, and reaching a new peak nesting depth may allocate reusable capacity.
-Create and dispose scopes, and set or reset the global bus, on Unity's main thread. These APIs
-follow DxMessaging's single-threaded runtime contract.
-Pair this with `IMessageRegistrationBuilder` for clean test lifecycles.
+The concrete scope allocates no managed objects after previously used nesting depths have been established and is safe to copy. Do not store it as `IDisposable`, which boxes the
+value. Nested scopes restore the nearest active parent even when disposed out of order. An explicit `SetGlobalMessageBus`, `ResetGlobalMessageBus`, or
+`DxMessagingStaticState.Reset` invalidates older scopes instead of letting them restore stale state. The scope throws for `null`, and reaching a new peak nesting depth may allocate
+reusable capacity. Create and dispose scopes, and set or reset the global bus, on Unity's main thread. These APIs follow DxMessaging's single-threaded runtime contract. Pair this
+with `IMessageRegistrationBuilder` for clean test lifecycles.
 
-> **Editor note:** When the global bus is replaced with a decorated implementation, certain inspector diagnostics that rely on the concrete `MessageBus` type (e.g., registration graphs) are temporarily unavailable until the override scope ends.
+> **Editor note:** When the global bus is replaced with a decorated implementation, certain inspector diagnostics that rely on the concrete `MessageBus` type (e.g., registration
+> graphs) are temporarily unavailable until the override scope ends.
 
-Need a stable reference to the original bus regardless of overrides? Use `InitialGlobalMessageBusProviderAsset` (Create Asset -> "DxMessaging/Message Bus Providers/Initial Global Message Bus") to expose the startup instance.
+Need a stable reference to the original bus regardless of overrides? Use `InitialGlobalMessageBusProviderAsset` (Create Asset -> "DxMessaging/Message Bus Providers/Initial Global
+Message Bus") to expose the startup instance.
 
 Scoped interceptors (debug)
 
@@ -252,7 +237,8 @@ Safety and troubleshooting
 
 Do's
 
-- **CRITICAL**: When overriding `MessageAwareComponent` hooks, you MUST call the base method: `base.Awake()`, `base.OnEnable()`, `base.OnDisable()`, `base.RegisterMessageHandlers()`.
+- **CRITICAL**: When overriding `MessageAwareComponent` hooks, you MUST call the base method: `base.Awake()`, `base.OnEnable()`, `base.OnDisable()`,
+  `base.RegisterMessageHandlers()`.
 - **Always call `base.RegisterMessageHandlers()` first** in your override to ensure parent class registrations happen before yours.
 - Override `RegisterForStringMessages => true` when you want the built-in string demos.
 - **Don't hide Unity methods** with `new` (e.g., `new void OnEnable()`); always `override` and call `base.*`.
@@ -265,13 +251,10 @@ Do's
 
 ## Important behavior note: Snapshot Semantics
 
-Listener lists freeze when each dispatch phase acquires them. Registration changes can affect
-later phases whose lists have not been captured; they do not rewrite a list already in use.
-See [Snapshot Semantics](../concepts/interceptors-and-ordering.md#snapshot-semantics-frozen-listener-lists)
-for the acquisition points and global accept-all rules.
+Listener lists freeze when each dispatch phase acquires them. Registration changes can affect later phases whose lists have not been captured; they do not rewrite a list already in
+use. See [Snapshot Semantics](../concepts/interceptors-and-ordering.md#snapshot-semantics-frozen-listener-lists) for the acquisition points and global accept-all rules.
 
-Handler activity is checked separately from list membership. See
-[Handler activity during callbacks](../concepts/interceptors-and-ordering.md#handler-activity-during-callbacks)
+Handler activity is checked separately from list membership. See [Handler activity during callbacks](../concepts/interceptors-and-ordering.md#handler-activity-during-callbacks)
 before using `MessageHandler.active` to control delivery during an emission.
 
 Don'ts
@@ -326,7 +309,8 @@ void OnSpawned(in Spawned m) => Refresh();
 
 More advanced use cases
 
-- Scene transitions: create a local bus per scene (or sub-system), pass it to tokens. Emit globally for cross-scene untargeted notifications, but isolate targeted/broadcast to the scene's bus.
+- Scene transitions: create a local bus per scene (or sub-system), pass it to tokens. Emit globally for cross-scene untargeted notifications, but isolate targeted/broadcast to the
+  scene's bus.
 - Analytics layer: use `RegisterTargetedWithoutTargeting` and `RegisterBroadcastWithoutSource` to observe all flows; record in a buffer or file; disable in release.
 - Pausable systems: set `emitMessagesWhenDisabled` for senders you want alive while disabled; use `ToggleMessageHandler` to pause entire listeners.
 

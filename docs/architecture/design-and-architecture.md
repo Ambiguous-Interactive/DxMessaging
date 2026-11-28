@@ -97,9 +97,8 @@ flowchart TB
 - Struct messages passed by `ref` to avoid copying and GC.
 - Minimal allocations in hot paths; logging and diagnostics use ring buffers.
 - Pre-allocated internal collections for common operations.
-- Untargeted dispatch without interceptors, global accept-all handlers, or post-processors reuses
-  resolved handler entries across steady-state emissions; registration changes and sweeps refresh
-  the route.
+- Untargeted dispatch without interceptors, global accept-all handlers, or post-processors reuses resolved handler entries across steady-state emissions; registration changes and
+  sweeps refresh the route.
 - Handlers are sorted by priority once during registration. Emitting a message iterates through all active handlers in that order.
 
 ## Message Type System
@@ -119,15 +118,10 @@ Attributes like `[DxTargetedMessage]` and `[DxBroadcastMessage]` (with source ge
 
 ### Memory Reclamation Subsystem
 
-A separate memory-reclamation subsystem bounds the empty per-message-type
-and per-context slots a long-running bus retains, plus the shared
-collection pools `DxPools` and the bus-owned context dictionary use. Idle
-sweeps run on a wall-clock cadence and through a Unity PlayerLoop hook;
-`IMessageBus.Trim` exposes the same sweep synchronously. Active
-registrations are never reclaimed. See the
-[Memory Reclamation guide](../guides/memory-reclamation.md) and
-[Runtime Settings reference](../reference/runtime-settings.md) for the full
-policy, tuning recommendations, and diagnostic counters.
+A separate memory-reclamation subsystem bounds the empty per-message-type and per-context slots a long-running bus retains, plus the shared collection pools `DxPools` and the
+bus-owned context dictionary use. Idle sweeps run on a wall-clock cadence and through a Unity PlayerLoop hook; `IMessageBus.Trim` exposes the same sweep synchronously. Active
+registrations are never reclaimed. See the [Memory Reclamation guide](../guides/memory-reclamation.md) and [Runtime Settings reference](../reference/runtime-settings.md) for the
+full policy, tuning recommendations, and diagnostic counters.
 
 ## The Message Bus
 
@@ -135,8 +129,7 @@ Message flow: Interceptors > Handlers > Post-Processors.
 
 - Interceptors may transform or cancel messages before delivery.
 - Handlers execute in priority order; lower number executes first.
-- Post-processors observe completed dispatch and can emit follow-up messages. The message
-  payload alone does not prove which gameplay changes a handler applied.
+- Post-processors observe completed dispatch and can emit follow-up messages. The message payload alone does not prove which gameplay changes a handler applied.
 
 ## Why DxMessaging is Fast
 

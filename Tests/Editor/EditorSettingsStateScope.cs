@@ -17,21 +17,12 @@ namespace DxMessaging.Tests.Editor
 
     internal sealed class EditorSettingsCacheScope : IDisposable
     {
-        private readonly EditorStaticFieldScope _state = new(
-            typeof(DxMessagingSettings),
-            "_settingsRevision",
-            "_cachedSettingsRevision",
-            "_cachedSettings",
-            "_cachedSettingsPath"
-        );
+        private readonly EditorStaticFieldScope _state = new(typeof(DxMessagingSettings), "_settingsRevision", "_cachedSettingsRevision", "_cachedSettings", "_cachedSettingsPath");
 
         internal void SetCurrent(DxMessagingSettings settings, string path = null)
         {
             _state.Set("_cachedSettings", settings);
-            _state.Set(
-                "_cachedSettingsPath",
-                path ?? (settings == null ? null : AssetDatabase.GetAssetPath(settings))
-            );
+            _state.Set("_cachedSettingsPath", path ?? (settings == null ? null : AssetDatabase.GetAssetPath(settings)));
             _state.Set("_cachedSettingsRevision", DxMessagingSettings.SettingsRevision);
         }
 
@@ -59,42 +50,20 @@ namespace DxMessaging.Tests.Editor
                 }
                 try
                 {
-                    int registered = RmRegisterResources(
-                        session,
-                        1,
-                        new[] { path },
-                        0,
-                        IntPtr.Zero,
-                        0,
-                        IntPtr.Zero
-                    );
+                    int registered = RmRegisterResources(session, 1, new[] { path }, 0, IntPtr.Zero, 0, IntPtr.Zero);
                     report.Append($", register={registered}");
                     if (registered == 0)
                     {
                         ProcessInfo[] processes = new ProcessInfo[64];
                         uint count = (uint)processes.Length;
-                        int listed = RmGetList(
-                            session,
-                            out uint needed,
-                            ref count,
-                            processes,
-                            out uint reasons
-                        );
-                        report.Append(
-                            $", list={listed}, needed={needed}, returned={count}, reasons={reasons}"
-                        );
+                        int listed = RmGetList(session, out uint needed, ref count, processes, out uint reasons);
+                        report.Append($", list={listed}, needed={needed}, returned={count}, reasons={reasons}");
                         if (listed == 0)
                         {
-                            for (
-                                int index = 0;
-                                index < Math.Min(count, (uint)processes.Length);
-                                ++index
-                            )
+                            for (int index = 0; index < Math.Min(count, (uint)processes.Length); ++index)
                             {
                                 ProcessInfo process = processes[index];
-                                report.Append(
-                                    $"; pid={process.Process.Id}, app='{process.ApplicationName}', service='{process.ServiceName}'"
-                                );
+                                report.Append($"; pid={process.Process.Id}, app='{process.ApplicationName}', service='{process.ServiceName}'");
                             }
                         }
                     }
@@ -155,13 +124,7 @@ namespace DxMessaging.Tests.Editor
         );
 
         [DllImport("rstrtmgr.dll", ExactSpelling = true)]
-        private static extern int RmGetList(
-            uint session,
-            out uint needed,
-            ref uint count,
-            [In, Out] ProcessInfo[] processes,
-            out uint reasons
-        );
+        private static extern int RmGetList(uint session, out uint needed, ref uint count, [In, Out] ProcessInfo[] processes, out uint reasons);
 
         [DllImport("rstrtmgr.dll", ExactSpelling = true)]
         private static extern int RmEndSession(uint session);
@@ -179,22 +142,12 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void FileLockObserverProcessLayoutMatchesTheWindowsSdk()
         {
-            Type unique = typeof(EditorFileLockDiagnostics).GetNestedType(
-                "UniqueProcess",
-                System.Reflection.BindingFlags.NonPublic
-            );
-            Type process = typeof(EditorFileLockDiagnostics).GetNestedType(
-                "ProcessInfo",
-                System.Reflection.BindingFlags.NonPublic
-            );
+            Type unique = typeof(EditorFileLockDiagnostics).GetNestedType("UniqueProcess", System.Reflection.BindingFlags.NonPublic);
+            Type process = typeof(EditorFileLockDiagnostics).GetNestedType("ProcessInfo", System.Reflection.BindingFlags.NonPublic);
             Assert.That(unique, Is.Not.Null);
             Assert.That(process, Is.Not.Null);
             Assert.That(Marshal.SizeOf(unique), Is.EqualTo(12));
-            Assert.That(
-                Marshal.SizeOf(process),
-                Is.EqualTo(668),
-                "Native RM_PROCESS_INFO array stride."
-            );
+            Assert.That(Marshal.SizeOf(process), Is.EqualTo(668), "Native RM_PROCESS_INFO array stride.");
             KeyValuePair<string, int>[] offsets =
             {
                 new("Process", 0),
@@ -207,11 +160,7 @@ namespace DxMessaging.Tests.Editor
             };
             foreach (KeyValuePair<string, int> entry in offsets)
             {
-                Assert.That(
-                    Marshal.OffsetOf(process, entry.Key).ToInt32(),
-                    Is.EqualTo(entry.Value),
-                    $"Windows SDK field offset: {entry.Key}"
-                );
+                Assert.That(Marshal.OffsetOf(process, entry.Key).ToInt32(), Is.EqualTo(entry.Value), $"Windows SDK field offset: {entry.Key}");
             }
         }
 
@@ -220,58 +169,33 @@ namespace DxMessaging.Tests.Editor
         public void FileLockObserverReportsEveryOwnedProcess(int count)
         {
             using EditorOwnedFileLockProcesses owners = new(count);
-            IOException failure = Assert.Throws<IOException>(() =>
-                File.Delete(owners.ResourcePath)
-            );
+            IOException failure = Assert.Throws<IOException>(() => File.Delete(owners.ResourcePath));
             Assert.That(failure.HResult & 65535, Is.EqualTo(32), $"Owned holders={count}");
             string report = EditorFileLockDiagnostics.Describe(owners.ResourcePath);
             TestContext.Out.WriteLine(report);
             Assert.That(report, Does.StartWith("RestartManager start=0, register=0, list=0,"));
             Assert.That(report, Does.EndWith(", end=0"));
             HashSet<uint> actual = new();
-            foreach (
-                System.Text.RegularExpressions.Match match in System.Text.RegularExpressions.Regex.Matches(
-                    report,
-                    @"; pid=(\d+),"
-                )
-            )
+            foreach (System.Text.RegularExpressions.Match match in System.Text.RegularExpressions.Regex.Matches(report, @"; pid=(\d+),"))
             {
-                actual.Add(
-                    uint.Parse(
-                        match.Groups[1].Value,
-                        System.Globalization.CultureInfo.InvariantCulture
-                    )
-                );
+                actual.Add(uint.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture));
             }
             HashSet<uint> expected = new();
             foreach (int id in owners.ProcessIds)
             {
                 expected.Add((uint)id);
             }
-            Assert.That(
-                actual,
-                Is.EquivalentTo(expected),
-                $"Every owned holder must decode: count={count}; {report}"
-            );
+            Assert.That(actual, Is.EquivalentTo(expected), $"Every owned holder must decode: count={count}; {report}");
         }
 
         [Test]
         public void FileLockObserverReportsTheCurrentProcessForAnOwnedExclusiveFile()
         {
-            string path = Path.Combine(
-                Path.GetTempPath(),
-                "dxm-owned-lock-" + Guid.NewGuid().ToString("N") + ".rsp"
-            );
+            string path = Path.Combine(Path.GetTempPath(), "dxm-owned-lock-" + Guid.NewGuid().ToString("N") + ".rsp");
             try
             {
-                using FileStream locked = new(
-                    path,
-                    FileMode.CreateNew,
-                    FileAccess.ReadWrite,
-                    FileShare.None
-                );
-                using System.Diagnostics.Process current =
-                    System.Diagnostics.Process.GetCurrentProcess();
+                using FileStream locked = new(path, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
+                using System.Diagnostics.Process current = System.Diagnostics.Process.GetCurrentProcess();
                 string report = EditorFileLockDiagnostics.Describe(path);
                 TestContext.Out.WriteLine(report);
                 Assert.That(report, Does.StartWith("RestartManager start=0, register=0, list=0,"));
@@ -311,10 +235,7 @@ namespace DxMessaging.Tests.Editor
             {
                 throw new ArgumentOutOfRangeException(nameof(count));
             }
-            _directory = Path.Combine(
-                Path.GetTempPath(),
-                "dxm-owned-rm-" + Guid.NewGuid().ToString("N")
-            );
+            _directory = Path.Combine(Path.GetTempPath(), "dxm-owned-rm-" + Guid.NewGuid().ToString("N"));
             ResourcePath = Path.Combine(_directory, "owned.rsp");
             Directory.CreateDirectory(_directory);
             try
@@ -337,32 +258,23 @@ try {
                     System.Diagnostics.ProcessStartInfo start = new()
                     {
                         FileName = "pwsh",
-                        Arguments =
-                            "-NoLogo -NoProfile -NonInteractive -File \""
-                            + script
-                            + "\" -OwnedPath \""
-                            + ResourcePath
-                            + "\"",
+                        Arguments = "-NoLogo -NoProfile -NonInteractive -File \"" + script + "\" -OwnedPath \"" + ResourcePath + "\"",
                         UseShellExecute = false,
                         CreateNoWindow = true,
                         RedirectStandardInput = true,
                         RedirectStandardOutput = true,
                         RedirectStandardError = true,
                     };
-                    System.Diagnostics.Process child = System.Diagnostics.Process.Start(start)
-                        ?? throw new InvalidOperationException("Owned holder did not start.");
+                    System.Diagnostics.Process child = System.Diagnostics.Process.Start(start) ?? throw new InvalidOperationException("Owned holder did not start.");
                     _children.Add(child);
-                    System.Threading.Tasks.Task<string> ready =
-                        child.StandardOutput.ReadLineAsync();
+                    System.Threading.Tasks.Task<string> ready = child.StandardOutput.ReadLineAsync();
                     if (!ready.Wait(10_000))
                     {
                         throw new TimeoutException("Owned holder readiness handshake timed out.");
                     }
                     if (ready.Result != "DXM_HOLDER_READY:" + child.Id)
                     {
-                        throw new InvalidOperationException(
-                            "Owned holder readiness mismatch: " + ready.Result
-                        );
+                        throw new InvalidOperationException("Owned holder readiness mismatch: " + ready.Result);
                     }
                 }
             }
@@ -398,19 +310,12 @@ try {
                         child.StandardInput.Close();
                         if (!child.WaitForExit(10_000))
                         {
-                            throw new TimeoutException(
-                                "Owned holder did not acknowledge normal shutdown."
-                            );
+                            throw new TimeoutException("Owned holder did not acknowledge normal shutdown.");
                         }
                     }
                     if (child.ExitCode != 0)
                     {
-                        throw new InvalidOperationException(
-                            "Owned holder exited with "
-                                + child.ExitCode
-                                + ": "
-                                + child.StandardError.ReadToEnd()
-                        );
+                        throw new InvalidOperationException("Owned holder exited with " + child.ExitCode + ": " + child.StandardError.ReadToEnd());
                     }
                 }
                 catch (Exception failure)
@@ -423,9 +328,7 @@ try {
                             child.Kill();
                             if (!child.WaitForExit(10_000))
                             {
-                                throw new TimeoutException(
-                                    "Owned holder cleanup was not confirmed."
-                                );
+                                throw new TimeoutException("Owned holder cleanup was not confirmed.");
                             }
                         }
                     }
@@ -449,10 +352,7 @@ try {
             }
             if (0 < failures.Count)
             {
-                throw new AggregateException(
-                    "Owned Restart Manager process cleanup failed.",
-                    failures
-                );
+                throw new AggregateException("Owned Restart Manager process cleanup failed.", failures);
             }
         }
     }
@@ -482,15 +382,7 @@ try {
 #if UNITY_EDITOR_WIN
             try
             {
-                IntPtr handle = CreateFileW(
-                    Path.GetFullPath(path),
-                    0x00010000,
-                    7,
-                    IntPtr.Zero,
-                    3,
-                    0,
-                    IntPtr.Zero
-                );
+                IntPtr handle = CreateFileW(Path.GetFullPath(path), 0x00010000, 7, IntPtr.Zero, 3, 0, IntPtr.Zero);
                 if (handle == new IntPtr(-1))
                 {
                     error = Marshal.GetLastWin32Error();
@@ -505,11 +397,7 @@ try {
                 error = -1;
             }
 #endif
-            return new DeleteSharingProbeResult(
-                error,
-                started,
-                System.Diagnostics.Stopwatch.GetTimestamp()
-            );
+            return new DeleteSharingProbeResult(error, started, System.Diagnostics.Stopwatch.GetTimestamp());
         }
 
         internal static string Describe(string path, Exception failure, string operation)
@@ -529,12 +417,7 @@ try {
         }
 
 #if UNITY_EDITOR_WIN
-        [DllImport(
-            "kernel32.dll",
-            CharSet = CharSet.Unicode,
-            ExactSpelling = true,
-            SetLastError = true
-        )]
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
         private static extern IntPtr CreateFileW(
             string fileName,
             uint desiredAccess,
@@ -566,10 +449,7 @@ try {
         [TestCase("missing", 2)]
         public void DeleteSharingProbeReportsOwnedFileState(string state, int expectedError)
         {
-            string directory = Path.Combine(
-                Path.GetTempPath(),
-                "dxm-delete-sharing-" + Guid.NewGuid().ToString("N")
-            );
+            string directory = Path.Combine(Path.GetTempPath(), "dxm-delete-sharing-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(directory);
             string path = Path.Combine(directory, "owned.rsp");
             FileStream owner = null;
@@ -580,11 +460,7 @@ try {
                 {
                     File.WriteAllText(path, "owned control");
                 }
-                if (
-                    state == "held-denial"
-                    || state == "released-denial"
-                    || state == "delete-shared"
-                )
+                if (state == "held-denial" || state == "released-denial" || state == "delete-shared")
                 {
                     FileShare sharing = FileShare.ReadWrite;
                     if (state == "delete-shared")
@@ -607,62 +483,25 @@ try {
                 {
                     string originalMessage = denied.Message;
                     int originalError = denied.HResult;
-                    string report = EditorCompilerInputFailureDiagnostics.Describe(
-                        path,
-                        denied,
-                        "delete"
-                    );
+                    string report = EditorCompilerInputFailureDiagnostics.Describe(path, denied, "delete");
                     TestContext.Out.WriteLine("Owned diagnostic chain control: " + report);
-                    Assert.That(
-                        report,
-                        Does.StartWith(
-                            $"DXM_COMPILER_INPUT_SHARING operation=delete; code=32; before={expectedError}; after={expectedError}; observed="
-                        ),
-                        state
-                    );
-                    Assert.That(
-                        report,
-                        Does.Contain("; rm=RestartManager start=0, register=0, list=0,"),
-                        state
-                    );
+                    Assert.That(report, Does.StartWith($"DXM_COMPILER_INPUT_SHARING operation=delete; code=32; before={expectedError}; after={expectedError}; observed="), state);
+                    Assert.That(report, Does.Contain("; rm=RestartManager start=0, register=0, list=0,"), state);
                     Assert.That(report, Does.EndWith(", end=0"), state);
                     Assert.That(denied.Message, Is.EqualTo(originalMessage), state);
                     Assert.That(denied.HResult, Is.EqualTo(originalError), state);
                     long previous = 1;
-                    foreach (
-                        string field in new[]
-                        {
-                            "observed",
-                            "beforeStart",
-                            "beforeEnd",
-                            "queryStart",
-                            "queryEnd",
-                            "afterStart",
-                            "afterEnd",
-                        }
-                    )
+                    foreach (string field in new[] { "observed", "beforeStart", "beforeEnd", "queryStart", "queryEnd", "afterStart", "afterEnd" })
                     {
-                        System.Text.RegularExpressions.Match match =
-                            System.Text.RegularExpressions.Regex.Match(report, $@"; {field}=(\d+)");
+                        System.Text.RegularExpressions.Match match = System.Text.RegularExpressions.Regex.Match(report, $@"; {field}=(\d+)");
                         Assert.That(match.Success, Is.True, $"{state}: {field}");
-                        long current = long.Parse(
-                            match.Groups[1].Value,
-                            System.Globalization.CultureInfo.InvariantCulture
-                        );
+                        long current = long.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
                         Assert.That(current, Is.GreaterThanOrEqualTo(previous), field);
                         previous = current;
                     }
-                    System.Text.RegularExpressions.Match frequency =
-                        System.Text.RegularExpressions.Regex.Match(report, @"; frequency=(\d+)");
+                    System.Text.RegularExpressions.Match frequency = System.Text.RegularExpressions.Regex.Match(report, @"; frequency=(\d+)");
                     Assert.That(frequency.Success, Is.True, state);
-                    Assert.That(
-                        long.Parse(
-                            frequency.Groups[1].Value,
-                            System.Globalization.CultureInfo.InvariantCulture
-                        ),
-                        Is.GreaterThan(0),
-                        state
-                    );
+                    Assert.That(long.Parse(frequency.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture), Is.GreaterThan(0), state);
                 }
                 DeleteSharingProbeResult probe = EditorCompilerInputFailureDiagnostics.Probe(path);
                 TestContext.Out.WriteLine(
@@ -703,51 +542,20 @@ try {
 
         internal EditorCompilerInputScope(Action<string, string> copyFile)
         {
-            _pending.Add(
-                "sidecar",
-                MessageBusInspection.ReadField(
-                    typeof(DxMessagingBaseCallIgnoreSync),
-                    "SidecarImportPending"
-                )
-            );
-            _pending.Add(
-                "response",
-                MessageBusInspection.ReadField(
-                    typeof(DxMessaging.Editor.SetupCscRsp),
-                    "responseFileImportPending"
-                )
-            );
+            _pending.Add("sidecar", MessageBusInspection.ReadField(typeof(DxMessagingBaseCallIgnoreSync), "SidecarImportPending"));
+            _pending.Add("response", MessageBusInspection.ReadField(typeof(DxMessaging.Editor.SetupCscRsp), "responseFileImportPending"));
             try
             {
-                _sidecarCallbacks = new(
-                    typeof(DxMessagingBaseCallIgnoreSync),
-                    suspendBaseline: true
-                );
-                _responseCallbacks = new(
-                    typeof(DxMessaging.Editor.SetupCscRsp),
-                    suspendBaseline: true
-                );
+                _sidecarCallbacks = new(typeof(DxMessagingBaseCallIgnoreSync), suspendBaseline: true);
+                _responseCallbacks = new(typeof(DxMessaging.Editor.SetupCscRsp), suspendBaseline: true);
                 string root = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-                foreach (
-                    string relative in new[]
-                    {
-                        "Assets/csc.rsp",
-                        "csc.rsp",
-                        DxMessagingBaseCallIgnoreSync.SidecarAssetPath,
-                    }
-                )
+                foreach (string relative in new[] { "Assets/csc.rsp", "csc.rsp", DxMessagingBaseCallIgnoreSync.SidecarAssetPath })
                 {
                     foreach (string suffix in new[] { "", ".meta" })
                     {
                         string path = Path.Combine(root, relative + suffix);
                         string backup = File.Exists(path)
-                            ? Path.Combine(
-                                Path.GetDirectoryName(path),
-                                "."
-                                    + Path.GetFileName(path)
-                                    + ".dxm-fixture-"
-                                    + Guid.NewGuid().ToString("N")
-                            )
+                            ? Path.Combine(Path.GetDirectoryName(path), "." + Path.GetFileName(path) + ".dxm-fixture-" + Guid.NewGuid().ToString("N"))
                             : null;
                         _saved.Add(path, backup);
                     }
@@ -770,11 +578,7 @@ try {
                         }
                         catch (IOException failure)
                         {
-                            string diagnostics = EditorCompilerInputFailureDiagnostics.Describe(
-                                saved.Key,
-                                failure,
-                                operation
-                            );
+                            string diagnostics = EditorCompilerInputFailureDiagnostics.Describe(saved.Key, failure, operation);
                             throw new IOException(
                                 $"Compiler-input backup {operation} failed: '{saved.Key}' -> '{saved.Value}'. "
                                     + $"sourceExists={File.Exists(saved.Key)}, backupExists={File.Exists(saved.Value)}, "
@@ -834,10 +638,8 @@ try {
                     {
                         if (
                             File.Exists(saved.Key)
-                            && File.GetLastWriteTimeUtc(saved.Key)
-                                == File.GetLastWriteTimeUtc(saved.Value)
-                            && File.ReadAllBytes(saved.Key)
-                                .SequenceEqual(File.ReadAllBytes(saved.Value))
+                            && File.GetLastWriteTimeUtc(saved.Key) == File.GetLastWriteTimeUtc(saved.Value)
+                            && File.ReadAllBytes(saved.Key).SequenceEqual(File.ReadAllBytes(saved.Value))
                         )
                         {
                             // Preserve the existing file and its open readers when nothing changed.
@@ -859,11 +661,7 @@ try {
                 }
                 catch (Exception exception)
                 {
-                    string diagnostics = EditorCompilerInputFailureDiagnostics.Describe(
-                        diagnosticPath,
-                        exception,
-                        operation
-                    );
+                    string diagnostics = EditorCompilerInputFailureDiagnostics.Describe(diagnosticPath, exception, operation);
                     failures.Add(
                         new IOException(
                             $"Restoring compiler input '{saved.Key}' failed. "
@@ -878,18 +676,10 @@ try {
             try
             {
                 typeof(DxMessagingBaseCallIgnoreSync)
-                    .GetField(
-                        "SidecarImportPending",
-                        System.Reflection.BindingFlags.Static
-                            | System.Reflection.BindingFlags.NonPublic
-                    )
+                    .GetField("SidecarImportPending", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)
                     .SetValue(null, _pending["sidecar"]);
                 typeof(DxMessaging.Editor.SetupCscRsp)
-                    .GetField(
-                        "responseFileImportPending",
-                        System.Reflection.BindingFlags.Static
-                            | System.Reflection.BindingFlags.NonPublic
-                    )
+                    .GetField("responseFileImportPending", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)
                     .SetValue(null, _pending["response"]);
             }
             catch (Exception exception)

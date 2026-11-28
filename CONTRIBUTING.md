@@ -8,22 +8,26 @@ Developer setup (run these steps in order):
 1. Restore the .NET local tools (CSharpier): `dotnet tool restore` - without this, the first commit touching a `.cs` file fails because the csharpier hook cannot find the tool
 1. Install the pre-commit framework: `pipx install pre-commit` (or `pip install pre-commit`)
 1. Install the git hooks: `pre-commit install`
-1. Optionally run everything once: `pre-commit run --all-files && pre-commit run --all-files --hook-stage pre-push` (the second command is needed because `pre-commit run` defaults to commit-stage hooks; spelling, asmdef validation, and the script tests are staged at pre-push)
+1. Optionally run everything once: `pre-commit run --all-files && pre-commit run --all-files --hook-stage pre-push` (the second command is needed because `pre-commit run` defaults
+   to commit-stage hooks; spelling, asmdef validation, and the script tests are staged at pre-push)
 
-Git hooks are managed solely by the standard [pre-commit framework](https://pre-commit.com); the hook set lives in `.pre-commit-config.yaml`. If you contributed before the tooling simplification and your local clone still points `core.hooksPath` at the removed `scripts/hooks` directory, clear it once with `git config --local --unset core.hooksPath` and re-run `pre-commit install`, or commits will fail looking for deleted hook scripts.
+Git hooks are managed solely by the standard [pre-commit framework](https://pre-commit.com); the hook set lives in `.pre-commit-config.yaml`. If you contributed before the tooling
+simplification and your local clone still points `core.hooksPath` at the removed `scripts/hooks` directory, clear it once with `git config --local --unset core.hooksPath` and
+re-run `pre-commit install`, or commits will fail looking for deleted hook scripts.
 
 ## Fast feedback
 
-Use [the iteration runbook](docs/runbooks/iteration-speed.md) for focused checks, full validation,
-Unity host isolation and the coordinator pilot. Use its named Node watch command during edits.
-Run `npm run test:unit` for the unit subset and `npm test` for the complete suite. Run the managed behavior and representative-retention
-commands from that runbook in separate processes before delivery. Run affected exhaustive fixtures
-when memory or lifecycle owners change.
+Use [the iteration runbook](docs/runbooks/iteration-speed.md) for focused checks, full validation, Unity host isolation and the coordinator pilot. Use its named Node watch command
+during edits. Run `npm run test:unit` for the unit subset and `npm test` for the complete suite. Run the managed behavior and representative-retention commands from that runbook in
+separate processes before delivery. Run affected exhaustive fixtures when memory or lifecycle owners change.
 
 ## Before you push
 
 - Script tests: `npm test` (the built-in `node --test` runner; no jest)
-- Run `npm run validate:all` for repository checks. Its `check:analyzers` step requires the exact SDK in root `global.json`. The devcontainer installs it during post-create. The `rollForward: disable` policy rejects nearby SDK versions. If the SDK is missing, install it into the system dotnet location: `wget https://dot.net/v1/dotnet-install.sh -O /tmp/dotnet-install.sh && sudo bash /tmp/dotnet-install.sh --jsonfile global.json --install-dir /usr/share/dotnet`. The system dotnet host on `PATH` does not use `~/.dotnet`.
+- Run `npm run validate:all` for repository checks. Its `check:analyzers` step requires the exact SDK in root `global.json`. The devcontainer installs it during post-create. The
+  `rollForward: disable` policy rejects nearby SDK versions. If the SDK is missing, install it into the system dotnet location:
+  `wget https://dot.net/v1/dotnet-install.sh -O /tmp/dotnet-install.sh && sudo bash /tmp/dotnet-install.sh --jsonfile global.json --install-dir /usr/share/dotnet`. The system
+  dotnet host on `PATH` does not use `~/.dotnet`.
 - Formatting: `npm run format:check` (fix with `npm run format`)
 - Markdown lint: `npm run lint:markdown`
 - Spelling: `npm run check:spelling`
@@ -31,7 +35,8 @@ when memory or lifecycle owners change.
 
 Windows note: if you use `nvm` or `fnm`, run commits from a shell where Node is initialized (PowerShell or Git Bash) and verify `npm --version` before running hooks.
 
-Line endings: Git normalizes most text files to **LF** through `.gitattributes`. **Exception:** C#/.NET files (`.cs`, `.csproj`, `.sln`, `.props`) use CRLF per .NET conventions. Run this once after cloning (especially on Windows) to fix your working tree:
+Line endings: Git normalizes most text files to **LF** through `.gitattributes`. **Exception:** C#/.NET files (`.cs`, `.csproj`, `.sln`, `.props`) use CRLF per .NET conventions.
+Run this once after cloning (especially on Windows) to fix your working tree:
 
 ```bash
 git config core.autocrlf false
@@ -53,10 +58,11 @@ What runs locally (via `pre-commit`, see `.pre-commit-config.yaml`):
 - JSON/.asmdef formatting: Prettier (2-space indent)
 - YAML formatting: Prettier (2-space indent) + yamllint
 - C# formatting and naming: CSharpier + the underscore-method auto-fixer
-- Banner SVG sync, llms.txt freshness, spelling (cspell), asmdef reference
-  validation, and the `node --test` script suite
+- Banner SVG sync, llms.txt freshness, spelling (cspell), asmdef reference validation, and the `node --test` script suite
 
-On pull requests, CI checks markdown links with lychee in one offline pass. It validates local links and in-repo `#anchor` fragments against the working tree and blocks the PR on broken ones. External URLs are checked by the scheduled advisory scan, which opens a tracking issue instead of failing CI. For flaky external responses, widen `accept` in `.lychee.toml`; do not add per-domain `exclude` entries or substitute a different URL.
+On pull requests, CI checks markdown links with lychee in one offline pass. It validates local links and in-repo `#anchor` fragments against the working tree and blocks the PR on
+broken ones. External URLs are checked by the scheduled advisory scan, which opens a tracking issue instead of failing CI. For flaky external responses, widen `accept` in
+`.lychee.toml`; do not add per-domain `exclude` entries or substitute a different URL.
 
 Handy commands:
 
@@ -65,18 +71,23 @@ Handy commands:
 - Run the yamllint hook directly: `pre-commit run yamllint --all-files`
 - Format C#: `dotnet tool restore && dotnet tool run csharpier format .` (the trailing `.` is required; without a path, `csharpier format` reads stdin and formats nothing)
 
-Prettier keeps YAML formatting consistent but does not automatically wrap long YAML lines. `yamllint` is the authoritative check for the YAML line-length rule; for workflow `run:` commands, use folded scalars (`run: >-`) or multiline blocks (`run: |`) to split long commands across readable lines.
+Prettier keeps YAML formatting consistent but does not automatically wrap long YAML lines. `yamllint` is the authoritative check for the YAML line-length rule; for workflow `run:`
+commands, use folded scalars (`run: >-`) or multiline blocks (`run: |`) to split long commands across readable lines.
 
 ## Documentation Style and Code Samples
 
 Two strict rules apply to all documentation (Markdown files and `///` XML doc comments) and to every C# code sample:
 
-1. **ASCII-only.** Pure ASCII is required. Real Unicode emojis are allowed only on callout lines (lines starting with `>`), capped at five per file. See the [ASCII-only documentation guideline](./.llm/skills/documentation-style/references/ascii-only-docs.md).
-1. **Code samples must compile.** Every C# snippet - inline backticks, fenced blocks, table cells, and XML `<code>` blocks - must compile against the snippet harness. See the [Code samples must compile guideline](./.llm/skills/documentation-code-samples/references/code-samples-must-compile.md) and run `dotnet test .docs-tests/WallstopStudios.DxMessaging.Docs.Tests.csproj`.
+1. **ASCII-only.** Pure ASCII is required. Real Unicode emojis are allowed only on callout lines (lines starting with `>`), capped at five per file. See the
+   [ASCII-only documentation guideline](./.llm/skills/documentation-style/references/ascii-only-docs.md).
+1. **Code samples must compile.** Every C# snippet - inline backticks, fenced blocks, table cells, and XML `<code>` blocks - must compile against the snippet harness. See the
+   [Code samples must compile guideline](./.llm/skills/documentation-code-samples/references/code-samples-must-compile.md) and run
+   `dotnet test .docs-tests/WallstopStudios.DxMessaging.Docs.Tests.csproj`.
 
 ## NPM Package Validation
 
-Unity requires `.meta` files for every asset to maintain consistent GUIDs across installations. When changing packaging metadata, verify against the real tarball with `npm pack --dry-run` that:
+Unity requires `.meta` files for every asset to maintain consistent GUIDs across installations. When changing packaging metadata, verify against the real tarball with
+`npm pack --dry-run` that:
 
 1. Every `.meta` file in the package corresponds to an actual file or directory
 1. Every Unity-tracked file/directory has its `.meta` file included
@@ -91,25 +102,28 @@ To fix issues:
 - For orphaned .meta files: Delete the orphaned `.meta` file
 - For missing .meta files: Ensure Unity generates the `.meta` file, or copy it from the repository
 
-If you need to repair line endings manually (for example, after copying files from an external tool), run `git add --renormalize . && git checkout -- .` and then re-stage the affected files.
+If you need to repair line endings manually (for example, after copying files from an external tool), run `git add --renormalize . && git checkout -- .` and then re-stage the
+affected files.
 
 ## SourceGenerators Analyzer Troubleshooting
 
-Build the projects under `SourceGenerators/` with `dotnet` and the pinned SDK.
-`WallstopStudios.DxMessaging.DotNetOnly.asmdef` assigns these development sources to
-an assembly boundary while its `!UNITY_2021_3_OR_NEWER` constraint excludes them from
-Unity compilation. Keep that boundary when changing the SDK projects. The shipped
-generator and analyzer DLLs remain under `Runtime/Analyzers/`.
+Build the projects under `SourceGenerators/` with `dotnet` and the pinned SDK. `WallstopStudios.DxMessaging.DotNetOnly.asmdef` assigns these development sources to an assembly
+boundary while its `!UNITY_2021_3_OR_NEWER` constraint excludes them from Unity compilation. Keep that boundary when changing the SDK projects. The shipped generator and analyzer
+DLLs remain under `Runtime/Analyzers/`.
 
-If you open the package in Unity and see project-wide `CS0315` / `CS0452` errors (`type ... cannot be used as type parameter ...; there is no boxing conversion to ...IMessage`), or `CS0006` errors that name a metadata file under `SourceGenerators/.../obj/...dll` or `SourceGenerators/.../bin/...dll`, the cause is stale build output rather than a code change.
+If you open the package in Unity and see project-wide `CS0315` / `CS0452` errors (`type ... cannot be used as type parameter ...; there is no boxing conversion to ...IMessage`), or
+`CS0006` errors that name a metadata file under `SourceGenerators/.../obj/...dll` or `SourceGenerators/.../bin/...dll`, the cause is stale build output rather than a code change.
 
-Cause: Unity imported the `SourceGenerators/` projects' in-tree `obj/` and `bin/` build DLLs and cached the auto-referenced-plugin registrations in its Library. Those stray DLLs shadow the two real analyzers shipped in `Runtime/Analyzers/`, so the wrong assemblies feed the compiler.
+Cause: Unity imported the `SourceGenerators/` projects' in-tree `obj/` and `bin/` build DLLs and cached the auto-referenced-plugin registrations in its Library. Those stray DLLs
+shadow the two real analyzers shipped in `Runtime/Analyzers/`, so the wrong assemblies feed the compiler.
 
 To fix it:
 
 1. Close Unity.
-1. Delete the Unity **project's** `Library/` folder. A partial **Assets > Reimport** does not clear the cached auto-referenced-plugin registrations, so the full Library delete is required.
+1. Delete the Unity **project's** `Library/` folder. A partial **Assets > Reimport** does not clear the cached auto-referenced-plugin registrations, so the full Library delete is
+   required.
 1. Confirm no `obj/` or `bin/` folders remain under `SourceGenerators/`. The build is configured to emit output to `.artifacts/`, which Unity ignores.
 1. Reopen the project.
 
-Contributor invariant: never let the `SourceGenerators/` projects build their `obj/` or `bin/` in-tree. `SourceGenerators/Directory.Build.props` redirects all output (obj, bin, and restore) to the git-ignored `.artifacts/` tree precisely so Unity never imports a build DLL.
+Contributor invariant: never let the `SourceGenerators/` projects build their `obj/` or `bin/` in-tree. `SourceGenerators/Directory.Build.props` redirects all output (obj, bin, and
+restore) to the git-ignored `.artifacts/` tree precisely so Unity never imports a build DLL.

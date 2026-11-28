@@ -30,12 +30,7 @@ namespace DxMessaging.Core.Diagnostics
         /// <param name="type">Message type registered for.</param>
         /// <param name="registrationType">Kind of registration.</param>
         /// <param name="priority">Registration priority; lower runs earlier.</param>
-        public MessageRegistrationMetadata(
-            InstanceId? context,
-            Type type,
-            MessageRegistrationType registrationType,
-            int priority
-        )
+        public MessageRegistrationMetadata(InstanceId? context, Type type, MessageRegistrationType registrationType, int priority)
         {
             this.context = context;
             this.type = type;

@@ -13,11 +13,7 @@ namespace DxMessaging.Tests.Editor.Contract
         {
             get
             {
-                Func<MessageBus, bool, int>[] callbacks = (Func<MessageBus, bool, int>[])
-                    MessageBusInspection.ReadField(
-                        typeof(MessageBus),
-                        "SweepableTypeCacheRegistry"
-                    );
+                Func<MessageBus, bool, int>[] callbacks = (Func<MessageBus, bool, int>[])MessageBusInspection.ReadField(typeof(MessageBus), "SweepableTypeCacheRegistry");
                 List<ObservedSweep> rows = new();
                 foreach (Func<MessageBus, bool, int> callback in callbacks)
                 {
@@ -34,9 +30,7 @@ namespace DxMessaging.Tests.Editor.Contract
                     }
                     if (fields.Length != 1)
                     {
-                        throw new InvalidOperationException(
-                            $"A sweep callback must address one real message cache; observed {fields.Length} in {callback.Method}."
-                        );
+                        throw new InvalidOperationException($"A sweep callback must address one real message cache; observed {fields.Length} in {callback.Method}.");
                     }
                     rows.Add(new ObservedSweep(fields[0], callback));
                 }
@@ -50,12 +44,8 @@ namespace DxMessaging.Tests.Editor.Contract
                 .OfType<FieldInfo>()
                 .Where(field =>
                 {
-                    Type type = field.FieldType.IsArray
-                        ? field.FieldType.GetElementType()
-                        : field.FieldType;
-                    return field.DeclaringType == typeof(MessageBus)
-                        && type.IsGenericType
-                        && type.GetGenericTypeDefinition() == typeof(MessageCache<>);
+                    Type type = field.FieldType.IsArray ? field.FieldType.GetElementType() : field.FieldType;
+                    return field.DeclaringType == typeof(MessageBus) && type.IsGenericType && type.GetGenericTypeDefinition() == typeof(MessageCache<>);
                 })
                 .Distinct();
     }

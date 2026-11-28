@@ -1,6 +1,7 @@
 # Comparisons: DxMessaging and Alternatives
 
-**TL;DR:** This guide compares DxMessaging with other messaging approaches. Each has legitimate strengths and trade-offs. DxMessaging takes a different approach with its own trade-offs.
+**TL;DR:** This guide compares DxMessaging with other messaging approaches. Each has legitimate strengths and trade-offs. DxMessaging takes a different approach with its own
+trade-offs.
 
 ## This guide shows
 
@@ -28,14 +29,14 @@
 
 ## Performance Benchmarks
 
-The live cross-library comparison matrix is now CI-generated into [Performance Benchmarks](./performance.md) on nightly or manual runs (Standalone IL2CPP Release, the build shape shipped games run); see the [comparison suite source](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/Tests/Runtime/Comparisons) for the scenario bridges. The [live tables](./performance.md) are the source of truth; the snapshot below is retained only as dated historical context.
+The live cross-library comparison matrix is now CI-generated into [Performance Benchmarks](./performance.md) on nightly or manual runs (Standalone IL2CPP Release, the build shape
+shipped games run); see the [comparison suite source](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/Tests/Runtime/Comparisons) for the scenario bridges. The
+[live tables](./performance.md) are the source of truth; the snapshot below is retained only as dated historical context.
 
 ### Historical snapshot (early PlayMode Mono run, Windows)
 
-These figures are from an early PlayMode Mono benchmark run on Windows, kept to
-show the relative ordering at the time. They are **superseded** by the live
-[Standalone IL2CPP tables](./performance.md) -- do not cite them as current
-numbers.
+These figures are from an early PlayMode Mono benchmark run on Windows, kept to show the relative ordering at the time. They are **superseded** by the live
+[Standalone IL2CPP tables](./performance.md) -- do not cite them as current numbers.
 
 | Message Tech                       | Operations / Second | Allocations? |
 | ---------------------------------- | ------------------- | ------------ |
@@ -88,7 +89,8 @@ Need registration ownership helpers and bus inspection?
 - **MessagePipe:** Typed messaging with DI integration and synchronous/asynchronous APIs
 - **Zenject Signals:** Decoupled messaging integrated with Zenject dependency injection
 
-> **Note:** The Unity package can use its default bus or an explicit bus without a DI framework. See the [integration guides](../integrations/index.md) for container-owned services and the [.NET source-build contract](../reference/compatibility.md#plain-net-runtime) for non-Unity hosts.
+> **Note:** The Unity package can use its default bus or an explicit bus without a DI framework. See the [integration guides](../integrations/index.md) for container-owned services
+> and the [.NET source-build contract](../reference/compatibility.md#plain-net-runtime) for non-Unity hosts.
 
 ---
 
@@ -181,7 +183,8 @@ leftClick.Merge(rightClick).Subscribe(_ => Debug.Log("Any click!"));
 
 #### Performance Characteristics
 
-- **Allocations:** MessageBroker is zero-allocation for basic operations. Stream operators (Select, Where, Buffer) may allocate. For simple pub/sub, UniRx matches DxMessaging's allocation profile.
+- **Allocations:** MessageBroker is zero-allocation for basic operations. Stream operators (Select, Where, Buffer) may allocate. For simple pub/sub, UniRx matches DxMessaging's
+  allocation profile.
 - **Overhead:** Higher than simple events due to observable infrastructure
 - **Use case:** Best for complex event transformations; overhead justified by functionality
 
@@ -249,7 +252,10 @@ leftClick.Merge(rightClick).Subscribe(_ => Debug.Log("Any click!"));
 | **Temporal Operators**   | Extensive (Rx)                                                       | Not built-in                                                         |
 | **Complex Stream Logic** | LINQ-style                                                           | Not designed for                                                     |
 
-**Bottom Line:** UniRx is well-suited for complex event stream transformations and reactive programming patterns, with MessageBroker providing straightforward pub/sub setup. DxMessaging focuses on straightforward pub/sub communication with control, validation, debugging, and Unity-specific features. Both are viable options depending on your needs: choose UniRx when you need stream operators, reactive patterns, or simple zero-setup pub/sub; choose DxMessaging when you need Unity-native lifecycle integration, execution control, and debugging tools.
+**Bottom Line:** UniRx is well-suited for complex event stream transformations and reactive programming patterns, with MessageBroker providing straightforward pub/sub setup.
+DxMessaging focuses on straightforward pub/sub communication with control, validation, debugging, and Unity-specific features. Both are viable options depending on your needs:
+choose UniRx when you need stream operators, reactive patterns, or simple zero-setup pub/sub; choose DxMessaging when you need Unity-native lifecycle integration, execution
+control, and debugging tools.
 
 ---
 
@@ -328,10 +334,8 @@ public class AchievementSystem
 - [ ] **Execution order control:** No priority system (handlers execute in subscription order)
 - [ ] **Setup complexity:** Requires DI container configuration (VContainer/Zenject setup needed)
 - [ ] **Global message observation:** No built-in way to listen to all instances of a message across different keys/sources
-- [ ] **Provider setup:** The Unity package uses a supported container. Its built-in
-      `BuiltinContainerBuilder` avoids a separate DI library; check its supported lifetime/features and
-      register the concrete message types required by the Unity backend. See the
-      [pinned MessagePipe Unity setup](https://github.com/Cysharp/MessagePipe/tree/1.8.2#unity).
+- [ ] **Provider setup:** The Unity package uses a supported container. Its built-in `BuiltinContainerBuilder` avoids a separate DI library; check its supported lifetime/features
+      and register the concrete message types required by the Unity backend. See the [pinned MessagePipe Unity setup](https://github.com/Cysharp/MessagePipe/tree/1.8.2#unity).
 
 #### Performance Characteristics
 
@@ -400,24 +404,21 @@ public class AchievementSystem
 | **Decoupling**           | Excellent                                                            | Excellent                                                            |
 | **Leak Detection**       | Roslyn analyzer                                                      | Token diagnostics and ownership helpers                              |
 
-**Bottom Line:** MessagePipe is DI-first and leads DxMessaging in several
-[current comparison scenarios](./performance.md#latest-ci-performance-results).
-DxMessaging is Unity-first with lifecycle awareness and debugging. Choose from
-the topology your game uses, not a blanket throughput ranking.
+**Bottom Line:** MessagePipe is DI-first and leads DxMessaging in several [current comparison scenarios](./performance.md#latest-ci-performance-results). DxMessaging is Unity-first
+with lifecycle awareness and debugging. Choose from the topology your game uses, not a blanket throughput ranking.
 
-**Note on Performance:** Read the
-[current Standalone IL2CPP comparison](./performance.md#latest-ci-performance-results)
-instead of a copied rate. MessagePipe leads several current raw-dispatch
-scenarios; DxMessaging leads keyed dispatch in some runs. Measure the topology
-your game uses before choosing on throughput alone.
+**Note on Performance:** Read the [current Standalone IL2CPP comparison](./performance.md#latest-ci-performance-results) instead of a copied rate. MessagePipe leads several current
+raw-dispatch scenarios; DxMessaging leads keyed dispatch in some runs. Measure the topology your game uses before choosing on throughput alone.
 
-> **💡 Want both?** DxMessaging integrates with DI frameworks! See [DI Integration Guides](../integrations/index.md) for Zenject, VContainer, and Reflex. Use DI for service construction, DxMessaging for event communication.
+> **💡 Want both?** DxMessaging integrates with DI frameworks! See [DI Integration Guides](../integrations/index.md) for Zenject, VContainer, and Reflex. Use DI for service
+> construction, DxMessaging for event communication.
 
 ---
 
 ### Zenject Signals (DI-Based Messaging)
 
-**What It Is:** The built-in messaging system for Zenject (Extenject), a dependency injection framework for Unity. Signals are an optional extension that provides decoupled communication.
+**What It Is:** The built-in messaging system for Zenject (Extenject), a dependency injection framework for Unity. Signals are an optional extension that provides decoupled
+communication.
 
 **Core Philosophy:** Loosely coupled messaging integrated with dependency injection. Reduce direct dependencies between classes while maintaining testability.
 
@@ -572,24 +573,24 @@ public class AchievementSystem
 | **Testability**          | DI mocking                                                           | Local buses                                                          |
 | **Decoupling**           | Excellent                                                            | Excellent                                                            |
 
-**Bottom Line:** Zenject Signals are well-suited if you're already invested in Zenject and value testability through DI. DxMessaging offers standalone messaging without requiring DI setup, and includes Unity-specific features.
+**Bottom Line:** Zenject Signals are well-suited if you're already invested in Zenject and value testability through DI. DxMessaging offers standalone messaging without requiring
+DI setup, and includes Unity-specific features.
 
-> **💡 Using Zenject?** DxMessaging integrates with Zenject. See the [DxMessaging + Zenject Integration Guide](../integrations/zenject.md) for setup. Use DxMessaging's priorities, interceptors, and visual diagnostics with Zenject's DI.
+> **💡 Using Zenject?** DxMessaging integrates with Zenject. See the [DxMessaging + Zenject Integration Guide](../integrations/zenject.md) for setup. Use DxMessaging's priorities,
+> interceptors, and visual diagnostics with Zenject's DI.
 
 ---
 
 ## Scriptable Object Architecture (SOA)
 
-**What It Is:** A Unity-specific pattern popularized by Ryan Hipple's [Unite 2017 talk](https://www.youtube.com/watch?v=raQ3iHhE_Kk) that uses ScriptableObject assets for runtime communication (GameEvent, FloatVariable, etc.).
+**What It Is:** A Unity-specific pattern popularized by Ryan Hipple's [Unite 2017 talk](https://www.youtube.com/watch?v=raQ3iHhE_Kk) that uses ScriptableObject assets for runtime
+communication (GameEvent, FloatVariable, etc.).
 
 **Core Philosophy:** Designer-driven, asset-based communication where systems communicate through serialized SO assets instead of direct references.
 
-[Unity's architecture guide](https://unity.com/how-to/architect-game-code-scriptable-objects)
-shows both runtime variables and event assets. ScriptableObjects can hold mutable state as well as
-shared authored configuration. The
-[Unity 2021.3 manual](https://docs.unity3d.com/2021.3/Documentation/Manual/class-ScriptableObject.html)
-explains the distinction between using asset data in a player and saving asset changes. Define
-runtime state ownership, reset and saved-game storage explicitly.
+[Unity's architecture guide](https://unity.com/how-to/architect-game-code-scriptable-objects) shows both runtime variables and event assets. ScriptableObjects can hold mutable
+state as well as shared authored configuration. The [Unity 2021.3 manual](https://docs.unity3d.com/2021.3/Documentation/Manual/class-ScriptableObject.html) explains the distinction
+between using asset data in a player and saving asset changes. Define runtime state ownership, reset and saved-game storage explicitly.
 
 ### Quick Comparison
 
@@ -621,8 +622,8 @@ runtime state ownership, reset and saved-game storage explicitly.
 - Shared configuration supplies code that emits runtime messages.
 - An asset or service owns current state while messages report changes.
 
-The examples do not establish a performance ranking. Preserve state queries and initial snapshots
-when migrating variables or runtime sets; subscriptions alone do not supply either.
+The examples do not establish a performance ranking. Preserve state queries and initial snapshots when migrating variables or runtime sets; subscriptions alone do not supply
+either.
 
 ### Full Comparison Guide
 
@@ -784,11 +785,8 @@ public class UI : MonoBehaviour
 | **Decoupling**           | Publisher reference                                                  | Shared message contract and bus                                      |
 | **Return Values**        | Yes                                                                  | Fire-and-forget                                                      |
 
-**Bottom Line:** C# events lead the current basic callback scenarios and remain
-simple for local callbacks. DxMessaging is better for complex, decoupled systems
-where lifecycle management, debugging, and execution control matter. Read the
-[current measurements](./performance.md#latest-ci-performance-results) for the
-actual runner and topology.
+**Bottom Line:** C# events lead the current basic callback scenarios and remain simple for local callbacks. DxMessaging is better for complex, decoupled systems where lifecycle
+management, debugging, and execution control matter. Read the [current measurements](./performance.md#latest-ci-performance-results) for the actual runner and topology.
 
 ---
 
@@ -926,7 +924,8 @@ public class UI : MonoBehaviour
 | **Refactoring Safety**   | Silent breakage                                                      | Compile-time errors                                                  |
 | **Code Visibility**      | Hidden in Inspector                                                  | Explicit in code                                                     |
 
-**Bottom Line:** UnityEvents are well-suited for simple Inspector-based wiring and designer workflows. DxMessaging is better for code-first development, refactoring safety, and complex messaging needs.
+**Bottom Line:** UnityEvents are well-suited for simple Inspector-based wiring and designer workflows. DxMessaging is better for code-first development, refactoring safety, and
+complex messaging needs.
 
 ---
 
@@ -1064,7 +1063,8 @@ public class Weapon : MonoBehaviour
 | **Refactoring Safety**   | Silent breakage                                                      | Compile-time errors                                                  |
 | **Parameters**           | 0 or 1 only                                                          | Unlimited (struct fields)                                            |
 
-**Bottom Line:** SendMessage is legacy Unity API. Use only for maintaining old code. DxMessaging provides all the same capabilities with type safety, performance, and modern tooling.
+**Bottom Line:** SendMessage is legacy Unity API. Use only for maintaining old code. DxMessaging provides all the same capabilities with type safety, performance, and modern
+tooling.
 
 **Migration Path:** DxMessaging provides `ReflexiveMessage` to bridge legacy SendMessage behavior:
 
@@ -1230,7 +1230,8 @@ public class UI : MonoBehaviour
 | **Decoupling**           | Good                                                                 | Excellent                                                            |
 | **Organization**         | One big class                                                        | Structured                                                           |
 
-**Bottom Line:** Static event buses solve global access but inherit all the problems of C# events (leaks, undefined order, no observability). DxMessaging provides the same global access with lifecycle safety, structure, and debugging tools.
+**Bottom Line:** Static event buses solve global access but inherit all the problems of C# events (leaks, undefined order, no observability). DxMessaging provides the same global
+access with lifecycle safety, structure, and debugging tools.
 
 **Migration Path:** DxMessaging can replace static event buses gradually:
 
@@ -1254,20 +1255,17 @@ combatDamage.EmitGameObjectBroadcast(gameObject, combatBus);
 
 DxMessaging involves trade-offs like any architectural choice. This section describes what you gain and what you sacrifice when adopting it.
 
-Choose from the communication and ownership requirements below. Project age, line count and team
-size do not establish a performance result or an adoption payback period.
+Choose from the communication and ownership requirements below. Project age, line count and team size do not establish a performance result or an adoption payback period.
 
 ### Learning Curve
 
-Try one complete route before adopting the bus across a project: define a message, choose its bus,
-register and release a listener, and inspect a delivery. Include a scene or scope transition if the
-application uses one. The [getting started guide](../getting-started/getting-started.md) and
-[ownership patterns](../concepts/listening-patterns.md) provide call sites to evaluate.
+Try one complete route before adopting the bus across a project: define a message, choose its bus, register and release a listener, and inspect a delivery. Include a scene or scope
+transition if the application uses one. The [getting started guide](../getting-started/getting-started.md) and [ownership patterns](../concepts/listening-patterns.md) provide call
+sites to evaluate.
 
-The team needs to understand targeted versus sourced broadcasts, registration lifetime and callback
-ordering. Typed message names make emitters and listeners searchable, but a message type alone does
-not explain the application's state ownership or scene dependencies. Evaluate those costs in the
-code the team maintains; this guide has no measured learning-time estimate.
+The team needs to understand targeted versus sourced broadcasts, registration lifetime and callback ordering. Typed message names make emitters and listeners searchable, but a
+message type alone does not explain the application's state ownership or scene dependencies. Evaluate those costs in the code the team maintains; this guide has no measured
+learning-time estimate.
 
 ### Boilerplate
 
@@ -1298,9 +1296,8 @@ var msg = new TookDamage(5);
 msg.EmitGameObjectBroadcast(gameObject);
 ```
 
-A direct event may need less setup when a known publisher and callback already meet the contract.
-Use the bus when its routing, interception, ownership or diagnostics remove work the application
-would otherwise implement.
+A direct event may need less setup when a known publisher and callback already meet the contract. Use the bus when its routing, interception, ownership or diagnostics remove work
+the application would otherwise implement.
 
 ### Performance
 
@@ -1318,28 +1315,22 @@ would otherwise implement.
 
 #### Hard Numbers
 
-- C# events and DxMessaging: see the
-  [current CI measurements](./performance.md#latest-ci-performance-results)
-- Allocation scope: the contract covers the promised steady-state dispatch path. Registration,
-  payload construction, boxing, callbacks and diagnostic recording need separate measurement.
+- C# events and DxMessaging: see the [current CI measurements](./performance.md#latest-ci-performance-results)
+- Allocation scope: the contract covers the promised steady-state dispatch path. Registration, payload construction, boxing, callbacks and diagnostic recording need separate
+  measurement.
 
-Measure the target workload and backend before choosing an implementation for performance. A
-message count alone does not establish frame cost. The linked results describe their named routes,
-handler work and build profiles; they do not measure an application's UI or gameplay logic.
+Measure the target workload and backend before choosing an implementation for performance. A message count alone does not establish frame cost. The linked results describe their
+named routes, handler work and build profiles; they do not measure an application's UI or gameplay logic.
 
 ### Flexibility
 
 #### Contracts to Check
 
-- Emit methods return `void` and dispatch synchronously. Use an explicit query/service contract when
-  a caller needs a result. Interceptors can mutate a `ref` payload or routing context and cancel
-  delivery; that is different from collecting return values from multiple subscribers.
-- Registration methods accept inline callbacks. Keep their deregistration token, lease or component
-  owner, and measure any registration/closure work separately from dispatch.
-- Targeted messages carry a target and broadcasts carry an explicit source. Untargeted messages do
-  not infer a sender identity.
-- Priorities and stages order callback invocation. They do not wait for asynchronous operations
-  started inside a callback to finish.
+- Emit methods return `void` and dispatch synchronously. Use an explicit query/service contract when a caller needs a result. Interceptors can mutate a `ref` payload or routing
+  context and cancel delivery; that is different from collecting return values from multiple subscribers.
+- Registration methods accept inline callbacks. Keep their deregistration token, lease or component owner, and measure any registration/closure work separately from dispatch.
+- Targeted messages carry a target and broadcasts carry an explicit source. Untargeted messages do not infer a sender identity.
+- Priorities and stages order callback invocation. They do not wait for asynchronous operations started inside a callback to finish.
 
 #### When Limitations Hurt
 
@@ -1355,9 +1346,8 @@ if (OnValidateDamage?.Invoke(damage) == true) {
 // DxMessaging workaround: Use interceptors or separate query pattern
 ```
 
-For a query, define how a caller obtains a result and handles failure. A direct service method or a
-returning delegate is one option. For notifications, choose the routing and lifetime contract the
-application needs.
+For a query, define how a caller obtains a result and handles failure. A direct service method or a returning delegate is one option. For notifications, choose the routing and
+lifetime contract the application needs.
 
 ### Debuggability
 
@@ -1385,14 +1375,10 @@ _ = debugToken.RegisterBroadcastWithoutSource<TookDamage>(
 );
 ```
 
-Use [Message Monitor](../guides/diagnostics.md#message-monitor) to find the
-emission and its call site. For a loaded-scene `MessagingComponent`, use
-[Flow Graph](../guides/diagnostics.md#flow-graph) to inspect the matching receiver
-route; use bus logs or counters for direct registrations outside those
-components.
+Use [Message Monitor](../guides/diagnostics.md#message-monitor) to find the emission and its call site. For a loaded-scene `MessagingComponent`, use
+[Flow Graph](../guides/diagnostics.md#flow-graph) to inspect the matching receiver route; use bus logs or counters for direct registrations outside those components.
 
-**Verdict:** Initial debugging adds a routing layer, while the built-in tools
-make system-wide message flow inspectable without adding log statements.
+**Verdict:** Initial debugging adds a routing layer, while the built-in tools make system-wide message flow inspectable without adding log statements.
 
 ### Coupling and Architecture
 
@@ -1425,9 +1411,8 @@ All systems -> Listen to messages
 Add/remove systems without affecting others
 ```
 
-A bus can remove direct publisher references, but it still introduces shared message contracts,
-route choices and lifecycle dependencies. Review those dependencies when adding or changing a
-message; line count does not determine whether the tradeoff is useful.
+A bus can remove direct publisher references, but it still introduces shared message contracts, route choices and lifecycle dependencies. Review those dependencies when adding or
+changing a message; line count does not determine whether the tradeoff is useful.
 
 ### Testing
 
@@ -1443,9 +1428,8 @@ message; line count does not determine whether the tradeoff is useful.
 
 ##### Example
 
-See the [complete local-bus test in the README](https://github.com/Ambiguous-Interactive/DxMessaging#local-bus-islands-for-testing)
-for a subscription that enables its token, verifies delivery, and disposes the token even when an
-assertion fails. Separate buses isolate routing; runtime settings and pools remain shared.
+See the [complete local-bus test in the README](https://github.com/Ambiguous-Interactive/DxMessaging#local-bus-islands-for-testing) for a subscription that enables its token,
+verifies delivery, and disposes the token even when an assertion fails. Separate buses isolate routing; runtime settings and pools remain shared.
 
 **Verdict:** DxMessaging makes integration testing easier, unit testing slightly more verbose.
 
@@ -1476,7 +1460,8 @@ assertion fails. Separate buses isolate routing; runtime settings and pools rema
 | **Type Safety**          | Strong                                                               | Strong                                                               | Strong                                                               | Strong                                                               |
 | **Dependencies**         | None                                                                 | None                                                                 | MessagePipe package                                                  | Zenject required                                                     |
 
-For DxMessaging allocation expectations, use the [allocation contract and exceptions](../reference/faq.md#does-dxmessaging-allocate-memory-is-dispatch-zero-gc) for the selected route.
+For DxMessaging allocation expectations, use the [allocation contract and exceptions](../reference/faq.md#does-dxmessaging-allocate-memory-is-dispatch-zero-gc) for the selected
+route.
 
 ### Traditional Approaches Comparison
 
@@ -1490,33 +1475,27 @@ For DxMessaging allocation expectations, use the [allocation contract and except
 | Diagnostics          | Debugger and project tooling                                                | Inspector, debugger and project tooling                                     | Asset Inspector and project tooling               | Defined by the implementation     | Message Monitor, Flow Graph and token diagnostics                           |
 | Performance evidence | [Named benchmark scenarios](./performance.md#latest-ci-performance-results) | [Named benchmark scenarios](./performance.md#latest-ci-performance-results) | The benchmark's tested bridge                     | Measure the actual implementation | [Named benchmark scenarios](./performance.md#latest-ci-performance-results) |
 
-The [C# specification](https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/language-specification/delegates#216-delegate-invocation)
-defines synchronous multicast invocation-list order. That order and DxMessaging priorities describe
-callback invocation, not completion of asynchronous work started by callbacks. A custom event
-accessor, channel or static bus needs its own contract.
+The [C# specification](https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/language-specification/delegates#216-delegate-invocation) defines synchronous multicast
+invocation-list order. That order and DxMessaging priorities describe callback invocation, not completion of asynchronous work started by callbacks. A custom event accessor,
+channel or static bus needs its own contract.
 
-DxMessaging's Unity component helpers require their documented base lifecycle calls. Plain tokens
-and leases need an owner that releases them. These helpers do not make arbitrary handler closures,
-shared assets or application state leak-free. For a host outside Unity, use the separate
-[.NET source-build contract](../reference/compatibility.md#plain-net-runtime), including its declared
-support-package dependency; Unity-only components and diagnostics are not part of that target.
+DxMessaging's Unity component helpers require their documented base lifecycle calls. Plain tokens and leases need an owner that releases them. These helpers do not make arbitrary
+handler closures, shared assets or application state leak-free. For a host outside Unity, use the separate
+[.NET source-build contract](../reference/compatibility.md#plain-net-runtime), including its declared support-package dependency; Unity-only components and diagnostics are not part
+of that target.
 
 <a id="overall-verdict-by-use-case"></a>
 
 ### Choices by Use Case
 
-- **Known publisher and local callback:** Start with a direct method, event or UnityEvent if it
-  already provides the needed contract.
+- **Known publisher and local callback:** Start with a direct method, event or UnityEvent if it already provides the needed contract.
 - **Typed routing across owners:** Evaluate DxMessaging's targeted, broadcast and untargeted paths.
-- **Existing asset workflow:** Preserve state ownership and asset references; add a bridge only where
-  bus listeners are needed.
+- **Existing asset workflow:** Preserve state ownership and asset references; add a bridge only where bus listeners are needed.
 - **Stream transformations:** Evaluate the required reactive operators and subscription lifetime.
-- **Existing DI services:** Compare the container's event facilities with the optional bus
-  integrations using the actual setup and cleanup call sites.
-- **Diagnostics or interception:** Check whether priorities, cancellation, post-processors and the
-  inspection tools address the application's concrete problem.
-- **Performance requirement:** Measure the complete topology, callback work, allocations and target
-  backend. Preserve the [published results' scope](./performance.md#how-to-read-these-tables).
+- **Existing DI services:** Compare the container's event facilities with the optional bus integrations using the actual setup and cleanup call sites.
+- **Diagnostics or interception:** Check whether priorities, cancellation, post-processors and the inspection tools address the application's concrete problem.
+- **Performance requirement:** Measure the complete topology, callback work, allocations and target backend. Preserve the
+  [published results' scope](./performance.md#how-to-read-these-tables).
 
 <a id="when-each-approach-actually-wins"></a>
 
@@ -1588,7 +1567,8 @@ support-package dependency; Unity-only components and diagnostics are not part o
 - [x] Team is already heavily invested in SOA with many existing assets
 - [x] Shared assets have explicit state ownership, reset and subscription cleanup.
 - Consider migration and ongoing maintenance costs alongside the existing authoring workflow.
-- **Alternative:** Keep configuration or runtime state in an asset/service and use messages for notifications ([SOA integration choices](../guides/patterns.md#14-compatibility-with-scriptable-object-architecture-soa)).
+- **Alternative:** Keep configuration or runtime state in an asset/service and use messages for notifications
+  ([SOA integration choices](../guides/patterns.md#14-compatibility-with-scriptable-object-architecture-soa)).
 
 ### Static Event Bus Wins When
 
@@ -1597,11 +1577,9 @@ support-package dependency; Unity-only components and diagnostics are not part o
 
 ## Cost-Benefit Summary
 
-Adoption adds message declarations, registration ownership and bus selection. Source generation and
-ownership helpers reduce some repeated setup, while diagnostics expose routes and selected message
-history. Compare those costs with the publisher references, cleanup and inspection code the
-application would otherwise maintain. This guide does not establish a payback time or a project-size
-threshold.
+Adoption adds message declarations, registration ownership and bus selection. Source generation and ownership helpers reduce some repeated setup, while diagnostics expose routes
+and selected message history. Compare those costs with the publisher references, cleanup and inspection code the application would otherwise maintain. This guide does not establish
+a payback time or a project-size threshold.
 
 <a id="making-the-decision-be-honest-with-yourself"></a>
 
@@ -1623,13 +1601,12 @@ threshold.
 
 ### Try a Bounded Integration
 
-Choose one real notification with a known owner. Implement the sender and listener, exercise a
-lifecycle transition, and inspect the delivered payload and cleanup. Keep the existing design when
-a bus does not remove enough application work to justify the change. Migrate incrementally when
-routing or inspection needs make the bus useful; preserve existing state/query contracts.
+Choose one real notification with a known owner. Implement the sender and listener, exercise a lifecycle transition, and inspect the delivered payload and cleanup. Keep the
+existing design when a bus does not remove enough application work to justify the change. Migrate incrementally when routing or inspection needs make the bus useful; preserve
+existing state/query contracts.
 
-Project duration, team size, message count and lines of code can describe a workload. They do not
-prove that a particular framework is required, faster, easier to learn or cheaper to maintain.
+Project duration, team size, message count and lines of code can describe a workload. They do not prove that a particular framework is required, faster, easier to learn or cheaper
+to maintain.
 
 See also
 

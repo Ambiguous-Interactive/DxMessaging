@@ -23,25 +23,12 @@ namespace DxMessaging.Tests
         }
 
         private static object ScalarPriorities<TMessage>(MessageBus bus)
-            where TMessage : IMessage =>
-            CacheValue<TMessage>(
-                ((Array)ReadField(bus, "_scalarSinks")).GetValue(
-                    BusSinkIndex.UntargetedHandleDefault
-                )
-            );
+            where TMessage : IMessage => CacheValue<TMessage>(((Array)ReadField(bus, "_scalarSinks")).GetValue(BusSinkIndex.UntargetedHandleDefault));
 
         private static object TargetMap<TMessage>(MessageBus bus)
-            where TMessage : IMessage =>
-            CacheValue<TMessage>(
-                ((Array)ReadField(bus, "_contextSinks")).GetValue(
-                    BusContextIndex.TargetedHandleDefault
-                )
-            );
+            where TMessage : IMessage => CacheValue<TMessage>(((Array)ReadField(bus, "_contextSinks")).GetValue(BusContextIndex.TargetedHandleDefault));
 
-        internal static bool TryObserveUntargetedPriorityStorageForBenchmark<TMessage>(
-            this MessageBus bus,
-            out PriorityStorageObservation observation
-        )
+        internal static bool TryObserveUntargetedPriorityStorageForBenchmark<TMessage>(this MessageBus bus, out PriorityStorageObservation observation)
             where TMessage : IUntargetedMessage
         {
             object priorities = ScalarPriorities<TMessage>(bus);
@@ -53,20 +40,13 @@ namespace DxMessaging.Tests
             object handlers = ReadField(priorities, "handlers");
             observation = new PriorityStorageObservation(
                 ((IDictionary)handlers).Count,
-                (int)
-                    handlers
-                        .GetType()
-                        .GetMethod("EnsureCapacity")
-                        .Invoke(handlers, new object[] { 0 }),
+                (int)handlers.GetType().GetMethod("EnsureCapacity").Invoke(handlers, new object[] { 0 }),
                 (int)ReadProperty(ReadField(priorities, "order"), "Capacity")
             );
             return true;
         }
 
-        internal static bool TryObserveUntargetedFlatSnapshotStorageForBenchmark<TMessage>(
-            this MessageBus bus,
-            out FlatSnapshotStorageObservation observation
-        )
+        internal static bool TryObserveUntargetedFlatSnapshotStorageForBenchmark<TMessage>(this MessageBus bus, out FlatSnapshotStorageObservation observation)
             where TMessage : IUntargetedMessage
         {
             object priorities = ScalarPriorities<TMessage>(bus);
@@ -85,11 +65,7 @@ namespace DxMessaging.Tests
             {
                 pooled = (int)ReadProperty(pool, "Count");
             }
-            observation = new FlatSnapshotStorageObservation(
-                (int)ReadField(flat, "count"),
-                ((Array)ReadField(flat, "entries")).Length,
-                pooled
-            );
+            observation = new FlatSnapshotStorageObservation((int)ReadField(flat, "count"), ((Array)ReadField(flat, "entries")).Length, pooled);
             return true;
         }
 
@@ -102,27 +78,18 @@ namespace DxMessaging.Tests
         )
             where TMessage : IMessage
         {
-            Dictionary<int, MessageCache<object>> byBus =
-                (Dictionary<int, MessageCache<object>>)
-                    ReadField(handler, "_handlersByTypeByMessageBus");
-            if (
-                !byBus.TryGetValue(
-                    bus.RegisteredGlobalSequentialIndex,
-                    out MessageCache<object> byType
-                ) || !byType.TryGetValue<TMessage>(out object raw)
-            )
+            Dictionary<int, MessageCache<object>> byBus = (Dictionary<int, MessageCache<object>>)ReadField(handler, "_handlersByTypeByMessageBus");
+            if (!byBus.TryGetValue(bus.RegisteredGlobalSequentialIndex, out MessageCache<object> byType) || !byType.TryGetValue<TMessage>(out object raw))
             {
                 observation = default;
                 return false;
             }
-            MessageHandler.TypedHandler<TMessage> typed =
-                (MessageHandler.TypedHandler<TMessage>)raw;
+            MessageHandler.TypedHandler<TMessage> typed = (MessageHandler.TypedHandler<TMessage>)raw;
             TypedSlot<TMessage> slot = typed._slots[slotIndex];
             if (
                 slot == null
                 || !slot.byPriority.TryGetValue(priority, out IHandlerActionCache erased)
-                || erased
-                    is not MessageHandler.HandlerActionCache<MessageHandler.FastHandler<TMessage>> cache
+                || erased is not MessageHandler.HandlerActionCache<MessageHandler.FastHandler<TMessage>> cache
             )
             {
                 observation = default;
@@ -143,11 +110,7 @@ namespace DxMessaging.Tests
             return true;
         }
 
-        internal static bool TryObserveTargetedHandleMapStorageForBenchmark<TMessage>(
-            this MessageBus bus,
-            out int entries,
-            out int capacity
-        )
+        internal static bool TryObserveTargetedHandleMapStorageForBenchmark<TMessage>(this MessageBus bus, out int entries, out int capacity)
             where TMessage : IMessage
         {
             object map = TargetMap<TMessage>(bus);
@@ -156,11 +119,7 @@ namespace DxMessaging.Tests
             return map != null;
         }
 
-        internal static bool TryObserveTargetedHandleMapTopologyForBenchmark<TMessage>(
-            this MessageBus bus,
-            InstanceId target,
-            out IntKeyMapTopologyObservation observation
-        )
+        internal static bool TryObserveTargetedHandleMapTopologyForBenchmark<TMessage>(this MessageBus bus, InstanceId target, out IntKeyMapTopologyObservation observation)
             where TMessage : IMessage
         {
             object map = TargetMap<TMessage>(bus);
@@ -168,10 +127,7 @@ namespace DxMessaging.Tests
             return map != null;
         }
 
-        internal static bool TryObserveTargetedHandleMapLongestClusterForBenchmark<TMessage>(
-            this MessageBus bus,
-            out int longestCluster
-        )
+        internal static bool TryObserveTargetedHandleMapLongestClusterForBenchmark<TMessage>(this MessageBus bus, out int longestCluster)
             where TMessage : IMessage
         {
             object map = TargetMap<TMessage>(bus);
@@ -195,11 +151,7 @@ namespace DxMessaging.Tests
             return map;
         }
 
-        internal static void ObserveContextMapForBenchmark(
-            object opaqueMap,
-            out int count,
-            out int capacity
-        )
+        internal static void ObserveContextMapForBenchmark(object opaqueMap, out int count, out int capacity)
         {
             IntKeyMap<object> map = (IntKeyMap<object>)opaqueMap;
             count = map.Count;

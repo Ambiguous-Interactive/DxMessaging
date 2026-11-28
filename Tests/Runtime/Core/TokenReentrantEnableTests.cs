@@ -34,14 +34,7 @@ namespace DxMessaging.Tests.Runtime.Core
                             {
                                 foreach (bool retarget in new[] { false, true })
                                 {
-                                    yield return new TestCaseData(
-                                        scenario,
-                                        fast,
-                                        count,
-                                        after,
-                                        nested,
-                                        retarget
-                                    ).SetName(
+                                    yield return new TestCaseData(scenario, fast, count, after, nested, retarget).SetName(
                                         $"ReentrantEnable_{scenario}_fast{fast}_count{count}_after{after}_nested{nested}_retarget{retarget}"
                                     );
                                 }
@@ -62,9 +55,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     {
                         foreach (bool retarget in new[] { false, true })
                         {
-                            yield return new TestCaseData(scenario, fast, after, retarget).SetName(
-                                $"ReentrantEnableFailure_{scenario}_fast{fast}_after{after}_retarget{retarget}"
-                            );
+                            yield return new TestCaseData(scenario, fast, after, retarget).SetName($"ReentrantEnableFailure_{scenario}_fast{fast}_after{after}_retarget{retarget}");
                         }
                     }
                 }
@@ -73,14 +64,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
         /// <summary>Nested activation leaves the owning replay and subsequent lifecycle intact.</summary>
         [TestCaseSource(nameof(ActivationCases))]
-        public void NestedEnableKeepsOwningActivationAndCleanup(
-            MessageScenario scenario,
-            bool fast,
-            int count,
-            bool after,
-            bool nested,
-            bool retarget
-        )
+        public void NestedEnableKeepsOwningActivationAndCleanup(MessageScenario scenario, bool fast, int count, bool after, bool nested, bool retarget)
         {
             Scope scope = new Scope(scenario, fast, count, after, nested, retarget, false);
             try
@@ -108,12 +92,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
         /// <summary>Failed activation preserves its error and releases replay ownership for retry.</summary>
         [TestCaseSource(nameof(FailureCases))]
-        public void ThrowAfterNestedEnablePreservesErrorAndAllowsRecovery(
-            MessageScenario scenario,
-            bool fast,
-            bool after,
-            bool retarget
-        )
+        public void ThrowAfterNestedEnablePreservesErrorAndAllowsRecovery(MessageScenario scenario, bool fast, bool after, bool retarget)
         {
             Scope scope = new Scope(scenario, fast, 2, after, true, retarget, true);
             try
@@ -154,9 +133,7 @@ namespace DxMessaging.Tests.Runtime.Core
             private readonly MessageRegistrationToken _token;
             private readonly int[] _calls;
             private readonly List<string> _trace = new List<string>();
-            internal readonly Exception Marker = new InvalidOperationException(
-                "reentrant-enable-marker"
-            );
+            internal readonly Exception Marker = new InvalidOperationException("reentrant-enable-marker");
             internal Exception Failure,
                 RecoveryFailure,
                 CleanupFailure;
@@ -169,18 +146,9 @@ namespace DxMessaging.Tests.Runtime.Core
                 RecoveryDelivery,
                 TokenCleanupCounters,
                 FinalCounters;
-            internal string Report =>
-                $"{_scenario}, fast={_fast}, nested={_nested}, retarget={_retarget}, throwing={_throwing}; {string.Join(",", _trace)}";
+            internal string Report => $"{_scenario}, fast={_fast}, nested={_nested}, retarget={_retarget}, throwing={_throwing}; {string.Join(",", _trace)}";
 
-            internal Scope(
-                MessageScenario scenario,
-                bool fast,
-                int count,
-                bool after,
-                bool nested,
-                bool retarget,
-                bool throwing
-            )
+            internal Scope(MessageScenario scenario, bool fast, int count, bool after, bool nested, bool retarget, bool throwing)
             {
                 _scenario = scenario;
                 _fast = fast;
@@ -257,8 +225,7 @@ namespace DxMessaging.Tests.Runtime.Core
             private void Stage(int index)
             {
                 Action<ProbeMessage> normal = _ => ++_calls[index];
-                MessageHandler.FastHandler<ProbeMessage> fast = (in ProbeMessage _) =>
-                    ++_calls[index];
+                MessageHandler.FastHandler<ProbeMessage> fast = (in ProbeMessage _) => ++_calls[index];
                 switch (_scenario.Kind)
                 {
                     case MessageKind.Untargeted:
@@ -372,8 +339,7 @@ namespace DxMessaging.Tests.Runtime.Core
         private sealed class ProbeBus : DelegatingMessageBus
         {
             internal readonly BusType Actual;
-            internal readonly List<MessageBusRegistration> Handles =
-                new List<MessageBusRegistration>();
+            internal readonly List<MessageBusRegistration> Handles = new List<MessageBusRegistration>();
             internal Action Callback;
             internal int Completed;
             private readonly bool _after;
@@ -423,40 +389,26 @@ namespace DxMessaging.Tests.Runtime.Core
                 return value;
             }
 
-            public override MessageBusRegistration RegisterUntargeted<T>(
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterUntargeted<T>(MessageHandler handler, int priority = 0)
             {
                 Before();
                 return After<T>(base.RegisterUntargeted<T>(handler, priority));
             }
 
-            public override MessageBusRegistration RegisterTargeted<T>(
-                InstanceId context,
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterTargeted<T>(InstanceId context, MessageHandler handler, int priority = 0)
             {
                 Before();
                 return After<T>(base.RegisterTargeted<T>(context, handler, priority));
             }
 
-            public override MessageBusRegistration RegisterSourcedBroadcast<T>(
-                InstanceId context,
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterSourcedBroadcast<T>(InstanceId context, MessageHandler handler, int priority = 0)
             {
                 Before();
                 return After<T>(base.RegisterSourcedBroadcast<T>(context, handler, priority));
             }
         }
 
-        private readonly struct ProbeMessage
-            : IUntargetedMessage,
-                ITargetedMessage,
-                IBroadcastMessage
+        private readonly struct ProbeMessage : IUntargetedMessage, ITargetedMessage, IBroadcastMessage
         {
             public Type MessageType => typeof(ProbeMessage);
         }

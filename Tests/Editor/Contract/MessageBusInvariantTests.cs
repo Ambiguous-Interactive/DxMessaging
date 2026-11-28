@@ -28,11 +28,7 @@ namespace DxMessaging.Tests.Editor.Contract
 
         private const int ExpectedMessageCacheFieldCount = 8;
 
-        private const BindingFlags DeclaredInstanceFields =
-            BindingFlags.Instance
-            | BindingFlags.Public
-            | BindingFlags.NonPublic
-            | BindingFlags.DeclaredOnly;
+        private const BindingFlags DeclaredInstanceFields = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
 
         [Test]
         public void MessageCacheFieldCountMatchesExpected()
@@ -51,9 +47,7 @@ namespace DxMessaging.Tests.Editor.Contract
         [Test]
         public void MessageCacheArrayFieldsCountAsStorageFields()
         {
-            string[] fieldNames = GetMessageCacheStorageFields()
-                .Select(field => field.Name)
-                .ToArray();
+            string[] fieldNames = GetMessageCacheStorageFields().Select(field => field.Name).ToArray();
 
             Assert.That(fieldNames, Does.Contain("_scalarSinks"));
             Assert.That(fieldNames, Does.Contain("_contextSinks"));
@@ -69,55 +63,26 @@ namespace DxMessaging.Tests.Editor.Contract
 
             foreach (Type cacheType in new[] { keyedCache, leafCache })
             {
-                Assert.That(
-                    cacheType.GetField("cache", DeclaredInstanceFields),
-                    Is.Null,
-                    $"{cacheType.Name} must not eagerly allocate the legacy snapshot list."
-                );
-                Assert.That(
-                    cacheType.GetField("lastSeenVersion", DeclaredInstanceFields),
-                    Is.Null,
-                    $"{cacheType.Name} must not retain unused legacy version stamps."
-                );
-                Assert.That(
-                    cacheType.GetField("lastSeenEmissionId", DeclaredInstanceFields),
-                    Is.Null,
-                    $"{cacheType.Name} must not retain unused legacy emission stamps."
-                );
+                Assert.That(cacheType.GetField("cache", DeclaredInstanceFields), Is.Null, $"{cacheType.Name} must not eagerly allocate the legacy snapshot list.");
+                Assert.That(cacheType.GetField("lastSeenVersion", DeclaredInstanceFields), Is.Null, $"{cacheType.Name} must not retain unused legacy version stamps.");
+                Assert.That(cacheType.GetField("lastSeenEmissionId", DeclaredInstanceFields), Is.Null, $"{cacheType.Name} must not retain unused legacy emission stamps.");
             }
 
-            Assert.That(
-                interceptorCache.GetField("lastSeenEmissionId", DeclaredInstanceFields),
-                Is.Null,
-                "InterceptorCache<T> must not retain an unused legacy emission stamp."
-            );
+            Assert.That(interceptorCache.GetField("lastSeenEmissionId", DeclaredInstanceFields), Is.Null, "InterceptorCache<T> must not retain an unused legacy emission stamp.");
         }
 
         [Test]
         public void DispatchSnapshotCarriesDirectEntryCountAlongsideGlobalBuckets()
         {
-            Type snapshotType = typeof(MessageBus)
-                .GetNestedTypes(BindingFlags.NonPublic)
-                .Single(type => type.Name == "DispatchSnapshot");
+            Type snapshotType = typeof(MessageBus).GetNestedTypes(BindingFlags.NonPublic).Single(type => type.Name == "DispatchSnapshot");
 
-            Assert.That(
-                snapshotType.GetField("entryCount", DeclaredInstanceFields),
-                Is.Not.Null,
-                "Non-global snapshots must carry their flat entry count directly."
-            );
-            Assert.That(
-                snapshotType.GetField("buckets", DeclaredInstanceFields),
-                Is.Not.Null,
-                "Global accept-all snapshots still require priority bucket storage."
-            );
+            Assert.That(snapshotType.GetField("entryCount", DeclaredInstanceFields), Is.Not.Null, "Non-global snapshots must carry their flat entry count directly.");
+            Assert.That(snapshotType.GetField("buckets", DeclaredInstanceFields), Is.Not.Null, "Global accept-all snapshots still require priority bucket storage.");
 
             Type flatType = typeof(MessageBus)
                 .Assembly.GetType("DxMessaging.Core.Internal.FlatDispatch`1", throwOnError: true)
                 .MakeGenericType(typeof(UntargetedDispatchProbeMessage));
-            MethodInfo rent = flatType.BaseType.GetMethod(
-                "Rent",
-                BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy
-            );
+            MethodInfo rent = flatType.BaseType.GetMethod("Rent", BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy);
             object flat = rent.Invoke(null, new object[] { 0 });
             ConstructorInfo flatSnapshotConstructor = snapshotType
                 .GetConstructors(BindingFlags.Instance | BindingFlags.Public)
@@ -134,18 +99,10 @@ namespace DxMessaging.Tests.Editor.Contract
                 Is.EqualTo(0),
                 "The zero-entry ownership case must remain representable without buckets."
             );
-            Assert.That(
-                snapshotType.GetProperty("IsInitialized").GetValue(snapshot),
-                Is.True,
-                "An owned zero-entry flat snapshot must not be confused with the empty singleton."
-            );
+            Assert.That(snapshotType.GetProperty("IsInitialized").GetValue(snapshot), Is.True, "An owned zero-entry flat snapshot must not be confused with the empty singleton.");
 
             snapshotType.GetMethod("Release").Invoke(snapshot, null);
-            Assert.That(
-                snapshotType.GetField("flat", DeclaredInstanceFields).GetValue(snapshot),
-                Is.Null,
-                "Releasing a zero-entry flat snapshot must return its owned holder."
-            );
+            Assert.That(snapshotType.GetField("flat", DeclaredInstanceFields).GetValue(snapshot), Is.Null, "Releasing a zero-entry flat snapshot must return its owned holder.");
         }
 
         [Test]
@@ -164,65 +121,34 @@ namespace DxMessaging.Tests.Editor.Contract
                 "HandleSourcedBroadcastPostProcessing",
                 "HandleSourcedBroadcastWithoutSourcePostProcessing",
             };
-            string[] internalGlobalCallbacks =
-            {
-                "HandleGlobalUntargetedMessage",
-                "HandleGlobalTargetedMessage",
-                "HandleGlobalSourcedBroadcastMessage",
-            };
+            string[] internalGlobalCallbacks = { "HandleGlobalUntargetedMessage", "HandleGlobalTargetedMessage", "HandleGlobalSourcedBroadcastMessage" };
 
-            MethodInfo[] declaredMethods = typeof(MessageHandler).GetMethods(
-                BindingFlags.Instance
-                    | BindingFlags.Public
-                    | BindingFlags.NonPublic
-                    | BindingFlags.DeclaredOnly
-            );
+            MethodInfo[] declaredMethods = typeof(MessageHandler).GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
             foreach (string callbackName in removedTypedCallbacks)
             {
-                Assert.That(
-                    declaredMethods.Any(method => method.Name == callbackName),
-                    Is.False,
-                    $"{callbackName} is dead legacy typed-dispatch plumbing and must be removed."
-                );
+                Assert.That(declaredMethods.Any(method => method.Name == callbackName), Is.False, $"{callbackName} is dead legacy typed-dispatch plumbing and must be removed.");
             }
 
             foreach (string callbackName in internalGlobalCallbacks)
             {
                 MethodInfo callback = declaredMethods.Single(method => method.Name == callbackName);
-                Assert.That(
-                    callback.IsPublic,
-                    Is.False,
-                    $"{callbackName} is MessageBus plumbing and must remain internal."
-                );
+                Assert.That(callback.IsPublic, Is.False, $"{callbackName} is MessageBus plumbing and must remain internal.");
             }
         }
 
         [Test]
         public void EveryMessageCacheFieldHasSweepableRegistryEntry()
         {
-            string[] fieldNames = GetMessageCacheStorageFields()
-                .Select(field => field.Name)
-                .OrderBy(name => name, StringComparer.Ordinal)
-                .ToArray();
-            string[] registeredNames = SweepRegistryInspection
-                .Rows.Select(sweepable => sweepable.StorageFieldName)
-                .OrderBy(name => name, StringComparer.Ordinal)
-                .ToArray();
+            string[] fieldNames = GetMessageCacheStorageFields().Select(field => field.Name).OrderBy(name => name, StringComparer.Ordinal).ToArray();
+            string[] registeredNames = SweepRegistryInspection.Rows.Select(sweepable => sweepable.StorageFieldName).OrderBy(name => name, StringComparer.Ordinal).ToArray();
 
-            Assert.That(
-                registeredNames,
-                Is.EqualTo(fieldNames),
-                "Every MessageBus MessageCache storage field must have exactly one sweep registry row."
-            );
+            Assert.That(registeredNames, Is.EqualTo(fieldNames), "Every MessageBus MessageCache storage field must have exactly one sweep registry row.");
         }
 
         [Test]
         public void SweepableRegistryDoesNotContainUnknownFields()
         {
-            HashSet<string> fieldNames = new(
-                GetMessageCacheStorageFields().Select(field => field.Name),
-                StringComparer.Ordinal
-            );
+            HashSet<string> fieldNames = new(GetMessageCacheStorageFields().Select(field => field.Name), StringComparer.Ordinal);
 
             foreach (ObservedSweep sweepable in SweepRegistryInspection.Rows)
             {
@@ -236,21 +162,9 @@ namespace DxMessaging.Tests.Editor.Contract
         [Test]
         public void AotBridgeRegistrationHooksKeepGeneratedReflectionContract()
         {
-            AssertAotBridgeHook(
-                "RegisterAotUntargetedBridge",
-                typeof(AotHookUntargetedMessage),
-                (Action<IMessageBus, IUntargetedMessage>)((_, _) => { })
-            );
-            AssertAotBridgeHook(
-                "RegisterAotTargetedBridge",
-                typeof(AotHookTargetedMessage),
-                (Action<IMessageBus, InstanceId, ITargetedMessage>)((_, _, _) => { })
-            );
-            AssertAotBridgeHook(
-                "RegisterAotSourcedBridge",
-                typeof(AotHookBroadcastMessage),
-                (Action<IMessageBus, InstanceId, IBroadcastMessage>)((_, _, _) => { })
-            );
+            AssertAotBridgeHook("RegisterAotUntargetedBridge", typeof(AotHookUntargetedMessage), (Action<IMessageBus, IUntargetedMessage>)((_, _) => { }));
+            AssertAotBridgeHook("RegisterAotTargetedBridge", typeof(AotHookTargetedMessage), (Action<IMessageBus, InstanceId, ITargetedMessage>)((_, _, _) => { }));
+            AssertAotBridgeHook("RegisterAotSourcedBridge", typeof(AotHookBroadcastMessage), (Action<IMessageBus, InstanceId, IBroadcastMessage>)((_, _, _) => { }));
         }
 
         [Test]
@@ -262,11 +176,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 .Select(group => group.Key)
                 .ToArray();
 
-            Assert.That(
-                duplicateNames,
-                Is.Empty,
-                "Sweep registry rows must be one-to-one with MessageBus MessageCache storage fields."
-            );
+            Assert.That(duplicateNames, Is.Empty, "Sweep registry rows must be one-to-one with MessageBus MessageCache storage fields.");
         }
 
         [TestCase(false)]
@@ -276,11 +186,7 @@ namespace DxMessaging.Tests.Editor.Contract
             MessageBus bus = new();
             foreach (ObservedSweep sweepable in SweepRegistryInspection.Rows)
             {
-                Assert.AreEqual(
-                    0,
-                    sweepable.Sweep(bus, force),
-                    $"An empty {sweepable.StorageFieldName} must reclaim no slots."
-                );
+                Assert.AreEqual(0, sweepable.Sweep(bus, force), $"An empty {sweepable.StorageFieldName} must reclaim no slots.");
                 Assert.AreEqual(0, bus.OccupiedTypeSlots);
                 Assert.AreEqual(0, bus.OccupiedTargetSlots);
             }
@@ -293,24 +199,13 @@ namespace DxMessaging.Tests.Editor.Contract
             MessageHandler handler = new MessageHandler(HandlerOwnerA, bus) { active = true };
             try
             {
-                MessageBusRegistration deregister = bus.RegisterTargeted<TargetedProbeMessage>(
-                    Target,
-                    handler
-                );
+                MessageBusRegistration deregister = bus.RegisterTargeted<TargetedProbeMessage>(Target, handler);
                 bus.Deregister<TargetedProbeMessage>(in deregister);
 
                 IMessageBus.TrimResult result = bus.Trim(force: true);
 
-                Assert.AreEqual(
-                    1,
-                    result.TargetSlotsEvicted,
-                    "Context sweep should report the reclaimed target slot."
-                );
-                Assert.AreEqual(
-                    1,
-                    result.TypeSlotsEvicted,
-                    "Removing the final target dictionary also removes the context-backed type slot."
-                );
+                Assert.AreEqual(1, result.TargetSlotsEvicted, "Context sweep should report the reclaimed target slot.");
+                Assert.AreEqual(1, result.TypeSlotsEvicted, "Removing the final target dictionary also removes the context-backed type slot.");
                 Assert.AreEqual(0, bus.OccupiedTypeSlots);
                 Assert.AreEqual(0, bus.OccupiedTargetSlots);
             }
@@ -324,9 +219,7 @@ namespace DxMessaging.Tests.Editor.Contract
         public void InterceptorMessageCachesAreSweptThroughRegistry()
         {
             MessageBus bus = new MessageBus();
-            IMessageBus.UntargetedInterceptor<InterceptorProbeMessage> interceptor = (
-                ref InterceptorProbeMessage _
-            ) => true;
+            IMessageBus.UntargetedInterceptor<InterceptorProbeMessage> interceptor = (ref InterceptorProbeMessage _) => true;
 
             MessageBusRegistration deregister = bus.RegisterUntargetedInterceptor(interceptor);
             Assert.AreEqual(1, bus.RegisteredInterceptors);
@@ -335,9 +228,7 @@ namespace DxMessaging.Tests.Editor.Contract
             bus.Deregister<InterceptorProbeMessage>(in deregister);
             Assert.AreEqual(0, bus.RegisteredInterceptors);
 
-            ObservedSweep sweepable = SweepRegistryInspection.Rows.Single(row =>
-                row.StorageFieldName == "_untargetedInterceptsByType"
-            );
+            ObservedSweep sweepable = SweepRegistryInspection.Rows.Single(row => row.StorageFieldName == "_untargetedInterceptsByType");
             int evicted = sweepable.Sweep(bus, force: true);
 
             Assert.AreEqual(1, evicted);
@@ -374,22 +265,13 @@ namespace DxMessaging.Tests.Editor.Contract
                     )
                 ).AsAction();
                 secondDeregister = (
-                    second.RegisterUntargetedMessageHandler<UntargetedDispatchProbeMessage>(
-                        _ => secondCalls++,
-                        _ => secondCalls++,
-                        priority: 0,
-                        messageBus: bus
-                    )
+                    second.RegisterUntargetedMessageHandler<UntargetedDispatchProbeMessage>(_ => secondCalls++, _ => secondCalls++, priority: 0, messageBus: bus)
                 ).AsAction();
 
                 UntargetedDispatchProbeMessage message = new UntargetedDispatchProbeMessage();
                 bus.UntargetedBroadcast(ref message);
 
-                Assert.AreEqual(
-                    1,
-                    secondCalls,
-                    "Trim must not release the active dispatch snapshot while the current emission is still iterating it."
-                );
+                Assert.AreEqual(1, secondCalls, "Trim must not release the active dispatch snapshot while the current emission is still iterating it.");
 
                 _ = bus.Trim(force: true);
                 Assert.AreEqual(0, bus.OccupiedTypeSlots);
@@ -405,9 +287,7 @@ namespace DxMessaging.Tests.Editor.Contract
         public void StaleInterceptorDeregisterAfterSweepCannotRemoveReRegisteredInterceptor()
         {
             MessageBus bus = new MessageBus();
-            IMessageBus.UntargetedInterceptor<InterceptorProbeMessage> interceptor = (
-                ref InterceptorProbeMessage _
-            ) => true;
+            IMessageBus.UntargetedInterceptor<InterceptorProbeMessage> interceptor = (ref InterceptorProbeMessage _) => true;
 
             MessageBusRegistration staleDeregister = bus.RegisterUntargetedInterceptor(interceptor);
             bus.Deregister<InterceptorProbeMessage>(in staleDeregister);
@@ -416,21 +296,14 @@ namespace DxMessaging.Tests.Editor.Contract
             _ = bus.RegisterUntargetedInterceptor(interceptor);
             bus.Deregister<InterceptorProbeMessage>(in staleDeregister);
 
-            Assert.AreEqual(
-                1,
-                bus.RegisteredInterceptors,
-                "A stale deregister closure from an evicted interceptor cache must not remove a later registration."
-            );
+            Assert.AreEqual(1, bus.RegisteredInterceptors, "A stale deregister closure from an evicted interceptor cache must not remove a later registration.");
         }
 
         [Test]
         public void StaleGlobalAcceptAllDeregisterAfterSweepCannotRemoveReRegisteredHandler()
         {
             MessageBus bus = new MessageBus();
-            MessageHandler handler = new MessageHandler(new InstanceId(0x4D42_0001), bus)
-            {
-                active = true,
-            };
+            MessageHandler handler = new MessageHandler(new InstanceId(0x4D42_0001), bus) { active = true };
             try
             {
                 MessageBusRegistration staleDeregister = bus.RegisterGlobalAcceptAll(handler);
@@ -440,11 +313,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 MessageBusRegistration currentDeregister = bus.RegisterGlobalAcceptAll(handler);
                 bus.Deregister<IMessage>(in staleDeregister);
 
-                Assert.AreEqual(
-                    1,
-                    bus.RegisteredGlobalAcceptAll,
-                    "A stale GlobalAcceptAll deregister closure from an evicted global slot must not remove a later registration."
-                );
+                Assert.AreEqual(1, bus.RegisteredGlobalAcceptAll, "A stale GlobalAcceptAll deregister closure from an evicted global slot must not remove a later registration.");
 
                 bus.Deregister<IMessage>(in currentDeregister);
                 Assert.AreEqual(0, bus.RegisteredGlobalAcceptAll);
@@ -463,19 +332,14 @@ namespace DxMessaging.Tests.Editor.Contract
             MessageHandler handler = new MessageHandler(HandlerOwnerA, bus) { active = true };
             try
             {
-                MessageBusRegistration staleDeregister =
-                    bus.RegisterUntargeted<UntargetedDispatchProbeMessage>(handler);
+                MessageBusRegistration staleDeregister = bus.RegisterUntargeted<UntargetedDispatchProbeMessage>(handler);
                 bus.Deregister<UntargetedDispatchProbeMessage>(in staleDeregister);
                 Assert.AreEqual(2, bus.Log.Registrations.Count);
 
                 _ = bus.Trim(force: true);
                 bus.Deregister<UntargetedDispatchProbeMessage>(in staleDeregister);
 
-                Assert.AreEqual(
-                    2,
-                    bus.Log.Registrations.Count,
-                    "A stale scalar deregister closure after sweep must be silent in diagnostics."
-                );
+                Assert.AreEqual(2, bus.Log.Registrations.Count, "A stale scalar deregister closure after sweep must be silent in diagnostics.");
             }
             finally
             {
@@ -491,21 +355,14 @@ namespace DxMessaging.Tests.Editor.Contract
             MessageHandler handler = new MessageHandler(HandlerOwnerA, bus) { active = true };
             try
             {
-                MessageBusRegistration staleDeregister = bus.RegisterTargeted<TargetedProbeMessage>(
-                    Target,
-                    handler
-                );
+                MessageBusRegistration staleDeregister = bus.RegisterTargeted<TargetedProbeMessage>(Target, handler);
                 bus.Deregister<TargetedProbeMessage>(in staleDeregister);
                 Assert.AreEqual(2, bus.Log.Registrations.Count);
 
                 _ = bus.Trim(force: true);
                 bus.Deregister<TargetedProbeMessage>(in staleDeregister);
 
-                Assert.AreEqual(
-                    2,
-                    bus.Log.Registrations.Count,
-                    "A stale context deregister closure after sweep must be silent in diagnostics."
-                );
+                Assert.AreEqual(2, bus.Log.Registrations.Count, "A stale context deregister closure after sweep must be silent in diagnostics.");
             }
             finally
             {
@@ -517,14 +374,8 @@ namespace DxMessaging.Tests.Editor.Contract
         public void TrimDuringInFlightDispatchAfterDeregisteringCurrentSlotDefersSnapshotRelease()
         {
             MessageBus bus = new MessageBus();
-            MessageHandler firstHandler = new MessageHandler(new InstanceId(0x4D42_0002), bus)
-            {
-                active = true,
-            };
-            MessageHandler secondHandler = new MessageHandler(new InstanceId(0x4D42_0003), bus)
-            {
-                active = true,
-            };
+            MessageHandler firstHandler = new MessageHandler(new InstanceId(0x4D42_0002), bus) { active = true };
+            MessageHandler secondHandler = new MessageHandler(new InstanceId(0x4D42_0003), bus) { active = true };
             List<string> calls = new List<string>();
             IMessageBus.TrimResult inFlightTrimResult = default;
             Action firstDeregister = null;
@@ -543,32 +394,14 @@ namespace DxMessaging.Tests.Editor.Contract
                     calls.Add("second");
                 };
 
-                firstDeregister = (
-                    firstHandler.RegisterUntargetedMessageHandler(
-                        first,
-                        first,
-                        priority: 0,
-                        messageBus: bus
-                    )
-                ).AsAction();
-                secondDeregister = (
-                    secondHandler.RegisterUntargetedMessageHandler(
-                        second,
-                        second,
-                        priority: 1,
-                        messageBus: bus
-                    )
-                ).AsAction();
+                firstDeregister = (firstHandler.RegisterUntargetedMessageHandler(first, first, priority: 0, messageBus: bus)).AsAction();
+                secondDeregister = (secondHandler.RegisterUntargetedMessageHandler(second, second, priority: 1, messageBus: bus)).AsAction();
 
                 DispatchTrimProbeMessage message = new DispatchTrimProbeMessage();
                 bus.UntargetedBroadcast(ref message);
 
                 Assert.That(calls, Is.EqualTo(new[] { "first", "second" }));
-                Assert.AreEqual(
-                    0,
-                    inFlightTrimResult.TypeSlotsEvicted,
-                    "Trim must not release the active dispatch snapshot while the dispatch loop is still reading it."
-                );
+                Assert.AreEqual(0, inFlightTrimResult.TypeSlotsEvicted, "Trim must not release the active dispatch snapshot while the dispatch loop is still reading it.");
             }
             finally
             {
@@ -579,62 +412,36 @@ namespace DxMessaging.Tests.Editor.Contract
 
         private static IEnumerable<TestCaseData> HandlerDelegateCases()
         {
-            yield return new TestCaseData(
-                typeof(MessageHandler.FastHandler<AotHookUntargetedMessage>),
-                new[] { true }
-            ).SetName("FastHandler_MessageIsReadonly");
-            yield return new TestCaseData(
-                typeof(MessageHandler.FastHandlerWithContext<AotHookTargetedMessage>),
-                new[] { true, true }
-            ).SetName("FastHandlerWithContext_ContextAndMessageAreReadonly");
-            yield return new TestCaseData(
-                typeof(IMessageBus.UntargetedInterceptor<AotHookUntargetedMessage>),
-                new[] { false }
-            ).SetName("UntargetedInterceptor_MessageRemainsWritable");
-            yield return new TestCaseData(
-                typeof(IMessageBus.TargetedInterceptor<AotHookTargetedMessage>),
-                new[] { false, false }
-            ).SetName("TargetedInterceptor_ContextAndMessageRemainWritable");
-            yield return new TestCaseData(
-                typeof(IMessageBus.BroadcastInterceptor<AotHookBroadcastMessage>),
-                new[] { false, false }
-            ).SetName("BroadcastInterceptor_ContextAndMessageRemainWritable");
+            yield return new TestCaseData(typeof(MessageHandler.FastHandler<AotHookUntargetedMessage>), new[] { true }).SetName("FastHandler_MessageIsReadonly");
+            yield return new TestCaseData(typeof(MessageHandler.FastHandlerWithContext<AotHookTargetedMessage>), new[] { true, true }).SetName(
+                "FastHandlerWithContext_ContextAndMessageAreReadonly"
+            );
+            yield return new TestCaseData(typeof(IMessageBus.UntargetedInterceptor<AotHookUntargetedMessage>), new[] { false }).SetName(
+                "UntargetedInterceptor_MessageRemainsWritable"
+            );
+            yield return new TestCaseData(typeof(IMessageBus.TargetedInterceptor<AotHookTargetedMessage>), new[] { false, false }).SetName(
+                "TargetedInterceptor_ContextAndMessageRemainWritable"
+            );
+            yield return new TestCaseData(typeof(IMessageBus.BroadcastInterceptor<AotHookBroadcastMessage>), new[] { false, false }).SetName(
+                "BroadcastInterceptor_ContextAndMessageRemainWritable"
+            );
         }
 
         [Test]
         [TestCaseSource(nameof(HandlerDelegateCases))]
-        public void HandlerDelegateByRefModifiersMatchCallbackRole(
-            Type delegateType,
-            bool[] expectedIsIn
-        )
+        public void HandlerDelegateByRefModifiersMatchCallbackRole(Type delegateType, bool[] expectedIsIn)
         {
             MethodInfo invoke = delegateType.GetMethod("Invoke");
             ParameterInfo[] parameters = invoke.GetParameters();
             string caseDescription = delegateType.FullName;
 
-            Assert.That(
-                parameters.Length,
-                Is.EqualTo(expectedIsIn.Length),
-                $"{caseDescription} must expose the expected parameter count."
-            );
+            Assert.That(parameters.Length, Is.EqualTo(expectedIsIn.Length), $"{caseDescription} must expose the expected parameter count.");
             for (int i = 0; i < parameters.Length; ++i)
             {
                 ParameterInfo parameter = parameters[i];
-                Assert.That(
-                    parameter.ParameterType.IsByRef,
-                    Is.True,
-                    $"{caseDescription} parameter {i} must remain allocation-free by-reference."
-                );
-                Assert.That(
-                    parameter.IsIn,
-                    Is.EqualTo(expectedIsIn[i]),
-                    $"{caseDescription} parameter {i} has the wrong readonly modifier."
-                );
-                Assert.That(
-                    parameter.IsOut,
-                    Is.False,
-                    $"{caseDescription} parameter {i} must not be an out parameter."
-                );
+                Assert.That(parameter.ParameterType.IsByRef, Is.True, $"{caseDescription} parameter {i} must remain allocation-free by-reference.");
+                Assert.That(parameter.IsIn, Is.EqualTo(expectedIsIn[i]), $"{caseDescription} parameter {i} has the wrong readonly modifier.");
+                Assert.That(parameter.IsOut, Is.False, $"{caseDescription} parameter {i} must not be an out parameter.");
             }
         }
 
@@ -643,15 +450,9 @@ namespace DxMessaging.Tests.Editor.Contract
         {
             int invocationCount = 0;
             MessageHandler.FastHandler<AotHookUntargetedMessage> scalarMethod = HandleScalar;
-            MessageHandler.FastHandlerWithContext<AotHookTargetedMessage> contextMethod =
-                HandleContext;
-            MessageHandler.FastHandler<AotHookUntargetedMessage> scalarLambda = (
-                in AotHookUntargetedMessage _
-            ) => ++invocationCount;
-            MessageHandler.FastHandlerWithContext<AotHookTargetedMessage> contextLambda = (
-                in InstanceId _,
-                in AotHookTargetedMessage __
-            ) => ++invocationCount;
+            MessageHandler.FastHandlerWithContext<AotHookTargetedMessage> contextMethod = HandleContext;
+            MessageHandler.FastHandler<AotHookUntargetedMessage> scalarLambda = (in AotHookUntargetedMessage _) => ++invocationCount;
+            MessageHandler.FastHandlerWithContext<AotHookTargetedMessage> contextLambda = (in InstanceId _, in AotHookTargetedMessage __) => ++invocationCount;
             AotHookUntargetedMessage untargeted = default;
             AotHookTargetedMessage targeted = default;
             InstanceId context = new InstanceId(42);
@@ -684,21 +485,12 @@ namespace DxMessaging.Tests.Editor.Contract
                 return true;
             }
 
-            return fieldType.IsArray
-                && fieldType.GetArrayRank() == 1
-                && IsClosedMessageCache(fieldType.GetElementType());
+            return fieldType.IsArray && fieldType.GetArrayRank() == 1 && IsClosedMessageCache(fieldType.GetElementType());
         }
 
-        private static void AssertAotBridgeHook(
-            string methodName,
-            Type messageType,
-            Delegate bridge
-        )
+        private static void AssertAotBridgeHook(string methodName, Type messageType, Delegate bridge)
         {
-            MethodInfo method = typeof(MessageBus).GetMethod(
-                methodName,
-                BindingFlags.Static | BindingFlags.NonPublic
-            );
+            MethodInfo method = typeof(MessageBus).GetMethod(methodName, BindingFlags.Static | BindingFlags.NonPublic);
 
             Assert.IsNotNull(method, $"{methodName} must remain available for generated code.");
             Assert.AreEqual(typeof(void), method.ReturnType, methodName);
@@ -707,17 +499,12 @@ namespace DxMessaging.Tests.Editor.Contract
             Assert.AreEqual(2, parameters.Length, methodName);
             Assert.AreEqual(typeof(Type), parameters[0].ParameterType, methodName);
             Assert.AreEqual(typeof(Delegate), parameters[1].ParameterType, methodName);
-            Assert.DoesNotThrow(
-                () => method.Invoke(null, new object[] { messageType, bridge }),
-                $"{methodName} must accept the generated delegate shape."
-            );
+            Assert.DoesNotThrow(() => method.Invoke(null, new object[] { messageType, bridge }), $"{methodName} must accept the generated delegate shape.");
         }
 
         private static bool IsClosedMessageCache(Type type)
         {
-            return type != null
-                && type.IsGenericType
-                && type.GetGenericTypeDefinition() == typeof(MessageCache<>);
+            return type != null && type.IsGenericType && type.GetGenericTypeDefinition() == typeof(MessageCache<>);
         }
 
         private readonly struct AotHookUntargetedMessage : IUntargetedMessage { }

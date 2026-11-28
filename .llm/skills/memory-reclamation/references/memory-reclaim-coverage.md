@@ -1,25 +1,19 @@
 # Memory Reclaim Coverage
 
-> **One-line summary**: Every DxMessaging memory holder keyed by message type or
-> `InstanceId` must have explicit trim, idle-sweep, slot-count, and allocation
-> coverage.
+> **One-line summary**: Every DxMessaging memory holder keyed by message type or `InstanceId` must have explicit trim, idle-sweep, slot-count, and allocation coverage.
 
 ## Overview
 
-Memory reclamation is a runtime guarantee, not an implementation detail. A new
-dictionary, list, stack, or cache keyed by message type or context can create a
-session-length retention bug unless tests prove it empties and trims.
+Memory reclamation is a runtime guarantee, not an implementation detail. A new dictionary, list, stack, or cache keyed by message type or context can create a session-length
+retention bug unless tests prove it empties and trims.
 
-Use the `MemoryReclaim` category for direct reclamation tests. Use
-`LeakWatcher.WatchWithSlots` when a test expects slot counts to return to the
-baseline. Use `AllocationMatrixTests` when the reclaim path could affect
-zero-allocation dispatch or bounded trim budgets.
+Use the `MemoryReclaim` category for direct reclamation tests. Use `LeakWatcher.WatchWithSlots` when a test expects slot counts to return to the baseline. Use
+`AllocationMatrixTests` when the reclaim path could affect zero-allocation dispatch or bounded trim budgets.
 
 ## Solution
 
-Start each change by naming the holder that can retain memory, then write the
-smallest test that proves it becomes empty, is swept, and leaves future
-registrations safe after stale teardown callbacks run.
+Start each change by naming the holder that can retain memory, then write the smallest test that proves it becomes empty, is swept, and leaves future registrations safe after stale
+teardown callbacks run.
 
 ## Coverage Rule
 
@@ -30,14 +24,11 @@ Every memory holder gets a reclamation test. The minimum proof is:
 1. Assert `OccupiedTypeSlots` or `OccupiedTargetSlots` increased before trim.
 1. Run `Trim(force: true)` or age the slot and trigger an idle sweep.
 1. Assert slot counts return to the pre-test baseline.
-1. Assert a stale deregistration closure is a no-op after sweep when the holder
-   has deregistration handles.
+1. Assert a stale deregistration closure is a no-op after sweep when the holder has deregistration handles.
 
 ## LeakWatcher Slots
 
-`LeakWatcher.Watch()` checks registration counters only. Use
-`LeakWatcher.WatchWithSlots()` for tests where trim is part of the expected
-cleanup.
+`LeakWatcher.Watch()` checks registration counters only. Use `LeakWatcher.WatchWithSlots()` for tests where trim is part of the expected cleanup.
 
 ```csharp
 using (LeakWatcher watcher = LeakWatcher.WatchWithSlots(label: scenario.DisplayName))
@@ -53,59 +44,42 @@ using (LeakWatcher watcher = LeakWatcher.WatchWithSlots(label: scenario.DisplayN
 }
 ```
 
-Slot deltas are compared to the watcher's starting snapshot. Tests do not need
-the whole bus to be empty; they need the watched region to return to its own
-baseline.
+Slot deltas are compared to the watcher's starting snapshot. Tests do not need the whole bus to be empty; they need the watched region to return to its own baseline.
 
-For typed-handler storage, pass `handler: handler` to
-`LeakWatcher.WatchWithSlots(bus, ...)`. This adds retained context-key and
-priority-cache checks on that bus. `LeakedHandlerContexts` and
-`LeakedHandlerPriorityCaches` are independent of public registration and bus-slot
-deltas, and freeze on disposal. A zero registration delta does not prove an
-empty handler context was reclaimed. The internal query runs only at diagnostic
-boundaries; keep it outside dispatch and allocation measurements. See
+For typed-handler storage, pass `handler: handler` to `LeakWatcher.WatchWithSlots(bus, ...)`. This adds retained context-key and priority-cache checks on that bus.
+`LeakedHandlerContexts` and `LeakedHandlerPriorityCaches` are independent of public registration and bus-slot deltas, and freeze on disposal. A zero registration delta does not
+prove an empty handler context was reclaimed. The internal query runs only at diagnostic boundaries; keep it outside dispatch and allocation measurements. See
 [optional handler storage checks](../../allocation-and-leak-coverage/references/leak-watcher-usage.md#optional-handler-storage-checks).
 
 ## MemoryReclaim Category
 
-Place direct reclamation fixtures under `Tests/Runtime/MemoryReclaim` and mark
-the fixture or tests with `[Category("MemoryReclaim")]`. This category is
-opt-in because it can create many message types or `InstanceId` values and can
-run longer than the default suite budget.
+Place direct reclamation fixtures under `Tests/Runtime/MemoryReclaim` and mark the fixture or tests with `[Category("MemoryReclaim")]`. This category is opt-in because it can
+create many message types or `InstanceId` values and can run longer than the default suite budget.
 
-The current runtime budget tests treat `MemoryReclaim` like `Stress`,
-`Performance`, and `Allocation`: when it is selected, the default-suite
-wall-clock assertion is skipped. If a Unity Test Runner workflow adds category
-matrices, include an explicit `MemoryReclaim` leg.
+The current runtime budget tests treat `MemoryReclaim` like `Stress`, `Performance`, and `Allocation`: when it is selected, the default-suite wall-clock assertion is skipped. If a
+Unity Test Runner workflow adds category matrices, include an explicit `MemoryReclaim` leg.
 
 ## Allocation Budget Pattern
 
-`AllocationMatrixTests` owns dispatch allocation guarantees. Reclamation work
-that changes trim or post-trim emit behavior needs allocation coverage:
+`AllocationMatrixTests` owns dispatch allocation guarantees. Reclamation work that changes trim or post-trim emit behavior needs allocation coverage:
 
-- Repeated forced trim should be idempotent after the first reclaim (the first
-  force-trim evicts the dirty candidate; every subsequent force-trim evicts no
-  type/target slots and leaves the live type-slot count stable), pinned
-  DETERMINISTICALLY via the `IMessageBus.TrimResult` eviction counts rather than a
-  `GC.Alloc` count budget (which was warm-editor-flaky).
+- Repeated forced trim should be idempotent after the first reclaim (the first force-trim evicts the dirty candidate; every subsequent force-trim evicts no type/target slots and
+  leaves the live type-slot count stable), pinned DETERMINISTICALLY via the `IMessageBus.TrimResult` eviction counts rather than a `GC.Alloc` count budget (which was
+  warm-editor-flaky).
 - Emitting after a partial trim should remain zero-allocation.
-- Allocation tests that exercise multiple message kinds must use
-  `MessageScenarios.AllKinds`.
+- Allocation tests that exercise multiple message kinds must use `MessageScenarios.AllKinds`.
 
 ## Adding a Holder
 
-When adding a dictionary, list, stack, pool, or cache keyed by message type or
-`InstanceId`:
+When adding a dictionary, list, stack, pool, or cache keyed by message type or `InstanceId`:
 
 1. Identify whether it contributes to type-slot or target-slot occupancy.
-1. Add it to `OccupiedTypeSlots` or `OccupiedTargetSlots` if users need to see
-   the footprint.
+1. Add it to `OccupiedTypeSlots` or `OccupiedTargetSlots` if users need to see the footprint.
 1. Add a forced-trim test in `MemoryReclamationTests`.
 1. Add an idle-sweep test if the holder is eligible for idle reclamation.
 1. Add stale-deregistration coverage when handles can outlive the slot.
 1. Add allocation coverage when the holder participates in emit or trim paths.
-1. Add `MessageBusInvariantTests` coverage when the holder is a
-   `MessageCache<>` field.
+1. Add `MessageBusInvariantTests` coverage when the holder is a `MessageCache<>` field.
 
 ## See Also
 

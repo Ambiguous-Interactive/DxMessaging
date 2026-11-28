@@ -19,12 +19,7 @@ namespace DxMessaging.Tests.Editor
         /// The three declarations that together clip one line of text to its own box. All three are
         /// required: `text-overflow` does nothing without `overflow` and `white-space`.
         /// </summary>
-        private static readonly string[] ClipDeclarations =
-        {
-            "overflow: hidden;",
-            "text-overflow: ellipsis;",
-            "white-space: nowrap;",
-        };
+        private static readonly string[] ClipDeclarations = { "overflow: hidden;", "text-overflow: ellipsis;", "white-space: nowrap;" };
 
         private const float ProbeWindowWidth = 240f;
         private const float ProbeWindowHeight = 240f;
@@ -59,14 +54,8 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void ThemeAssetsLoadFromPackagePaths()
         {
-            Assert.That(
-                AssetDatabase.LoadAssetAtPath<StyleSheet>(DxMessagingEditorTheme.TokensUssPath),
-                Is.Not.Null
-            );
-            Assert.That(
-                AssetDatabase.LoadAssetAtPath<StyleSheet>(DxMessagingEditorTheme.ThemeUssPath),
-                Is.Not.Null
-            );
+            Assert.That(AssetDatabase.LoadAssetAtPath<StyleSheet>(DxMessagingEditorTheme.TokensUssPath), Is.Not.Null);
+            Assert.That(AssetDatabase.LoadAssetAtPath<StyleSheet>(DxMessagingEditorTheme.ThemeUssPath), Is.Not.Null);
 
             AssertIconLoads(DxMessagingEditorTheme.Icon32FileName, 32);
             AssertIconLoads(DxMessagingEditorTheme.Icon48FileName, 48);
@@ -81,35 +70,17 @@ namespace DxMessaging.Tests.Editor
             DxMessagingEditorTheme.Apply(root);
 
             Assert.That(root.ClassListContains(DxMessagingEditorTheme.ThemeClassName), Is.True);
-            Assert.That(
-                root.ClassListContains(DxMessagingEditorTheme.LightSkinClassName),
-                Is.EqualTo(!EditorGUIUtility.isProSkin)
-            );
-            Assert.That(
-                root.ClassListContains(DxMessagingEditorTheme.DarkSkinClassName),
-                Is.EqualTo(EditorGUIUtility.isProSkin)
-            );
-            Assert.That(
-                StyleSheetCount(root, DxMessagingEditorTheme.LoadTokensStylesheet()),
-                Is.EqualTo(1)
-            );
-            Assert.That(
-                StyleSheetCount(root, DxMessagingEditorTheme.LoadThemeStylesheet()),
-                Is.EqualTo(1)
-            );
+            Assert.That(root.ClassListContains(DxMessagingEditorTheme.LightSkinClassName), Is.EqualTo(!EditorGUIUtility.isProSkin));
+            Assert.That(root.ClassListContains(DxMessagingEditorTheme.DarkSkinClassName), Is.EqualTo(EditorGUIUtility.isProSkin));
+            Assert.That(StyleSheetCount(root, DxMessagingEditorTheme.LoadTokensStylesheet()), Is.EqualTo(1));
+            Assert.That(StyleSheetCount(root, DxMessagingEditorTheme.LoadThemeStylesheet()), Is.EqualTo(1));
             int stylesheetCount = root.styleSheets.count;
 
             DxMessagingEditorTheme.Apply(root);
 
             Assert.That(root.styleSheets.count, Is.EqualTo(stylesheetCount));
-            Assert.That(
-                StyleSheetCount(root, DxMessagingEditorTheme.LoadTokensStylesheet()),
-                Is.EqualTo(1)
-            );
-            Assert.That(
-                StyleSheetCount(root, DxMessagingEditorTheme.LoadThemeStylesheet()),
-                Is.EqualTo(1)
-            );
+            Assert.That(StyleSheetCount(root, DxMessagingEditorTheme.LoadTokensStylesheet()), Is.EqualTo(1));
+            Assert.That(StyleSheetCount(root, DxMessagingEditorTheme.LoadThemeStylesheet()), Is.EqualTo(1));
         }
 
         [Test]
@@ -130,18 +101,9 @@ namespace DxMessaging.Tests.Editor
                 from the palette instead. Both skins are pinned, because a light-skin value that drifts
                 is exactly the unreadable label this replaced.
             */
-            AssertColor(
-                DxMessagingEditorPalette.BroadcastText,
-                ReadTokenColor("--dx-broadcast-text")
-            );
-            AssertColor(
-                DxMessagingEditorPalette.BroadcastTextOnLight,
-                ReadTokenColor("--dx-broadcast-text", lightSkin: true)
-            );
-            AssertColor(
-                DxMessagingEditorPalette.AmberOnLight,
-                ReadTokenColor("--dx-accent", lightSkin: true)
-            );
+            AssertColor(DxMessagingEditorPalette.BroadcastText, ReadTokenColor("--dx-broadcast-text"));
+            AssertColor(DxMessagingEditorPalette.BroadcastTextOnLight, ReadTokenColor("--dx-broadcast-text", lightSkin: true));
+            AssertColor(DxMessagingEditorPalette.AmberOnLight, ReadTokenColor("--dx-accent", lightSkin: true));
         }
 
         [Test]
@@ -156,17 +118,8 @@ namespace DxMessaging.Tests.Editor
             AssertHueBetween(targeted, 0.70f, 0.82f, "Targeted must be purple.");
             AssertHueBetween(broadcast, 0.27f, 0.43f, "Broadcast must stay green.");
 
-            Color.RGBToHSV(
-                danger,
-                out float dangerHue,
-                out float dangerSaturation,
-                out float dangerValue
-            );
-            Assert.That(
-                dangerHue,
-                Is.LessThanOrEqualTo(0.04f).Or.GreaterThanOrEqualTo(0.96f),
-                "Problem states must keep the red hue removed from the message taxonomy."
-            );
+            Color.RGBToHSV(danger, out float dangerHue, out float dangerSaturation, out float dangerValue);
+            Assert.That(dangerHue, Is.LessThanOrEqualTo(0.04f).Or.GreaterThanOrEqualTo(0.96f), "Problem states must keep the red hue removed from the message taxonomy.");
             Assert.That(dangerSaturation, Is.GreaterThanOrEqualTo(0.5f));
             Assert.That(dangerValue, Is.GreaterThanOrEqualTo(0.5f));
             Assert.That(danger, Is.Not.EqualTo(targeted));
@@ -177,13 +130,7 @@ namespace DxMessaging.Tests.Editor
         public void TargetedRouteHueMeetsNonTextContrastInBothSkins(bool lightSkin)
         {
             Color targeted = ReadTokenColor("--dx-targeted");
-            string[] surfaceTokens =
-            {
-                "--dx-tool-window",
-                "--dx-tool-card",
-                "--dx-tool-row-a",
-                "--dx-tool-row-b",
-            };
+            string[] surfaceTokens = { "--dx-tool-window", "--dx-tool-card", "--dx-tool-row-a", "--dx-tool-row-b" };
 
             foreach (string surfaceToken in surfaceTokens)
             {
@@ -213,11 +160,7 @@ namespace DxMessaging.Tests.Editor
         public void DangerAdmonitionUsesProblemTokensInsteadOfTaxonomyColor()
         {
             string theme = System.IO.File.ReadAllText(DxMessagingEditorTheme.ThemeUssPath);
-            Match dangerRule = Regex.Match(
-                theme,
-                @"\.dx-danger\s+\.dx-admonition__title\s*\{(?<body>[^}]*)\}",
-                RegexOptions.Singleline
-            );
+            Match dangerRule = Regex.Match(theme, @"\.dx-danger\s+\.dx-admonition__title\s*\{(?<body>[^}]*)\}", RegexOptions.Singleline);
 
             Assert.That(dangerRule.Success, Is.True, "The danger-title rule is missing.");
             Assert.That(dangerRule.Groups["body"].Value, Does.Contain("var(--dx-danger-text)"));
@@ -242,10 +185,7 @@ namespace DxMessaging.Tests.Editor
         [TestCase(false)]
         public void ForSkinPicksTheValueBelongingToTheSkinInUse(bool proSkin)
         {
-            Assert.That(
-                DxMessagingEditorPalette.ForSkin(Color.red, Color.blue, proSkin),
-                Is.EqualTo(proSkin ? Color.red : Color.blue)
-            );
+            Assert.That(DxMessagingEditorPalette.ForSkin(Color.red, Color.blue, proSkin), Is.EqualTo(proSkin ? Color.red : Color.blue));
         }
 
         /// <summary>
@@ -267,11 +207,7 @@ namespace DxMessaging.Tests.Editor
             SortedSet<string> declared = new(StringComparer.Ordinal);
             CollectStylesheetClassNames(DxMessagingEditorTheme.TokensUssPath, declared);
             CollectStylesheetClassNames(DxMessagingEditorTheme.ThemeUssPath, declared);
-            Assert.That(
-                declared,
-                Is.Not.Empty,
-                "The stylesheet scan found no classes at all, so it is not reading the sheets."
-            );
+            Assert.That(declared, Is.Not.Empty, "The stylesheet scan found no classes at all, so it is not reading the sheets.");
 
             string sources = ReadEditorSourceText();
             List<string> dead = new();
@@ -287,13 +223,7 @@ namespace DxMessaging.Tests.Editor
                 }
             }
 
-            Assert.That(
-                dead,
-                Is.Empty,
-                "These stylesheet classes are dead style. Render each one on a real surface or "
-                    + "remove it from the sheet: "
-                    + string.Join(", ", dead)
-            );
+            Assert.That(dead, Is.Empty, "These stylesheet classes are dead style. Render each one on a real surface or " + "remove it from the sheet: " + string.Join(", ", dead));
         }
 
         /// <summary>
@@ -305,9 +235,7 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void EveryGrowingStylesheetRuleAlsoDeclaresHowItShrinks()
         {
-            string uss = StripBlockComments(
-                System.IO.File.ReadAllText(DxMessagingEditorTheme.ThemeUssPath)
-            );
+            string uss = StripBlockComments(System.IO.File.ReadAllText(DxMessagingEditorTheme.ThemeUssPath));
             List<string> growOnly = new();
             foreach (string block in uss.Split('}'))
             {
@@ -319,10 +247,7 @@ namespace DxMessaging.Tests.Editor
 
                 string selector = block.Substring(0, open).Trim().Replace("\n", " ");
                 string body = block.Substring(open + 1);
-                if (
-                    body.Contains("flex-grow", StringComparison.Ordinal)
-                    && !body.Contains("flex-shrink", StringComparison.Ordinal)
-                )
+                if (body.Contains("flex-grow", StringComparison.Ordinal) && !body.Contains("flex-shrink", StringComparison.Ordinal))
                 {
                     growOnly.Add(selector);
                 }
@@ -331,9 +256,7 @@ namespace DxMessaging.Tests.Editor
             Assert.That(
                 growOnly,
                 Is.Empty,
-                "UI Toolkit defaults flex-shrink to 0, so these rules grow but never give space "
-                    + "back and overflow the panel: "
-                    + string.Join(", ", growOnly)
+                "UI Toolkit defaults flex-shrink to 0, so these rules grow but never give space " + "back and overflow the panel: " + string.Join(", ", growOnly)
             );
         }
 
@@ -347,27 +270,16 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void TheSharedToolbarRuleSizesFromItsContentInsteadOfPinningOneLine()
         {
-            string uss = StripBlockComments(
-                System.IO.File.ReadAllText(DxMessagingEditorTheme.ThemeUssPath)
-            );
+            string uss = StripBlockComments(System.IO.File.ReadAllText(DxMessagingEditorTheme.ThemeUssPath));
             string body = FindRuleBody(uss, "." + DxMessagingEditorTheme.ToolbarClassName);
 
-            Assert.That(
-                body,
-                Does.Contain("min-height:"),
-                "The toolbar keeps its designed size through `min-height`, not `height`."
-            );
+            Assert.That(body, Does.Contain("min-height:"), "The toolbar keeps its designed size through `min-height`, not `height`.");
             Assert.That(
                 Regex.IsMatch(body, @"(?:^|;)\s*height\s*:"),
                 Is.False,
-                "A pinned `height` on a wrapping toolbar draws its wrapped lines outside the box "
-                    + "and over the content beneath it (#435)."
+                "A pinned `height` on a wrapping toolbar draws its wrapped lines outside the box " + "and over the content beneath it (#435)."
             );
-            Assert.That(
-                body,
-                Does.Contain("flex-shrink: 0;"),
-                "A grown toolbar must not be squeezed back onto its neighbours by the log below."
-            );
+            Assert.That(body, Does.Contain("flex-shrink: 0;"), "A grown toolbar must not be squeezed back onto its neighbours by the log below.");
         }
 
         /// <summary>
@@ -380,9 +292,7 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void EveryLogColumnHeadingClipsItsTextLikeTheRowCellBeneathIt()
         {
-            string uss = StripBlockComments(
-                System.IO.File.ReadAllText(DxMessagingEditorTheme.ThemeUssPath)
-            );
+            string uss = StripBlockComments(System.IO.File.ReadAllText(DxMessagingEditorTheme.ThemeUssPath));
             string headingSelector = string.Join(
                 ", ",
                 "." + DxMessagingEditorTheme.ColumnTimeClassName,
@@ -395,30 +305,15 @@ namespace DxMessaging.Tests.Editor
 
             foreach (string declaration in ClipDeclarations)
             {
-                Assert.That(
-                    headingBody,
-                    Does.Contain(declaration),
-                    $"Log headings must declare `{declaration}` or a shrunken heading prints over "
-                        + "the one next to it (#435)."
-                );
+                Assert.That(headingBody, Does.Contain(declaration), $"Log headings must declare `{declaration}` or a shrunken heading prints over " + "the one next to it (#435).");
             }
 
-            foreach (
-                string cellClass in new[]
-                {
-                    DxMessagingEditorTheme.RowMessageClassName,
-                    DxMessagingEditorTheme.RowRouteClassName,
-                }
-            )
+            foreach (string cellClass in new[] { DxMessagingEditorTheme.RowMessageClassName, DxMessagingEditorTheme.RowRouteClassName })
             {
                 string cellBody = FindRuleBody(uss, "." + cellClass);
                 foreach (string declaration in ClipDeclarations)
                 {
-                    Assert.That(
-                        cellBody,
-                        Does.Contain(declaration),
-                        $"Row cell `{cellClass}` must keep the `{declaration}` its heading mirrors."
-                    );
+                    Assert.That(cellBody, Does.Contain(declaration), $"Row cell `{cellClass}` must keep the `{declaration}` its heading mirrors.");
                 }
             }
 
@@ -428,20 +323,13 @@ namespace DxMessaging.Tests.Editor
                 header, so the two drifted out of alignment; the floor keeps it readable at the
                 Monitor's 420px minimum width.
             */
-            foreach (
-                string flexibleSelector in new[]
-                {
-                    "." + DxMessagingEditorTheme.ColumnMessageClassName,
-                    "." + DxMessagingEditorTheme.RowMessageClassName,
-                }
-            )
+            foreach (string flexibleSelector in new[] { "." + DxMessagingEditorTheme.ColumnMessageClassName, "." + DxMessagingEditorTheme.RowMessageClassName })
             {
                 string body = FindRuleBody(uss, flexibleSelector);
                 Assert.That(
                     body,
                     Does.Contain("flex-basis: 0;").And.Contain("min-width:"),
-                    $"`{flexibleSelector}` must size from grow and shrink alone, with a floor, so "
-                        + "the heading and the cell beneath it stay in one column."
+                    $"`{flexibleSelector}` must size from grow and shrink alone, with a floor, so " + "the heading and the cell beneath it stay in one column."
                 );
             }
         }
@@ -449,22 +337,11 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void FlowGraphRelationshipCardsUseReadableTextTokensAndSizes()
         {
-            string uss = StripBlockComments(
-                System.IO.File.ReadAllText(DxMessagingEditorTheme.ThemeUssPath)
-            );
+            string uss = StripBlockComments(System.IO.File.ReadAllText(DxMessagingEditorTheme.ThemeUssPath));
 
-            string roleBody = FindRuleBody(
-                uss,
-                ".dxmessaging-flow-graph-details-relationship .dx-card__label"
-            );
-            string identityBody = FindRuleBody(
-                uss,
-                ".dxmessaging-flow-graph-details-relationship .dx-kv__v"
-            );
-            string metadataBody = FindRuleBody(
-                uss,
-                ".dxmessaging-flow-graph-details-relationship .dx-detail__frame"
-            );
+            string roleBody = FindRuleBody(uss, ".dxmessaging-flow-graph-details-relationship .dx-card__label");
+            string identityBody = FindRuleBody(uss, ".dxmessaging-flow-graph-details-relationship .dx-kv__v");
+            string metadataBody = FindRuleBody(uss, ".dxmessaging-flow-graph-details-relationship .dx-detail__frame");
 
             Assert.That(
                 roleBody,
@@ -512,14 +389,9 @@ namespace DxMessaging.Tests.Editor
         [TestCase(".dx-detail__link", "link")]
         [TestCase(".dx-clickable", "link")]
         [TestCase(".dx-resizer", "split-resize-up-down")]
-        public void EveryInteractiveStylesheetRuleDeclaresACursor(
-            string selector,
-            string expectedCursor
-        )
+        public void EveryInteractiveStylesheetRuleDeclaresACursor(string selector, string expectedCursor)
         {
-            string uss = StripBlockComments(
-                System.IO.File.ReadAllText(DxMessagingEditorTheme.ThemeUssPath)
-            );
+            string uss = StripBlockComments(System.IO.File.ReadAllText(DxMessagingEditorTheme.ThemeUssPath));
 
             string body = null;
             foreach (string block in uss.Split('}'))
@@ -557,13 +429,7 @@ namespace DxMessaging.Tests.Editor
 
             foreach (System.Reflection.Assembly assembly in LoadedAssemblyUtility.GetAssemblies())
             {
-                if (
-                    string.Equals(
-                        assembly.GetName().Name,
-                        brandingAssemblyName,
-                        StringComparison.Ordinal
-                    )
-                )
+                if (string.Equals(assembly.GetName().Name, brandingAssemblyName, StringComparison.Ordinal))
                 {
                     loadedPrototypeArtifacts.Add("assembly: " + assembly.FullName);
                 }
@@ -571,13 +437,7 @@ namespace DxMessaging.Tests.Editor
 
             foreach (Type windowType in TypeCache.GetTypesDerivedFrom<EditorWindow>())
             {
-                if (
-                    windowType.FullName != null
-                    && windowType.FullName.StartsWith(
-                        brandingNamespacePrefix,
-                        StringComparison.Ordinal
-                    )
-                )
+                if (windowType.FullName != null && windowType.FullName.StartsWith(brandingNamespacePrefix, StringComparison.Ordinal))
                 {
                     loadedPrototypeArtifacts.Add("window: " + windowType.AssemblyQualifiedName);
                 }
@@ -597,22 +457,14 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void CreateEmptyStateBuildsContainerWithTitleAndBody()
         {
-            VisualElement empty = DxMessagingEditorTheme.CreateEmptyState(
-                "No data",
-                "Nothing to show yet.",
-                bodyName: "body-name",
-                titleName: "title-name"
-            );
+            VisualElement empty = DxMessagingEditorTheme.CreateEmptyState("No data", "Nothing to show yet.", bodyName: "body-name", titleName: "title-name");
 
             Assert.That(empty.ClassListContains(DxMessagingEditorTheme.EmptyClassName), Is.True);
 
             Label title = empty.Q<Label>("title-name");
             Assert.That(title, Is.Not.Null);
             Assert.That(title.text, Is.EqualTo("No data"));
-            Assert.That(
-                title.ClassListContains(DxMessagingEditorTheme.EmptyTitleClassName),
-                Is.True
-            );
+            Assert.That(title.ClassListContains(DxMessagingEditorTheme.EmptyTitleClassName), Is.True);
 
             Label body = empty.Q<Label>("body-name");
             Assert.That(body, Is.Not.Null);
@@ -626,17 +478,10 @@ namespace DxMessaging.Tests.Editor
         [TestCase("   ")]
         public void CreateEmptyStateOmitsTitleWhenBlank(string blankTitle)
         {
-            VisualElement empty = DxMessagingEditorTheme.CreateEmptyState(
-                blankTitle,
-                body: "Body only.",
-                bodyName: "body-name"
-            );
+            VisualElement empty = DxMessagingEditorTheme.CreateEmptyState(blankTitle, body: "Body only.", bodyName: "body-name");
 
             Assert.That(empty.ClassListContains(DxMessagingEditorTheme.EmptyClassName), Is.True);
-            Assert.That(
-                empty.Query<Label>(className: DxMessagingEditorTheme.EmptyTitleClassName).ToList(),
-                Is.Empty
-            );
+            Assert.That(empty.Query<Label>(className: DxMessagingEditorTheme.EmptyTitleClassName).ToList(), Is.Empty);
             Assert.That(empty.Q<Label>("body-name"), Is.Not.Null);
         }
 
@@ -645,18 +490,11 @@ namespace DxMessaging.Tests.Editor
         [TestCase("   ")]
         public void CreateEmptyStateOmitsBodyWhenBlank(string blankBody)
         {
-            VisualElement empty = DxMessagingEditorTheme.CreateEmptyState(
-                "Title only",
-                blankBody,
-                titleName: "title-name"
-            );
+            VisualElement empty = DxMessagingEditorTheme.CreateEmptyState("Title only", blankBody, titleName: "title-name");
 
             Assert.That(empty.ClassListContains(DxMessagingEditorTheme.EmptyClassName), Is.True);
             Assert.That(empty.Q<Label>("title-name"), Is.Not.Null);
-            Assert.That(
-                empty.Query<Label>(className: DxMessagingEditorTheme.EmptyBodyClassName).ToList(),
-                Is.Empty
-            );
+            Assert.That(empty.Query<Label>(className: DxMessagingEditorTheme.EmptyBodyClassName).ToList(), Is.Empty);
         }
 
         [Test]
@@ -666,22 +504,10 @@ namespace DxMessaging.Tests.Editor
 
             DxMessagingEditorTheme.ApplyCompleteBorder(element, DxMessagingEditorPalette.Amber);
 
-            Assert.That(
-                element.style.borderTopWidth.value,
-                Is.EqualTo(DxMessagingEditorTheme.CompleteBorderWidth)
-            );
-            Assert.That(
-                element.style.borderRightWidth.value,
-                Is.EqualTo(DxMessagingEditorTheme.CompleteBorderWidth)
-            );
-            Assert.That(
-                element.style.borderBottomWidth.value,
-                Is.EqualTo(DxMessagingEditorTheme.CompleteBorderWidth)
-            );
-            Assert.That(
-                element.style.borderLeftWidth.value,
-                Is.EqualTo(DxMessagingEditorTheme.CompleteBorderWidth)
-            );
+            Assert.That(element.style.borderTopWidth.value, Is.EqualTo(DxMessagingEditorTheme.CompleteBorderWidth));
+            Assert.That(element.style.borderRightWidth.value, Is.EqualTo(DxMessagingEditorTheme.CompleteBorderWidth));
+            Assert.That(element.style.borderBottomWidth.value, Is.EqualTo(DxMessagingEditorTheme.CompleteBorderWidth));
+            Assert.That(element.style.borderLeftWidth.value, Is.EqualTo(DxMessagingEditorTheme.CompleteBorderWidth));
             AssertColor(element.style.borderTopColor.value, DxMessagingEditorPalette.Amber);
             AssertColor(element.style.borderRightColor.value, DxMessagingEditorPalette.Amber);
             AssertColor(element.style.borderBottomColor.value, DxMessagingEditorPalette.Amber);
@@ -693,11 +519,7 @@ namespace DxMessaging.Tests.Editor
         {
             VisualElement element = new();
 
-            DxMessagingEditorTheme.ApplyCompleteBorder(
-                element,
-                DxMessagingEditorPalette.AmberSoft,
-                3f
-            );
+            DxMessagingEditorTheme.ApplyCompleteBorder(element, DxMessagingEditorPalette.AmberSoft, 3f);
 
             Assert.That(element.style.borderTopWidth.value, Is.EqualTo(3f));
             Assert.That(element.style.borderRightWidth.value, Is.EqualTo(3f));
@@ -726,9 +548,7 @@ namespace DxMessaging.Tests.Editor
 
             Assert.That(
                 DxMessagingEditorTheme.MeasureWrappedContentHeight(control),
-                Is.GreaterThan(
-                    control.resolvedStyle.height + EditorWindowTestUtility.LayoutTolerance
-                ),
+                Is.GreaterThan(control.resolvedStyle.height + EditorWindowTestUtility.LayoutTolerance),
                 "The control probe must reproduce the defect, otherwise the fixed probe below "
                     + "proves nothing: a wrapping container that will not grow leaves its "
                     + "wrapped lines outside its own box."
@@ -736,11 +556,8 @@ namespace DxMessaging.Tests.Editor
 
             Assert.That(
                 DxMessagingEditorTheme.MeasureWrappedContentHeight(fixedProbe),
-                Is.LessThanOrEqualTo(
-                    fixedProbe.resolvedStyle.height + EditorWindowTestUtility.LayoutTolerance
-                ),
-                "A container built through ApplyContentSizedWrap must end up tall enough for "
-                    + "every line its children wrap onto."
+                Is.LessThanOrEqualTo(fixedProbe.resolvedStyle.height + EditorWindowTestUtility.LayoutTolerance),
+                "A container built through ApplyContentSizedWrap must end up tall enough for " + "every line its children wrap onto."
             );
         }
 
@@ -757,19 +574,12 @@ namespace DxMessaging.Tests.Editor
                 Two children fit on one line, so no editor has to derive a wrapped height and this
                 reads the same on Unity 2021.3 as it does on 6000.x.
             */
-            VisualElement probe = AddWrapProbe(
-                window,
-                pinnedHeight: 0f,
-                contentSized: true,
-                childCount: SingleLineChildCount
-            );
+            VisualElement probe = AddWrapProbe(window, pinnedHeight: 0f, contentSized: true, childCount: SingleLineChildCount);
             EditorWindowTestUtility.SettleLayout(window);
 
             Assert.That(
                 DxMessagingEditorTheme.MeasureWrappedContentHeight(probe),
-                Is.LessThanOrEqualTo(
-                    probe.resolvedStyle.height + EditorWindowTestUtility.LayoutTolerance
-                ),
+                Is.LessThanOrEqualTo(probe.resolvedStyle.height + EditorWindowTestUtility.LayoutTolerance),
                 "The probe must already fit, otherwise this asserts the wrong case."
             );
             /*
@@ -779,8 +589,7 @@ namespace DxMessaging.Tests.Editor
             Assert.That(
                 probe.style.minHeight.keyword,
                 Is.EqualTo(StyleKeyword.Null).Or.EqualTo(StyleKeyword.Undefined),
-                "A container that already fits its lines must keep the height its stylesheet "
-                    + "gives it, so the helper must not write an inline min-height."
+                "A container that already fits its lines must keep the height its stylesheet " + "gives it, so the helper must not write an inline min-height."
             );
         }
 
@@ -808,8 +617,7 @@ namespace DxMessaging.Tests.Editor
             Assert.That(
                 probe.style.minHeight.keyword,
                 Is.EqualTo(StyleKeyword.Null),
-                "Leaving the panel must release the height, so the container measures its next "
-                    + "content from its own stylesheet height."
+                "Leaving the panel must release the height, so the container measures its next " + "content from its own stylesheet height."
             );
 
             while (SingleLineChildCount < probe.childCount)
@@ -826,9 +634,7 @@ namespace DxMessaging.Tests.Editor
             );
             Assert.That(
                 DxMessagingEditorTheme.MeasureWrappedContentHeight(probe),
-                Is.LessThanOrEqualTo(
-                    probe.resolvedStyle.height + EditorWindowTestUtility.LayoutTolerance
-                ),
+                Is.LessThanOrEqualTo(probe.resolvedStyle.height + EditorWindowTestUtility.LayoutTolerance),
                 "The re-measured container must still contain its children."
             );
         }
@@ -854,14 +660,11 @@ namespace DxMessaging.Tests.Editor
             Assert.That(
                 probe.resolvedStyle.height,
                 Is.GreaterThan(firstHeight + EditorWindowTestUtility.LayoutTolerance),
-                "The container must grow again when a child grows, not stay at the height its "
-                    + "first content needed."
+                "The container must grow again when a child grows, not stay at the height its " + "first content needed."
             );
             Assert.That(
                 DxMessagingEditorTheme.MeasureWrappedContentHeight(probe),
-                Is.LessThanOrEqualTo(
-                    probe.resolvedStyle.height + EditorWindowTestUtility.LayoutTolerance
-                ),
+                Is.LessThanOrEqualTo(probe.resolvedStyle.height + EditorWindowTestUtility.LayoutTolerance),
                 "The grown child must end up inside the container."
             );
         }
@@ -880,11 +683,7 @@ namespace DxMessaging.Tests.Editor
             probe[0].style.height = UnboundedLayoutSize;
             EditorWindowTestUtility.SettleLayout(window);
 
-            Assert.That(
-                DxMessagingEditorTheme.MeasureWrappedContentHeight(probe),
-                Is.EqualTo(0f),
-                "An unbounded child is not a measurement, so there is nothing to report."
-            );
+            Assert.That(DxMessagingEditorTheme.MeasureWrappedContentHeight(probe), Is.EqualTo(0f), "An unbounded child is not a measurement, so there is nothing to report.");
             Assert.That(
                 probe.style.minHeight.keyword,
                 Is.EqualTo(StyleKeyword.Null).Or.EqualTo(StyleKeyword.Undefined),
@@ -904,16 +703,8 @@ namespace DxMessaging.Tests.Editor
             string editorRoot = DxMessagingEditorTheme.PackageRoot + "/Editor";
             string allowedRelativePath = "Editor/DxMessagingEditorTheme.cs";
 
-            string[] sourcePaths = System.IO.Directory.GetFiles(
-                editorRoot,
-                "*.cs",
-                System.IO.SearchOption.AllDirectories
-            );
-            Assert.That(
-                sourcePaths,
-                Is.Not.Empty,
-                $"Expected editor sources under '{editorRoot}'."
-            );
+            string[] sourcePaths = System.IO.Directory.GetFiles(editorRoot, "*.cs", System.IO.SearchOption.AllDirectories);
+            Assert.That(sourcePaths, Is.Not.Empty, $"Expected editor sources under '{editorRoot}'.");
 
             List<string> offenders = new();
             foreach (string sourcePath in sourcePaths)
@@ -938,13 +729,7 @@ namespace DxMessaging.Tests.Editor
                 A stylesheet can turn wrapping on just as well as a source file can, and
                 nothing would then supply the height either.
             */
-            foreach (
-                string ussPath in new[]
-                {
-                    DxMessagingEditorTheme.TokensUssPath,
-                    DxMessagingEditorTheme.ThemeUssPath,
-                }
-            )
+            foreach (string ussPath in new[] { DxMessagingEditorTheme.TokensUssPath, DxMessagingEditorTheme.ThemeUssPath })
             {
                 string[] ussLines = System.IO.File.ReadAllLines(ussPath);
                 for (int index = 0; index < ussLines.Length; index++)
@@ -980,12 +765,7 @@ namespace DxMessaging.Tests.Editor
         /// <paramref name="pinnedHeight"/> holds the container at one line's worth of height,
         /// which is what Unity 2021.3 does to a wrapping container on its own.
         /// </summary>
-        private static VisualElement AddWrapProbe(
-            EditorWindow window,
-            float pinnedHeight,
-            bool contentSized,
-            int childCount = ProbeChildCount
-        )
+        private static VisualElement AddWrapProbe(EditorWindow window, float pinnedHeight, bool contentSized, int childCount = ProbeChildCount)
         {
             VisualElement probe = new();
             probe.style.flexDirection = FlexDirection.Row;
@@ -1029,11 +809,7 @@ namespace DxMessaging.Tests.Editor
 
         private static void AssertColor(Color actual, string expectedHex)
         {
-            Assert.That(
-                ColorUtility.TryParseHtmlString(expectedHex, out Color expected),
-                Is.True,
-                expectedHex
-            );
+            Assert.That(ColorUtility.TryParseHtmlString(expectedHex, out Color expected), Is.True, expectedHex);
             AssertColor(actual, expected, expectedHex);
         }
 
@@ -1045,12 +821,7 @@ namespace DxMessaging.Tests.Editor
             Assert.That(actual.a, Is.EqualTo(expected.a).Within(0.0001f), message);
         }
 
-        private static void AssertHueBetween(
-            Color color,
-            float minimum,
-            float maximum,
-            string message
-        )
+        private static void AssertHueBetween(Color color, float minimum, float maximum, string message)
         {
             Color.RGBToHSV(color, out float hue, out float saturation, out float value);
             Assert.That(hue, Is.InRange(minimum, maximum), message);
@@ -1069,16 +840,12 @@ namespace DxMessaging.Tests.Editor
 
         private static float RelativeLuminance(Color color)
         {
-            return 0.2126f * Linearize(color.r)
-                + 0.7152f * Linearize(color.g)
-                + 0.0722f * Linearize(color.b);
+            return 0.2126f * Linearize(color.r) + 0.7152f * Linearize(color.g) + 0.0722f * Linearize(color.b);
         }
 
         private static float Linearize(float channel)
         {
-            return channel <= 0.04045f
-                ? channel / 12.92f
-                : Mathf.Pow((channel + 0.055f) / 1.055f, 2.4f);
+            return channel <= 0.04045f ? channel / 12.92f : Mathf.Pow((channel + 0.055f) / 1.055f, 2.4f);
         }
 
         /// <summary>
@@ -1145,16 +912,8 @@ namespace DxMessaging.Tests.Editor
         private static string ReadEditorSourceText()
         {
             string editorRoot = DxMessagingEditorTheme.PackageRoot + "/Editor";
-            string[] sourcePaths = System.IO.Directory.GetFiles(
-                editorRoot,
-                "*.cs",
-                System.IO.SearchOption.AllDirectories
-            );
-            Assert.That(
-                sourcePaths,
-                Is.Not.Empty,
-                $"Expected editor sources under '{editorRoot}'."
-            );
+            string[] sourcePaths = System.IO.Directory.GetFiles(editorRoot, "*.cs", System.IO.SearchOption.AllDirectories);
+            Assert.That(sourcePaths, Is.Not.Empty, $"Expected editor sources under '{editorRoot}'.");
 
             StringBuilder sources = new();
             foreach (string sourcePath in sourcePaths)
@@ -1173,17 +932,12 @@ namespace DxMessaging.Tests.Editor
         {
             string prefix = tokenName + ":";
             bool inLightBlock = false;
-            foreach (
-                string rawLine in System.IO.File.ReadAllLines(DxMessagingEditorTheme.TokensUssPath)
-            )
+            foreach (string rawLine in System.IO.File.ReadAllLines(DxMessagingEditorTheme.TokensUssPath))
             {
                 string line = rawLine.Trim();
                 if (line.StartsWith(".dx-theme", StringComparison.Ordinal))
                 {
-                    inLightBlock = line.Contains(
-                        DxMessagingEditorTheme.LightSkinClassName,
-                        StringComparison.Ordinal
-                    );
+                    inLightBlock = line.Contains(DxMessagingEditorTheme.LightSkinClassName, StringComparison.Ordinal);
                 }
 
                 if (!line.StartsWith(prefix, StringComparison.Ordinal) || inLightBlock != lightSkin)
@@ -1205,19 +959,11 @@ namespace DxMessaging.Tests.Editor
                 }
 
                 value = value.Trim();
-                Assert.That(
-                    ColorUtility.TryParseHtmlString(value, out Color color),
-                    Is.True,
-                    $"{tokenName} should be a hex color token."
-                );
+                Assert.That(ColorUtility.TryParseHtmlString(value, out Color color), Is.True, $"{tokenName} should be a hex color token.");
                 return color;
             }
 
-            Assert.Fail(
-                $"Missing design token {tokenName} ({(lightSkin ? "light" : "default")} skin) in "
-                    + DxMessagingEditorTheme.TokensUssPath
-                    + "."
-            );
+            Assert.Fail($"Missing design token {tokenName} ({(lightSkin ? "light" : "default")} skin) in " + DxMessagingEditorTheme.TokensUssPath + ".");
             return Color.clear;
         }
 

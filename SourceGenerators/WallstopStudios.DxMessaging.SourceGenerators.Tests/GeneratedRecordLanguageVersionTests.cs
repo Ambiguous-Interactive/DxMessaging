@@ -11,13 +11,7 @@ internal sealed class GeneratedRecordLanguageVersionTests
 {
     [Test]
     public void GeneratedReferenceDeclarationsCompileWithCSharp9(
-        [Values(
-            "DxAutoConstructor",
-            "DxUntargetedMessage",
-            "DxTargetedMessage",
-            "DxBroadcastMessage"
-        )]
-            string attribute,
+        [Values("DxAutoConstructor", "DxUntargetedMessage", "DxTargetedMessage", "DxBroadcastMessage")] string attribute,
         [Values(false, true)] bool nested,
         [Values(false, true)] bool generic,
         [Values(false, true)] bool record
@@ -50,29 +44,11 @@ namespace Sample
     public static class Consumer { {{consumer}} }
 }
 """;
-        string context =
-            $"attribute={attribute}, nested={nested}, generic={generic}, record={record}";
-        GeneratorDriverRunResult result =
-            attribute == "DxAutoConstructor"
-                ? GeneratorTestUtilities.RunDxAutoConstructor(source)
-                : GeneratorTestUtilities.RunDxMessageId(source);
+        string context = $"attribute={attribute}, nested={nested}, generic={generic}, record={record}";
+        GeneratorDriverRunResult result = attribute == "DxAutoConstructor" ? GeneratorTestUtilities.RunDxAutoConstructor(source) : GeneratorTestUtilities.RunDxMessageId(source);
         Assert.That(result.Diagnostics, Is.Empty, context);
-        Assert.That(
-            result.Results.SelectMany(generated => generated.GeneratedSources),
-            Is.Not.Empty,
-            context
-        );
-        ImmutableArray<Diagnostic> diagnostics = GeneratorTestUtilities.CompileGeneratedOutput(
-            source,
-            result,
-            LanguageVersion.CSharp9
-        );
-        Assert.That(
-            diagnostics,
-            Is.Empty,
-            context
-                + "\n"
-                + string.Join("\n", diagnostics.Select(diagnostic => diagnostic.ToString()))
-        );
+        Assert.That(result.Results.SelectMany(generated => generated.GeneratedSources), Is.Not.Empty, context);
+        ImmutableArray<Diagnostic> diagnostics = GeneratorTestUtilities.CompileGeneratedOutput(source, result, LanguageVersion.CSharp9);
+        Assert.That(diagnostics, Is.Empty, context + "\n" + string.Join("\n", diagnostics.Select(diagnostic => diagnostic.ToString())));
     }
 }

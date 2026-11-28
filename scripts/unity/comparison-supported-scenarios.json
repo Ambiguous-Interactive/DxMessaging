@@ -1,25 +1,6 @@
 {
-  "DxMessaging": [
-    "GlobalToOne",
-    "GlobalToMany",
-    "KeyedToOne",
-    "PriorityOrdered",
-    "Filtered",
-    "PostProcess",
-    "FilteredPostProcess",
-    "SubUnsub",
-    "StructNoBox"
-  ],
-  "MessagePipe": [
-    "GlobalToOne",
-    "GlobalToMany",
-    "KeyedToOne",
-    "Filtered",
-    "PostProcess",
-    "FilteredPostProcess",
-    "SubUnsub",
-    "StructNoBox"
-  ],
+  "DxMessaging": ["GlobalToOne", "GlobalToMany", "KeyedToOne", "PriorityOrdered", "Filtered", "PostProcess", "FilteredPostProcess", "SubUnsub", "StructNoBox"],
+  "MessagePipe": ["GlobalToOne", "GlobalToMany", "KeyedToOne", "Filtered", "PostProcess", "FilteredPostProcess", "SubUnsub", "StructNoBox"],
   "UniRx": ["GlobalToOne", "GlobalToMany", "Filtered", "SubUnsub", "StructNoBox"],
   "ZenjectSignalBus": ["GlobalToOne", "GlobalToMany", "KeyedToOne", "SubUnsub", "StructNoBox"],
   "UnityAtoms": ["GlobalToOne", "GlobalToMany", "KeyedToOne", "SubUnsub", "StructNoBox"],

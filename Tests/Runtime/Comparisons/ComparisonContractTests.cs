@@ -29,36 +29,23 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             Case generation lives in ComparisonBridgeContract so the zero-dependency roster and the
             gated External/UnityAtoms rosters all enumerate cases from ONE source of truth.
         */
-        private static IEnumerable<TestCaseData> RosterCases() =>
-            ComparisonBridgeContract.IdentityCases(ZeroDependencyComparisonRoster.Bridges);
+        private static IEnumerable<TestCaseData> RosterCases() => ComparisonBridgeContract.IdentityCases(ZeroDependencyComparisonRoster.Bridges);
 
-        private static IEnumerable<TestCaseData> RosterScenarioCases() =>
-            ComparisonBridgeContract.EmitOnceAccountingCases(
-                ZeroDependencyComparisonRoster.Bridges
-            );
+        private static IEnumerable<TestCaseData> RosterScenarioCases() => ComparisonBridgeContract.EmitOnceAccountingCases(ZeroDependencyComparisonRoster.Bridges);
 
         [Test]
         [TestCaseSource(nameof(ComparisonScenarioCases))]
         public void ComparisonScenarioHasNonEmptyKeyAndDisplayName(ComparisonScenario scenario)
         {
-            Assert.IsNotEmpty(
-                ComparisonScenarios.Key(scenario),
-                $"Comparison scenario '{scenario}' must declare a non-empty stable Key."
-            );
-            Assert.IsNotEmpty(
-                ComparisonScenarios.DisplayName(scenario),
-                $"Comparison scenario '{scenario}' must declare a non-empty DisplayName."
-            );
+            Assert.IsNotEmpty(ComparisonScenarios.Key(scenario), $"Comparison scenario '{scenario}' must declare a non-empty stable Key.");
+            Assert.IsNotEmpty(ComparisonScenarios.DisplayName(scenario), $"Comparison scenario '{scenario}' must declare a non-empty DisplayName.");
         }
 
         [Test]
         public void ComparisonScenarioKeysAreUnique()
         {
             string[] keys = ComparisonScenarios.All.Select(ComparisonScenarios.Key).ToArray();
-            CollectionAssert.AllItemsAreUnique(
-                keys,
-                "Comparison scenario Keys must be unique; they are baked into the row scenario id and joined on by the renderer."
-            );
+            CollectionAssert.AllItemsAreUnique(keys, "Comparison scenario Keys must be unique; they are baked into the row scenario id and joined on by the renderer.");
         }
 
         /*
@@ -75,12 +62,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         public void SupportingBridgesAgreeOnInvocationsPerOperation(ComparisonScenario scenario)
         {
             Dictionary<long, List<string>> byInvocationCount = new();
-            foreach (
-                (
-                    string _,
-                    Func<IMessagingTechBridge> factory
-                ) in ZeroDependencyComparisonRoster.Bridges
-            )
+            foreach ((string _, Func<IMessagingTechBridge> factory) in ZeroDependencyComparisonRoster.Bridges)
             {
                 using IMessagingTechBridge bridge = factory();
                 if (!bridge.Supports(scenario))
@@ -103,61 +85,39 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 1,
                 $"Scenario '{ComparisonScenarios.DisplayName(scenario)}': supporting bridges disagree on "
                     + "InvocationsPerOperation (fan-out), so the comparison column is not 1:1. Groups: "
-                    + string.Join(
-                        "; ",
-                        byInvocationCount.Select(kvp =>
-                            $"{kvp.Key}=>[{string.Join(",", kvp.Value)}]"
-                        )
-                    )
+                    + string.Join("; ", byInvocationCount.Select(kvp => $"{kvp.Key}=>[{string.Join(",", kvp.Value)}]"))
             );
         }
 
         [Test]
         public void ComparisonScenarioDisplayNamesAreUnique()
         {
-            string[] displayNames = ComparisonScenarios
-                .All.Select(ComparisonScenarios.DisplayName)
-                .ToArray();
-            CollectionAssert.AllItemsAreUnique(
-                displayNames,
-                "Comparison scenario DisplayNames must be unique so matrix column headers never collide."
-            );
+            string[] displayNames = ComparisonScenarios.All.Select(ComparisonScenarios.DisplayName).ToArray();
+            CollectionAssert.AllItemsAreUnique(displayNames, "Comparison scenario DisplayNames must be unique so matrix column headers never collide.");
         }
 
         [Test]
         public void PerformanceCaseNamesSortInScenarioOrder()
         {
             List<string> names = new();
-            for (
-                int scenarioIndex = 0;
-                scenarioIndex < ComparisonScenarios.All.Length;
-                scenarioIndex++
-            )
+            for (int scenarioIndex = 0; scenarioIndex < ComparisonScenarios.All.Length; scenarioIndex++)
             {
                 ComparisonScenario scenario = ComparisonScenarios.All[scenarioIndex];
-                names.Add(
-                    ComparisonScenarios.PerformanceCaseName(scenarioIndex, "ATech", scenario)
-                );
-                names.Add(
-                    ComparisonScenarios.PerformanceCaseName(scenarioIndex, "ZTech", scenario)
-                );
+                names.Add(ComparisonScenarios.PerformanceCaseName(scenarioIndex, "ATech", scenario));
+                names.Add(ComparisonScenarios.PerformanceCaseName(scenarioIndex, "ZTech", scenario));
             }
 
             List<string> sorted = names.OrderBy(name => name, StringComparer.Ordinal).ToList();
             CollectionAssert.AreEqual(
                 names,
                 sorted,
-                "Parameterized comparison case names must sort scenario-major because a runner "
-                    + "may order generated cases by display name rather than source enumeration."
+                "Parameterized comparison case names must sort scenario-major because a runner " + "may order generated cases by display name rather than source enumeration."
             );
         }
 
         [Test]
         [TestCaseSource(nameof(RosterCases))]
-        public void RosterBridgeHasNonEmptyTechMetadata(
-            string rosterKey,
-            Func<IMessagingTechBridge> factory
-        )
+        public void RosterBridgeHasNonEmptyTechMetadata(string rosterKey, Func<IMessagingTechBridge> factory)
         {
             ComparisonBridgeContract.AssertTechIdentity(rosterKey, factory);
         }
@@ -166,29 +126,18 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         public void RosterTechKeysAreUnique()
         {
             List<string> techKeys = new();
-            foreach (
-                (
-                    string _,
-                    Func<IMessagingTechBridge> factory
-                ) in ZeroDependencyComparisonRoster.Bridges
-            )
+            foreach ((string _, Func<IMessagingTechBridge> factory) in ZeroDependencyComparisonRoster.Bridges)
             {
                 using IMessagingTechBridge bridge = factory();
                 techKeys.Add(bridge.TechKey);
             }
 
-            CollectionAssert.AllItemsAreUnique(
-                techKeys,
-                "Roster TechKeys must be unique; they are the matrix row identity."
-            );
+            CollectionAssert.AllItemsAreUnique(techKeys, "Roster TechKeys must be unique; they are the matrix row identity.");
         }
 
         [Test]
         [TestCaseSource(nameof(RosterCases))]
-        public void SupportedScenarioDeclaresPositiveFanOut(
-            string rosterKey,
-            Func<IMessagingTechBridge> factory
-        )
+        public void SupportedScenarioDeclaresPositiveFanOut(string rosterKey, Func<IMessagingTechBridge> factory)
         {
             using IMessagingTechBridge bridge = factory();
             foreach (ComparisonScenario scenario in ComparisonScenarios.All)
@@ -201,36 +150,23 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 Assert.Greater(
                     bridge.InvocationsPerOperation(scenario),
                     0,
-                    $"Bridge '{rosterKey}' supports '{scenario}' so it must declare a positive fan-out "
-                        + "(InvocationsPerOperation > 0)."
+                    $"Bridge '{rosterKey}' supports '{scenario}' so it must declare a positive fan-out " + "(InvocationsPerOperation > 0)."
                 );
             }
         }
 
         [Test]
         [TestCaseSource(nameof(RosterScenarioCases))]
-        public void SupportedScenarioEmitOnceAdvancesProgressByDeclaredFanOut(
-            string rosterKey,
-            Func<IMessagingTechBridge> factory,
-            ComparisonScenario scenario
-        )
+        public void SupportedScenarioEmitOnceAdvancesProgressByDeclaredFanOut(string rosterKey, Func<IMessagingTechBridge> factory, ComparisonScenario scenario)
         {
             ComparisonBridgeContract.AssertEmitOnceAccounting(rosterKey, factory, scenario);
         }
 
         [Test]
         [TestCaseSource(nameof(RosterScenarioCases))]
-        public void StructScenarioDispatchesNonPrimitiveStructPayload(
-            string rosterKey,
-            Func<IMessagingTechBridge> factory,
-            ComparisonScenario scenario
-        )
+        public void StructScenarioDispatchesNonPrimitiveStructPayload(string rosterKey, Func<IMessagingTechBridge> factory, ComparisonScenario scenario)
         {
-            ComparisonBridgeContract.AssertStructScenarioPayloadFidelity(
-                rosterKey,
-                factory,
-                scenario
-            );
+            ComparisonBridgeContract.AssertStructScenarioPayloadFidelity(rosterKey, factory, scenario);
         }
 
         [Test]
@@ -239,10 +175,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             using IMessagingTechBridge dxMessaging = new DxMessagingBridge();
             foreach (ComparisonScenario scenario in ComparisonScenarios.All)
             {
-                Assert.IsTrue(
-                    dxMessaging.Supports(scenario),
-                    $"DxMessaging is the full-featured baseline and must support every comparison scenario, including '{scenario}'."
-                );
+                Assert.IsTrue(dxMessaging.Supports(scenario), $"DxMessaging is the full-featured baseline and must support every comparison scenario, including '{scenario}'.");
             }
         }
 
@@ -251,18 +184,9 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         {
             using IMessagingTechBridge bridge = new UnitySendMessageBridge();
 
-            Assert.IsFalse(
-                bridge.Supports(ComparisonScenario.GlobalToOneSubscriber),
-                "Unity SendMessage addresses a GameObject, so it must not claim global-to-one dispatch."
-            );
-            Assert.IsFalse(
-                bridge.Supports(ComparisonScenario.GlobalToManySubscribers),
-                "Unity SendMessage addresses a GameObject, so it must not claim global fan-out."
-            );
-            Assert.IsTrue(
-                bridge.Supports(ComparisonScenario.KeyedToOneOfMany),
-                "Unity SendMessage must retain its addressed keyed-dispatch comparison."
-            );
+            Assert.IsFalse(bridge.Supports(ComparisonScenario.GlobalToOneSubscriber), "Unity SendMessage addresses a GameObject, so it must not claim global-to-one dispatch.");
+            Assert.IsFalse(bridge.Supports(ComparisonScenario.GlobalToManySubscribers), "Unity SendMessage addresses a GameObject, so it must not claim global fan-out.");
+            Assert.IsTrue(bridge.Supports(ComparisonScenario.KeyedToOneOfMany), "Unity SendMessage must retain its addressed keyed-dispatch comparison.");
         }
 
         [Test]
@@ -273,17 +197,11 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             {
                 bridge.Prepare(ComparisonScenario.KeyedToOneOfMany);
                 GameObject dispatchTarget = bridge.DispatchTargetForTests;
-                Assert.IsFalse(
-                    dispatchTarget == null,
-                    "Preparing keyed SendMessage dispatch must create its addressed receiver."
-                );
+                Assert.IsFalse(dispatchTarget == null, "Preparing keyed SendMessage dispatch must create its addressed receiver.");
 
                 bridge.Dispose();
 
-                Assert.IsTrue(
-                    dispatchTarget == null,
-                    "Dispose must synchronously destroy SendMessage receivers before the next benchmark case."
-                );
+                Assert.IsTrue(dispatchTarget == null, "Dispose must synchronously destroy SendMessage receivers before the next benchmark case.");
             }
             finally
             {
@@ -295,27 +213,13 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         public void RosterIncludesAllZeroDependencyBaselines()
         {
             HashSet<string> rosterKeys = new();
-            foreach (
-                (
-                    string _,
-                    Func<IMessagingTechBridge> factory
-                ) in ZeroDependencyComparisonRoster.Bridges
-            )
+            foreach ((string _, Func<IMessagingTechBridge> factory) in ZeroDependencyComparisonRoster.Bridges)
             {
                 using IMessagingTechBridge bridge = factory();
                 rosterKeys.Add(bridge.TechKey);
             }
 
-            foreach (
-                string requiredKey in new[]
-                {
-                    "DxMessaging",
-                    "CsEvent",
-                    "UnityEvent",
-                    "ScriptableObject",
-                    "UnitySendMessage",
-                }
-            )
+            foreach (string requiredKey in new[] { "DxMessaging", "CsEvent", "UnityEvent", "ScriptableObject", "UnitySendMessage" })
             {
                 Assert.IsTrue(
                     rosterKeys.Contains(requiredKey),

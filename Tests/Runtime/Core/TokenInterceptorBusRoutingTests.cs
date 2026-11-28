@@ -53,53 +53,22 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void InterceptorRegisteredViaTokenRunsOnTokenBusOnly(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void InterceptorRegisteredViaTokenRunsOnTokenBusOnly([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             using TokenBusRoutingScope scope = TokenBusRoutingScope.Create();
             InstanceId context = new(ContextInstanceId);
             int intercepted = 0;
 
-            using (
-                LeakWatcher customWatcher = new(
-                    bus: scope.Bus,
-                    throwOnLeak: true,
-                    label: scenario.DisplayName + "_Custom"
-                )
-            )
-            using (
-                LeakWatcher globalWatcher = new(
-                    throwOnLeak: true,
-                    label: scenario.DisplayName + "_Global"
-                )
-            )
+            using (LeakWatcher customWatcher = new(bus: scope.Bus, throwOnLeak: true, label: scenario.DisplayName + "_Custom"))
+            using (LeakWatcher globalWatcher = new(throwOnLeak: true, label: scenario.DisplayName + "_Global"))
             {
-                MessageRegistrationHandle handle = ScenarioCallbacks.RegisterCountingInterceptor(
-                    scenario,
-                    scope.Token,
-                    () => true,
-                    () => ++intercepted
-                );
+                MessageRegistrationHandle handle = ScenarioCallbacks.RegisterCountingInterceptor(scenario, scope.Token, () => true, () => ++intercepted);
 
                 ScenarioCallbacks.EmitForKind(scenario, scope.Bus, context);
-                Assert.AreEqual(
-                    1,
-                    intercepted,
-                    "[{0}] An interceptor registered through a custom-bus token must "
-                        + "intercept emissions on the token's bus.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(1, intercepted, "[{0}] An interceptor registered through a custom-bus token must " + "intercept emissions on the token's bus.", scenario.Kind);
 
                 ScenarioCallbacks.EmitForKind(scenario, messageBus: null, context);
-                Assert.AreEqual(
-                    1,
-                    intercepted,
-                    "[{0}] An interceptor registered through a custom-bus token must "
-                        + "NOT intercept emissions on the global bus.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(1, intercepted, "[{0}] An interceptor registered through a custom-bus token must " + "NOT intercept emissions on the global bus.", scenario.Kind);
 
                 scope.Token.RemoveRegistration(handle);
             }
@@ -114,19 +83,8 @@ namespace DxMessaging.Tests.Runtime.Core
             int targetedIntercepted = 0;
             int broadcastIntercepted = 0;
 
-            using (
-                LeakWatcher customWatcher = new(
-                    bus: scope.Bus,
-                    throwOnLeak: true,
-                    label: nameof(InterceptorsStagedWhileDisabledLandOnTokenBusAtEnable) + "_Custom"
-                )
-            )
-            using (
-                LeakWatcher globalWatcher = new(
-                    throwOnLeak: true,
-                    label: nameof(InterceptorsStagedWhileDisabledLandOnTokenBusAtEnable) + "_Global"
-                )
-            )
+            using (LeakWatcher customWatcher = new(bus: scope.Bus, throwOnLeak: true, label: nameof(InterceptorsStagedWhileDisabledLandOnTokenBusAtEnable) + "_Custom"))
+            using (LeakWatcher globalWatcher = new(throwOnLeak: true, label: nameof(InterceptorsStagedWhileDisabledLandOnTokenBusAtEnable) + "_Global"))
             {
                 _ = scope.Token.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(
                     (ref SimpleUntargetedMessage _) =>
@@ -151,40 +109,20 @@ namespace DxMessaging.Tests.Runtime.Core
                 );
 
                 EmitAllKinds(scope.Bus, context);
-                Assert.AreEqual(
-                    0,
-                    untargetedIntercepted + targetedIntercepted + broadcastIntercepted,
-                    "Staged interceptors must stay inert while the token is disabled."
-                );
+                Assert.AreEqual(0, untargetedIntercepted + targetedIntercepted + broadcastIntercepted, "Staged interceptors must stay inert while the token is disabled.");
 
                 scope.Token.Enable();
 
                 EmitAllKinds(scope.Bus, context);
-                Assert.AreEqual(
-                    1,
-                    untargetedIntercepted,
-                    "An untargeted interceptor staged while disabled must land on the "
-                        + "token's bus at Enable() time."
-                );
-                Assert.AreEqual(
-                    1,
-                    targetedIntercepted,
-                    "A targeted interceptor staged while disabled must land on the "
-                        + "token's bus at Enable() time."
-                );
-                Assert.AreEqual(
-                    1,
-                    broadcastIntercepted,
-                    "A broadcast interceptor staged while disabled must land on the "
-                        + "token's bus at Enable() time."
-                );
+                Assert.AreEqual(1, untargetedIntercepted, "An untargeted interceptor staged while disabled must land on the " + "token's bus at Enable() time.");
+                Assert.AreEqual(1, targetedIntercepted, "A targeted interceptor staged while disabled must land on the " + "token's bus at Enable() time.");
+                Assert.AreEqual(1, broadcastIntercepted, "A broadcast interceptor staged while disabled must land on the " + "token's bus at Enable() time.");
 
                 EmitAllKinds(messageBus: null, context);
                 Assert.AreEqual(
                     3,
                     untargetedIntercepted + targetedIntercepted + broadcastIntercepted,
-                    "Interceptors activated by Enable() on a custom-bus token must "
-                        + "NOT intercept emissions on the global bus."
+                    "Interceptors activated by Enable() on a custom-bus token must " + "NOT intercept emissions on the global bus."
                 );
 
                 scope.Token.UnregisterAll();
@@ -196,27 +134,12 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             BusType originalBus = new();
             BusType retargetedBus = new();
-            using TokenBusRoutingScope scope = TokenBusRoutingScope.Create(
-                enable: false,
-                bus: originalBus
-            );
+            using TokenBusRoutingScope scope = TokenBusRoutingScope.Create(enable: false, bus: originalBus);
             int intercepted = 0;
 
+            using (LeakWatcher originalWatcher = new(bus: originalBus, throwOnLeak: true, label: nameof(RetargetWhileDisabledReroutesStagedInterceptorsToNewBus) + "_Original"))
             using (
-                LeakWatcher originalWatcher = new(
-                    bus: originalBus,
-                    throwOnLeak: true,
-                    label: nameof(RetargetWhileDisabledReroutesStagedInterceptorsToNewBus)
-                        + "_Original"
-                )
-            )
-            using (
-                LeakWatcher retargetedWatcher = new(
-                    bus: retargetedBus,
-                    throwOnLeak: true,
-                    label: nameof(RetargetWhileDisabledReroutesStagedInterceptorsToNewBus)
-                        + "_Retargeted"
-                )
+                LeakWatcher retargetedWatcher = new(bus: retargetedBus, throwOnLeak: true, label: nameof(RetargetWhileDisabledReroutesStagedInterceptorsToNewBus) + "_Retargeted")
             )
             {
                 _ = scope.Token.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(
@@ -232,28 +155,13 @@ namespace DxMessaging.Tests.Runtime.Core
 
                 SimpleUntargetedMessage message = new();
                 message.EmitUntargeted(retargetedBus);
-                Assert.AreEqual(
-                    1,
-                    intercepted,
-                    "A staged interceptor must land on the bus the token is bound to "
-                        + "at Enable() time (the retargeted bus)."
-                );
+                Assert.AreEqual(1, intercepted, "A staged interceptor must land on the bus the token is bound to " + "at Enable() time (the retargeted bus).");
 
                 message.EmitUntargeted(originalBus);
-                Assert.AreEqual(
-                    1,
-                    intercepted,
-                    "A staged interceptor re-routed by RetargetMessageBus must NOT "
-                        + "intercept emissions on the original bus."
-                );
+                Assert.AreEqual(1, intercepted, "A staged interceptor re-routed by RetargetMessageBus must NOT " + "intercept emissions on the original bus.");
 
                 message.EmitUntargeted();
-                Assert.AreEqual(
-                    1,
-                    intercepted,
-                    "A staged interceptor re-routed by RetargetMessageBus must NOT "
-                        + "intercept emissions on the global bus."
-                );
+                Assert.AreEqual(1, intercepted, "A staged interceptor re-routed by RetargetMessageBus must NOT " + "intercept emissions on the global bus.");
 
                 scope.Token.UnregisterAll();
             }
@@ -264,26 +172,11 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             BusType originalBus = new();
             BusType retargetedBus = new();
-            using TokenBusRoutingScope scope = TokenBusRoutingScope.Create(
-                enable: true,
-                bus: originalBus
-            );
+            using TokenBusRoutingScope scope = TokenBusRoutingScope.Create(enable: true, bus: originalBus);
             int intercepted = 0;
 
-            using (
-                LeakWatcher originalWatcher = new(
-                    bus: originalBus,
-                    throwOnLeak: true,
-                    label: nameof(RetargetRebindActiveMovesLiveInterceptorToNewBus) + "_Original"
-                )
-            )
-            using (
-                LeakWatcher retargetedWatcher = new(
-                    bus: retargetedBus,
-                    throwOnLeak: true,
-                    label: nameof(RetargetRebindActiveMovesLiveInterceptorToNewBus) + "_Retargeted"
-                )
-            )
+            using (LeakWatcher originalWatcher = new(bus: originalBus, throwOnLeak: true, label: nameof(RetargetRebindActiveMovesLiveInterceptorToNewBus) + "_Original"))
+            using (LeakWatcher retargetedWatcher = new(bus: retargetedBus, throwOnLeak: true, label: nameof(RetargetRebindActiveMovesLiveInterceptorToNewBus) + "_Retargeted"))
             {
                 _ = scope.Token.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(
                     (ref SimpleUntargetedMessage _) =>
@@ -295,28 +188,15 @@ namespace DxMessaging.Tests.Runtime.Core
 
                 SimpleUntargetedMessage message = new();
                 message.EmitUntargeted(originalBus);
-                Assert.AreEqual(
-                    1,
-                    intercepted,
-                    "Control failed: a live interceptor registered through the token "
-                        + "must intercept emissions on the token's original bus."
-                );
+                Assert.AreEqual(1, intercepted, "Control failed: a live interceptor registered through the token " + "must intercept emissions on the token's original bus.");
 
                 scope.Token.RetargetMessageBus(retargetedBus, MessageBusRebindMode.RebindActive);
 
                 message.EmitUntargeted(originalBus);
-                Assert.AreEqual(
-                    1,
-                    intercepted,
-                    "RebindActive must remove the live interceptor from the original bus."
-                );
+                Assert.AreEqual(1, intercepted, "RebindActive must remove the live interceptor from the original bus.");
 
                 message.EmitUntargeted(retargetedBus);
-                Assert.AreEqual(
-                    2,
-                    intercepted,
-                    "RebindActive must re-register the live interceptor on the new bus."
-                );
+                Assert.AreEqual(2, intercepted, "RebindActive must re-register the live interceptor on the new bus.");
 
                 scope.Token.UnregisterAll();
             }
@@ -349,11 +229,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
         internal MessageRegistrationToken Token { get; }
 
-        private TokenBusRoutingScope(
-            IMessageBus bus,
-            MessageHandler handler,
-            MessageRegistrationToken token
-        )
+        private TokenBusRoutingScope(IMessageBus bus, MessageHandler handler, MessageRegistrationToken token)
         {
             Bus = bus;
             Handler = handler;

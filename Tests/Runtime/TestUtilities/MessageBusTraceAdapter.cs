@@ -11,10 +11,7 @@ namespace DxMessaging.Tests.Runtime
     {
         internal delegate void UntargetedEmission(ref UntargetedPayload message);
         internal delegate void TargetedEmission(ref InstanceId target, ref TargetedPayload message);
-        internal delegate void BroadcastEmission(
-            ref InstanceId source,
-            ref BroadcastPayload message
-        );
+        internal delegate void BroadcastEmission(ref InstanceId source, ref BroadcastPayload message);
 
         private readonly MessageScenario _scenario;
         private readonly IMessageBus _bus;
@@ -42,31 +39,15 @@ namespace DxMessaging.Tests.Runtime
         private BusTraceOperation? _handlerActiveOperation;
         private BusTraceOperation? _nestedOperation;
         private int _depth;
-        private readonly BusTraceOperation[] _registrations = new BusTraceOperation[
-            BusTraceSequence.TokenCount
-        ];
-        private readonly MessageRegistrationHandle[] _staleHandles = new MessageRegistrationHandle[
-            BusTraceSequence.TokenCount
-        ];
-        private readonly MessageHandler[] _handlers = new MessageHandler[
-            BusTraceSequence.TokenCount
-        ];
-        private readonly MessageRegistrationToken[] _tokens = new MessageRegistrationToken[
-            BusTraceSequence.TokenCount
-        ];
-        private readonly MessageRegistrationHandle[] _handles = new MessageRegistrationHandle[
-            BusTraceSequence.TokenCount
-        ];
-        private readonly MessageRegistrationHandle[] _explicitHandles =
-            new MessageRegistrationHandle[BusTraceSequence.HandleSlotCount];
-        private readonly Func<MessageRegistrationHandle>[] _registrationFactories =
-            new Func<MessageRegistrationHandle>[BusTraceSequence.HandleSlotCount];
-        private readonly int[] _explicitCallbackIdentities = new int[
-            BusTraceSequence.HandleSlotCount
-        ];
-        private readonly BusTraceOperation[] _explicitRegistrations = new BusTraceOperation[
-            BusTraceSequence.HandleSlotCount
-        ];
+        private readonly BusTraceOperation[] _registrations = new BusTraceOperation[BusTraceSequence.TokenCount];
+        private readonly MessageRegistrationHandle[] _staleHandles = new MessageRegistrationHandle[BusTraceSequence.TokenCount];
+        private readonly MessageHandler[] _handlers = new MessageHandler[BusTraceSequence.TokenCount];
+        private readonly MessageRegistrationToken[] _tokens = new MessageRegistrationToken[BusTraceSequence.TokenCount];
+        private readonly MessageRegistrationHandle[] _handles = new MessageRegistrationHandle[BusTraceSequence.TokenCount];
+        private readonly MessageRegistrationHandle[] _explicitHandles = new MessageRegistrationHandle[BusTraceSequence.HandleSlotCount];
+        private readonly Func<MessageRegistrationHandle>[] _registrationFactories = new Func<MessageRegistrationHandle>[BusTraceSequence.HandleSlotCount];
+        private readonly int[] _explicitCallbackIdentities = new int[BusTraceSequence.HandleSlotCount];
+        private readonly BusTraceOperation[] _explicitRegistrations = new BusTraceOperation[BusTraceSequence.HandleSlotCount];
         private int _nextCallbackIdentity;
         private readonly List<string> _callbacks = new();
         private readonly List<string> _finalEmissions = new();
@@ -105,10 +86,7 @@ namespace DxMessaging.Tests.Runtime
                 {
                     if (tokenFactory == null)
                     {
-                        MessageHandler handler = new(new InstanceId(1000 + slot), bus)
-                        {
-                            active = true,
-                        };
+                        MessageHandler handler = new(new InstanceId(1000 + slot), bus) { active = true };
                         _handlers[slot] = handler;
                         _tokens[slot] = MessageRegistrationToken.Create(handler, bus);
                     }
@@ -128,11 +106,7 @@ namespace DxMessaging.Tests.Runtime
                 }
                 catch (Exception cleanupError)
                 {
-                    throw new AggregateException(
-                        "Adapter setup and cleanup both failed.",
-                        setupError,
-                        cleanupError
-                    );
+                    throw new AggregateException("Adapter setup and cleanup both failed.", setupError, cleanupError);
                 }
                 throw;
             }
@@ -244,9 +218,7 @@ namespace DxMessaging.Tests.Runtime
                     case BusTraceOperationKind.EmitWithReset:
                         if (_reset == null)
                         {
-                            throw new NotSupportedException(
-                                "This adapter has no local reset action."
-                            );
+                            throw new NotSupportedException("This adapter has no local reset action.");
                         }
                         _resetOperation = operation;
                         try
@@ -305,21 +277,11 @@ namespace DxMessaging.Tests.Runtime
                         : "; globalBus="
                             + (
                                 ReferenceEquals(MessageHandler.MessageBus, _bus) ? "primary"
-                                : ReferenceEquals(MessageHandler.MessageBus, _alternateGlobalBus)
-                                    ? "alternate"
+                                : ReferenceEquals(MessageHandler.MessageBus, _alternateGlobalBus) ? "alternate"
                                 : "external"
                             )
                 );
-            return new BusTraceObservation(
-                _callbacks,
-                state,
-                exception,
-                trimResult,
-                _bus.OccupiedTypeSlots,
-                _bus.OccupiedTargetSlots,
-                _finalEmissions,
-                _unmatchedDiagnostics
-            );
+            return new BusTraceObservation(_callbacks, state, exception, trimResult, _bus.OccupiedTypeSlots, _bus.OccupiedTargetSlots, _finalEmissions, _unmatchedDiagnostics);
         }
 
         /// <summary>Always attempts every token cleanup and reports cleanup or registration-leak failures.</summary>
@@ -336,11 +298,7 @@ namespace DxMessaging.Tests.Runtime
                         continue;
                     }
                     DisposeToken(slot);
-                    if (
-                        token._metadata.Count != 0
-                        || token._callCounts.Count != 0
-                        || token._emissionBuffer.Count != 0
-                    )
+                    if (token._metadata.Count != 0 || token._callCounts.Count != 0 || token._emissionBuffer.Count != 0)
                     {
                         throw new InvalidOperationException(
                             $"Disposed token retained metadata={token._metadata.Count}, callCounts={token._callCounts.Count}, history={token._emissionBuffer.Count}."
@@ -407,41 +365,25 @@ namespace DxMessaging.Tests.Runtime
             if (_globalScope == null)
             {
                 _globalScope = GlobalBusScope.Capture();
-                _alternateGlobalBus = MessageBus.CreateForInternalUse(
-                    new FakeClock(),
-                    idleEvictionTicks: 0,
-                    idleEvictionEnabled: false,
-                    trimApiEnabled: true
-                );
+                _alternateGlobalBus = MessageBus.CreateForInternalUse(new FakeClock(), idleEvictionTicks: 0, idleEvictionEnabled: false, trimApiEnabled: true);
                 _alternateGlobalBus.DiagnosticsMode = false;
-                _alternateGlobalLeaks = LeakWatcher.WatchWithSlots(
-                    _alternateGlobalBus,
-                    label: "Differential alternate global bus"
-                );
-                _globalOverrides = new MessageHandler.GlobalMessageBusScope[
-                    BusTraceSequence.TokenCount
-                ];
+                _alternateGlobalLeaks = LeakWatcher.WatchWithSlots(_alternateGlobalBus, label: "Differential alternate global bus");
+                _globalOverrides = new MessageHandler.GlobalMessageBusScope[BusTraceSequence.TokenCount];
                 MessageHandler.SetGlobalMessageBus(_bus);
             }
             switch (operation.Kind)
             {
                 case BusTraceOperationKind.AcquireGlobalOverride:
-                    _globalOverrides[operation.LeaseSlot] = MessageHandler.OverrideGlobalMessageBus(
-                        operation.Context == 0 ? _bus : _alternateGlobalBus
-                    );
+                    _globalOverrides[operation.LeaseSlot] = MessageHandler.OverrideGlobalMessageBus(operation.Context == 0 ? _bus : _alternateGlobalBus);
                     break;
                 case BusTraceOperationKind.CopyGlobalOverride:
-                    _globalOverrides[operation.LeaseSlot] = _globalOverrides[
-                        operation.SourceLeaseSlot
-                    ];
+                    _globalOverrides[operation.LeaseSlot] = _globalOverrides[operation.SourceLeaseSlot];
                     break;
                 case BusTraceOperationKind.DisposeGlobalOverride:
                     DisposeGlobalOverride(operation.LeaseSlot);
                     break;
                 case BusTraceOperationKind.ReplaceGlobalBus:
-                    MessageHandler.SetGlobalMessageBus(
-                        operation.Context == 0 ? _bus : _alternateGlobalBus
-                    );
+                    MessageHandler.SetGlobalMessageBus(operation.Context == 0 ? _bus : _alternateGlobalBus);
                     break;
             }
         }
@@ -450,8 +392,7 @@ namespace DxMessaging.Tests.Runtime
 
         protected virtual void DisposeToken(int slot) => _tokens[slot].Dispose();
 
-        protected virtual void ExecuteHostLifecycle(BusTraceOperation operation) =>
-            throw new NotSupportedException("This adapter has no native host lifecycle.");
+        protected virtual void ExecuteHostLifecycle(BusTraceOperation operation) => throw new NotSupportedException("This adapter has no native host lifecycle.");
 
         protected virtual void DisposeAdapterState() { }
 
@@ -478,17 +419,13 @@ namespace DxMessaging.Tests.Runtime
         protected virtual void CopyHandle(BusTraceOperation operation)
         {
             _explicitHandles[operation.HandleSlot] = _explicitHandles[operation.SourceHandleSlot];
-            _registrationFactories[operation.HandleSlot] = _registrationFactories[
-                operation.SourceHandleSlot
-            ];
+            _registrationFactories[operation.HandleSlot] = _registrationFactories[operation.SourceHandleSlot];
             CopyRegistrationIdentity(operation);
         }
 
         protected virtual void DuplicateRegistration(BusTraceOperation operation)
         {
-            Func<MessageRegistrationHandle> register = _registrationFactories[
-                operation.SourceHandleSlot
-            ];
+            Func<MessageRegistrationHandle> register = _registrationFactories[operation.SourceHandleSlot];
             _explicitHandles[operation.HandleSlot] = register();
             _registrationFactories[operation.HandleSlot] = register;
             CopyRegistrationIdentity(operation);
@@ -496,12 +433,8 @@ namespace DxMessaging.Tests.Runtime
 
         private void CopyRegistrationIdentity(BusTraceOperation operation)
         {
-            _explicitCallbackIdentities[operation.HandleSlot] = _explicitCallbackIdentities[
-                operation.SourceHandleSlot
-            ];
-            _explicitRegistrations[operation.HandleSlot] = _explicitRegistrations[
-                operation.SourceHandleSlot
-            ];
+            _explicitCallbackIdentities[operation.HandleSlot] = _explicitCallbackIdentities[operation.SourceHandleSlot];
+            _explicitRegistrations[operation.HandleSlot] = _explicitRegistrations[operation.SourceHandleSlot];
         }
 
         protected virtual void Remove(BusTraceOperation operation)
@@ -514,8 +447,7 @@ namespace DxMessaging.Tests.Runtime
             int slot = operation.Token;
             MessageRegistrationHandle handle =
                 operation.Kind == BusTraceOperationKind.RemoveStale ? _staleHandles[slot]
-                : operation.Kind == BusTraceOperationKind.RemoveForeign
-                    ? _handles[operation.HandleToken]
+                : operation.Kind == BusTraceOperationKind.RemoveForeign ? _handles[operation.HandleToken]
                 : _handles[slot];
             _tokens[slot].RemoveRegistration(handle);
             if (operation.Kind == BusTraceOperationKind.Remove)
@@ -524,8 +456,7 @@ namespace DxMessaging.Tests.Runtime
             }
         }
 
-        protected virtual void CleanupThrowingCallback(int slot) =>
-            _tokens[slot].RemoveRegistration(_handles[slot]);
+        protected virtual void CleanupThrowingCallback(int slot) => _tokens[slot].RemoveRegistration(_handles[slot]);
 
         protected virtual void CleanupThrowingCallback(BusTraceOperation operation)
         {
@@ -542,17 +473,13 @@ namespace DxMessaging.Tests.Runtime
         // Mutants change real callback behavior here; observation construction remains shared.
         protected virtual void OnCallback(int slot, IMessage message) { }
 
-        protected virtual void SetHandlerActive(int slot, bool active) =>
-            _handlers[slot].active = active;
+        protected virtual void SetHandlerActive(int slot, bool active) => _handlers[slot].active = active;
 
         protected virtual void DisableFromCallback(int slot) => _tokens[slot].Disable();
 
         protected virtual void EmitNested(BusTraceOperation operation) => Emit(operation);
 
-        private MessageScenario Scenario(int offset) =>
-            offset == 0
-                ? _scenario
-                : new MessageScenario((MessageKind)(((int)_scenario.Kind + offset) % 3));
+        private MessageScenario Scenario(int offset) => offset == 0 ? _scenario : new MessageScenario((MessageKind)(((int)_scenario.Kind + offset) % 3));
 
         protected virtual void Register(BusTraceOperation operation)
         {
@@ -601,9 +528,7 @@ namespace DxMessaging.Tests.Runtime
             }
         }
 
-        private Func<MessageRegistrationHandle> CreateRegistrationFactory(
-            BusTraceOperation operation
-        )
+        private Func<MessageRegistrationHandle> CreateRegistrationFactory(BusTraceOperation operation)
         {
             int callbackIdentity = _nextCallbackIdentity++;
             _explicitCallbackIdentities[operation.HandleSlot] = callbackIdentity;
@@ -618,68 +543,23 @@ namespace DxMessaging.Tests.Runtime
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
-                    MessageHandler.FastHandler<UntargetedPayload> untargeted = (
-                        in UntargetedPayload message
-                    ) =>
-                        Record(
-                            operation.Token,
-                            message.Value,
-                            message,
-                            operation.HandleSlot,
-                            callbackIdentity
-                        );
-                    return () =>
-                        ScenarioHarness.RegisterUntargeted(
-                            scenario,
-                            token,
-                            untargeted,
-                            operation.Priority
-                        );
+                    MessageHandler.FastHandler<UntargetedPayload> untargeted = (in UntargetedPayload message) =>
+                        Record(operation.Token, message.Value, message, operation.HandleSlot, callbackIdentity);
+                    return () => ScenarioHarness.RegisterUntargeted(scenario, token, untargeted, operation.Priority);
                 case MessageKind.Targeted:
-                    MessageHandler.FastHandler<TargetedPayload> targeted = (
-                        in TargetedPayload message
-                    ) =>
-                        Record(
-                            operation.Token,
-                            message.Value,
-                            message,
-                            operation.HandleSlot,
-                            callbackIdentity
-                        );
-                    return () =>
-                        ScenarioHarness.RegisterTargeted(
-                            scenario,
-                            token,
-                            context,
-                            targeted,
-                            operation.Priority
-                        );
+                    MessageHandler.FastHandler<TargetedPayload> targeted = (in TargetedPayload message) =>
+                        Record(operation.Token, message.Value, message, operation.HandleSlot, callbackIdentity);
+                    return () => ScenarioHarness.RegisterTargeted(scenario, token, context, targeted, operation.Priority);
                 case MessageKind.Broadcast:
-                    MessageHandler.FastHandler<BroadcastPayload> broadcast = (
-                        in BroadcastPayload message
-                    ) =>
-                        Record(
-                            operation.Token,
-                            message.Value,
-                            message,
-                            operation.HandleSlot,
-                            callbackIdentity
-                        );
-                    return () =>
-                        ScenarioHarness.RegisterBroadcast(
-                            scenario,
-                            token,
-                            context,
-                            broadcast,
-                            operation.Priority
-                        );
+                    MessageHandler.FastHandler<BroadcastPayload> broadcast = (in BroadcastPayload message) =>
+                        Record(operation.Token, message.Value, message, operation.HandleSlot, callbackIdentity);
+                    return () => ScenarioHarness.RegisterBroadcast(scenario, token, context, broadcast, operation.Priority);
                 default:
                     throw new ArgumentOutOfRangeException(nameof(operation));
             }
         }
 
-        private void Emit(BusTraceOperation operation) =>
-            Emit(operation, untypedRoute: operation.Kind == BusTraceOperationKind.EmitUntyped);
+        private void Emit(BusTraceOperation operation) => Emit(operation, untypedRoute: operation.Kind == BusTraceOperationKind.EmitUntyped);
 
         private void Emit(BusTraceOperation operation, bool untypedRoute)
         {
@@ -706,9 +586,7 @@ namespace DxMessaging.Tests.Runtime
                         finally
                         {
                             UntargetedPayload final = (UntargetedPayload)boxed;
-                            _finalEmissions.Add(
-                                $"call={capture.Ordinal},kind={scenario.Kind},route=untyped,value={final.Value},context=none"
-                            );
+                            _finalEmissions.Add($"call={capture.Ordinal},kind={scenario.Kind},route=untyped,value={final.Value},context=none");
                         }
                         break;
                     }
@@ -722,9 +600,7 @@ namespace DxMessaging.Tests.Runtime
                         finally
                         {
                             TargetedPayload final = (TargetedPayload)boxed;
-                            _finalEmissions.Add(
-                                $"call={capture.Ordinal},kind={scenario.Kind},route=untyped,value={final.Value},context={context.Id}"
-                            );
+                            _finalEmissions.Add($"call={capture.Ordinal},kind={scenario.Kind},route=untyped,value={final.Value},context={context.Id}");
                         }
                         break;
                     }
@@ -738,9 +614,7 @@ namespace DxMessaging.Tests.Runtime
                         finally
                         {
                             BroadcastPayload final = (BroadcastPayload)boxed;
-                            _finalEmissions.Add(
-                                $"call={capture.Ordinal},kind={scenario.Kind},route=untyped,value={final.Value},context={context.Id}"
-                            );
+                            _finalEmissions.Add($"call={capture.Ordinal},kind={scenario.Kind},route=untyped,value={final.Value},context={context.Id}");
                         }
                         break;
                     }
@@ -759,12 +633,7 @@ namespace DxMessaging.Tests.Runtime
             The untyped route above records its caller's original box and context;
             internal untyped final values and extension-method boundaries remain unobserved.
         */
-        private void EmitTyped(
-            MessageScenario scenario,
-            InstanceId context,
-            BusTraceOperation operation,
-            int ordinal
-        )
+        private void EmitTyped(MessageScenario scenario, InstanceId context, BusTraceOperation operation, int ordinal)
         {
             switch (scenario.Kind)
             {
@@ -783,9 +652,7 @@ namespace DxMessaging.Tests.Runtime
                     }
                     finally
                     {
-                        _finalEmissions.Add(
-                            $"call={ordinal},kind={scenario.Kind},value={untargeted.Value},context=none"
-                        );
+                        _finalEmissions.Add($"call={ordinal},kind={scenario.Kind},value={untargeted.Value},context=none");
                     }
                     break;
                 case MessageKind.Targeted:
@@ -803,9 +670,7 @@ namespace DxMessaging.Tests.Runtime
                     }
                     finally
                     {
-                        _finalEmissions.Add(
-                            $"call={ordinal},kind={scenario.Kind},value={targeted.Value},context={context.Id}"
-                        );
+                        _finalEmissions.Add($"call={ordinal},kind={scenario.Kind},value={targeted.Value},context={context.Id}");
                     }
                     break;
                 case MessageKind.Broadcast:
@@ -823,9 +688,7 @@ namespace DxMessaging.Tests.Runtime
                     }
                     finally
                     {
-                        _finalEmissions.Add(
-                            $"call={ordinal},kind={scenario.Kind},value={broadcast.Value},context={context.Id}"
-                        );
+                        _finalEmissions.Add($"call={ordinal},kind={scenario.Kind},value={broadcast.Value},context={context.Id}");
                     }
                     break;
                 default:
@@ -862,18 +725,9 @@ namespace DxMessaging.Tests.Runtime
                     level == LogLevel.Info
                     && message != null
                     && (
-                        message.StartsWith(
-                            "Could not find a matching untargeted broadcast handler ",
-                            StringComparison.Ordinal
-                        )
-                        || message.StartsWith(
-                            "Could not find a matching targeted broadcast handler ",
-                            StringComparison.Ordinal
-                        )
-                        || message.StartsWith(
-                            "Could not find a matching sourced broadcast handler ",
-                            StringComparison.Ordinal
-                        )
+                        message.StartsWith("Could not find a matching untargeted broadcast handler ", StringComparison.Ordinal)
+                        || message.StartsWith("Could not find a matching targeted broadcast handler ", StringComparison.Ordinal)
+                        || message.StartsWith("Could not find a matching sourced broadcast handler ", StringComparison.Ordinal)
                     )
                 )
                 {
@@ -893,36 +747,17 @@ namespace DxMessaging.Tests.Runtime
             }
         }
 
-        private void Record(
-            int token,
-            int value,
-            IMessage message,
-            int handleSlot = -1,
-            int callbackIdentity = -1
-        )
+        private void Record(int token, int value, IMessage message, int handleSlot = -1, int callbackIdentity = -1)
         {
-            _callbacks.Add(
-                $"token={token},value={value}"
-                    + (
-                        0 <= handleSlot
-                            ? $",registration={handleSlot},callback={callbackIdentity}"
-                            : string.Empty
-                    )
-            );
+            _callbacks.Add($"token={token},value={value}" + (0 <= handleSlot ? $",registration={handleSlot},callback={callbackIdentity}" : string.Empty));
             OnCallback(token, message);
-            if (
-                _handlerActiveOperation.HasValue
-                && MatchesCallback(_handlerActiveOperation.Value, token, callbackIdentity)
-            )
+            if (_handlerActiveOperation.HasValue && MatchesCallback(_handlerActiveOperation.Value, token, callbackIdentity))
             {
                 BusTraceOperation operation = _handlerActiveOperation.Value;
                 _handlerActiveOperation = null;
                 SetHandlerActive(operation.HandlerToken, operation.HandlerActive);
             }
-            if (
-                _disableOperation.HasValue
-                && MatchesCallback(_disableOperation.Value, token, callbackIdentity)
-            )
+            if (_disableOperation.HasValue && MatchesCallback(_disableOperation.Value, token, callbackIdentity))
             {
                 _disableOperation = null;
                 DisableFromCallback(token);
@@ -931,32 +766,17 @@ namespace DxMessaging.Tests.Runtime
             {
                 BusTraceOperation nested = _nestedOperation.Value;
                 bool useNested = (_depth & 1) != 0;
-                if (
-                    MatchesCallback(nested, token, callbackIdentity, useNested)
-                    && _depth < nested.Depth
-                )
+                if (MatchesCallback(nested, token, callbackIdentity, useNested) && _depth < nested.Depth)
                 {
                     long emission = _bus.EmissionId;
                     int next = (_depth & 1) == 0 ? nested.NestedToken : nested.Token;
                     BusTraceOperation registration =
-                        0 <= nested.HandleSlot
-                            ? _explicitRegistrations[
-                                useNested ? nested.HandleSlot : nested.SourceHandleSlot
-                            ]
-                            : _registrations[next];
+                        0 <= nested.HandleSlot ? _explicitRegistrations[useNested ? nested.HandleSlot : nested.SourceHandleSlot] : _registrations[next];
                     _callbacks.Add($"nested-enter:depth={_depth},emission={emission}");
                     ++_depth;
                     try
                     {
-                        EmitNested(
-                            new BusTraceOperation(
-                                BusTraceOperationKind.Emit,
-                                next,
-                                registration.Context,
-                                unchecked(value + 1),
-                                kindOffset: registration.KindOffset
-                            )
-                        );
+                        EmitNested(new BusTraceOperation(BusTraceOperationKind.Emit, next, registration.Context, unchecked(value + 1), kindOffset: registration.KindOffset));
                     }
                     finally
                     {
@@ -965,10 +785,7 @@ namespace DxMessaging.Tests.Runtime
                     }
                 }
             }
-            if (
-                _throwOperation.HasValue
-                && MatchesCallback(_throwOperation.Value, token, callbackIdentity)
-            )
+            if (_throwOperation.HasValue && MatchesCallback(_throwOperation.Value, token, callbackIdentity))
             {
                 BusTraceOperation operation = _throwOperation.Value;
                 _throwOperation = null;
@@ -981,22 +798,14 @@ namespace DxMessaging.Tests.Runtime
                     CleanupThrowingCallback(operation);
                 }
             }
-            if (
-                _resetOperation.HasValue
-                && MatchesCallback(_resetOperation.Value, token, callbackIdentity)
-            )
+            if (_resetOperation.HasValue && MatchesCallback(_resetOperation.Value, token, callbackIdentity))
             {
                 _resetOperation = null;
                 _reset();
             }
         }
 
-        protected virtual bool MatchesCallback(
-            BusTraceOperation operation,
-            int token,
-            int callbackIdentity,
-            bool useNested = false
-        )
+        protected virtual bool MatchesCallback(BusTraceOperation operation, int token, int callbackIdentity, bool useNested = false)
         {
             int owner = useNested ? operation.NestedToken : operation.Token;
             if (token != owner)
@@ -1012,8 +821,7 @@ namespace DxMessaging.Tests.Runtime
                 Copies and duplicates retain delegate identity even after the original slot
                 is reused. Actual token state excludes handles consumed by callback cleanup.
             */
-            return callbackIdentity == _explicitCallbackIdentities[slot]
-                && _tokens[owner]._metadata.ContainsKey(_explicitHandles[slot]);
+            return callbackIdentity == _explicitCallbackIdentities[slot] && _tokens[owner]._metadata.ContainsKey(_explicitHandles[slot]);
         }
 
         internal readonly struct UntargetedPayload : IUntargetedMessage<UntargetedPayload>

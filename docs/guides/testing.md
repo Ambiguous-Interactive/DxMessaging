@@ -2,15 +2,13 @@
 
 [Back to Index](../getting-started/index.md) | [Patterns](patterns.md) | [runtime configuration](../advanced/runtime-configuration.md)
 
-Test message delivery and registration ownership separately. Use a local bus for plain C# owners,
-and a scoped bus override when a Unity component resolves the global bus. Run Unity messaging tests
-on the main thread; separate buses still share runtime settings and pools.
+Test message delivery and registration ownership separately. Use a local bus for plain C# owners, and a scoped bus override when a Unity component resolves the global bus. Run
+Unity messaging tests on the main thread; separate buses still share runtime settings and pools.
 
 ## Plain C# owners
 
-This synchronous NUnit test uses no Unity object. Save it as `PlainMessageTests.cs` in a test assembly.
-The token starts disabled, so enable it after staging the handler. The `using` block disposes the
-registration even when an assertion fails.
+This synchronous NUnit test uses no Unity object. Save it as `PlainMessageTests.cs` in a test assembly. The token starts disabled, so enable it after staging the handler. The
+`using` block disposes the registration even when an assertion fails.
 
 ```csharp
 using DxMessaging.Core;
@@ -48,9 +46,8 @@ public sealed class PlainMessageTests
 
 ## Capture messages with a recorder
 
-In 4.0.0, add `WallstopStudios.DxMessaging.Testing` to your test assembly definition's
-references. This support assembly is included only when `UNITY_INCLUDE_TESTS` is
-set. It does not add test helpers to the runtime assembly or ordinary player builds.
+In 4.0.0, add `WallstopStudios.DxMessaging.Testing` to your test assembly definition's references. This support assembly is included only when `UNITY_INCLUDE_TESTS` is set. It does
+not add test helpers to the runtime assembly or ordinary player builds.
 
 Use an explicit bus and dispose the recorder after assertions:
 
@@ -77,29 +74,22 @@ public sealed class RecorderExampleTests
 }
 ```
 
-The factory owns the handler, token, activation, and cleanup from the manual
-example above. For a recipient, use `MessageRecorder.Targeted<T>(target, bus)`;
-for a sender, use `MessageRecorder.Broadcast<T>(source, bus)`. The context is an
-`InstanceId`; Unity GameObjects and Components convert through the existing APIs.
-Each recorder has its own subscription, including two recorders for the same type
-and context on one bus.
+The factory owns the handler, token, activation, and cleanup from the manual example above. For a recipient, use `MessageRecorder.Targeted<T>(target, bus)`; for a sender, use
+`MessageRecorder.Broadcast<T>(source, bus)`. The context is an `InstanceId`; Unity GameObjects and Components convert through the existing APIs. Each recorder has its own
+subscription, including two recorders for the same type and context on one bus.
 
-`Received` is a live read-only view in handler delivery order. Structs are copied;
-class messages retain their original references. Interceptor vetoes prevent
-capture, and accepted interceptor mutations are visible. Earlier messages are not
-replayed. Setup and list growth allocate, so use the recorder for behavioral
-assertions outside throughput or allocation measurements.
+`Received` is a live read-only view in handler delivery order. Structs are copied; class messages retain their original references. Interceptor vetoes prevent capture, and accepted
+interceptor mutations are visible. Earlier messages are not replayed. Setup and list growth allocate, so use the recorder for behavioral assertions outside throughput or allocation
+measurements.
 
-`Clear()` releases captures while keeping the subscription. Successful `Dispose()`
-removes the subscription and clears captures; repeated disposal is harmless.
-If bus cleanup throws, resolve the cause and retry `Dispose()` on the same
-recorder. Setup failures use the builder's existing cleanup contract: a
-`MessageRegistrationBuildException.Lease` owns cleanup if rollback could not finish.
+`Clear()` releases captures while keeping the subscription. Successful `Dispose()` removes the subscription and clears captures; repeated disposal is harmless. If bus cleanup
+throws, resolve the cause and retry `Dispose()` on the same recorder. Setup failures use the builder's existing cleanup contract: a `MessageRegistrationBuildException.Lease` owns
+cleanup if rollback could not finish.
 
 ## Unity component lifecycle
 
-Put these scripts and `TestPing` above in the same PlayMode test assembly. The receiver registers
-through its inherited token and keeps the required base call. Save it as `TestPingReceiver.cs`:
+Put these scripts and `TestPing` above in the same PlayMode test assembly. The receiver registers through its inherited token and keeps the required base call. Save it as
+`TestPingReceiver.cs`:
 
 ```csharp
 using DxMessaging.Unity;
@@ -121,9 +111,8 @@ public sealed class TestPingReceiver : MessageAwareComponent
 }
 ```
 
-Save the fixture as `ComponentLifecycleTests.cs`. The synchronous test checks enabled, disabled,
-and re-enabled delivery. The receiver uses the default `MessageRegistrationTiedToEnableStatus = true`.
-The fixture restores the previous global bus after destroying its GameObject:
+Save the fixture as `ComponentLifecycleTests.cs`. The synchronous test checks enabled, disabled, and re-enabled delivery. The receiver uses the default
+`MessageRegistrationTiedToEnableStatus = true`. The fixture restores the previous global bus after destroying its GameObject:
 
 ```csharp
 using System;
@@ -194,30 +183,21 @@ public sealed class ComponentLifecycleTests
 }
 ```
 
-Unity's [Destroy contract](https://docs.unity3d.com/2021.3/Documentation/ScriptReference/Object.Destroy.html)
-defers destruction until after the current Update loop. The
-[Unity teardown](https://docs.unity3d.com/Packages/com.unity.test-framework@1.4/api/UnityEngine.TestTools.UnityTearDownAttribute.html)
-yields once for that destruction,
-then asserts the six registration counters. It does not poll until counts reach zero or reset the bus
-to hide live registrations. A failed cleanup assertion still runs the `finally` block that restores
-the previous bus.
+Unity's [Destroy contract](https://docs.unity3d.com/2021.3/Documentation/ScriptReference/Object.Destroy.html) defers destruction until after the current Update loop. The
+[Unity teardown](https://docs.unity3d.com/Packages/com.unity.test-framework@1.4/api/UnityEngine.TestTools.UnityTearDownAttribute.html) yields once for that destruction, then
+asserts the six registration counters. It does not poll until counts reach zero or reset the bus to hide live registrations. A failed cleanup assertion still runs the `finally`
+block that restores the previous bus.
 
-Use `[Test]` for synchronous registration and delivery checks. Use `[UnityTest]` only when the test
-must observe a later frame, scene transition, coroutine, or deferred destruction. Track every owned
-GameObject and token so teardown runs even after an assertion fails.
+Use `[Test]` for synchronous registration and delivery checks. Use `[UnityTest]` only when the test must observe a later frame, scene transition, coroutine, or deferred
+destruction. Track every owned GameObject and token so teardown runs even after an assertion fails.
 
 ## Extend the checks
 
-- For [targeted messages](patterns.md#2-directed-commands-targeted), verify both the intended
-  receiver and a different target that must not receive the message.
-- For [broadcast messages](patterns.md#3-observability-broadcast), verify the emitter's source and
-  the intended source-bound and all-source listeners.
-- For [interceptors](patterns.md#4-validation-and-normalization-interceptors), test accepted,
-  cancelled, and modified messages, including whether handlers and post-processors run.
-- For cleanup and reentrancy, assert observable delivery and the registrations owned by the test.
-  Avoid sleeps, retries, and unbounded waits for another fixture's state.
-- Restore any diagnostics or runtime settings changed by a fixture. A local bus isolates routing;
-  it does not isolate those shared settings.
+- For [targeted messages](patterns.md#2-directed-commands-targeted), verify both the intended receiver and a different target that must not receive the message.
+- For [broadcast messages](patterns.md#3-observability-broadcast), verify the emitter's source and the intended source-bound and all-source listeners.
+- For [interceptors](patterns.md#4-validation-and-normalization-interceptors), test accepted, cancelled, and modified messages, including whether handlers and post-processors run.
+- For cleanup and reentrancy, assert observable delivery and the registrations owned by the test. Avoid sleeps, retries, and unbounded waits for another fixture's state.
+- Restore any diagnostics or runtime settings changed by a fixture. A local bus isolates routing; it does not isolate those shared settings.
 
 ## See Also
 

@@ -19,33 +19,19 @@ internal sealed class GeneratedInterfaceContainerTests
     private static readonly ImmutableArray<SyntaxTree> ShippedContracts = ReadShippedContracts();
 
     [TestCaseSource(nameof(ContainerCases))]
-    public void GeneratedMembersPreserveLegalContainingDeclarations(
-        string container,
-        string target,
-        bool constructor,
-        string? message
-    )
+    public void GeneratedMembersPreserveLegalContainingDeclarations(string container, string target, bool constructor, string? message)
     {
-        string context =
-            $"container={container}, target={target}, constructor={constructor}, message={message ?? "none"}";
+        string context = $"container={container}, target={target}, constructor={constructor}, message={message ?? "none"}";
         string manual = CreateSource(container, target, constructor, message, manual: true);
         AssertCompilationExecutes(CreateCompilation(manual), "Handwritten oracle: " + context);
 
         string source = CreateSource(container, target, constructor, message, manual: false);
         GeneratorDriver driver = CreateDriver();
-        driver = driver.RunGeneratorsAndUpdateCompilation(
-            CreateCompilation(source),
-            out Compilation generated,
-            out ImmutableArray<Diagnostic> diagnostics
-        );
+        driver = driver.RunGeneratorsAndUpdateCompilation(CreateCompilation(source), out Compilation generated, out ImmutableArray<Diagnostic> diagnostics);
         GeneratorDriverRunResult result = driver.GetRunResult();
         Assert.That(result.Results.Select(run => run.Exception), Has.All.Null, context);
         Assert.That(diagnostics, Is.Empty, context + "\n" + string.Join("\n", diagnostics));
-        Assert.That(
-            result.GeneratedTrees,
-            Has.Length.EqualTo((constructor ? 1 : 0) + (message == null ? 0 : 1)),
-            "Generate every requested member set: " + context
-        );
+        Assert.That(result.GeneratedTrees, Has.Length.EqualTo((constructor ? 1 : 0) + (message == null ? 0 : 1)), "Generate every requested member set: " + context);
         AssertCompilationExecutes(generated, "Generated caller: " + context);
     }
 
@@ -53,48 +39,25 @@ internal sealed class GeneratedInterfaceContainerTests
     public void NonpartialInterfaceRetainsTheContainerDiagnostics(bool constructor, string? message)
     {
         string context = $"constructor={constructor}, message={message ?? "none"}";
-        string source = CreateSource(
-                "Interface",
-                "readonly struct",
-                constructor,
-                message,
-                manual: false
-            )
+        string source = CreateSource("Interface", "readonly struct", constructor, message, manual: false)
             .Replace("partial interface Envelope", "interface Envelope", StringComparison.Ordinal);
         GeneratorDriver driver = CreateDriver().RunGenerators(CreateCompilation(source));
         GeneratorDriverRunResult result = driver.GetRunResult();
         Diagnostic[] diagnostics = result.Diagnostics.ToArray();
         Assert.That(result.Results.Select(run => run.Exception), Has.All.Null, context);
-        Assert.That(
-            result.GeneratedTrees,
-            Is.Empty,
-            "Do not emit an invalid container: " + context
-        );
+        Assert.That(result.GeneratedTrees, Is.Empty, "Do not emit an invalid container: " + context);
         Assert.That(diagnostics.Select(d => d.Id), Does.Contain("DXMSG003"), context);
         Assert.That(diagnostics.Select(d => d.Id), Does.Contain("DXMSG004"), context);
         Assert.That(
             diagnostics.All(d => d.Id is "DXMSG003" or "DXMSG004"),
             Is.True,
-            "Retain only the declared container diagnostics: "
-                + context
-                + "\n"
-                + string.Join("\n", diagnostics.AsEnumerable())
+            "Retain only the declared container diagnostics: " + context + "\n" + string.Join("\n", diagnostics.AsEnumerable())
         );
     }
 
     private static IEnumerable<TestCaseData> ContainerCases()
     {
-        foreach (
-            string container in new[]
-            {
-                "Interface",
-                "GenericInterface",
-                "ClassInterface",
-                "InterfaceClass",
-                "Class",
-                "Struct",
-            }
-        )
+        foreach (string container in new[] { "Interface", "GenericInterface", "ClassInterface", "InterfaceClass", "Class", "Struct" })
         {
             foreach (string target in new[] { "class", "readonly struct" })
             {
@@ -112,9 +75,7 @@ internal sealed class GeneratedInterfaceContainerTests
     {
         foreach ((bool constructor, string? message) in Attributes())
         {
-            yield return new TestCaseData(constructor, message).SetName(
-                $"NonpartialInterfaceRetainsTheContainerDiagnostics({constructor},{message ?? "none"})"
-            );
+            yield return new TestCaseData(constructor, message).SetName($"NonpartialInterfaceRetainsTheContainerDiagnostics({constructor},{message ?? "none"})");
         }
     }
 
@@ -128,49 +89,24 @@ internal sealed class GeneratedInterfaceContainerTests
         }
     }
 
-    private static string CreateSource(
-        string container,
-        string target,
-        bool constructor,
-        string? message,
-        bool manual
-    )
+    private static string CreateSource(string container, string target, bool constructor, string? message, bool manual)
     {
         (string open, string close, string name) = container switch
         {
             "Interface" => ("public partial interface Envelope {", "}", "Envelope.Packet"),
-            "GenericInterface" => (
-                "public partial interface Envelope<T> where T : struct {",
-                "}",
-                "Envelope<int>.Packet"
-            ),
-            "ClassInterface" => (
-                "public partial class Outer { public partial interface Envelope {",
-                "} }",
-                "Outer.Envelope.Packet"
-            ),
-            "InterfaceClass" => (
-                "public partial interface Envelope { public partial class Inner {",
-                "} }",
-                "Envelope.Inner.Packet"
-            ),
+            "GenericInterface" => ("public partial interface Envelope<T> where T : struct {", "}", "Envelope<int>.Packet"),
+            "ClassInterface" => ("public partial class Outer { public partial interface Envelope {", "} }", "Outer.Envelope.Packet"),
+            "InterfaceClass" => ("public partial interface Envelope { public partial class Inner {", "} }", "Envelope.Inner.Packet"),
             "Class" => ("public partial class Envelope {", "}", "Envelope.Packet"),
             "Struct" => ("public partial struct Envelope {", "}", "Envelope.Packet"),
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(container),
-                container,
-                "Unknown test container"
-            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(container), container, "Unknown test container"),
         };
         string declaration = target == "class" ? "partial class" : "readonly partial struct";
         string attributes = manual
             ? ""
-            : (constructor ? "[DxMessaging.Core.Attributes.DxAutoConstructor]" : "")
-                + (message == null ? "" : $"[DxMessaging.Core.Attributes.Dx{message}Message]");
-        string baseType =
-            manual && message != null ? $" : DxMessaging.Core.Messages.I{message}Message" : "";
-        string members =
-            manual || !constructor ? "public Packet(int value) { Value = value; }" : "";
+            : (constructor ? "[DxMessaging.Core.Attributes.DxAutoConstructor]" : "") + (message == null ? "" : $"[DxMessaging.Core.Attributes.Dx{message}Message]");
+        string baseType = manual && message != null ? $" : DxMessaging.Core.Messages.I{message}Message" : "";
+        string members = manual || !constructor ? "public Packet(int value) { Value = value; }" : "";
         if (manual && message != null)
         {
             members += "public System.Type MessageType => typeof(Packet);";
@@ -200,24 +136,14 @@ namespace ConsumerExample
     }
 
     private static CSharpGeneratorDriver CreateDriver() =>
-        CSharpGeneratorDriver.Create(
-            generators: new ISourceGenerator[]
-            {
-                new DxAutoConstructorGenerator(),
-                new DxMessageIdGenerator(),
-            },
-            parseOptions: ParseOptions
-        );
+        CSharpGeneratorDriver.Create(generators: new ISourceGenerator[] { new DxAutoConstructorGenerator(), new DxMessageIdGenerator() }, parseOptions: ParseOptions);
 
     private static CSharpCompilation CreateCompilation(string source) =>
         CSharpCompilation.Create(
             "InterfaceContainerConsumer",
             ShippedContracts.Add(CSharpSyntaxTree.ParseText(source, ParseOptions, "Consumer.cs")),
             GeneratorTestUtilities.CompilationReferences,
-            new CSharpCompilationOptions(
-                OutputKind.DynamicallyLinkedLibrary,
-                generalDiagnosticOption: ReportDiagnostic.Error
-            )
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, generalDiagnosticOption: ReportDiagnostic.Error)
         );
 
     private static ImmutableArray<SyntaxTree> ReadShippedContracts()
@@ -229,9 +155,7 @@ namespace ConsumerExample
         }
         if (root == null)
         {
-            throw new DirectoryNotFoundException(
-                "Find the repository containing the real messaging contracts."
-            );
+            throw new DirectoryNotFoundException("Find the repository containing the real messaging contracts.");
         }
         string[] paths =
         {
@@ -257,11 +181,7 @@ namespace ConsumerExample
     private static void AssertCompilationExecutes(Compilation compilation, string context)
     {
         Diagnostic[] diagnostics = compilation.GetDiagnostics().ToArray();
-        Assert.That(
-            diagnostics,
-            Is.Empty,
-            context + "\n" + string.Join("\n", diagnostics.AsEnumerable())
-        );
+        Assert.That(diagnostics, Is.Empty, context + "\n" + string.Join("\n", diagnostics.AsEnumerable()));
         using MemoryStream image = new();
         EmitResult emit = compilation.Emit(image);
         Assert.That(emit.Success, Is.True, context + "\n" + string.Join("\n", emit.Diagnostics));
@@ -272,11 +192,7 @@ namespace ConsumerExample
             Assembly assembly = load.LoadFromStream(image);
             MethodInfo? verify = assembly.GetType("ConsumerExample.Consumer")?.GetMethod("Verify");
             Assert.That(verify, Is.Not.Null, "The explicit caller must be emitted: " + context);
-            Assert.That(
-                verify!.Invoke(null, null),
-                Is.EqualTo(true),
-                "Field and identity must agree: " + context
-            );
+            Assert.That(verify!.Invoke(null, null), Is.EqualTo(true), "Field and identity must agree: " + context);
         }
         finally
         {

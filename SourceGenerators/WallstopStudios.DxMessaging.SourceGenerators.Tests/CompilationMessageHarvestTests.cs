@@ -76,9 +76,7 @@ internal sealed class CompilationMessageHarvestTests
     [Test]
     public void AggregateOnUnity2021Dxmsg009LineProducesEntryWithFilePathAndLine()
     {
-        Dictionary<string, ParsedTypeReport> aggregated = BaseCallLogMessageParser.Aggregate(
-            new[] { Unity2021Dxmsg009 }
-        );
+        Dictionary<string, ParsedTypeReport> aggregated = BaseCallLogMessageParser.Aggregate(new[] { Unity2021Dxmsg009 });
 
         Assert.That(aggregated, Has.Count.EqualTo(1));
         Assert.That(aggregated.ContainsKey("Sample.BrokenThing"), Is.True);
@@ -97,9 +95,7 @@ internal sealed class CompilationMessageHarvestTests
             (new hides) on OnEnable. The same type FQN appears in both, so the per-type report
             should fold both methods into one entry while keeping both diagnostic ids.
         */
-        Dictionary<string, ParsedTypeReport> aggregated = BaseCallLogMessageParser.Aggregate(
-            new[] { Unity2021Dxmsg006, Unity2021Dxmsg007 }
-        );
+        Dictionary<string, ParsedTypeReport> aggregated = BaseCallLogMessageParser.Aggregate(new[] { Unity2021Dxmsg006, Unity2021Dxmsg007 });
 
         Assert.That(aggregated, Has.Count.EqualTo(1));
         ParsedTypeReport report = aggregated["Sample.Player"];
@@ -121,12 +117,7 @@ internal sealed class CompilationMessageHarvestTests
             must also be tolerant of unrelated lines.
         */
         Dictionary<string, ParsedTypeReport> aggregated = BaseCallLogMessageParser.Aggregate(
-            new[]
-            {
-                "Assets/Foo.cs(1,1): warning CS0162: Unreachable code detected",
-                "[BUILD] Cooked some assets in 12.3s",
-                Unity2021Dxmsg009,
-            }
+            new[] { "Assets/Foo.cs(1,1): warning CS0162: Unreachable code detected", "[BUILD] Cooked some assets in 12.3s", Unity2021Dxmsg009 }
         );
 
         Assert.That(aggregated, Has.Count.EqualTo(1));
@@ -141,9 +132,7 @@ internal sealed class CompilationMessageHarvestTests
             the empty result is then used by ApplyCompilerMessageDrain to RETIRE the previous
             attribution for that assembly. Stable empty handling is load-bearing for that flow.
         */
-        Dictionary<string, ParsedTypeReport> aggregated = BaseCallLogMessageParser.Aggregate(
-            Array.Empty<string>()
-        );
+        Dictionary<string, ParsedTypeReport> aggregated = BaseCallLogMessageParser.Aggregate(Array.Empty<string>());
 
         Assert.That(aggregated, Is.Empty);
     }
@@ -170,16 +159,9 @@ internal sealed class CompilationMessageHarvestTests
         Dictionary<string, HashSet<string>> typesByAssembly = new(StringComparer.OrdinalIgnoreCase);
         Dictionary<string, ParsedTypeReport> mergedReports = new(StringComparer.Ordinal);
 
-        Dictionary<string, ParsedTypeReport> reports = MakeReports(
-            ("Sample.Player", stringArray, "DXMSG006", "Assets/Player.cs", 8)
-        );
+        Dictionary<string, ParsedTypeReport> reports = MakeReports(("Sample.Player", stringArray, "DXMSG006", "Assets/Player.cs", 8));
 
-        BaseCallReportAggregator.ApplyAssemblyReports(
-            "Sample.dll",
-            reports,
-            typesByAssembly,
-            mergedReports
-        );
+        BaseCallReportAggregator.ApplyAssemblyReports("Sample.dll", reports, typesByAssembly, mergedReports);
 
         Assert.That(typesByAssembly.ContainsKey("Sample.dll"), Is.True);
         Assert.That(typesByAssembly["Sample.dll"], Is.EquivalentTo(expectedArray1));
@@ -201,32 +183,14 @@ internal sealed class CompilationMessageHarvestTests
         Dictionary<string, HashSet<string>> typesByAssembly = new(StringComparer.OrdinalIgnoreCase);
         Dictionary<string, ParsedTypeReport> mergedReports = new(StringComparer.Ordinal);
 
-        BaseCallReportAggregator.ApplyAssemblyReports(
-            "A.dll",
-            MakeReports(("X", stringArray, "DXMSG006", "X.cs", 1)),
-            typesByAssembly,
-            mergedReports
-        );
-        Assume.That(
-            mergedReports.ContainsKey("X"),
-            Is.True,
-            "Precondition: X must be in the merged map after first apply."
-        );
+        BaseCallReportAggregator.ApplyAssemblyReports("A.dll", MakeReports(("X", stringArray, "DXMSG006", "X.cs", 1)), typesByAssembly, mergedReports);
+        Assume.That(mergedReports.ContainsKey("X"), Is.True, "Precondition: X must be in the merged map after first apply.");
 
         // Re-call without X.
-        BaseCallReportAggregator.ApplyAssemblyReports(
-            "A.dll",
-            new Dictionary<string, ParsedTypeReport>(StringComparer.Ordinal),
-            typesByAssembly,
-            mergedReports
-        );
+        BaseCallReportAggregator.ApplyAssemblyReports("A.dll", new Dictionary<string, ParsedTypeReport>(StringComparer.Ordinal), typesByAssembly, mergedReports);
 
         Assert.That(mergedReports, Is.Empty, "X must be retired from mergedReports.");
-        Assert.That(
-            typesByAssembly["A.dll"],
-            Is.Empty,
-            "A.dll's FQN set must drop X after the empty recompile."
-        );
+        Assert.That(typesByAssembly["A.dll"], Is.Empty, "A.dll's FQN set must drop X after the empty recompile.");
     }
 
     [Test]
@@ -241,43 +205,19 @@ internal sealed class CompilationMessageHarvestTests
         Dictionary<string, HashSet<string>> typesByAssembly = new(StringComparer.OrdinalIgnoreCase);
         Dictionary<string, ParsedTypeReport> mergedReports = new(StringComparer.Ordinal);
 
-        BaseCallReportAggregator.ApplyAssemblyReports(
-            "A.dll",
-            MakeReports(("X", stringArray0, "DXMSG006", "A/X.cs", 5)),
-            typesByAssembly,
-            mergedReports
-        );
-        BaseCallReportAggregator.ApplyAssemblyReports(
-            "B.dll",
-            MakeReports(("X", stringArray0, "DXMSG006", "B/X.cs", 9)),
-            typesByAssembly,
-            mergedReports
-        );
+        BaseCallReportAggregator.ApplyAssemblyReports("A.dll", MakeReports(("X", stringArray0, "DXMSG006", "A/X.cs", 5)), typesByAssembly, mergedReports);
+        BaseCallReportAggregator.ApplyAssemblyReports("B.dll", MakeReports(("X", stringArray0, "DXMSG006", "B/X.cs", 9)), typesByAssembly, mergedReports);
         Assume.That(mergedReports.ContainsKey("X"), Is.True);
 
         // A drops X.
-        BaseCallReportAggregator.ApplyAssemblyReports(
-            "A.dll",
-            new Dictionary<string, ParsedTypeReport>(StringComparer.Ordinal),
-            typesByAssembly,
-            mergedReports
-        );
+        BaseCallReportAggregator.ApplyAssemblyReports("A.dll", new Dictionary<string, ParsedTypeReport>(StringComparer.Ordinal), typesByAssembly, mergedReports);
 
-        Assert.That(
-            mergedReports.ContainsKey("X"),
-            Is.True,
-            "X must survive while B still reports it."
-        );
+        Assert.That(mergedReports.ContainsKey("X"), Is.True, "X must survive while B still reports it.");
         Assert.That(typesByAssembly["A.dll"], Is.Empty);
         Assert.That(typesByAssembly["B.dll"], Is.EquivalentTo(expectedArray3));
 
         // Now B drops X too.
-        BaseCallReportAggregator.ApplyAssemblyReports(
-            "B.dll",
-            new Dictionary<string, ParsedTypeReport>(StringComparer.Ordinal),
-            typesByAssembly,
-            mergedReports
-        );
+        BaseCallReportAggregator.ApplyAssemblyReports("B.dll", new Dictionary<string, ParsedTypeReport>(StringComparer.Ordinal), typesByAssembly, mergedReports);
 
         Assert.That(mergedReports, Is.Empty, "X must be retired once both assemblies drop it.");
         Assert.That(typesByAssembly["B.dll"], Is.Empty);
@@ -293,18 +233,8 @@ internal sealed class CompilationMessageHarvestTests
         Dictionary<string, HashSet<string>> typesByAssembly = new(StringComparer.OrdinalIgnoreCase);
         Dictionary<string, ParsedTypeReport> mergedReports = new(StringComparer.Ordinal);
 
-        BaseCallReportAggregator.ApplyAssemblyReports(
-            "A.dll",
-            MakeReports(("X", stringArray1, "DXMSG006", "A/X.cs", 5)),
-            typesByAssembly,
-            mergedReports
-        );
-        BaseCallReportAggregator.ApplyAssemblyReports(
-            "B.dll",
-            MakeReports(("X", stringArray2, "DXMSG006", "B/X.cs", 9)),
-            typesByAssembly,
-            mergedReports
-        );
+        BaseCallReportAggregator.ApplyAssemblyReports("A.dll", MakeReports(("X", stringArray1, "DXMSG006", "A/X.cs", 5)), typesByAssembly, mergedReports);
+        BaseCallReportAggregator.ApplyAssemblyReports("B.dll", MakeReports(("X", stringArray2, "DXMSG006", "B/X.cs", 9)), typesByAssembly, mergedReports);
 
         Assert.That(mergedReports.ContainsKey("X"), Is.True);
         Assert.That(mergedReports["X"].MissingBaseFor, Is.EquivalentTo(expectedArray));
@@ -325,19 +255,9 @@ internal sealed class CompilationMessageHarvestTests
         Dictionary<string, HashSet<string>> typesByAssembly = new(StringComparer.OrdinalIgnoreCase);
         Dictionary<string, ParsedTypeReport> mergedReports = new(StringComparer.Ordinal);
 
-        BaseCallReportAggregator.ApplyAssemblyReports(
-            "A.dll",
-            MakeReports(("X", stringArray1, "DXMSG006", "A/X.cs", 5)),
-            typesByAssembly,
-            mergedReports
-        );
+        BaseCallReportAggregator.ApplyAssemblyReports("A.dll", MakeReports(("X", stringArray1, "DXMSG006", "A/X.cs", 5)), typesByAssembly, mergedReports);
 
-        BaseCallReportAggregator.ApplyAssemblyReports(
-            "Empty.dll",
-            new Dictionary<string, ParsedTypeReport>(StringComparer.Ordinal),
-            typesByAssembly,
-            mergedReports
-        );
+        BaseCallReportAggregator.ApplyAssemblyReports("Empty.dll", new Dictionary<string, ParsedTypeReport>(StringComparer.Ordinal), typesByAssembly, mergedReports);
 
         Assert.That(mergedReports.ContainsKey("X"), Is.True);
         Assert.That(typesByAssembly.ContainsKey("Empty.dll"), Is.True);
@@ -351,28 +271,13 @@ internal sealed class CompilationMessageHarvestTests
         Dictionary<string, ParsedTypeReport> mergedReports = new(StringComparer.Ordinal);
 
         Assert.Throws<ArgumentException>(() =>
-            BaseCallReportAggregator.ApplyAssemblyReports(
-                string.Empty,
-                new Dictionary<string, ParsedTypeReport>(StringComparer.Ordinal),
-                typesByAssembly,
-                mergedReports
-            )
+            BaseCallReportAggregator.ApplyAssemblyReports(string.Empty, new Dictionary<string, ParsedTypeReport>(StringComparer.Ordinal), typesByAssembly, mergedReports)
         );
         Assert.Throws<ArgumentNullException>(() =>
-            BaseCallReportAggregator.ApplyAssemblyReports(
-                "A.dll",
-                new Dictionary<string, ParsedTypeReport>(StringComparer.Ordinal),
-                null!,
-                mergedReports
-            )
+            BaseCallReportAggregator.ApplyAssemblyReports("A.dll", new Dictionary<string, ParsedTypeReport>(StringComparer.Ordinal), null!, mergedReports)
         );
         Assert.Throws<ArgumentNullException>(() =>
-            BaseCallReportAggregator.ApplyAssemblyReports(
-                "A.dll",
-                new Dictionary<string, ParsedTypeReport>(StringComparer.Ordinal),
-                typesByAssembly,
-                null!
-            )
+            BaseCallReportAggregator.ApplyAssemblyReports("A.dll", new Dictionary<string, ParsedTypeReport>(StringComparer.Ordinal), typesByAssembly, null!)
         );
 
         /*
@@ -380,18 +285,8 @@ internal sealed class CompilationMessageHarvestTests
             matching messages" sentinel and must behave as the retirement path (same as an empty
             dict).
         */
-        BaseCallReportAggregator.ApplyAssemblyReports(
-            "A.dll",
-            MakeReports(("X", stringArray3, "DXMSG006", "A/X.cs", 1)),
-            typesByAssembly,
-            mergedReports
-        );
-        BaseCallReportAggregator.ApplyAssemblyReports(
-            "A.dll",
-            null,
-            typesByAssembly,
-            mergedReports
-        );
+        BaseCallReportAggregator.ApplyAssemblyReports("A.dll", MakeReports(("X", stringArray3, "DXMSG006", "A/X.cs", 1)), typesByAssembly, mergedReports);
+        BaseCallReportAggregator.ApplyAssemblyReports("A.dll", null, typesByAssembly, mergedReports);
         Assert.That(mergedReports, Is.Empty);
         Assert.That(typesByAssembly["A.dll"], Is.Empty);
     }
@@ -408,15 +303,10 @@ internal sealed class CompilationMessageHarvestTests
             Same type + same method reported via both paths: one entry, dedup'd diagnostic IDs,
             method appears once.
         */
-        Dictionary<string, ParsedTypeReport> logEntries = MakeReports(
-            ("Sample.Player", stringArray3, "DXMSG006", "Assets/Player.cs", 8)
-        );
-        Dictionary<string, ParsedTypeReport> merged = MakeReports(
-            ("Sample.Player", stringArray4, "DXMSG006", "Assets/Player.cs", 8)
-        );
+        Dictionary<string, ParsedTypeReport> logEntries = MakeReports(("Sample.Player", stringArray3, "DXMSG006", "Assets/Player.cs", 8));
+        Dictionary<string, ParsedTypeReport> merged = MakeReports(("Sample.Player", stringArray4, "DXMSG006", "Assets/Player.cs", 8));
 
-        Dictionary<string, BaseCallReportEntryDto> snapshot =
-            BaseCallReportAggregator.BuildSnapshot(logEntries, merged);
+        Dictionary<string, BaseCallReportEntryDto> snapshot = BaseCallReportAggregator.BuildSnapshot(logEntries, merged);
 
         Assert.That(snapshot, Has.Count.EqualTo(1));
         BaseCallReportEntryDto entry = snapshot["Sample.Player"];
@@ -434,19 +324,13 @@ internal sealed class CompilationMessageHarvestTests
             contract must work in isolation; Unity 2021 only feeds the CompilerMessage path,
             Unity 2022+ predominantly feeds LogEntries.
         */
-        Dictionary<string, ParsedTypeReport> logOnly = MakeReports(
-            ("Sample.A", stringArray4, "DXMSG006", "A.cs", 1)
-        );
-        Dictionary<string, BaseCallReportEntryDto> logSnapshot =
-            BaseCallReportAggregator.BuildSnapshot(logOnly, mergedReports: null);
+        Dictionary<string, ParsedTypeReport> logOnly = MakeReports(("Sample.A", stringArray4, "DXMSG006", "A.cs", 1));
+        Dictionary<string, BaseCallReportEntryDto> logSnapshot = BaseCallReportAggregator.BuildSnapshot(logOnly, mergedReports: null);
         Assert.That(logSnapshot, Has.Count.EqualTo(1));
         Assert.That(logSnapshot.ContainsKey("Sample.A"), Is.True);
 
-        Dictionary<string, ParsedTypeReport> mergedOnly = MakeReports(
-            ("Sample.B", stringArray2, "DXMSG009", "B.cs", 2)
-        );
-        Dictionary<string, BaseCallReportEntryDto> mergedSnapshot =
-            BaseCallReportAggregator.BuildSnapshot(logEntriesReports: null, mergedOnly);
+        Dictionary<string, ParsedTypeReport> mergedOnly = MakeReports(("Sample.B", stringArray2, "DXMSG009", "B.cs", 2));
+        Dictionary<string, BaseCallReportEntryDto> mergedSnapshot = BaseCallReportAggregator.BuildSnapshot(logEntriesReports: null, mergedOnly);
         Assert.That(mergedSnapshot, Has.Count.EqualTo(1));
         Assert.That(mergedSnapshot.ContainsKey("Sample.B"), Is.True);
         Assert.That(mergedSnapshot["Sample.B"].DiagnosticIds, Is.EquivalentTo(expectedArray5));
@@ -459,15 +343,10 @@ internal sealed class CompilationMessageHarvestTests
             First seen wins. LogEntries reports first → its path/line stick even though merged
             also has data for the same type with a different path/line.
         */
-        Dictionary<string, ParsedTypeReport> logEntries = MakeReports(
-            ("X", stringArray5, "DXMSG006", "First.cs", 3)
-        );
-        Dictionary<string, ParsedTypeReport> merged = MakeReports(
-            ("X", stringArray5, "DXMSG006", "Second.cs", 99)
-        );
+        Dictionary<string, ParsedTypeReport> logEntries = MakeReports(("X", stringArray5, "DXMSG006", "First.cs", 3));
+        Dictionary<string, ParsedTypeReport> merged = MakeReports(("X", stringArray5, "DXMSG006", "Second.cs", 99));
 
-        Dictionary<string, BaseCallReportEntryDto> snapshot =
-            BaseCallReportAggregator.BuildSnapshot(logEntries, merged);
+        Dictionary<string, BaseCallReportEntryDto> snapshot = BaseCallReportAggregator.BuildSnapshot(logEntries, merged);
 
         Assert.That(snapshot["X"].FilePath, Is.EqualTo("First.cs"));
         Assert.That(snapshot["X"].Line, Is.EqualTo(3));
@@ -480,15 +359,10 @@ internal sealed class CompilationMessageHarvestTests
             LogEntries says X.Awake / DXMSG006; merged says X.OnEnable / DXMSG009. The snapshot
             union must carry both methods and both diagnostic IDs on a single X entry.
         */
-        Dictionary<string, ParsedTypeReport> logEntries = MakeReports(
-            ("X", stringArray6, "DXMSG006", "A.cs", 1)
-        );
-        Dictionary<string, ParsedTypeReport> merged = MakeReports(
-            ("X", stringArray7, "DXMSG009", "B.cs", 2)
-        );
+        Dictionary<string, ParsedTypeReport> logEntries = MakeReports(("X", stringArray6, "DXMSG006", "A.cs", 1));
+        Dictionary<string, ParsedTypeReport> merged = MakeReports(("X", stringArray7, "DXMSG009", "B.cs", 2));
 
-        Dictionary<string, BaseCallReportEntryDto> snapshot =
-            BaseCallReportAggregator.BuildSnapshot(logEntries, merged);
+        Dictionary<string, BaseCallReportEntryDto> snapshot = BaseCallReportAggregator.BuildSnapshot(logEntries, merged);
 
         Assert.That(snapshot["X"].MissingBaseFor, Is.EquivalentTo(expectedArray6));
         Assert.That(snapshot["X"].DiagnosticIds, Is.EquivalentTo(expectedArray7));
@@ -497,8 +371,7 @@ internal sealed class CompilationMessageHarvestTests
     [Test]
     public void BuildSnapshotEmptyInputsReturnsEmptySnapshot()
     {
-        Dictionary<string, BaseCallReportEntryDto> snapshot =
-            BaseCallReportAggregator.BuildSnapshot(null, null);
+        Dictionary<string, BaseCallReportEntryDto> snapshot = BaseCallReportAggregator.BuildSnapshot(null, null);
         Assert.That(snapshot, Is.Empty);
 
         snapshot = BaseCallReportAggregator.BuildSnapshot(
@@ -521,48 +394,24 @@ internal sealed class CompilationMessageHarvestTests
 
         BaseCallReportAggregator.ApplyAssemblyReports(
             "A.dll",
-            MakeReports(
-                ("X", stringArray6, "DXMSG006", "A/X.cs", 1),
-                ("Y", stringArray7, "DXMSG006", "A/Y.cs", 2)
-            ),
+            MakeReports(("X", stringArray6, "DXMSG006", "A/X.cs", 1), ("Y", stringArray7, "DXMSG006", "A/Y.cs", 2)),
             typesByAssembly,
             mergedReports
         );
         BaseCallReportAggregator.ApplyAssemblyReports(
             "B.dll",
-            MakeReports(
-                ("Y", stringArray8, "DXMSG006", "B/Y.cs", 3),
-                ("Z", stringArray9, "DXMSG006", "B/Z.cs", 4)
-            ),
+            MakeReports(("Y", stringArray8, "DXMSG006", "B/Y.cs", 3), ("Z", stringArray9, "DXMSG006", "B/Z.cs", 4)),
             typesByAssembly,
             mergedReports
         );
-        BaseCallReportAggregator.ApplyAssemblyReports(
-            "C.dll",
-            MakeReports(("W", stringArray10, "DXMSG006", "C/W.cs", 5)),
-            typesByAssembly,
-            mergedReports
-        );
+        BaseCallReportAggregator.ApplyAssemblyReports("C.dll", MakeReports(("W", stringArray10, "DXMSG006", "C/W.cs", 5)), typesByAssembly, mergedReports);
 
-        Assert.That(
-            mergedReports.Keys,
-            Is.EquivalentTo(expectedArray8),
-            "Pre-retirement snapshot must contain all four FQNs across the three assemblies."
-        );
+        Assert.That(mergedReports.Keys, Is.EquivalentTo(expectedArray8), "Pre-retirement snapshot must contain all four FQNs across the three assemblies.");
 
         // A retires X by recompiling and reporting only Y.
-        BaseCallReportAggregator.ApplyAssemblyReports(
-            "A.dll",
-            MakeReports(("Y", stringArray8, "DXMSG006", "A/Y.cs", 2)),
-            typesByAssembly,
-            mergedReports
-        );
+        BaseCallReportAggregator.ApplyAssemblyReports("A.dll", MakeReports(("Y", stringArray8, "DXMSG006", "A/Y.cs", 2)), typesByAssembly, mergedReports);
 
-        Assert.That(
-            mergedReports.Keys,
-            Is.EquivalentTo(expectedArray9),
-            "X must be retired; W/Y/Z must remain (Y survives via B's claim)."
-        );
+        Assert.That(mergedReports.Keys, Is.EquivalentTo(expectedArray9), "X must be retired; W/Y/Z must remain (Y survives via B's claim).");
         Assert.That(typesByAssembly["A.dll"], Is.EquivalentTo(expectedArray10));
         Assert.That(typesByAssembly["B.dll"], Is.EquivalentTo(expectedArray11));
         Assert.That(typesByAssembly["C.dll"], Is.EquivalentTo(expectedArray12));
@@ -576,17 +425,11 @@ internal sealed class CompilationMessageHarvestTests
             dedupe; Aggregate-then-merge always produces a single MissingBaseFor entry per method.
             This pins the parser-level dedup contract that the harvester depends on.
         */
-        Dictionary<string, ParsedTypeReport> aggregated = BaseCallLogMessageParser.Aggregate(
-            new[] { Unity2021Dxmsg009, Unity2021Dxmsg009, Unity2021Dxmsg009 }
-        );
+        Dictionary<string, ParsedTypeReport> aggregated = BaseCallLogMessageParser.Aggregate(new[] { Unity2021Dxmsg009, Unity2021Dxmsg009, Unity2021Dxmsg009 });
 
         Assert.That(aggregated, Has.Count.EqualTo(1));
         ParsedTypeReport report = aggregated["Sample.BrokenThing"];
-        Assert.That(
-            report.MissingBaseFor,
-            Is.EquivalentTo(expected),
-            "Triple-reported same FQN.method must collapse to a single MissingBaseFor entry."
-        );
+        Assert.That(report.MissingBaseFor, Is.EquivalentTo(expected), "Triple-reported same FQN.method must collapse to a single MissingBaseFor entry.");
         Assert.That(report.DiagnosticIds, Is.EquivalentTo(expectedArray5));
     }
 
@@ -598,13 +441,8 @@ internal sealed class CompilationMessageHarvestTests
             (a defensive shape we may see if the harvester's internal state ever decays), the
             snapshot builder must not crash. The null entry is silently skipped.
         */
-        Dictionary<string, ParsedTypeReport> logEntries = new(StringComparer.Ordinal)
-        {
-            { "Sample.X", null! },
-        };
-        Dictionary<string, ParsedTypeReport> merged = MakeReports(
-            ("Sample.Y", stringArray11, "DXMSG006", "Y.cs", 1)
-        );
+        Dictionary<string, ParsedTypeReport> logEntries = new(StringComparer.Ordinal) { { "Sample.X", null! } };
+        Dictionary<string, ParsedTypeReport> merged = MakeReports(("Sample.Y", stringArray11, "DXMSG006", "Y.cs", 1));
 
         Dictionary<string, BaseCallReportEntryDto>? snapshot = null;
         Assert.DoesNotThrow(() =>
@@ -628,30 +466,12 @@ internal sealed class CompilationMessageHarvestTests
         Dictionary<string, HashSet<string>> typesByAssembly = new(StringComparer.OrdinalIgnoreCase);
         Dictionary<string, ParsedTypeReport> mergedReports = new(StringComparer.Ordinal);
 
-        BaseCallReportAggregator.ApplyAssemblyReports(
-            "A.dll",
-            MakeReports(("X", stringArray12, "DXMSG006", "A.cs", 10)),
-            typesByAssembly,
-            mergedReports
-        );
-        BaseCallReportAggregator.ApplyAssemblyReports(
-            "B.dll",
-            MakeReports(("X", stringArray12, "DXMSG006", "B.cs", 20)),
-            typesByAssembly,
-            mergedReports
-        );
+        BaseCallReportAggregator.ApplyAssemblyReports("A.dll", MakeReports(("X", stringArray12, "DXMSG006", "A.cs", 10)), typesByAssembly, mergedReports);
+        BaseCallReportAggregator.ApplyAssemblyReports("B.dll", MakeReports(("X", stringArray12, "DXMSG006", "B.cs", 20)), typesByAssembly, mergedReports);
 
         Assert.That(mergedReports, Contains.Key("X"));
-        Assert.That(
-            mergedReports["X"].FilePath,
-            Is.EqualTo("A.cs"),
-            "First-assembly-seen file path must persist when a second assembly also reports the FQN."
-        );
-        Assert.That(
-            mergedReports["X"].Line,
-            Is.EqualTo(10),
-            "First-assembly-seen line must persist when a second assembly also reports the FQN."
-        );
+        Assert.That(mergedReports["X"].FilePath, Is.EqualTo("A.cs"), "First-assembly-seen file path must persist when a second assembly also reports the FQN.");
+        Assert.That(mergedReports["X"].Line, Is.EqualTo(10), "First-assembly-seen line must persist when a second assembly also reports the FQN.");
     }
 
     [Test]
@@ -667,94 +487,38 @@ internal sealed class CompilationMessageHarvestTests
         string[] start = { "Start" };
 
         reports.Replace("A.dll", MakeReports((sharedType, awake, "DXMSG006", "Assets/A.cs", 10)));
-        reports.Replace(
-            "B.dll",
-            MakeReports(
-                (sharedType, onEnable, "DXMSG009", "Assets/B.cs", 20),
-                (independentType, onDestroy, "DXMSG006", "Assets/B.cs", 21)
-            )
-        );
-        Assert.That(
-            DescribeCompilerReport(reports.BuildMergedSnapshot(null)[sharedType]),
-            Is.EqualTo(("Awake,OnEnable", "DXMSG006,DXMSG009", "Assets/A.cs", 10))
-        );
+        reports.Replace("B.dll", MakeReports((sharedType, onEnable, "DXMSG009", "Assets/B.cs", 20), (independentType, onDestroy, "DXMSG006", "Assets/B.cs", 21)));
+        Assert.That(DescribeCompilerReport(reports.BuildMergedSnapshot(null)[sharedType]), Is.EqualTo(("Awake,OnEnable", "DXMSG006,DXMSG009", "Assets/A.cs", 10)));
 
-        reports.Replace(
-            "A.DLL",
-            MakeReports((sharedType, awake, "DXMSG006", "Assets/MovedA.cs", 11))
-        );
-        Assert.That(
-            DescribeCompilerReport(reports.BuildMergedSnapshot(null)[sharedType]),
-            Is.EqualTo(("Awake,OnEnable", "DXMSG006,DXMSG009", "Assets/MovedA.cs", 11))
-        );
+        reports.Replace("A.DLL", MakeReports((sharedType, awake, "DXMSG006", "Assets/MovedA.cs", 11)));
+        Assert.That(DescribeCompilerReport(reports.BuildMergedSnapshot(null)[sharedType]), Is.EqualTo(("Awake,OnEnable", "DXMSG006,DXMSG009", "Assets/MovedA.cs", 11)));
 
         reports.Replace("a.DLL", BaseCallLogMessageParser.Aggregate(Array.Empty<string>()));
         Dictionary<string, BaseCallReportEntryDto> afterAClears = reports.BuildMergedSnapshot(null);
         Assert.That(afterAClears, Has.Count.EqualTo(2));
-        Assert.That(
-            DescribeCompilerReport(afterAClears[independentType]),
-            Is.EqualTo(("OnDestroy", "DXMSG006", "Assets/B.cs", 21))
-        );
-        Assert.That(
-            DescribeCompilerReport(afterAClears[sharedType]),
-            Is.EqualTo(("OnEnable", "DXMSG009", "Assets/B.cs", 20))
-        );
+        Assert.That(DescribeCompilerReport(afterAClears[independentType]), Is.EqualTo(("OnDestroy", "DXMSG006", "Assets/B.cs", 21)));
+        Assert.That(DescribeCompilerReport(afterAClears[sharedType]), Is.EqualTo(("OnEnable", "DXMSG009", "Assets/B.cs", 20)));
 
-        reports.Replace(
-            "a.dll",
-            MakeReports((sharedType, onDisable, "DXMSG007", "Assets/NewA.cs", 30))
-        );
-        reports.Replace(
-            "A.dll",
-            MakeReports((sharedType, onDestroy, "DXMSG010", "Assets/NewA.cs", 31))
-        );
-        Assert.That(
-            DescribeCompilerReport(reports.BuildMergedSnapshot(null)[sharedType]),
-            Is.EqualTo(("OnDestroy,OnEnable", "DXMSG009,DXMSG010", "Assets/B.cs", 20))
-        );
+        reports.Replace("a.dll", MakeReports((sharedType, onDisable, "DXMSG007", "Assets/NewA.cs", 30)));
+        reports.Replace("A.dll", MakeReports((sharedType, onDestroy, "DXMSG010", "Assets/NewA.cs", 31)));
+        Assert.That(DescribeCompilerReport(reports.BuildMergedSnapshot(null)[sharedType]), Is.EqualTo(("OnDestroy,OnEnable", "DXMSG009,DXMSG010", "Assets/B.cs", 20)));
 
         reports.Replace("B.DLL", null);
         Dictionary<string, BaseCallReportEntryDto> afterBClears = reports.BuildMergedSnapshot(null);
         Assert.That(afterBClears, Has.Count.EqualTo(1));
-        Assert.That(
-            DescribeCompilerReport(afterBClears[sharedType]),
-            Is.EqualTo(("OnDestroy", "DXMSG010", "Assets/NewA.cs", 31))
-        );
+        Assert.That(DescribeCompilerReport(afterBClears[sharedType]), Is.EqualTo(("OnDestroy", "DXMSG010", "Assets/NewA.cs", 31)));
 
-        Dictionary<string, ParsedTypeReport> logReports = MakeReports(
-            (sharedType, start, "DXMSG006", "Assets/Console.cs", 40)
-        );
-        Assert.That(
-            DescribeCompilerReport(reports.BuildMergedSnapshot(logReports)[sharedType]),
-            Is.EqualTo(("OnDestroy,Start", "DXMSG006,DXMSG010", "Assets/Console.cs", 40))
-        );
+        Dictionary<string, ParsedTypeReport> logReports = MakeReports((sharedType, start, "DXMSG006", "Assets/Console.cs", 40));
+        Assert.That(DescribeCompilerReport(reports.BuildMergedSnapshot(logReports)[sharedType]), Is.EqualTo(("OnDestroy,Start", "DXMSG006,DXMSG010", "Assets/Console.cs", 40)));
 
         reports.Clear();
         Assert.That(reports.BuildMergedSnapshot(null), Is.Empty);
     }
 
-    private static (
-        string Methods,
-        string DiagnosticIds,
-        string Path,
-        int Line
-    ) DescribeCompilerReport(BaseCallReportEntryDto report) =>
-        (
-            string.Join(",", report.MissingBaseFor),
-            string.Join(",", report.DiagnosticIds.OrderBy(id => id, StringComparer.Ordinal)),
-            report.FilePath,
-            report.Line
-        );
+    private static (string Methods, string DiagnosticIds, string Path, int Line) DescribeCompilerReport(BaseCallReportEntryDto report) =>
+        (string.Join(",", report.MissingBaseFor), string.Join(",", report.DiagnosticIds.OrderBy(id => id, StringComparer.Ordinal)), report.FilePath, report.Line);
 
-    private static Dictionary<string, ParsedTypeReport> MakeReports(
-        params (
-            string Fqn,
-            string[] Methods,
-            string DiagnosticId,
-            string FilePath,
-            int Line
-        )[] entries
-    )
+    private static Dictionary<string, ParsedTypeReport> MakeReports(params (string Fqn, string[] Methods, string DiagnosticId, string FilePath, int Line)[] entries)
     {
         Dictionary<string, ParsedTypeReport> result = new(StringComparer.Ordinal);
         foreach ((string fqn, string[] methods, string id, string path, int line) in entries)

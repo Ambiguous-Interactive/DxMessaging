@@ -13,8 +13,7 @@ namespace DxMessaging.Core
     public sealed class MessageRegistrationGroup : IDisposable
     {
         private MessageRegistrationToken _token;
-        private readonly List<MessageRegistrationHandle> _handles =
-            new List<MessageRegistrationHandle>();
+        private readonly List<MessageRegistrationHandle> _handles = new List<MessageRegistrationHandle>();
         private bool _closed;
         private bool _disposing;
 
@@ -44,10 +43,7 @@ namespace DxMessaging.Core
             }
             if (!_token.OwnsRegistration(handle))
             {
-                throw new ArgumentException(
-                    "Register the handle on this group's token before adding it.",
-                    nameof(handle)
-                );
+                throw new ArgumentException("Register the handle on this group's token before adding it.", nameof(handle));
             }
             _token.TrackGroupRegistration(handle);
             if (!_handles.Contains(handle))
@@ -119,10 +115,7 @@ namespace DxMessaging.Core
             }
             if (failures != null)
             {
-                throw new AggregateException(
-                    "Some group registrations could not be removed. Retry Dispose after resolving the cleanup failures.",
-                    failures
-                );
+                throw new AggregateException("Some group registrations could not be removed. Retry Dispose after resolving the cleanup failures.", failures);
             }
             if (firstFailure != null)
             {

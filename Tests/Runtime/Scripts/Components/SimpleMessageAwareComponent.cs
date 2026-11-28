@@ -54,60 +54,24 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
         protected override void RegisterMessageHandlers()
         {
             base.RegisterMessageHandlers();
-            _ = _messageRegistrationToken.RegisterUntargeted<SimpleUntargetedMessage>(
-                HandleSimpleUntargetedMessage
-            );
-            _ = _messageRegistrationToken.RegisterGameObjectTargeted<SimpleTargetedMessage>(
-                gameObject,
-                HandleSimpleTargetedMessage
-            );
-            _ = _messageRegistrationToken.RegisterGameObjectTargeted<SimpleTargetedMessage>(
-                gameObject,
-                HandleSlowSimpleTargetedMessage
-            );
-            _ = _messageRegistrationToken.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(
-                HandleSimpleTargetedWithoutTargetingMessage
-            );
-            _fastComplexTargetingHandle =
-                _messageRegistrationToken.RegisterGameObjectTargeted<ComplexTargetedMessage>(
-                    gameObject,
-                    HandleComplexTargetedMessage
-                );
-            _slowComplexTargetingHandle =
-                _messageRegistrationToken.RegisterGameObjectTargeted<ComplexTargetedMessage>(
-                    gameObject,
-                    HandleSlowComplexTargetedMessage
-                );
-            _ = _messageRegistrationToken.RegisterGameObjectBroadcast<SimpleBroadcastMessage>(
-                gameObject,
-                HandleSimpleBroadcastMessage
-            );
-            _ = _messageRegistrationToken.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>(
-                HandleSimpleBroadcastWithoutSourceMessage
-            );
-            _ = _messageRegistrationToken.RegisterComponentTargeted<SimpleTargetedMessage>(
-                this,
-                HandleSimpleComponentTargetedMessage
-            );
-            _ = _messageRegistrationToken.RegisterComponentBroadcast<SimpleBroadcastMessage>(
-                this,
-                HandleSimpleComponentBroadcastMessage
-            );
-            _ = _messageRegistrationToken.RegisterComponentTargeted<ComplexTargetedMessage>(
-                this,
-                HandleComplexComponentTargetedMessage
-            );
+            _ = _messageRegistrationToken.RegisterUntargeted<SimpleUntargetedMessage>(HandleSimpleUntargetedMessage);
+            _ = _messageRegistrationToken.RegisterGameObjectTargeted<SimpleTargetedMessage>(gameObject, HandleSimpleTargetedMessage);
+            _ = _messageRegistrationToken.RegisterGameObjectTargeted<SimpleTargetedMessage>(gameObject, HandleSlowSimpleTargetedMessage);
+            _ = _messageRegistrationToken.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(HandleSimpleTargetedWithoutTargetingMessage);
+            _fastComplexTargetingHandle = _messageRegistrationToken.RegisterGameObjectTargeted<ComplexTargetedMessage>(gameObject, HandleComplexTargetedMessage);
+            _slowComplexTargetingHandle = _messageRegistrationToken.RegisterGameObjectTargeted<ComplexTargetedMessage>(gameObject, HandleSlowComplexTargetedMessage);
+            _ = _messageRegistrationToken.RegisterGameObjectBroadcast<SimpleBroadcastMessage>(gameObject, HandleSimpleBroadcastMessage);
+            _ = _messageRegistrationToken.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>(HandleSimpleBroadcastWithoutSourceMessage);
+            _ = _messageRegistrationToken.RegisterComponentTargeted<SimpleTargetedMessage>(this, HandleSimpleComponentTargetedMessage);
+            _ = _messageRegistrationToken.RegisterComponentBroadcast<SimpleBroadcastMessage>(this, HandleSimpleComponentBroadcastMessage);
+            _ = _messageRegistrationToken.RegisterComponentTargeted<ComplexTargetedMessage>(this, HandleComplexComponentTargetedMessage);
         }
 
         private void ToggleTargetedRegistration()
         {
             if (SlowComplexTargetingEnabled)
             {
-                _slowComplexTargetingHandle ??=
-                    _messageRegistrationToken.RegisterGameObjectTargeted<ComplexTargetedMessage>(
-                        gameObject,
-                        HandleSlowComplexTargetedMessage
-                    );
+                _slowComplexTargetingHandle ??= _messageRegistrationToken.RegisterGameObjectTargeted<ComplexTargetedMessage>(gameObject, HandleSlowComplexTargetedMessage);
             }
             else if (_slowComplexTargetingHandle != null)
             {
@@ -117,11 +81,7 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
 
             if (FastComplexTargetingEnabled)
             {
-                _fastComplexTargetingHandle ??=
-                    _messageRegistrationToken.RegisterGameObjectTargeted<ComplexTargetedMessage>(
-                        gameObject,
-                        HandleComplexTargetedMessage
-                    );
+                _fastComplexTargetingHandle ??= _messageRegistrationToken.RegisterGameObjectTargeted<ComplexTargetedMessage>(gameObject, HandleComplexTargetedMessage);
             }
             else if (_fastComplexTargetingHandle != null)
             {
@@ -185,10 +145,7 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
             targetedHandler?.Invoke();
         }
 
-        public void HandleSimpleTargetedWithoutTargetingMessage(
-            in InstanceId target,
-            in SimpleTargetedMessage message
-        )
+        public void HandleSimpleTargetedWithoutTargetingMessage(in InstanceId target, in SimpleTargetedMessage message)
         {
             targetedWithoutTargetingHandler?.Invoke();
         }
@@ -198,10 +155,7 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
             broadcastHandler?.Invoke();
         }
 
-        public void HandleSimpleBroadcastWithoutSourceMessage(
-            in InstanceId source,
-            in SimpleBroadcastMessage message
-        )
+        public void HandleSimpleBroadcastWithoutSourceMessage(in InstanceId source, in SimpleBroadcastMessage message)
         {
             broadcastWithoutSourceHandler?.Invoke();
         }

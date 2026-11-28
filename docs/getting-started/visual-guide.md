@@ -195,9 +195,8 @@ sequenceDiagram
 
 ## Your First Message (3 Easy Steps)
 
-> **Handler version:** These examples use the 4.0 `in` signature. With a 3.x package, use
-> `ref DamageRequested message` for the receiver callback parameter instead. Keep the registration
-> and emission calls unchanged. See the [4.0 migration guide](../guides/migration-guide.md#migrating-to-400).
+> **Handler version:** These examples use the 4.0 `in` signature. With a 3.x package, use `ref DamageRequested message` for the receiver callback parameter instead. Keep the
+> registration and emission calls unchanged. See the [4.0 migration guide](../guides/migration-guide.md#migrating-to-400).
 
 ### Step 1: Define It
 
@@ -262,7 +261,8 @@ public sealed class DamageReceiver : MessageAwareComponent
 - Deactivates in `OnDisable()`
 - Cleans up in `OnDestroy()`
 
-> **Important**: If you override `Awake`, `OnEnable`, `OnDisable`, `OnDestroy`, or `RegisterMessageHandlers` on a `MessageAwareComponent`, call `base.X()` first or your handlers stop working silently. See the [analyzer reference](../reference/analyzers.md#dxmsg006-missing-base-call).
+> **Important**: If you override `Awake`, `OnEnable`, `OnDisable`, `OnDestroy`, or `RegisterMessageHandlers` on a `MessageAwareComponent`, call `base.X()` first or your handlers
+> stop working silently. See the [analyzer reference](../reference/analyzers.md#dxmsg006-missing-base-call).
 
 ### Step 3: Send It
 
@@ -282,9 +282,8 @@ public sealed class Hazard : MonoBehaviour
 }
 ```
 
-On the hazard GameObject, enable **Is Trigger** on its collider and add a kinematic `Rigidbody` with
-**Use Gravity** disabled. Put `DamageReceiver` and the entering collider on the same target
-GameObject. The trigger provides that exact target, so `Hazard` does not need a player reference.
+On the hazard GameObject, enable **Is Trigger** on its collider and add a kinematic `Rigidbody` with **Use Gravity** disabled. Put `DamageReceiver` and the entering collider on the
+same target GameObject. The trigger provides that exact target, so `Hazard` does not need a player reference.
 
 ## Common Patterns Visualized
 
@@ -462,20 +461,16 @@ DxMessaging has three built-in Editor views for message flow.
 
 ### Message Monitor
 
-Inspect recent emissions by route kind, message type, and context. Select an
-entry to inspect its call site.
+Inspect recent emissions by route kind, message type, and context. Select an entry to inspect its call site.
 
 ### Flow Graph
 
-Inspect loaded-scene `MessagingComponent` topology, route activity, and delivery
-evidence. Direct bus or token registrations outside those components do not
-appear in this graph.
+Inspect loaded-scene `MessagingComponent` topology, route activity, and delivery evidence. Direct bus or token registrations outside those components do not appear in this graph.
 
 ### MessagingComponent Inspector
 
-Inspect component-local registrations, buffers, provider warnings, and missing
-base-call diagnostics. See the [Diagnostics guide](../guides/diagnostics.md) for
-screenshots and the complete workflow.
+Inspect component-local registrations, buffers, provider warnings, and missing base-call diagnostics. See the [Diagnostics guide](../guides/diagnostics.md) for screenshots and the
+complete workflow.
 
 ## Performance at a Glance
 
@@ -544,13 +539,10 @@ msg.EmitGameObjectBroadcast(gameObject);  // Now anyone can observe this source
 
 #### Cleanup follows the owner
 
-`MessageAwareComponent` disposes its token when Unity destroys the component. If you override
-`OnDestroy()`, call `base.OnDestroy()` so that cleanup still runs.
+`MessageAwareComponent` disposes its token when Unity destroys the component. If you override `OnDestroy()`, call `base.OnDestroy()` so that cleanup still runs.
 
-For direct tokens or builder leases, keep the token or lease and dispose it when its owner ends.
-A newly created token also needs `Enable()` after staging its handlers. See the
-[plain C# observer](../concepts/listening-patterns.md#development-debug-dump) and the
-[builder lifecycle examples](../advanced/registration-builders.md#code-examples).
+For direct tokens or builder leases, keep the token or lease and dispose it when its owner ends. A newly created token also needs `Enable()` after staging its handlers. See the
+[plain C# observer](../concepts/listening-patterns.md#development-debug-dump) and the [builder lifecycle examples](../advanced/registration-builders.md#code-examples).
 
 #### Old way (easy to forget)
 
@@ -571,13 +563,10 @@ protected override void RegisterMessageHandlers() {
 
 ### "Is it slower than regular events?"
 
-It has more routing work than a direct callback. Read the
-[current CI results](../architecture/performance.md#latest-ci-performance-results)
-for the measured cost on the published runner; do not rely on a fixed overhead
-because the difference changes by scenario, subscriber count, and backend.
+It has more routing work than a direct callback. Read the [current CI results](../architecture/performance.md#latest-ci-performance-results) for the measured cost on the published
+runner; do not rely on a fixed overhead because the difference changes by scenario, subscriber count, and backend.
 
-That cost buys automatic lifecycle, cleanup, observability, and predictable
-ordering when those features matter.
+That cost buys automatic lifecycle, cleanup, observability, and predictable ordering when those features matter.
 
 ### "Can I cancel a message?"
 
@@ -608,9 +597,8 @@ _ = token.RegisterTargetedInterceptor<ApplyDamage>(
 You'll see:
 
 - Message Monitor shows recent emissions, contexts, filters, and captured call sites.
-- Flow Graph shows loaded-scene `MessagingComponent` routes, receivers, call
-  counts, and delivery evidence. Use bus logs or counters for direct token or bus
-  registrations outside those components.
+- Flow Graph shows loaded-scene `MessagingComponent` routes, receivers, call counts, and delivery evidence. Use bus logs or counters for direct token or bus registrations outside
+  those components.
 - The Inspector shows component-local registrations and lifecycle warnings.
 
 **No more guessing.** You can literally see your event flow in real-time.

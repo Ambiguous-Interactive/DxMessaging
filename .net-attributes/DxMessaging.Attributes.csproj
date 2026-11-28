@@ -22,15 +22,7 @@
   <ItemGroup>
     <Compile Include="../Runtime/Attributes/**/*.cs" />
     <None Include="README.md" Pack="true" PackagePath="/" />
-    <None
-      Include="../Runtime/Analyzers/WallstopStudios.DxMessaging.SourceGenerators.dll"
-      Pack="true"
-      PackagePath="analyzers/dotnet/cs"
-    />
-    <None
-      Include="../Runtime/Analyzers/WallstopStudios.DxMessaging.Analyzer.dll"
-      Pack="true"
-      PackagePath="analyzers/dotnet/cs"
-    />
+    <None Include="../Runtime/Analyzers/WallstopStudios.DxMessaging.SourceGenerators.dll" Pack="true" PackagePath="analyzers/dotnet/cs" />
+    <None Include="../Runtime/Analyzers/WallstopStudios.DxMessaging.Analyzer.dll" Pack="true" PackagePath="analyzers/dotnet/cs" />
   </ItemGroup>
 </Project>

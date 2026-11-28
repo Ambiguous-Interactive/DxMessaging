@@ -19,12 +19,7 @@ namespace DxMessaging.Tests
     /// </summary>
     internal static partial class MessageBusInspection
     {
-        private const BindingFlags Members =
-            BindingFlags.Instance
-            | BindingFlags.Static
-            | BindingFlags.Public
-            | BindingFlags.NonPublic
-            | BindingFlags.DeclaredOnly;
+        private const BindingFlags Members = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
 
         public static object ReadField(object owner, string name)
         {
@@ -54,8 +49,7 @@ namespace DxMessaging.Tests
             throw new MissingMemberException(type.FullName, name);
         }
 
-        public static object RecycledHandlerCache(MessageBus bus) =>
-            ReadField(bus, "_recycledEmptyHandlerCache");
+        public static object RecycledHandlerCache(MessageBus bus) => ReadField(bus, "_recycledEmptyHandlerCache");
 
         public static int RecycledHandlerCacheHighWater(MessageBus bus)
         {
@@ -66,8 +60,7 @@ namespace DxMessaging.Tests
         public static CollectionPoolDiagnostics ContextMapPoolDiagnostics()
         {
             object pool = ReadProperty(typeof(MessageBus), "ContextHandlerByTargetDicts");
-            return (CollectionPoolDiagnostics)
-                pool.GetType().GetMethod("Snapshot").Invoke(pool, null);
+            return (CollectionPoolDiagnostics)pool.GetType().GetMethod("Snapshot").Invoke(pool, null);
         }
 
         public static int CountLiveRegistrations(MessageBus bus)
@@ -103,11 +96,7 @@ namespace DxMessaging.Tests
             {
                 count += references;
             }
-            foreach (
-                Dictionary<int, int> priorities in (
-                    (IDictionary)ReadField(bus, "_uniqueInterceptorsAndPriorities")
-                ).Values
-            )
+            foreach (Dictionary<int, int> priorities in ((IDictionary)ReadField(bus, "_uniqueInterceptorsAndPriorities")).Values)
             {
                 foreach (int references in priorities.Values)
                 {
@@ -138,11 +127,7 @@ namespace DxMessaging.Tests
             return count;
         }
 
-        public static bool HasDispatchState<TMessage>(
-            MessageBus bus,
-            RegistrationMethod method,
-            InstanceId context
-        )
+        public static bool HasDispatchState<TMessage>(MessageBus bus, RegistrationMethod method, InstanceId context)
             where TMessage : IMessage
         {
             bool contextual =
@@ -151,14 +136,9 @@ namespace DxMessaging.Tests
                 || method == RegistrationMethod.TargetedPostProcessor
                 || method == RegistrationMethod.BroadcastPostProcessor;
             object sink = typeof(MessageBus)
-                .GetMethod(
-                    contextual ? "ContextSinkForMethod" : "ScalarSinkForMethod",
-                    BindingFlags.Instance | BindingFlags.NonPublic
-                )
+                .GetMethod(contextual ? "ContextSinkForMethod" : "ScalarSinkForMethod", BindingFlags.Instance | BindingFlags.NonPublic)
                 .Invoke(bus, new object[] { method });
-            MethodInfo lookup = Array.Find(sink.GetType().GetMethods(), candidate =>
-                candidate.Name == "TryGetValue" && candidate.IsGenericMethodDefinition
-            );
+            MethodInfo lookup = Array.Find(sink.GetType().GetMethods(), candidate => candidate.Name == "TryGetValue" && candidate.IsGenericMethodDefinition);
             object[] arguments = { null };
             if (!(bool)lookup.MakeGenericMethod(typeof(TMessage)).Invoke(sink, arguments))
             {
@@ -173,11 +153,7 @@ namespace DxMessaging.Tests
                         "TryGetValue",
                         BindingFlags.Instance | BindingFlags.NonPublic,
                         null,
-                        new[]
-                        {
-                            typeof(InstanceId),
-                            priorities.GetType().BaseType.GetGenericArguments()[0].MakeByRefType(),
-                        },
+                        new[] { typeof(InstanceId), priorities.GetType().BaseType.GetGenericArguments()[0].MakeByRefType() },
                         null
                     );
                 object[] contextArguments = { context, null };

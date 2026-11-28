@@ -32,11 +32,7 @@ namespace DxMessaging.Core.Pooling
                 return false;
             }
 
-            PlayerLoopSystem hook = new PlayerLoopSystem
-            {
-                type = HookType,
-                updateDelegate = SweepIdleBuses,
-            };
+            PlayerLoopSystem hook = new PlayerLoopSystem { type = HookType, updateDelegate = SweepIdleBuses };
 
             return InsertUnder<Update>(ref root, hook);
         }
@@ -74,8 +70,7 @@ namespace DxMessaging.Core.Pooling
         {
             if (system.type == typeof(TTarget))
             {
-                PlayerLoopSystem[] oldList = system.subSystemList
-                    ?? Array.Empty<PlayerLoopSystem>();
+                PlayerLoopSystem[] oldList = system.subSystemList ?? Array.Empty<PlayerLoopSystem>();
                 PlayerLoopSystem[] newList = new PlayerLoopSystem[oldList.Length + 1];
                 Array.Copy(oldList, newList, oldList.Length);
                 newList[oldList.Length] = hook;

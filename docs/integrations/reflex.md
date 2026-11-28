@@ -4,12 +4,10 @@
 
 ## Overview
 
-Use Reflex for object construction and DxMessaging for message delivery. The optional
-DxMessaging Reflex assembly registers both `MessageBus` and `IMessageBus`, and it can provide
+Use Reflex for object construction and DxMessaging for message delivery. The optional DxMessaging Reflex assembly registers both `MessageBus` and `IMessageBus`, and it can provide
 `IMessageRegistrationBuilder` to container-created services.
 
-> **Changed in v3.2.3:** The examples target Reflex 14.0 or newer. DxMessaging's registration
-> helpers also adapt to the pre-14 `AddSingleton` API.
+> **Changed in v3.2.3:** The examples target Reflex 14.0 or newer. DxMessaging's registration helpers also adapt to the pre-14 `AddSingleton` API.
 
 ## Quick start
 
@@ -17,13 +15,11 @@ DxMessaging Reflex assembly registers both `MessageBus` and `IMessageBus`, and i
 
 - Install DxMessaging through UPM.
 - Install Reflex 14.0 or newer (`com.gustavopsantos.reflex`).
-- Create a Reflex settings asset inside a `Resources` folder with
-  **Assets > Create > Reflex > Settings**.
+- Create a Reflex settings asset inside a `Resources` folder with **Assets > Create > Reflex > Settings**.
 
 ### Create an installer
 
-Reflex discovers `IInstaller` components below a `ContainerScope`. Derive the installer from
-`MonoBehaviour` so it can be attached to that hierarchy.
+Reflex discovers `IInstaller` components below a `ContainerScope`. Derive the installer from `MonoBehaviour` so it can be attached to that hierarchy.
 
 ```csharp
 using DxMessaging.Unity.Integrations.Reflex;
@@ -40,8 +36,7 @@ public sealed class DxMessagingInstaller : MonoBehaviour, IInstaller
 }
 ```
 
-`AddDxMessagingBus()` uses an explicit factory and exposes the same singleton as both
-`MessageBus` and `IMessageBus`. `DxMessagingRegistrationInstaller` adds
+`AddDxMessagingBus()` uses an explicit factory and exposes the same singleton as both `MessageBus` and `IMessageBus`. `DxMessagingRegistrationInstaller` adds
 `IMessageRegistrationBuilder`.
 
 ### Add it to a scope
@@ -50,13 +45,11 @@ public sealed class DxMessagingInstaller : MonoBehaviour, IInstaller
 1. Add `DxMessagingInstaller` to the `SceneScope` GameObject or one of its children.
 1. Enter Play Mode. Reflex builds the scene container and injects scene objects from it.
 
-For one bus shared across scenes, put the installer on a Reflex RootScope prefab and add that
-prefab to the `RootScopes` list in the Reflex settings asset.
+For one bus shared across scenes, put the installer on a Reflex RootScope prefab and add that prefab to the `RootScopes` list in the Reflex settings asset.
 
 ## Register a service
 
-The following service owns a `MessageRegistrationLease`. Its constructor stages a real
-handler, `Initialize()` activates it, and `Dispose()` releases it.
+The following service owns a `MessageRegistrationLease`. Its constructor stages a real handler, `Initialize()` activates it, and `Dispose()` releases it.
 
 ```csharp
 using System;
@@ -118,9 +111,8 @@ builder.RegisterType(
 );
 ```
 
-Reflex disposes singleton services with their owning container. Call `Initialize()` from a
-bootstrap component after resolving the service. Reflex does not provide an `IInitializable`
-lifecycle contract.
+Reflex disposes singleton services with their owning container. Call `Initialize()` from a bootstrap component after resolving the service. Reflex does not provide an
+`IInitializable` lifecycle contract.
 
 ## Configure an existing MessagingComponent
 
@@ -147,15 +139,12 @@ public sealed class MessagingComponentConfigurator : MonoBehaviour
 }
 ```
 
-Add this configurator beside each `MessagingComponent` that should use the container-owned bus.
-With a configured scene scope, Reflex calls the injection method before ordinary scene `Awake`
-methods. `MessageAwareComponent.Awake` stages registrations and `OnEnable` activates them; a separate
-configurator `Awake` would depend on their relative order. Keep component-specific bus/provider
-settings consistent with the container bus.
+Add this configurator beside each `MessagingComponent` that should use the container-owned bus. With a configured scene scope, Reflex calls the injection method before ordinary
+scene `Awake` methods. `MessageAwareComponent.Awake` stages registrations and `OnEnable` activates them; a separate configurator `Awake` would depend on their relative order. Keep
+component-specific bus/provider settings consistent with the container bus.
 
-For objects injected later, `RebindActive` moves existing registrations but does not replay earlier
-messages. Parameterless emission shorthands still use the global bus; pass the container bus
-explicitly when emitting.
+For objects injected later, `RebindActive` moves existing registrations but does not replay earlier messages. Parameterless emission shorthands still use the global bus; pass the
+container bus explicitly when emitting.
 
 ## Inject IMessageBus directly
 
@@ -186,14 +175,12 @@ public sealed class GameBootstrap : MonoBehaviour
 
 ## Inject pooled objects
 
-Reflex injects scene objects when it creates the scene container. For prefabs instantiated later,
-use `GameObjectInjector.InjectRecursive` to inject components on the root and its children.
-`InjectObject` covers only the root GameObject.
+Reflex injects scene objects when it creates the scene container. For prefabs instantiated later, use `GameObjectInjector.InjectRecursive` to inject components on the root and its
+children. `InjectObject` covers only the root GameObject.
 
-This example assumes your game's `Enemy` component. It leaves activation, deactivation and reset to
-your pool policy. If `Awake` or `OnEnable` needs injected dependencies, use an inactive prefab and
-activate it only after `Spawn()` returns; instantiating an active prefab can run those callbacks
-before injection. See [Unity's instantiation lifecycle](https://docs.unity3d.com/2021.3/Documentation/ScriptReference/Object.Instantiate.html).
+This example assumes your game's `Enemy` component. It leaves activation, deactivation and reset to your pool policy. If `Awake` or `OnEnable` needs injected dependencies, use an
+inactive prefab and activate it only after `Spawn()` returns; instantiating an active prefab can run those callbacks before injection. See
+[Unity's instantiation lifecycle](https://docs.unity3d.com/2021.3/Documentation/ScriptReference/Object.Instantiate.html).
 
 ```csharp
 using System.Collections.Generic;

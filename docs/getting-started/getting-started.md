@@ -38,7 +38,8 @@ By the end of this guide, you will:
 
 **One approach:** The Player script needs references to all 6 systems. Or they all need references to the Player. This can create tight coupling.
 
-**With DxMessaging:** The Player emits one message: `TookDamage(25)`. Interested systems receive it through subscriptions. The sender depends on the message type. A `MessageAwareComponent` receiver owns registration cleanup through its Unity lifecycle.
+**With DxMessaging:** The Player emits one message: `TookDamage(25)`. Interested systems receive it through subscriptions. The sender depends on the message type. A
+`MessageAwareComponent` receiver owns registration cleanup through its Unity lifecycle.
 
 ---
 
@@ -50,18 +51,17 @@ By the end of this guide, you will:
 
 - **Subscription ownership** - `MessageAwareComponent` manages its token; plain C# owners dispose their tokens
 - **Predictable execution** - priority-based ordering, see exactly what runs when
-- **Message inspection** - Inspect [recent emissions](../guides/diagnostics.md#message-monitor) and
-  [loaded-scene component routes](../guides/diagnostics.md#flow-graph) in the Editor
+- **Message inspection** - Inspect [recent emissions](../guides/diagnostics.md#message-monitor) and [loaded-scene component routes](../guides/diagnostics.md#flow-graph) in the
+  Editor
 - **Designed to scale** - works for prototypes and larger codebases
 
-For plain C# owners, enable the token after staging registrations and dispose it when the owner
-scope ends. See the [plain C# observer example](../concepts/listening-patterns.md#development-debug-dump).
+For plain C# owners, enable the token after staging registrations and dispose it when the owner scope ends. See the
+[plain C# observer example](../concepts/listening-patterns.md#development-debug-dump).
 
 ## Quick Start
 
-> **Handler version:** These examples use the 4.0 `in` signature. With a 3.x package, use
-> `ref DamageRequested message` for the receiver callback parameter instead. Keep the registration
-> and emission calls unchanged. See the [4.0 migration guide](../guides/migration-guide.md#migrating-to-400).
+> **Handler version:** These examples use the 4.0 `in` signature. With a 3.x package, use `ref DamageRequested message` for the receiver callback parameter instead. Keep the
+> registration and emission calls unchanged. See the [4.0 migration guide](../guides/migration-guide.md#migrating-to-400).
 
 1. Define the command
 
@@ -117,18 +117,20 @@ public sealed class Hazard : MonoBehaviour
 }
 ```
 
-On the hazard GameObject, enable **Is Trigger** on its collider and add a kinematic `Rigidbody` with
-**Use Gravity** disabled. Put `DamageReceiver` and the entering collider on the same target
-GameObject. The hazard knows only that exact object. It does not know whether the object is a
-player, enemy, or breakable prop, and the receiver does not know which hazard sent the request.
+On the hazard GameObject, enable **Is Trigger** on its collider and add a kinematic `Rigidbody` with **Use Gravity** disabled. Put `DamageReceiver` and the entering collider on the
+same target GameObject. The hazard knows only that exact object. It does not know whether the object is a player, enemy, or breakable prop, and the receiver does not know which
+hazard sent the request.
 
 ### Important: Inheritance and base calls
 
 > **Important**
 >
-> If you override `Awake`, `OnEnable`, `OnDisable`, `OnDestroy`, or `RegisterMessageHandlers` on a `MessageAwareComponent`, your override **must** call the matching base method first. Forgetting any of them silently breaks message dispatch on the component -- no errors, no compile failure, just dead handlers. The Roslyn analyzer raises DXMSG006 and the [Inspector overlay](../guides/inspector-overlay.md) shows a HelpBox once the code is on disk.
+> If you override `Awake`, `OnEnable`, `OnDisable`, `OnDestroy`, or `RegisterMessageHandlers` on a `MessageAwareComponent`, your override **must** call the matching base method
+> first. Forgetting any of them silently breaks message dispatch on the component -- no errors, no compile failure, just dead handlers. The Roslyn analyzer raises DXMSG006 and the
+> [Inspector overlay](../guides/inspector-overlay.md) shows a HelpBox once the code is on disk.
 
-For the full table of guarded methods and the exact failure mode for each, see [Inheritance and base calls](quick-start.md#important-inheritance-and-base-calls) in the quickstart and [DXMSG006 in the analyzer reference](../reference/analyzers.md#dxmsg006-missing-base-call).
+For the full table of guarded methods and the exact failure mode for each, see [Inheritance and base calls](quick-start.md#important-inheritance-and-base-calls) in the quickstart
+and [DXMSG006 in the analyzer reference](../reference/analyzers.md#dxmsg006-missing-base-call).
 
 ## Message Types
 
@@ -184,8 +186,7 @@ Checklist:
 1. Did you call `base.RegisterMessageHandlers()` first?
 1. Is your component enabled in the scene?
 1. Are you emitting to the right target? (Check GameObject vs Component)
-1. For a loaded-scene `MessagingComponent`, check Flow Graph - does the receiver
-   route show up? For direct bus/token registrations, check bus logs and counters.
+1. For a loaded-scene `MessagingComponent`, check Flow Graph - does the receiver route show up? For direct bus/token registrations, check bus logs and counters.
 
 ### "My message is firing twice"
 

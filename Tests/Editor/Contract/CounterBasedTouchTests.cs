@@ -62,20 +62,9 @@ namespace DxMessaging.Tests.Editor.Contract
             try
             {
                 Action<ProbeMessage> callback = _ => { };
-                Action deregistration = (
-                    handler.RegisterUntargetedMessageHandler(
-                        callback,
-                        callback,
-                        priority: 17,
-                        messageBus: bus
-                    )
-                ).AsAction();
+                Action deregistration = (handler.RegisterUntargetedMessageHandler(callback, callback, priority: 17, messageBus: bus)).AsAction();
 
-                TypedSlot<ProbeMessage> slot = ReadTypedSlot<ProbeMessage>(
-                    handler,
-                    bus,
-                    "UntargetedHandleDefault"
-                );
+                TypedSlot<ProbeMessage> slot = ReadTypedSlot<ProbeMessage>(handler, bus, "UntargetedHandleDefault");
                 long tick = ReadBusTick(bus);
 
                 Assert.Greater(tick, 0);
@@ -120,19 +109,8 @@ namespace DxMessaging.Tests.Editor.Contract
             try
             {
                 Action<ProbeMessage> callback = _ => { };
-                Action deregistration = (
-                    handler.RegisterUntargetedMessageHandler(
-                        callback,
-                        callback,
-                        priority: 17,
-                        messageBus: bus
-                    )
-                ).AsAction();
-                TypedSlot<ProbeMessage> slot = ReadTypedSlot<ProbeMessage>(
-                    handler,
-                    bus,
-                    "UntargetedHandleDefault"
-                );
+                Action deregistration = (handler.RegisterUntargetedMessageHandler(callback, callback, priority: 17, messageBus: bus)).AsAction();
+                TypedSlot<ProbeMessage> slot = ReadTypedSlot<ProbeMessage>(handler, bus, "UntargetedHandleDefault");
                 long registerTick = ReadBusTick(bus);
 
                 deregistration();
@@ -214,19 +192,8 @@ namespace DxMessaging.Tests.Editor.Contract
                 {
                     currentCallCount++;
                 };
-                Action staleDeregistration = (
-                    handler.RegisterUntargetedMessageHandler(
-                        callback,
-                        staleCallback,
-                        priority: 17,
-                        messageBus: bus
-                    )
-                ).AsAction();
-                TypedSlot<ProbeMessage> slot = ReadTypedSlot<ProbeMessage>(
-                    handler,
-                    bus,
-                    "UntargetedHandleDefault"
-                );
+                Action staleDeregistration = (handler.RegisterUntargetedMessageHandler(callback, staleCallback, priority: 17, messageBus: bus)).AsAction();
+                TypedSlot<ProbeMessage> slot = ReadTypedSlot<ProbeMessage>(handler, bus, "UntargetedHandleDefault");
 
                 InvokeResetState(bus);
                 long tickAfterReset = ReadBusTick(bus);
@@ -236,12 +203,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 Assert.AreEqual(tickAfterReset, ReadBusTick(bus));
                 Assert.IsTrue(slot.IsEmpty);
 
-                _ = handler.RegisterUntargetedMessageHandler(
-                    currentCallback,
-                    currentCallback,
-                    priority: 17,
-                    messageBus: bus
-                );
+                _ = handler.RegisterUntargetedMessageHandler(currentCallback, currentCallback, priority: 17, messageBus: bus);
                 ProbeMessage message = new ProbeMessage();
                 bus.UntargetedBroadcast(ref message);
 
@@ -273,20 +235,8 @@ namespace DxMessaging.Tests.Editor.Contract
                 {
                     currentCallCount++;
                 };
-                Action staleDeregistration = (
-                    handler.RegisterTargetedMessageHandler(
-                        target,
-                        callback,
-                        staleCallback,
-                        priority: 17,
-                        messageBus: bus
-                    )
-                ).AsAction();
-                TypedSlot<TargetedProbeMessage> slot = ReadTypedSlot<TargetedProbeMessage>(
-                    handler,
-                    bus,
-                    "TargetedHandleDefault"
-                );
+                Action staleDeregistration = (handler.RegisterTargetedMessageHandler(target, callback, staleCallback, priority: 17, messageBus: bus)).AsAction();
+                TypedSlot<TargetedProbeMessage> slot = ReadTypedSlot<TargetedProbeMessage>(handler, bus, "TargetedHandleDefault");
 
                 InvokeResetState(bus);
                 long tickAfterReset = ReadBusTick(bus);
@@ -296,13 +246,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 Assert.AreEqual(tickAfterReset, ReadBusTick(bus));
                 Assert.IsTrue(slot.IsEmpty);
 
-                _ = handler.RegisterTargetedMessageHandler(
-                    target,
-                    currentCallback,
-                    currentCallback,
-                    priority: 17,
-                    messageBus: bus
-                );
+                _ = handler.RegisterTargetedMessageHandler(target, currentCallback, currentCallback, priority: 17, messageBus: bus);
                 TargetedProbeMessage message = new TargetedProbeMessage();
                 bus.TargetedBroadcast(ref target, ref message);
 
@@ -335,17 +279,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 };
                 Action<InstanceId, ITargetedMessage> targeted = (_, _) => { };
                 Action<InstanceId, IBroadcastMessage> broadcast = (_, _) => { };
-                Action staleDeregistration = (
-                    handler.RegisterGlobalAcceptAll(
-                        originalUntargeted,
-                        staleUntargeted,
-                        targeted,
-                        targeted,
-                        broadcast,
-                        broadcast,
-                        bus
-                    )
-                ).AsAction();
+                Action staleDeregistration = (handler.RegisterGlobalAcceptAll(originalUntargeted, staleUntargeted, targeted, targeted, broadcast, broadcast, bus)).AsAction();
                 TypedGlobalSlot slot = ReadTypedGlobalSlot(handler, bus, "UntargetedDefault");
 
                 InvokeResetState(bus);
@@ -356,15 +290,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 Assert.AreEqual(tickAfterReset, ReadBusTick(bus));
                 Assert.IsTrue(slot.IsEmpty);
 
-                _ = handler.RegisterGlobalAcceptAll(
-                    currentUntargeted,
-                    currentUntargeted,
-                    targeted,
-                    targeted,
-                    broadcast,
-                    broadcast,
-                    bus
-                );
+                _ = handler.RegisterGlobalAcceptAll(currentUntargeted, currentUntargeted, targeted, targeted, broadcast, broadcast, bus);
                 ProbeMessage message = new ProbeMessage();
                 bus.UntargetedBroadcast(ref message);
 
@@ -387,17 +313,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 Action<IUntargetedMessage> untargeted = _ => { };
                 Action<InstanceId, ITargetedMessage> targeted = (_, _) => { };
                 Action<InstanceId, IBroadcastMessage> broadcast = (_, _) => { };
-                Action deregistration = (
-                    handler.RegisterGlobalAcceptAll(
-                        untargeted,
-                        untargeted,
-                        targeted,
-                        targeted,
-                        broadcast,
-                        broadcast,
-                        bus
-                    )
-                ).AsAction();
+                Action deregistration = (handler.RegisterGlobalAcceptAll(untargeted, untargeted, targeted, targeted, broadcast, broadcast, bus)).AsAction();
                 TypedGlobalSlot slot = ReadTypedGlobalSlot(handler, bus, "UntargetedDefault");
                 long registerTick = ReadBusTick(bus);
 
@@ -430,8 +346,7 @@ namespace DxMessaging.Tests.Editor.Contract
         private static long ReadBusTick(MessageBus bus)
         {
             Type busType = typeof(MessageBus);
-            const BindingFlags Flags =
-                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+            const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
 
             foreach (string name in TickMemberNames)
             {
@@ -442,12 +357,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 }
 
                 PropertyInfo property = busType.GetProperty(name, Flags);
-                if (
-                    property != null
-                    && property.GetIndexParameters().Length == 0
-                    && property.GetMethod != null
-                    && IsLongLike(property.PropertyType)
-                )
+                if (property != null && property.GetIndexParameters().Length == 0 && property.GetMethod != null && IsLongLike(property.PropertyType))
                 {
                     return Convert.ToInt64(property.GetValue(bus));
                 }
@@ -463,54 +373,34 @@ namespace DxMessaging.Tests.Editor.Contract
 
         private static bool IsLongLike(Type type)
         {
-            return type == typeof(long)
-                || type == typeof(ulong)
-                || type == typeof(int)
-                || type == typeof(uint);
+            return type == typeof(long) || type == typeof(ulong) || type == typeof(int) || type == typeof(uint);
         }
 
         private static BusGlobalSlot ReadGlobalSlot(MessageBus bus)
         {
-            FieldInfo field = typeof(MessageBus).GetField(
-                "_globalSlots",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
+            FieldInfo field = typeof(MessageBus).GetField("_globalSlots", BindingFlags.Instance | BindingFlags.NonPublic);
             Assert.IsNotNull(field, "MessageBus must retain private field '_globalSlots'.");
             object value = field.GetValue(bus);
             Assert.IsInstanceOf<BusGlobalSlot>(value);
             return (BusGlobalSlot)value;
         }
 
-        private static TypedSlot<TMessage> ReadTypedSlot<TMessage>(
-            MessageHandler handler,
-            IMessageBus bus,
-            string typedSlotIndexName
-        )
+        private static TypedSlot<TMessage> ReadTypedSlot<TMessage>(MessageHandler handler, IMessageBus bus, string typedSlotIndexName)
             where TMessage : IMessage
         {
             object typedHandler = ReadTypedHandler<TMessage>(handler, bus);
             Array slots = ReadArrayField(typedHandler, "_slots");
-            int index = ReadIndexConstant(
-                "DxMessaging.Core.Internal.TypedSlotIndex",
-                typedSlotIndexName
-            );
+            int index = ReadIndexConstant("DxMessaging.Core.Internal.TypedSlotIndex", typedSlotIndexName);
             object slot = slots.GetValue(index);
             Assert.IsInstanceOf<TypedSlot<TMessage>>(slot);
             return (TypedSlot<TMessage>)slot;
         }
 
-        private static TypedGlobalSlot ReadTypedGlobalSlot(
-            MessageHandler handler,
-            IMessageBus bus,
-            string typedGlobalSlotIndexName
-        )
+        private static TypedGlobalSlot ReadTypedGlobalSlot(MessageHandler handler, IMessageBus bus, string typedGlobalSlotIndexName)
         {
             object typedHandler = ReadTypedHandler<IMessage>(handler, bus);
             Array slots = ReadArrayField(typedHandler, "_globalSlots");
-            int index = ReadIndexConstant(
-                "DxMessaging.Core.Internal.TypedGlobalSlotIndex",
-                typedGlobalSlotIndexName
-            );
+            int index = ReadIndexConstant("DxMessaging.Core.Internal.TypedGlobalSlotIndex", typedGlobalSlotIndexName);
             object slot = slots.GetValue(index);
             Assert.IsInstanceOf<TypedGlobalSlot>(slot);
             return (TypedGlobalSlot)slot;
@@ -519,15 +409,8 @@ namespace DxMessaging.Tests.Editor.Contract
         private static object ReadTypedHandler<TMessage>(MessageHandler handler, IMessageBus bus)
             where TMessage : IMessage
         {
-            Assert.IsTrue(
-                handler._handlersByTypeByMessageBus.ContainsKey(
-                    bus.RegisteredGlobalSequentialIndex
-                ),
-                "The handler must retain a cache for the registered bus."
-            );
-            bool exists = handler
-                ._handlersByTypeByMessageBus[bus.RegisteredGlobalSequentialIndex]
-                .TryGetValue<TMessage>(out object typedHandler);
+            Assert.IsTrue(handler._handlersByTypeByMessageBus.ContainsKey(bus.RegisteredGlobalSequentialIndex), "The handler must retain a cache for the registered bus.");
+            bool exists = handler._handlersByTypeByMessageBus[bus.RegisteredGlobalSequentialIndex].TryGetValue<TMessage>(out object typedHandler);
             Assert.IsTrue(exists, "Typed handler for " + typeof(TMessage).Name + " must exist.");
             Assert.IsNotNull(typedHandler);
             return typedHandler;
@@ -535,12 +418,7 @@ namespace DxMessaging.Tests.Editor.Contract
 
         private static Array ReadArrayField(object owner, string name)
         {
-            FieldInfo field = owner
-                .GetType()
-                .GetField(
-                    name,
-                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
-                );
+            FieldInfo field = owner.GetType().GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             Assert.IsNotNull(field, owner.GetType().Name + " must declare field '" + name + "'.");
             object value = field.GetValue(owner);
             Assert.IsNotNull(value, owner.GetType().Name + "." + name + " must be non-null.");
@@ -558,10 +436,7 @@ namespace DxMessaging.Tests.Editor.Contract
 
         private static void InvokeResetState(MessageBus bus)
         {
-            MethodInfo method = typeof(MessageBus).GetMethod(
-                "ResetState",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
+            MethodInfo method = typeof(MessageBus).GetMethod("ResetState", BindingFlags.Instance | BindingFlags.NonPublic);
             Assert.IsNotNull(method, "MessageBus.ResetState must exist for stale dereg tests.");
             method.Invoke(bus, Array.Empty<object>());
         }

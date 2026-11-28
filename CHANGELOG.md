@@ -2,1068 +2,724 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
 ### Added
 
-- Add explicit sticky publication, latest-state lookup and token replay for late untargeted listeners,
-  with owned cleanup and explicit payload lifetime ([#736](https://github.com/Ambiguous-Interactive/DxMessaging/issues/736)).
-- Add opt-in constructors and read-only properties for Unity-serialized fields while preserving their storage names
-  and reporting invalid names or inaccessible field types
+- Add explicit sticky publication, latest-state lookup and token replay for late untargeted listeners, with owned cleanup and explicit payload lifetime
+  ([#736](https://github.com/Ambiguous-Interactive/DxMessaging/issues/736)).
+- Add opt-in constructors and read-only properties for Unity-serialized fields while preserving their storage names and reporting invalid names or inaccessible field types
   ([#745](https://github.com/Ambiguous-Interactive/DxMessaging/issues/745)).
-- Split public attributes into an engine-free assembly and prepare an attributes-only NuGet package with the existing generators
-  for shared rules code ([#739](https://github.com/Ambiguous-Interactive/DxMessaging/issues/739)).
-- Add registration groups, source retargeting, and explicit-state handlers so pooled objects can replace subscriptions
-  without application-owned cleanup loops or captured callbacks
+- Split public attributes into an engine-free assembly and prepare an attributes-only NuGet package with the existing generators for shared rules code
+  ([#739](https://github.com/Ambiguous-Interactive/DxMessaging/issues/739)).
+- Add registration groups, source retargeting, and explicit-state handlers so pooled objects can replace subscriptions without application-owned cleanup loops or captured callbacks
   ([#738](https://github.com/Ambiguous-Interactive/DxMessaging/issues/738)).
-- Add exclusive Unity messaging lifecycle ownership with retryable cleanup, stale-token and destroyed-owner protection,
-  and `DXMSG015` callback forwarding diagnostics for classes with another base
-  ([#737](https://github.com/Ambiguous-Interactive/DxMessaging/issues/737)).
-- Add test-only message recorders with scoped subscriptions and read-only captures for all three routes
-  ([#740](https://github.com/Ambiguous-Interactive/DxMessaging/issues/740)).
-- Add `DxAotMessage` assembly selections so closed generic messages can dispatch untyped first on IL2CPP
-  ([#734](https://github.com/Ambiguous-Interactive/DxMessaging/issues/734)).
-- Add replayable native Editor settings cache evidence, retaining stopped measurements,
-  descriptive counters, native test results, and cleanup/source provenance
+- Add exclusive Unity messaging lifecycle ownership with retryable cleanup, stale-token and destroyed-owner protection, and `DXMSG015` callback forwarding diagnostics for classes
+  with another base ([#737](https://github.com/Ambiguous-Interactive/DxMessaging/issues/737)).
+- Add test-only message recorders with scoped subscriptions and read-only captures for all three routes ([#740](https://github.com/Ambiguous-Interactive/DxMessaging/issues/740)).
+- Add `DxAotMessage` assembly selections so closed generic messages can dispatch untyped first on IL2CPP ([#734](https://github.com/Ambiguous-Interactive/DxMessaging/issues/734)).
+- Add replayable native Editor settings cache evidence, retaining stopped measurements, descriptive counters, native test results, and cleanup/source provenance
   ([#613](https://github.com/Ambiguous-Interactive/DxMessaging/issues/613)).
-- Add **Tools / Wallstop Studios / DxMessaging / Upgrade 3.x Fast Handlers to 4.0** to preview and
-  update consumer callbacks under `Assets`. The command preserves source encoding and line endings,
-  upgrades matching `base` forwarding calls, and attempts to restore earlier writes if the batch
-  fails. It reports files it cannot restore. It adds inherited string-handler opt-ins when it can
-  prove the edit. Review the setting in each build
-  configuration when it needs manual attention. The command also flags ambiguous callbacks,
-  incompatible `ref` or `out` arguments, and writes or unresolved member access on newly readonly
-  parameters. [Migration guide](https://ambiguous-interactive.github.io/DxMessaging/guides/migration-guide/#use-in-parameters-for-fast-handlers)
-  ([#573](https://github.com/Ambiguous-Interactive/DxMessaging/issues/573),
-  [#796](https://github.com/Ambiguous-Interactive/DxMessaging/issues/796)).
+- Add **Tools / Wallstop Studios / DxMessaging / Upgrade 3.x Fast Handlers to 4.0** to preview and update consumer callbacks under `Assets`. The command preserves source encoding
+  and line endings, upgrades matching `base` forwarding calls, and attempts to restore earlier writes if the batch fails. It reports files it cannot restore. It adds inherited
+  string-handler opt-ins when it can prove the edit. Review the setting in each build configuration when it needs manual attention. The command also flags ambiguous callbacks,
+  incompatible `ref` or `out` arguments, and writes or unresolved member access on newly readonly parameters.
+  [Migration guide](https://ambiguous-interactive.github.io/DxMessaging/guides/migration-guide/#use-in-parameters-for-fast-handlers)
+  ([#573](https://github.com/Ambiguous-Interactive/DxMessaging/issues/573), [#796](https://github.com/Ambiguous-Interactive/DxMessaging/issues/796)).
 
 ### Changed
 
-- **BREAKING:** Add a direct `WallstopStudios.DxMessaging.Attributes` reference to Unity assembly definitions that use public
-  DxMessaging attributes. Namespaces stay unchanged; see the [4.0 migration guide](https://ambiguous-interactive.github.io/DxMessaging/guides/migration-guide/#reference-the-dedicated-attributes-assembly).
-- Correct IntelliSense summaries and references, including cache enumeration, bus reset behavior,
-  global observer message and context parameters, empty-bus debug logging, and deregistration callback boundaries
-  ([#503](https://github.com/Ambiguous-Interactive/DxMessaging/issues/503),
+- **BREAKING:** Add a direct `WallstopStudios.DxMessaging.Attributes` reference to Unity assembly definitions that use public DxMessaging attributes. Namespaces stay unchanged; see
+  the [4.0 migration guide](https://ambiguous-interactive.github.io/DxMessaging/guides/migration-guide/#reference-the-dedicated-attributes-assembly).
+- Correct IntelliSense summaries and references, including cache enumeration, bus reset behavior, global observer message and context parameters, empty-bus debug logging, and
+  deregistration callback boundaries ([#503](https://github.com/Ambiguous-Interactive/DxMessaging/issues/503),
   [#575](https://github.com/Ambiguous-Interactive/DxMessaging/issues/575)).
-- **BREAKING:** Remove the test-only `DxMessagingRuntimeSettingsProvider.Override` API. Configure
-  the runtime settings resource asset for application behavior and keep fixture configuration in
-  test assemblies; see the [4.0 migration guide](https://ambiguous-interactive.github.io/DxMessaging/guides/migration-guide/#migrating-to-400).
-- Reduce recurring Unity correctness setup by installing only the locked Node.js runtime
-  dependencies used to redact and seal test artifacts ([#572](https://github.com/Ambiguous-Interactive/DxMessaging/issues/572)).
-- Add disabled, missing-token, destroyed-receiver, stale-selection, and separate-bus visibility
-  exercises to the Diagnostics Tooling Exerciser guided tour ([#573](https://github.com/Ambiguous-Interactive/DxMessaging/issues/573)).
-- **BREAKING:** Stop `MessageAwareComponent` from registering three demo string handlers by
-  default; override `RegisterForStringMessages` to return `true` when those handlers are required
+- **BREAKING:** Remove the test-only `DxMessagingRuntimeSettingsProvider.Override` API. Configure the runtime settings resource asset for application behavior and keep fixture
+  configuration in test assemblies; see the [4.0 migration guide](https://ambiguous-interactive.github.io/DxMessaging/guides/migration-guide/#migrating-to-400).
+- Reduce recurring Unity correctness setup by installing only the locked Node.js runtime dependencies used to redact and seal test artifacts
+  ([#572](https://github.com/Ambiguous-Interactive/DxMessaging/issues/572)).
+- Add disabled, missing-token, destroyed-receiver, stale-selection, and separate-bus visibility exercises to the Diagnostics Tooling Exerciser guided tour
   ([#573](https://github.com/Ambiguous-Interactive/DxMessaging/issues/573)).
-- Reduce source-generator execution allocations by retaining concrete generator-owned lists and
-  materializing registrar sort keys once, and reduce package size by shipping only the optimized
-  analyzer payload instead of its development sources ([#576](https://github.com/Ambiguous-Interactive/DxMessaging/issues/576), [#577](https://github.com/Ambiguous-Interactive/DxMessaging/issues/577)).
-- Reduce warmed sticky publication and latest-value lookup to a sparse indexed read instead of a
-  dictionary lookup, keeping the same retained-state lifetime and immediate release when the last
-  value is cleared ([#749](https://github.com/Ambiguous-Interactive/DxMessaging/issues/749)).
-- **BREAKING:** Fast handlers and post-processors now use readonly references; change callback
-  parameters from `ref` to `in` and follow the [4.0 migration guide](https://ambiguous-interactive.github.io/DxMessaging/guides/migration-guide/#migrating-to-400) ([#486](https://github.com/Ambiguous-Interactive/DxMessaging/issues/486)).
-- Show `DXMSG006` through `DXMSG010` in MessageAwareComponent Inspector diagnostic titles so
-  lifecycle failures and opt-outs remain distinguishable
+- **BREAKING:** Stop `MessageAwareComponent` from registering three demo string handlers by default; override `RegisterForStringMessages` to return `true` when those handlers are
+  required ([#573](https://github.com/Ambiguous-Interactive/DxMessaging/issues/573)).
+- Reduce source-generator execution allocations by retaining concrete generator-owned lists and materializing registrar sort keys once, and reduce package size by shipping only the
+  optimized analyzer payload instead of its development sources ([#576](https://github.com/Ambiguous-Interactive/DxMessaging/issues/576),
+  [#577](https://github.com/Ambiguous-Interactive/DxMessaging/issues/577)).
+- Reduce warmed sticky publication and latest-value lookup to a sparse indexed read instead of a dictionary lookup, keeping the same retained-state lifetime and immediate release
+  when the last value is cleared ([#749](https://github.com/Ambiguous-Interactive/DxMessaging/issues/749)).
+- **BREAKING:** Fast handlers and post-processors now use readonly references; change callback parameters from `ref` to `in` and follow the
+  [4.0 migration guide](https://ambiguous-interactive.github.io/DxMessaging/guides/migration-guide/#migrating-to-400)
+  ([#486](https://github.com/Ambiguous-Interactive/DxMessaging/issues/486)).
+- Show `DXMSG006` through `DXMSG010` in MessageAwareComponent Inspector diagnostic titles so lifecycle failures and opt-outs remain distinguishable
   ([#314](https://github.com/Ambiguous-Interactive/DxMessaging/issues/314)).
-- Reduce warmed subscribe/unsubscribe churn by six managed allocation calls per cycle in Unity Mono
-  tests with handler-cache retention enabled ([#414](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414)).
-- **BREAKING (diagnostics output):** Emission-site traces require opt-in through
-  `IMessageBus.GlobalDiagnosticsStackTraces` or the **Capture Emission Stack Traces** setting
+- Reduce warmed subscribe/unsubscribe churn by six managed allocation calls per cycle in Unity Mono tests with handler-cache retention enabled
+  ([#414](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414)).
+- **BREAKING (diagnostics output):** Emission-site traces require opt-in through `IMessageBus.GlobalDiagnosticsStackTraces` or the **Capture Emission Stack Traces** setting
   ([#433](https://github.com/Ambiguous-Interactive/DxMessaging/issues/433)).
 
 ### Fixed
 
-- Fix Flow Graph compilation on early Unity 2021.3 patches
-  ([#575](https://github.com/Ambiguous-Interactive/DxMessaging/issues/575)).
-- Resolve message source links in the Flow Graph and Message Monitor against currently loaded
-  assemblies in Unity 6.6 ([#813](https://github.com/Ambiguous-Interactive/DxMessaging/issues/813)).
-- Use Unity's loaded assembly path to verify the runtime in the 3.x upgrade preview on Unity 6.6
+- Fix Flow Graph compilation on early Unity 2021.3 patches ([#575](https://github.com/Ambiguous-Interactive/DxMessaging/issues/575)).
+- Resolve message source links in the Flow Graph and Message Monitor against currently loaded assemblies in Unity 6.6
   ([#813](https://github.com/Ambiguous-Interactive/DxMessaging/issues/813)).
+- Use Unity's loaded assembly path to verify the runtime in the 3.x upgrade preview on Unity 6.6 ([#813](https://github.com/Ambiguous-Interactive/DxMessaging/issues/813)).
 - Preserve the serialized message bus fallback configured before `MessageAwareComponent.Awake` when a runtime provider is destroyed
   ([#810](https://github.com/Ambiguous-Interactive/DxMessaging/issues/810)).
-- Preserve `MessagingComponent` listener ownership during callbacks and report unresolved provider
-  recursion during initial setup ([#805](https://github.com/Ambiguous-Interactive/DxMessaging/issues/805)).
-- Replace the opt-in Inspector scan of Unity's Console history with a compiler warning feed.
-  Existing settings carry forward, and compiler warnings keep their source locations
-  ([#801](https://github.com/Ambiguous-Interactive/DxMessaging/issues/801),
-  [#575](https://github.com/Ambiguous-Interactive/DxMessaging/issues/575)).
-- Preserve broken-base-chain warnings (`DXMSG010`) in the opt-in Editor compiler-message bridge
-  ([#802](https://github.com/Ambiguous-Interactive/DxMessaging/issues/802)).
-- Remove stale compiler diagnostics from the Editor bridge when assemblies report the same type
-  name and one assembly's report changes ([#803](https://github.com/Ambiguous-Interactive/DxMessaging/issues/803)).
+- Preserve `MessagingComponent` listener ownership during callbacks and report unresolved provider recursion during initial setup
+  ([#805](https://github.com/Ambiguous-Interactive/DxMessaging/issues/805)).
+- Replace the opt-in Inspector scan of Unity's Console history with a compiler warning feed. Existing settings carry forward, and compiler warnings keep their source locations
+  ([#801](https://github.com/Ambiguous-Interactive/DxMessaging/issues/801), [#575](https://github.com/Ambiguous-Interactive/DxMessaging/issues/575)).
+- Preserve broken-base-chain warnings (`DXMSG010`) in the opt-in Editor compiler-message bridge ([#802](https://github.com/Ambiguous-Interactive/DxMessaging/issues/802)).
+- Remove stale compiler diagnostics from the Editor bridge when assemblies report the same type name and one assembly's report changes
+  ([#803](https://github.com/Ambiguous-Interactive/DxMessaging/issues/803)).
 - Fix arithmetic overflow when a token receives a handle it does not own in projects with checked arithmetic enabled
   ([#738](https://github.com/Ambiguous-Interactive/DxMessaging/issues/738)).
-- Accept npm 12 package metadata when validating packages and exporting `.unitypackage` files.
-  ([#742](https://github.com/Ambiguous-Interactive/DxMessaging/issues/742)).
-- Keep empty listener storage eligible for later cleanup when ordinary trim runs during dispatch
-  ([#715](https://github.com/Ambiguous-Interactive/DxMessaging/issues/715)).
-- Release unrelated interceptor targets when resetting the default bus while an old registration
-  handle is retained ([#712](https://github.com/Ambiguous-Interactive/DxMessaging/issues/712)).
-- Prevent duplicate delivery when a custom bus registers a callback during token retarget cleanup
-  ([#711](https://github.com/Ambiguous-Interactive/DxMessaging/issues/711)).
-- Preserve token activation when a custom bus retargets it during registration. Nested retargeting
-  and failure recovery avoid activating pending registrations twice
+- Accept npm 12 package metadata when validating packages and exporting `.unitypackage` files. ([#742](https://github.com/Ambiguous-Interactive/DxMessaging/issues/742)).
+- Keep empty listener storage eligible for later cleanup when ordinary trim runs during dispatch ([#715](https://github.com/Ambiguous-Interactive/DxMessaging/issues/715)).
+- Release unrelated interceptor targets when resetting the default bus while an old registration handle is retained
+  ([#712](https://github.com/Ambiguous-Interactive/DxMessaging/issues/712)).
+- Prevent duplicate delivery when a custom bus registers a callback during token retarget cleanup ([#711](https://github.com/Ambiguous-Interactive/DxMessaging/issues/711)).
+- Preserve token activation when a custom bus retargets it during registration. Nested retargeting and failure recovery avoid activating pending registrations twice
   ([#710](https://github.com/Ambiguous-Interactive/DxMessaging/issues/710)).
-- Preserve the original registration-history output when a custom serializer changes the log
-  ([#709](https://github.com/Ambiguous-Interactive/DxMessaging/issues/709)).
-- Preserve registration-history changes made by a clear predicate and reject stale or recursive
-  filtered clearing ([#708](https://github.com/Ambiguous-Interactive/DxMessaging/issues/708)).
-- Preserve consumer caller frames in diagnostic stack traces when source paths contain
-  DxMessaging namespace text ([#707](https://github.com/Ambiguous-Interactive/DxMessaging/issues/707)).
-- **BREAKING:** Reject record field constructors that replace the record copy constructor and
-  can silently change `with` results. Choose a distinct construction API as described in the
-  [migration guide](https://ambiguous-interactive.github.io/DxMessaging/guides/migration-guide/#preserve-record-copy-behavior)
+- Preserve the original registration-history output when a custom serializer changes the log ([#709](https://github.com/Ambiguous-Interactive/DxMessaging/issues/709)).
+- Preserve registration-history changes made by a clear predicate and reject stale or recursive filtered clearing
+  ([#708](https://github.com/Ambiguous-Interactive/DxMessaging/issues/708)).
+- Preserve consumer caller frames in diagnostic stack traces when source paths contain DxMessaging namespace text
+  ([#707](https://github.com/Ambiguous-Interactive/DxMessaging/issues/707)).
+- **BREAKING:** Reject record field constructors that replace the record copy constructor and can silently change `with` results. Choose a distinct construction API as described in
+  the [migration guide](https://ambiguous-interactive.github.io/DxMessaging/guides/migration-guide/#preserve-record-copy-behavior)
   ([#720](https://github.com/Ambiguous-Interactive/DxMessaging/issues/720)).
-- **BREAKING:** Order generated constructor parameters by source-file compilation order, then
-  declaration order within each file. Check positional calls for split partial types in the
-  [migration guide](https://ambiguous-interactive.github.io/DxMessaging/guides/migration-guide/#check-constructors-for-split-partial-types)
+- **BREAKING:** Order generated constructor parameters by source-file compilation order, then declaration order within each file. Check positional calls for split partial types in
+  the [migration guide](https://ambiguous-interactive.github.io/DxMessaging/guides/migration-guide/#check-constructors-for-split-partial-types)
   ([#723](https://github.com/Ambiguous-Interactive/DxMessaging/issues/723)).
-- Initialize excluded struct fields and auto-properties in generated constructors while preserving
-  initializers and avoiding unintended constructor calls. Chain empty primary constructors and
-  report an actionable diagnostic when primary parameters require explicit argument choices ([#706](https://github.com/Ambiguous-Interactive/DxMessaging/issues/706),
-  [#719](https://github.com/Ambiguous-Interactive/DxMessaging/issues/719)).
-- Fix `[DxAutoConstructor]` compilation errors for structs with fixed-size buffers by excluding
-  buffers from generated constructors and properties ([#497](https://github.com/Ambiguous-Interactive/DxMessaging/issues/497#issuecomment-6964871272)).
-- Preserve pointer constructor signatures and accept valid `null` pointer defaults
-  ([#705](https://github.com/Ambiguous-Interactive/DxMessaging/issues/705)).
-- Preserve valid `nameof(...)` generation and resolve optional defaults in each field's own
-  import and alias scope ([#703](https://github.com/Ambiguous-Interactive/DxMessaging/issues/703),
-  [#722](https://github.com/Ambiguous-Interactive/DxMessaging/issues/722)).
-- Preserve generated constructors and message identities for types nested in partial interfaces
-  ([#702](https://github.com/Ambiguous-Interactive/DxMessaging/issues/702)).
-- Skip unbound generic receiver methods during reflexive lookup and preserve callable concrete
-  overloads, including compatible object and interface parameters
+- Initialize excluded struct fields and auto-properties in generated constructors while preserving initializers and avoiding unintended constructor calls. Chain empty primary
+  constructors and report an actionable diagnostic when primary parameters require explicit argument choices
+  ([#706](https://github.com/Ambiguous-Interactive/DxMessaging/issues/706), [#719](https://github.com/Ambiguous-Interactive/DxMessaging/issues/719)).
+- Fix `[DxAutoConstructor]` compilation errors for structs with fixed-size buffers by excluding buffers from generated constructors and properties
+  ([#497](https://github.com/Ambiguous-Interactive/DxMessaging/issues/497#issuecomment-6964871272)).
+- Preserve pointer constructor signatures and accept valid `null` pointer defaults ([#705](https://github.com/Ambiguous-Interactive/DxMessaging/issues/705)).
+- Preserve valid `nameof(...)` generation and resolve optional defaults in each field's own import and alias scope
+  ([#703](https://github.com/Ambiguous-Interactive/DxMessaging/issues/703), [#722](https://github.com/Ambiguous-Interactive/DxMessaging/issues/722)).
+- Preserve generated constructors and message identities for types nested in partial interfaces ([#702](https://github.com/Ambiguous-Interactive/DxMessaging/issues/702)).
+- Skip unbound generic receiver methods during reflexive lookup and preserve callable concrete overloads, including compatible object and interface parameters
   ([#700](https://github.com/Ambiguous-Interactive/DxMessaging/issues/700)).
-- Preserve both reflexive deliveries when a metadata getter emits the same message during
-  receiver lookup, and keep its method cache within the configured retention bound
+- Preserve both reflexive deliveries when a metadata getter emits the same message during receiver lookup, and keep its method cache within the configured retention bound
   ([#699](https://github.com/Ambiguous-Interactive/DxMessaging/issues/699)).
-- Prevent registration-handle hashing from throwing in builds with integer overflow checks
-  ([#691](https://github.com/Ambiguous-Interactive/DxMessaging/issues/691)).
-- Preserve component cleanup ownership when deregistration callbacks release or register work
-  for the same listener. Failed cleanup remains publicly retryable
+- Prevent registration-handle hashing from throwing in builds with integer overflow checks ([#691](https://github.com/Ambiguous-Interactive/DxMessaging/issues/691)).
+- Preserve component cleanup ownership when deregistration callbacks release or register work for the same listener. Failed cleanup remains publicly retryable
   ([#679](https://github.com/Ambiguous-Interactive/DxMessaging/issues/679)).
-- Clean up subscriptions added by diagnostics after a failed registration build, preserving
-  a retryable lease when cleanup fails ([#677](https://github.com/Ambiguous-Interactive/DxMessaging/issues/677)).
-- Keep lease cleanup retryable when callbacks add subscriptions during disposal, and prevent
-  duplicate activation notifications ([#676](https://github.com/Ambiguous-Interactive/DxMessaging/issues/676)).
-- Prevent registration lease callbacks from reactivating the lease during deactivation or disposal
-  ([#790](https://github.com/Ambiguous-Interactive/DxMessaging/issues/790), [#779](https://github.com/Ambiguous-Interactive/DxMessaging/issues/779)).
-- Clean up subscriptions when registration-builder setup callbacks throw, preserving a retryable
-  lease when cleanup fails ([#675](https://github.com/Ambiguous-Interactive/DxMessaging/issues/675)).
-- Preserve activation when a custom bus registration callback calls `Enable()` on the same token.
-  The owning replay completes without restarting its registration queue, including during retargeting
-  ([#671](https://github.com/Ambiguous-Interactive/DxMessaging/issues/671)).
-- Stop reflexive dispatch when diagnostic or reflection metadata callbacks reset the bus; canceled
-  lookups do not retain a resolved method, and new handlers wait for the next emission
-  ([#670](https://github.com/Ambiguous-Interactive/DxMessaging/issues/670),
-  [#694](https://github.com/Ambiguous-Interactive/DxMessaging/issues/694)).
+- Clean up subscriptions added by diagnostics after a failed registration build, preserving a retryable lease when cleanup fails
+  ([#677](https://github.com/Ambiguous-Interactive/DxMessaging/issues/677)).
+- Keep lease cleanup retryable when callbacks add subscriptions during disposal, and prevent duplicate activation notifications
+  ([#676](https://github.com/Ambiguous-Interactive/DxMessaging/issues/676)).
+- Prevent registration lease callbacks from reactivating the lease during deactivation or disposal ([#790](https://github.com/Ambiguous-Interactive/DxMessaging/issues/790),
+  [#779](https://github.com/Ambiguous-Interactive/DxMessaging/issues/779)).
+- Clean up subscriptions when registration-builder setup callbacks throw, preserving a retryable lease when cleanup fails
+  ([#675](https://github.com/Ambiguous-Interactive/DxMessaging/issues/675)).
+- Preserve activation when a custom bus registration callback calls `Enable()` on the same token. The owning replay completes without restarting its registration queue, including
+  during retargeting ([#671](https://github.com/Ambiguous-Interactive/DxMessaging/issues/671)).
+- Stop reflexive dispatch when diagnostic or reflection metadata callbacks reset the bus; canceled lookups do not retain a resolved method, and new handlers wait for the next
+  emission ([#670](https://github.com/Ambiguous-Interactive/DxMessaging/issues/670), [#694](https://github.com/Ambiguous-Interactive/DxMessaging/issues/694)).
 - Preserve retryable cleanup and callback lifecycle cancellation during active token retargeting and recovery
-  ([#503](https://github.com/Ambiguous-Interactive/DxMessaging/issues/503),
-  [#663](https://github.com/Ambiguous-Interactive/DxMessaging/issues/663), [#668](https://github.com/Ambiguous-Interactive/DxMessaging/issues/668)).
+  ([#503](https://github.com/Ambiguous-Interactive/DxMessaging/issues/503), [#663](https://github.com/Ambiguous-Interactive/DxMessaging/issues/663),
+  [#668](https://github.com/Ambiguous-Interactive/DxMessaging/issues/668)).
 - Fix `InstanceId` XML and JSON data contract serialization by storing the numeric `id` member on its backing field
   ([#662](https://github.com/Ambiguous-Interactive/DxMessaging/issues/662)).
-- **BREAKING:** Make `InstanceId`, `MessageRegistrationHandle`, and `MessageHandler` comparisons
-  follow `IComparable`: values sort after null, and unrelated argument types throw
+- **BREAKING:** Make `InstanceId`, `MessageRegistrationHandle`, and `MessageHandler` comparisons follow `IComparable`: values sort after null, and unrelated argument types throw
   `ArgumentException` ([#661](https://github.com/Ambiguous-Interactive/DxMessaging/issues/661)).
-- Stop teardown from attaching pending context cleanup to a typed slot retired by a reentrant
-  bus reset ([#660](https://github.com/Ambiguous-Interactive/DxMessaging/issues/660)).
-- Keep reflexive signature keys stable after caller-owned type arrays change, safe for default/null arrays,
-  and usable in checked builds; resolve reflected overloads from the captured signature
-  ([#659](https://github.com/Ambiguous-Interactive/DxMessaging/issues/659)).
-- Resolve custom bus cache indices before registration so a throwing or resetting getter cannot
-  leave an inaccessible subscription. Avoid emission getters during registration and teardown
-  ([#655](https://github.com/Ambiguous-Interactive/DxMessaging/issues/655),
-  [#669](https://github.com/Ambiguous-Interactive/DxMessaging/issues/669)).
-- Stop diagnostic call-count storage from growing with handles removed during callbacks, while
-  preserving completed deliveries in bounded history
+- Stop teardown from attaching pending context cleanup to a typed slot retired by a reentrant bus reset ([#660](https://github.com/Ambiguous-Interactive/DxMessaging/issues/660)).
+- Keep reflexive signature keys stable after caller-owned type arrays change, safe for default/null arrays, and usable in checked builds; resolve reflected overloads from the
+  captured signature ([#659](https://github.com/Ambiguous-Interactive/DxMessaging/issues/659)).
+- Resolve custom bus cache indices before registration so a throwing or resetting getter cannot leave an inaccessible subscription. Avoid emission getters during registration and
+  teardown ([#655](https://github.com/Ambiguous-Interactive/DxMessaging/issues/655), [#669](https://github.com/Ambiguous-Interactive/DxMessaging/issues/669)).
+- Stop diagnostic call-count storage from growing with handles removed during callbacks, while preserving completed deliveries in bounded history
   ([#674](https://github.com/Ambiguous-Interactive/DxMessaging/issues/674)).
-- Keep token diagnostics cleared when an in-flight callback finishes after complete token cleanup
-  ([#781](https://github.com/Ambiguous-Interactive/DxMessaging/issues/781)).
-- Preserve token diagnostic origins when callbacks rebind the token, including pending callbacks
-  and nested deliveries ([#654](https://github.com/Ambiguous-Interactive/DxMessaging/issues/654)).
-- Release consumed typed teardown state after a token disables successfully, preserving staged
-  callbacks for re-enabling while allowing unrelated users of recycled maps to collect
+- Keep token diagnostics cleared when an in-flight callback finishes after complete token cleanup ([#781](https://github.com/Ambiguous-Interactive/DxMessaging/issues/781)).
+- Preserve token diagnostic origins when callbacks rebind the token, including pending callbacks and nested deliveries
+  ([#654](https://github.com/Ambiguous-Interactive/DxMessaging/issues/654)).
+- Release consumed typed teardown state after a token disables successfully, preserving staged callbacks for re-enabling while allowing unrelated users of recycled maps to collect
   ([#653](https://github.com/Ambiguous-Interactive/DxMessaging/issues/653)).
-- Release recycled context maps from consumed keyed registration handles so retaining an old
-  value cannot keep a later unrelated bus and receiver alive
+- Release recycled context maps from consumed keyed registration handles so retaining an old value cannot keep a later unrelated bus and receiver alive
   ([#652](https://github.com/Ambiguous-Interactive/DxMessaging/issues/652)).
-- Stop targeted and broadcast messages after a keyed handler resets the bus, before any
-  without-context handler runs ([#651](https://github.com/Ambiguous-Interactive/DxMessaging/issues/651)).
-- Preserve outer global accept-all callbacks when nested emissions change their registrations
-  ([#650](https://github.com/Ambiguous-Interactive/DxMessaging/issues/650)).
-- Stop the current emission when a global callback resets the bus, so replacement callbacks
-  receive only fresh emissions ([#649](https://github.com/Ambiguous-Interactive/DxMessaging/issues/649)).
-- Clear old callbacks and empty handler storage during static reset, including handlers with equal
-  owners ([#647](https://github.com/Ambiguous-Interactive/DxMessaging/issues/647), [#713](https://github.com/Ambiguous-Interactive/DxMessaging/issues/713)).
-- Preserve bus cache and generated lease owner identities across static resets so independent
-  buses keep their callbacks separate and new leases on a retained custom bus receive messages
-  ([#645](https://github.com/Ambiguous-Interactive/DxMessaging/issues/645), [#646](https://github.com/Ambiguous-Interactive/DxMessaging/issues/646)).
-- Apply runtime memory settings on an idle Editor update and release provider-created defaults on
-  reset and Editor assembly reload ([#730](https://github.com/Ambiguous-Interactive/DxMessaging/issues/730), [#644](https://github.com/Ambiguous-Interactive/DxMessaging/issues/644),
+- Stop targeted and broadcast messages after a keyed handler resets the bus, before any without-context handler runs
+  ([#651](https://github.com/Ambiguous-Interactive/DxMessaging/issues/651)).
+- Preserve outer global accept-all callbacks when nested emissions change their registrations ([#650](https://github.com/Ambiguous-Interactive/DxMessaging/issues/650)).
+- Stop the current emission when a global callback resets the bus, so replacement callbacks receive only fresh emissions
+  ([#649](https://github.com/Ambiguous-Interactive/DxMessaging/issues/649)).
+- Clear old callbacks and empty handler storage during static reset, including handlers with equal owners ([#647](https://github.com/Ambiguous-Interactive/DxMessaging/issues/647),
+  [#713](https://github.com/Ambiguous-Interactive/DxMessaging/issues/713)).
+- Preserve bus cache and generated lease owner identities across static resets so independent buses keep their callbacks separate and new leases on a retained custom bus receive
+  messages ([#645](https://github.com/Ambiguous-Interactive/DxMessaging/issues/645), [#646](https://github.com/Ambiguous-Interactive/DxMessaging/issues/646)).
+- Apply runtime memory settings on an idle Editor update and release provider-created defaults on reset and Editor assembly reload
+  ([#730](https://github.com/Ambiguous-Interactive/DxMessaging/issues/730), [#644](https://github.com/Ambiguous-Interactive/DxMessaging/issues/644),
   [#575](https://github.com/Ambiguous-Interactive/DxMessaging/issues/575)).
-- Preserve token cleanup and retryable failures during custom-bus callbacks, including activation
-  that reuses a staged handle while older cleanup runs
+- Preserve token cleanup and retryable failures during custom-bus callbacks, including activation that reuses a staged handle while older cleanup runs
   ([#642](https://github.com/Ambiguous-Interactive/DxMessaging/issues/642), [#673](https://github.com/Ambiguous-Interactive/DxMessaging/issues/673)).
-- Keep token replay valid when a custom-bus registration callback calls `UnregisterAll()` or `Dispose()`; cleared future entries stay inactive and accepted registrations keep their teardown
-  ([#641](https://github.com/Ambiguous-Interactive/DxMessaging/issues/641)).
-- Keep registrations removed by an earlier custom-bus callback from activating later in the
-  same token replay ([#639](https://github.com/Ambiguous-Interactive/DxMessaging/issues/639)).
-- Prevent rejected registrations on enabled tokens from reappearing after Disable/Enable
-  ([#638](https://github.com/Ambiguous-Interactive/DxMessaging/issues/638)).
-- Remove obsolete object-search warnings from Message Monitor, Flow Graph, and the diagnostics
-  sample on Unity 6000.4 ([#628](https://github.com/Ambiguous-Interactive/DxMessaging/issues/628)).
-- Fix direct registration handles so passing one to a different bus preserves both buses, and global
-  registrations on different buses keep distinct identities ([#637](https://github.com/Ambiguous-Interactive/DxMessaging/issues/637)).
-- Fix source generation when generic and nongeneric types have colliding generated file names
-  ([#624](https://github.com/Ambiguous-Interactive/DxMessaging/issues/624)).
-- Fix generated message declarations and constructors failing for escaped C# identifiers
-  ([#623](https://github.com/Ambiguous-Interactive/DxMessaging/issues/623)).
-- Preserve field nullability and C# constant conversions in generated constructors. Keep nullable
-  opt-outs and optional NaN, infinity, and signed-zero defaults on older compiler hosts
-  ([#696](https://github.com/Ambiguous-Interactive/DxMessaging/issues/696),
-  [#697](https://github.com/Ambiguous-Interactive/DxMessaging/issues/697),
+- Keep token replay valid when a custom-bus registration callback calls `UnregisterAll()` or `Dispose()`; cleared future entries stay inactive and accepted registrations keep their
+  teardown ([#641](https://github.com/Ambiguous-Interactive/DxMessaging/issues/641)).
+- Keep registrations removed by an earlier custom-bus callback from activating later in the same token replay
+  ([#639](https://github.com/Ambiguous-Interactive/DxMessaging/issues/639)).
+- Prevent rejected registrations on enabled tokens from reappearing after Disable/Enable ([#638](https://github.com/Ambiguous-Interactive/DxMessaging/issues/638)).
+- Remove obsolete object-search warnings from Message Monitor, Flow Graph, and the diagnostics sample on Unity 6000.4
+  ([#628](https://github.com/Ambiguous-Interactive/DxMessaging/issues/628)).
+- Fix direct registration handles so passing one to a different bus preserves both buses, and global registrations on different buses keep distinct identities
+  ([#637](https://github.com/Ambiguous-Interactive/DxMessaging/issues/637)).
+- Fix source generation when generic and nongeneric types have colliding generated file names ([#624](https://github.com/Ambiguous-Interactive/DxMessaging/issues/624)).
+- Fix generated message declarations and constructors failing for escaped C# identifiers ([#623](https://github.com/Ambiguous-Interactive/DxMessaging/issues/623)).
+- Preserve field nullability and C# constant conversions in generated constructors. Keep nullable opt-outs and optional NaN, infinity, and signed-zero defaults on older compiler
+  hosts ([#696](https://github.com/Ambiguous-Interactive/DxMessaging/issues/696), [#697](https://github.com/Ambiguous-Interactive/DxMessaging/issues/697),
   [#698](https://github.com/Ambiguous-Interactive/DxMessaging/issues/698)).
-- Fix generated message and constructor declarations failing for C# 9 reference records,
-  including nested record containers ([#695](https://github.com/Ambiguous-Interactive/DxMessaging/issues/695)).
-- Stop repeated console-harvester settings searches and scans when the console bridge is disabled
-  ([#613](https://github.com/Ambiguous-Interactive/DxMessaging/issues/613)).
-- Fix provider fallback selection in registration builders, components, dependency-injection
-  adapters, and emission helpers, including destroyed Unity-backed providers, deferred per-build
-  resolution, scoped container fallbacks, and live serialized-handle fallbacks
+- Fix generated message and constructor declarations failing for C# 9 reference records, including nested record containers
+  ([#695](https://github.com/Ambiguous-Interactive/DxMessaging/issues/695)).
+- Stop repeated console-harvester settings searches and scans when the console bridge is disabled ([#613](https://github.com/Ambiguous-Interactive/DxMessaging/issues/613)).
+- Fix provider fallback selection in registration builders, components, dependency-injection adapters, and emission helpers, including destroyed Unity-backed providers, deferred
+  per-build resolution, scoped container fallbacks, and live serialized-handle fallbacks ([#572](https://github.com/Ambiguous-Interactive/DxMessaging/issues/572)).
+- Execute the already-compiled Zenject, VContainer, and Reflex integration test suites in the EditMode correctness matrix instead of reporting three permanently skipped shim
+  sentinels ([#572](https://github.com/Ambiguous-Interactive/DxMessaging/issues/572)).
+- Make `MessagingComponentInstaller` honor its documented explicit-bus precedence when both an explicit bus and provider are assigned
   ([#572](https://github.com/Ambiguous-Interactive/DxMessaging/issues/572)).
-- Execute the already-compiled Zenject, VContainer, and Reflex integration test suites in the
-  EditMode correctness matrix instead of reporting three permanently skipped shim sentinels
+- Make null provider and empty provider-handle configuration replace a prior explicit component bus with the global fallback
   ([#572](https://github.com/Ambiguous-Interactive/DxMessaging/issues/572)).
-- Make `MessagingComponentInstaller` honor its documented explicit-bus precedence when both an
-  explicit bus and provider are assigned ([#572](https://github.com/Ambiguous-Interactive/DxMessaging/issues/572)).
-- Make null provider and empty provider-handle configuration replace a prior explicit component bus
-  with the global fallback ([#572](https://github.com/Ambiguous-Interactive/DxMessaging/issues/572)).
-- Fix `MessagingComponent` retaining registrations after destruction, delivering to inactive
-  hosts before activation, and losing listener configuration when callbacks release, replace, or
-  reconfigure listener owners ([#542](https://github.com/Ambiguous-Interactive/DxMessaging/issues/542),
-  [#543](https://github.com/Ambiguous-Interactive/DxMessaging/issues/543),
-  [#683](https://github.com/Ambiguous-Interactive/DxMessaging/issues/683)).
-- Fix base-call ignore compiler wiring and batch preparation while preserving consumer options
-  ([#537](https://github.com/Ambiguous-Interactive/DxMessaging/issues/537),
-  [#538](https://github.com/Ambiguous-Interactive/DxMessaging/issues/538),
-  [#541](https://github.com/Ambiguous-Interactive/DxMessaging/issues/541)).
-- Keep the Inspector's empty warning area hidden while its first refresh waits for imports
-  ([#540](https://github.com/Ambiguous-Interactive/DxMessaging/issues/540)).
-- Fix corrupted boxed struct payloads and IL2CPP failures when emitting registered manual messages
-  through untyped dispatch ([#527](https://github.com/Ambiguous-Interactive/DxMessaging/issues/527),
-  [#529](https://github.com/Ambiguous-Interactive/DxMessaging/issues/529)).
-- Fix persistent listeners retaining former targets, unused bus storage after scene changes,
-  unbounded registration history, and oversized reflexive caches
+- Fix `MessagingComponent` retaining registrations after destruction, delivering to inactive hosts before activation, and losing listener configuration when callbacks release,
+  replace, or reconfigure listener owners ([#542](https://github.com/Ambiguous-Interactive/DxMessaging/issues/542),
+  [#543](https://github.com/Ambiguous-Interactive/DxMessaging/issues/543), [#683](https://github.com/Ambiguous-Interactive/DxMessaging/issues/683)).
+- Fix base-call ignore compiler wiring and batch preparation while preserving consumer options ([#537](https://github.com/Ambiguous-Interactive/DxMessaging/issues/537),
+  [#538](https://github.com/Ambiguous-Interactive/DxMessaging/issues/538), [#541](https://github.com/Ambiguous-Interactive/DxMessaging/issues/541)).
+- Keep the Inspector's empty warning area hidden while its first refresh waits for imports ([#540](https://github.com/Ambiguous-Interactive/DxMessaging/issues/540)).
+- Fix corrupted boxed struct payloads and IL2CPP failures when emitting registered manual messages through untyped dispatch
+  ([#527](https://github.com/Ambiguous-Interactive/DxMessaging/issues/527), [#529](https://github.com/Ambiguous-Interactive/DxMessaging/issues/529)).
+- Fix persistent listeners retaining former targets, unused bus storage after scene changes, unbounded registration history, and oversized reflexive caches
   ([#523](https://github.com/Ambiguous-Interactive/DxMessaging/issues/523)).
-- Fix stripped IL2CPP projects on Unity 2021.3 failing to compile because the runtime assembly
-  referenced the optional IMGUI module ([#515](https://github.com/Ambiguous-Interactive/DxMessaging/pull/515)).
-- Fix combined `ReflexiveSendMode` flags so active filtering is opt-in, inactive descendants are
-  included without it, and missing zero- or one-argument receivers remain silent
-  ([#489](https://github.com/Ambiguous-Interactive/DxMessaging/issues/489),
-  [#490](https://github.com/Ambiguous-Interactive/DxMessaging/issues/490)).
-- Fix nested reflexive sends so the outer hierarchy traversal resumes without duplicate delivery,
-  and skip receivers destroyed earlier in the same traversal
+- Fix stripped IL2CPP projects on Unity 2021.3 failing to compile because the runtime assembly referenced the optional IMGUI module
+  ([#515](https://github.com/Ambiguous-Interactive/DxMessaging/pull/515)).
+- Fix combined `ReflexiveSendMode` flags so active filtering is opt-in, inactive descendants are included without it, and missing zero- or one-argument receivers remain silent
+  ([#489](https://github.com/Ambiguous-Interactive/DxMessaging/issues/489), [#490](https://github.com/Ambiguous-Interactive/DxMessaging/issues/490)).
+- Fix nested reflexive sends so the outer hierarchy traversal resumes without duplicate delivery, and skip receivers destroyed earlier in the same traversal
   ([#489](https://github.com/Ambiguous-Interactive/DxMessaging/issues/489)).
-- Fix `MessagingComponent.Release` so destroyed listeners can dispose their registrations and are
-  no longer retained ([#491](https://github.com/Ambiguous-Interactive/DxMessaging/issues/491)).
-- Stop the base-call analyzer from reporting `DXMSG009` or `DXMSG007` for components that declare
-  `OnApplicationFocus(bool)` or `OnApplicationPause(bool)`. `MessageAwareComponent` declares neither
-  hook, so such a method overrides and hides nothing; the diagnostic claimed a CS0114 hiding that
-  does not exist, and no spelling of the method silenced it (adding `new` traded the warning for
-  CS0109). Hide-based diagnostics now fire only when an ancestor actually declares a virtual member
-  with a matching signature -- exactly the shape CS0114 warns about -- so coverage resumes
-  automatically if the base class adds the hooks in a future release
+- Fix `MessagingComponent.Release` so destroyed listeners can dispose their registrations and are no longer retained
+  ([#491](https://github.com/Ambiguous-Interactive/DxMessaging/issues/491)).
+- Stop the base-call analyzer from reporting `DXMSG009` or `DXMSG007` for components that declare `OnApplicationFocus(bool)` or `OnApplicationPause(bool)`. `MessageAwareComponent`
+  declares neither hook, so such a method overrides and hides nothing; the diagnostic claimed a CS0114 hiding that does not exist, and no spelling of the method silenced it (adding
+  `new` traded the warning for CS0109). Hide-based diagnostics now fire only when an ancestor actually declares a virtual member with a matching signature -- exactly the shape
+  CS0114 warns about -- so coverage resumes automatically if the base class adds the hooks in a future release
   ([#453](https://github.com/Ambiguous-Interactive/DxMessaging/issues/453)).
-- Report each base-call analyzer diagnostic once per declaration. When the analyzer DLL loads twice
-  into one compilation -- typically a stale in-project copy alongside the package's analyzer --
-  every registration reported its own copy of each warning, so one declaration surfaced as two
-  identical entries at the same location
+- Report each base-call analyzer diagnostic once per declaration. When the analyzer DLL loads twice into one compilation -- typically a stale in-project copy alongside the
+  package's analyzer -- every registration reported its own copy of each warning, so one declaration surfaced as two identical entries at the same location
   ([#453](https://github.com/Ambiguous-Interactive/DxMessaging/issues/453)).
-- Stop the Message Monitor from drawing its toolbar over the log header, and its column headings
-  over each other, at narrow window widths. Neither Monitor row wraps now - the live toolbar is two
-  declared rows, what the log is doing and what it is filtered to - because a wrapping row's height
-  is not resolved from the lines it wraps onto on Unity 2021.3, so those lines rendered outside the
-  row. Every heading clips to its own column with an ellipsis, the way the row cell beneath it
-  already did, and the route-kind chips give space back instead of pushing the search field past
-  the edge ([#435](https://github.com/Ambiguous-Interactive/DxMessaging/issues/435)).
-- Keep wrapping rows in the Flow Graph and Message Monitor inside their own box. On Unity 2021.3 a
-  wrapping row keeps the height of one line, so a long type name or a deep hierarchy path pushed
-  the extra lines on top of the block beneath. Every wrapping container in the editor now measures
-  its lines and takes that height. Monitor lane pills and active-filter tokens also wrap in a row
-  the window owns rather than in the scroll view's own content container, which Unity sized to the
-  viewport and clipped, so tokens past the first lines can now be scrolled to
-  ([#440](https://github.com/Ambiguous-Interactive/DxMessaging/issues/440)).
+- Stop the Message Monitor from drawing its toolbar over the log header, and its column headings over each other, at narrow window widths. Neither Monitor row wraps now - the live
+  toolbar is two declared rows, what the log is doing and what it is filtered to - because a wrapping row's height is not resolved from the lines it wraps onto on Unity 2021.3, so
+  those lines rendered outside the row. Every heading clips to its own column with an ellipsis, the way the row cell beneath it already did, and the route-kind chips give space
+  back instead of pushing the search field past the edge ([#435](https://github.com/Ambiguous-Interactive/DxMessaging/issues/435)).
+- Keep wrapping rows in the Flow Graph and Message Monitor inside their own box. On Unity 2021.3 a wrapping row keeps the height of one line, so a long type name or a deep
+  hierarchy path pushed the extra lines on top of the block beneath. Every wrapping container in the editor now measures its lines and takes that height. Monitor lane pills and
+  active-filter tokens also wrap in a row the window owns rather than in the scroll view's own content container, which Unity sized to the viewport and clipped, so tokens past the
+  first lines can now be scrolled to ([#440](https://github.com/Ambiguous-Interactive/DxMessaging/issues/440)).
 
 ## [3.3.0]
 
 ### Added
 
-- Add ready-to-run scenes to the Mini Combat and UI Buttons + Inspector samples, so neither needs
-  Inspector wiring ([#372](https://github.com/Ambiguous-Interactive/DxMessaging/issues/372)).
-- Add a guided tour to the Diagnostics Tooling Exerciser sample that emits traffic and opens Message
-  Monitor and Flow Graph ([#346](https://github.com/Ambiguous-Interactive/DxMessaging/issues/346)).
-- Add the standard .NET constructors to `MessageRegistrationBuildException`
-  ([#367](https://github.com/Ambiguous-Interactive/DxMessaging/issues/367)).
-- Show the installed version's release notes in the Unity Package Manager Version History tab
-  ([#362](https://github.com/Ambiguous-Interactive/DxMessaging/issues/362)).
+- Add ready-to-run scenes to the Mini Combat and UI Buttons + Inspector samples, so neither needs Inspector wiring
+  ([#372](https://github.com/Ambiguous-Interactive/DxMessaging/issues/372)).
+- Add a guided tour to the Diagnostics Tooling Exerciser sample that emits traffic and opens Message Monitor and Flow Graph
+  ([#346](https://github.com/Ambiguous-Interactive/DxMessaging/issues/346)).
+- Add the standard .NET constructors to `MessageRegistrationBuildException` ([#367](https://github.com/Ambiguous-Interactive/DxMessaging/issues/367)).
+- Show the installed version's release notes in the Unity Package Manager Version History tab ([#362](https://github.com/Ambiguous-Interactive/DxMessaging/issues/362)).
 
 ### Changed
 
-- Use a collision-driven first-message guide and remove maintainer details from user docs
-  ([#404](https://github.com/Ambiguous-Interactive/DxMessaging/issues/404),
+- Use a collision-driven first-message guide and remove maintainer details from user docs ([#404](https://github.com/Ambiguous-Interactive/DxMessaging/issues/404),
   [#411](https://github.com/Ambiguous-Interactive/DxMessaging/issues/411)).
-- Color Untargeted routes blue, Targeted purple, and Broadcast green in the editor and the docs; red
-  now marks problems ([#353](https://github.com/Ambiguous-Interactive/DxMessaging/issues/353)).
-- Shrink the package download by using Unity's Roslyn assemblies instead of bundling private copies
-  ([#371](https://github.com/Ambiguous-Interactive/DxMessaging/issues/371)).
-- Allocate less when registering many message types that have not emitted yet
+- Color Untargeted routes blue, Targeted purple, and Broadcast green in the editor and the docs; red now marks problems
+  ([#353](https://github.com/Ambiguous-Interactive/DxMessaging/issues/353)).
+- Shrink the package download by using Unity's Roslyn assemblies instead of bundling private copies ([#371](https://github.com/Ambiguous-Interactive/DxMessaging/issues/371)).
+- Allocate less when registering many message types that have not emitted yet ([#374](https://github.com/Ambiguous-Interactive/DxMessaging/issues/374)).
+- Deregister in linear instead of quadratic time when one token owns many same-priority handlers for one message type
   ([#374](https://github.com/Ambiguous-Interactive/DxMessaging/issues/374)).
-- Deregister in linear instead of quadratic time when one token owns many same-priority handlers for
-  one message type ([#374](https://github.com/Ambiguous-Interactive/DxMessaging/issues/374)).
-- Stop generated code from suppressing compiler warnings, so it follows your project's warning
-  policy ([#367](https://github.com/Ambiguous-Interactive/DxMessaging/issues/367)).
-- Point the Package Manager **Changelog** link at the rendered changelog instead of raw Markdown
-  ([#362](https://github.com/Ambiguous-Interactive/DxMessaging/issues/362)).
-- Dispatch faster when a message type has interceptors or post-processors: interceptors are
-  resolved once when registrations change instead of being re-collected on every emission, and
-  emissions no longer repeat handler and post-processor lookups the bus already resolved. One
-  interceptor costs roughly half what it did, and four cost roughly a quarter
+- Stop generated code from suppressing compiler warnings, so it follows your project's warning policy ([#367](https://github.com/Ambiguous-Interactive/DxMessaging/issues/367)).
+- Point the Package Manager **Changelog** link at the rendered changelog instead of raw Markdown ([#362](https://github.com/Ambiguous-Interactive/DxMessaging/issues/362)).
+- Dispatch faster when a message type has interceptors or post-processors: interceptors are resolved once when registrations change instead of being re-collected on every emission,
+  and emissions no longer repeat handler and post-processor lookups the bus already resolved. One interceptor costs roughly half what it did, and four cost roughly a quarter
   ([#408](https://github.com/Ambiguous-Interactive/DxMessaging/issues/408)).
 
 ### Fixed
 
-- Fix active `MessageRegistrationToken` registrations with null callbacks leaving partial token or
-  bus state behind after throwing ([#414](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414)).
-- Make initially empty and interceptor-rewritten post routes obey frozen snapshots: additions wait
-  until the next emission, while removals finish the current post phase
+- Fix active `MessageRegistrationToken` registrations with null callbacks leaving partial token or bus state behind after throwing
+  ([#414](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414)).
+- Make initially empty and interceptor-rewritten post routes obey frozen snapshots: additions wait until the next emission, while removals finish the current post phase
   ([#413](https://github.com/Ambiguous-Interactive/DxMessaging/issues/413)).
-- Fix an interceptor registered or removed at a different priority than the running interceptor
-  taking effect during that same emission; interceptor changes now wait for the next emission, as
-  the snapshot semantics documentation already described
-  ([#408](https://github.com/Ambiguous-Interactive/DxMessaging/issues/408)).
-- Fix `DxMessagingStaticState.Reset()` from inside an interceptor so it stops the rest of the
-  dispatch instead of invoking callbacks against reset bus state
+- Fix an interceptor registered or removed at a different priority than the running interceptor taking effect during that same emission; interceptor changes now wait for the next
+  emission, as the snapshot semantics documentation already described ([#408](https://github.com/Ambiguous-Interactive/DxMessaging/issues/408)).
+- Fix `DxMessagingStaticState.Reset()` from inside an interceptor so it stops the rest of the dispatch instead of invoking callbacks against reset bus state
   ([#395](https://github.com/Ambiguous-Interactive/DxMessaging/issues/395)).
-- Fix Flow Graph so route and component details select and ping the object they name
-  ([#345](https://github.com/Ambiguous-Interactive/DxMessaging/issues/345)).
-- Fix Message Monitor resizing so one divider controls the log detail area and wrapped stack frames
-  keep their height ([#344](https://github.com/Ambiguous-Interactive/DxMessaging/issues/344)).
-- Fix disposing nested runtime-settings override tokens out of order restoring ended settings
-  ([#384](https://github.com/Ambiguous-Interactive/DxMessaging/issues/384)).
-- Fix copied `GlobalMessageBusScope` and `RegistrationDisposable` values restoring or removing newer
-  state, and remove the 1,024 nested-scope cap
+- Fix Flow Graph so route and component details select and ping the object they name ([#345](https://github.com/Ambiguous-Interactive/DxMessaging/issues/345)).
+- Fix Message Monitor resizing so one divider controls the log detail area and wrapped stack frames keep their height
+  ([#344](https://github.com/Ambiguous-Interactive/DxMessaging/issues/344)).
+- Fix disposing nested runtime-settings override tokens out of order restoring ended settings ([#384](https://github.com/Ambiguous-Interactive/DxMessaging/issues/384)).
+- Fix copied `GlobalMessageBusScope` and `RegistrationDisposable` values restoring or removing newer state, and remove the 1,024 nested-scope cap
   ([#375](https://github.com/Ambiguous-Interactive/DxMessaging/issues/375)).
-- Fix the Reflex integration and DI sample for Reflex 14 while keeping earlier Reflex releases
-  working ([#367](https://github.com/Ambiguous-Interactive/DxMessaging/issues/367)).
-- Fix editor tooling failing to compile on Unity 6000.5 after Unity changed its object-discovery and
-  object-lookup APIs ([#365](https://github.com/Ambiguous-Interactive/DxMessaging/issues/365),
-  [#367](https://github.com/Ambiguous-Interactive/DxMessaging/issues/367)).
+- Fix the Reflex integration and DI sample for Reflex 14 while keeping earlier Reflex releases working ([#367](https://github.com/Ambiguous-Interactive/DxMessaging/issues/367)).
+- Fix editor tooling failing to compile on Unity 6000.5 after Unity changed its object-discovery and object-lookup APIs
+  ([#365](https://github.com/Ambiguous-Interactive/DxMessaging/issues/365), [#367](https://github.com/Ambiguous-Interactive/DxMessaging/issues/367)).
 
 ## [3.2.2]
 
 ### Added
 
-- The Message Monitor now has a **Live** mode alongside the existing snapshot
-  view. It drains the bus emission buffer on a timer into a columnar log with a
-  record/pause toggle, named Untargeted/Targeted/Broadcast filter chips, the same
-  typed filter query as snapshot mode (`type:`, `message:`, `context:`, `stack:`),
-  a detail pane for the selected row whose stack trace starts collapsed, and a
-  footer reporting shown, buffered, recorded and missed counts. Repeated identical
-  emissions coalesce into one counted row, and a `LIVE` badge plus a footer line
-  say so, so the merged `N` column is not a mystery. The log updates in place as
-  it drains, so scrolling into older rows is not undone by the next poll, and
-  emissions the bus overwrote before the log could drain them raise a notice
-  saying the log has gaps instead of leaving that to a number in the footer. Live
-  mode is editor-only and reads data the bus already records, so it adds no
-  runtime cost.
-- Add a **Message subscriptions** section to every `MessageAwareComponent`
-  inspector. It lists the registrations its `MessageRegistrationToken` holds: the
-  message type, the registration kind, a priority badge, the observed call count,
-  and a dot showing whether the registration is currently subscribed on the bus.
-  Call counts read as `calls n/a` while diagnostics are off rather than as zero.
-  Multi-object selections group matching registrations, show how many selected
-  components carry each one, and mark mixed enabled states so a missing or
-  disabled handler stands out across a scene selection
-  ([#297](https://github.com/Ambiguous-Interactive/DxMessaging/issues/297)).
-  See [Inspector Overlay](https://ambiguous-interactive.github.io/DxMessaging/guides/inspector-overlay/#message-subscriptions).
+- The Message Monitor now has a **Live** mode alongside the existing snapshot view. It drains the bus emission buffer on a timer into a columnar log with a record/pause toggle,
+  named Untargeted/Targeted/Broadcast filter chips, the same typed filter query as snapshot mode (`type:`, `message:`, `context:`, `stack:`), a detail pane for the selected row
+  whose stack trace starts collapsed, and a footer reporting shown, buffered, recorded and missed counts. Repeated identical emissions coalesce into one counted row, and a `LIVE`
+  badge plus a footer line say so, so the merged `N` column is not a mystery. The log updates in place as it drains, so scrolling into older rows is not undone by the next poll,
+  and emissions the bus overwrote before the log could drain them raise a notice saying the log has gaps instead of leaving that to a number in the footer. Live mode is editor-only
+  and reads data the bus already records, so it adds no runtime cost.
+- Add a **Message subscriptions** section to every `MessageAwareComponent` inspector. It lists the registrations its `MessageRegistrationToken` holds: the message type, the
+  registration kind, a priority badge, the observed call count, and a dot showing whether the registration is currently subscribed on the bus. Call counts read as `calls n/a` while
+  diagnostics are off rather than as zero. Multi-object selections group matching registrations, show how many selected components carry each one, and mark mixed enabled states so
+  a missing or disabled handler stands out across a scene selection ([#297](https://github.com/Ambiguous-Interactive/DxMessaging/issues/297)). See
+  [Inspector Overlay](https://ambiguous-interactive.github.io/DxMessaging/guides/inspector-overlay/#message-subscriptions).
 
 ### Changed
 
-- Change Flow Graph to lead with an interactive node-and-edge canvas. Message
-  nodes connect to receiver nodes through live registration edges, with pan,
-  zoom, automatic framing, and selection. Text-heavy route analysis, trace
-  activity, raw topology, and overflow rows now start inside one collapsed
-  section. Empty captures explain how to restore live registrations instead of
-  filling the window with zero-value summaries. A crossing-aware layered layout
-  and ordered node ports keep arrow paths traceable without text labels on the
-  lines. Nodes use named metric rows instead of compact `+N` summaries, and
-  multi-kind message types use neutral `MIXED` metrics until filtered to one
-  route kind. Route selection opens responsive route, activity, emission, and
-  trace cards. Evidence lists message types and call sites as separate rows,
-  links every resolvable type declaration and live call-site asset, and keeps
-  dense type sets behind an eight-row disclosure. Technical diagnostics now
-  use separate route-health and trace-coverage cards with bordered relationship
-  records for their busiest paths. Captured object contexts render as breadcrumb
-  hierarchies, call sites separate the method from the file and line, and compact
-  selection headers keep exact identities in tooltips. Breadcrumbs backed by an
-  exact captured Unity-object identity and relationship endpoints select their graph items, message
-  details expose a bounded on-demand route roster with receiver, registration,
-  context, and context-ID identities, and global observers use the accessible amber taxonomy
-  badge. The complete text report remains available through **Copy diagnostics**
-  without rendering a text wall.
-  Broadcast and targeted routes
-  expose recent component- and registration-exact delivery call sites without
-  leaking evidence across message buses. Global accept-all
-  registrations appear as `ANY MESSAGE` observers instead of a misleading
-  `IMessage` message type. Destroyed Unity context references fall back to their
-  stable instance ID instead of aborting capture for that component. Follow-up
-  interaction work makes the full feathered route path clickable, dims unrelated
-  paths after selection, adds explicit fit and zoom controls with a 20 percent
-  overview floor, and removes the automatic default selection. Route activity
-  now leads while emission, trace, and technical evidence start collapsed.
-  Message and call-site source links open the exact declaration or captured
-  line when Unity can resolve it, and evidence disclosures stay open when the
-  background source index refreshes. Dense many-to-many coverage keeps hundreds of
-  crossing routes present and selectable in constrained layouts
-  ([#345](https://github.com/Ambiguous-Interactive/DxMessaging/issues/345)).
-- Change the snapshot Message Monitor to the same columnar surface as its live
-  log. Rows are fixed-height and carry the route kind, message type, context, and
-  dispatch id under a column header; the stack trace moved out of every row into
-  the selected entry's detail pane, behind a disclosure that starts collapsed.
-  A `SNAPSHOT` badge and a one-line explanation say that the log is buffered
-  history with one row per emission, so it is no longer ambiguous whether the
-  window is streaming or merging. Named taxonomy chips carrying per-kind counts
-  act as both the color legend and a per-kind filter, and **Copy JSON** follows
-  them. The always-expanded message-type and context lane panels became one
-  collapsed **Breakdown** disclosure of clickable filter pills, with their counts
-  and member lists in tooltips, and component diagnostics moved behind its own
-  collapsed disclosure. The log now flexes while the detail pane holds its height,
-  so neither is pushed off the bottom of the window. The detail pane also links out
-  to what a row stands for: the message type opens its declaring source, the
-  context selects and pings its object in the Hierarchy while that object is still
-  alive, and the stack trace renders one row per frame with its own **Open**
-  button, leaving out Unity's own stack-capture frames so the first row is the
-  emitting call site. The mode badge is now the mode switch in both directions, so
-  live mode is no longer one-way; the log gutter sits on the row rather than on the
-  live-only time column, so snapshot rows are no longer flush against the window
-  edge; Component Diagnostics and the stack trace carry drag handles instead of a
-  fixed cap; and everything that answers a click shows the pointer cursor
+- Change Flow Graph to lead with an interactive node-and-edge canvas. Message nodes connect to receiver nodes through live registration edges, with pan, zoom, automatic framing,
+  and selection. Text-heavy route analysis, trace activity, raw topology, and overflow rows now start inside one collapsed section. Empty captures explain how to restore live
+  registrations instead of filling the window with zero-value summaries. A crossing-aware layered layout and ordered node ports keep arrow paths traceable without text labels on
+  the lines. Nodes use named metric rows instead of compact `+N` summaries, and multi-kind message types use neutral `MIXED` metrics until filtered to one route kind. Route
+  selection opens responsive route, activity, emission, and trace cards. Evidence lists message types and call sites as separate rows, links every resolvable type declaration and
+  live call-site asset, and keeps dense type sets behind an eight-row disclosure. Technical diagnostics now use separate route-health and trace-coverage cards with bordered
+  relationship records for their busiest paths. Captured object contexts render as breadcrumb hierarchies, call sites separate the method from the file and line, and compact
+  selection headers keep exact identities in tooltips. Breadcrumbs backed by an exact captured Unity-object identity and relationship endpoints select their graph items, message
+  details expose a bounded on-demand route roster with receiver, registration, context, and context-ID identities, and global observers use the accessible amber taxonomy badge. The
+  complete text report remains available through **Copy diagnostics** without rendering a text wall. Broadcast and targeted routes expose recent component- and registration-exact
+  delivery call sites without leaking evidence across message buses. Global accept-all registrations appear as `ANY MESSAGE` observers instead of a misleading `IMessage` message
+  type. Destroyed Unity context references fall back to their stable instance ID instead of aborting capture for that component. Follow-up interaction work makes the full feathered
+  route path clickable, dims unrelated paths after selection, adds explicit fit and zoom controls with a 20 percent overview floor, and removes the automatic default selection.
+  Route activity now leads while emission, trace, and technical evidence start collapsed. Message and call-site source links open the exact declaration or captured line when Unity
+  can resolve it, and evidence disclosures stay open when the background source index refreshes. Dense many-to-many coverage keeps hundreds of crossing routes present and
+  selectable in constrained layouts ([#345](https://github.com/Ambiguous-Interactive/DxMessaging/issues/345)).
+- Change the snapshot Message Monitor to the same columnar surface as its live log. Rows are fixed-height and carry the route kind, message type, context, and dispatch id under a
+  column header; the stack trace moved out of every row into the selected entry's detail pane, behind a disclosure that starts collapsed. A `SNAPSHOT` badge and a one-line
+  explanation say that the log is buffered history with one row per emission, so it is no longer ambiguous whether the window is streaming or merging. Named taxonomy chips carrying
+  per-kind counts act as both the color legend and a per-kind filter, and **Copy JSON** follows them. The always-expanded message-type and context lane panels became one collapsed
+  **Breakdown** disclosure of clickable filter pills, with their counts and member lists in tooltips, and component diagnostics moved behind its own collapsed disclosure. The log
+  now flexes while the detail pane holds its height, so neither is pushed off the bottom of the window. The detail pane also links out to what a row stands for: the message type
+  opens its declaring source, the context selects and pings its object in the Hierarchy while that object is still alive, and the stack trace renders one row per frame with its own
+  **Open** button, leaving out Unity's own stack-capture frames so the first row is the emitting call site. The mode badge is now the mode switch in both directions, so live mode
+  is no longer one-way; the log gutter sits on the row rather than on the live-only time column, so snapshot rows are no longer flush against the window edge; Component Diagnostics
+  and the stack trace carry drag handles instead of a fixed cap; and everything that answers a click shows the pointer cursor
   ([#344](https://github.com/Ambiguous-Interactive/DxMessaging/issues/344)).
-- Improve targeted and source-bound broadcast routing throughput and reduce the
-  memory retained by their per-target lookup tables without changing the public
-  messaging API or delivery behavior
-  ([#289](https://github.com/Ambiguous-Interactive/DxMessaging/issues/289)).
-- The `MessagingComponent` inspector's matched and potential-match emission labels
-  now use the design system's colors instead of raw green and yellow, so they stay
-  readable on the light editor skin.
+- Improve targeted and source-bound broadcast routing throughput and reduce the memory retained by their per-target lookup tables without changing the public messaging API or
+  delivery behavior ([#289](https://github.com/Ambiguous-Interactive/DxMessaging/issues/289)).
+- The `MessagingComponent` inspector's matched and potential-match emission labels now use the design system's colors instead of raw green and yellow, so they stay readable on the
+  light editor skin.
 
 ### Fixed
 
-- Fix Flow Graph message-source links stalling the editor while scanning large
-  compilation assemblies. Source declarations now index in the background and
-  each assembly source file is read once, while exact nested and generic source
-  links continue to appear when the index completes
+- Fix Flow Graph message-source links stalling the editor while scanning large compilation assemblies. Source declarations now index in the background and each assembly source file
+  is read once, while exact nested and generic source links continue to appear when the index completes ([#345](https://github.com/Ambiguous-Interactive/DxMessaging/issues/345)).
+- Keep a selected Flow Graph route and its marker above dimmed paths at crossings so the highlighted route remains visible and wins overlapping clicks
   ([#345](https://github.com/Ambiguous-Interactive/DxMessaging/issues/345)).
-- Keep a selected Flow Graph route and its marker above dimmed paths at crossings
-  so the highlighted route remains visible and wins overlapping clicks
-  ([#345](https://github.com/Ambiguous-Interactive/DxMessaging/issues/345)).
-- Reflexive message dispatch to a destroyed `GameObject` or `Component` target
-  now skips Unity hierarchy delivery instead of throwing
-  `MissingReferenceException`; normal targeted bus handlers still run.
-- Fix the Diagnostics Tooling Exerciser losing all live registrations after a
-  reload-disabled Play Mode reset. Active receivers now rebuild their tokens and
-  the runner restarts its deterministic emissions on every activation
-  ([#346](https://github.com/Ambiguous-Interactive/DxMessaging/issues/346)).
-- Pooled collection rentals now return to their pool when attaching them to a
-  registration or reclamation owner throws, instead of remaining stranded
-  after a failed ownership transfer.
-- Documentation-site pages load faster. Every page was downloading the Mermaid
-  renderer (about 950 KB compressed) whether or not it had a diagram, and pages
-  that did have one rendered it twice. Diagrams now go through the site theme's own
-  Mermaid integration, which loads it only where a diagram exists and colors it
-  from the site palette in both light and dark. The display font is also linked
-  rather than `@import`-ed, so it no longer waits on the stylesheet that requested
-  it.
-- The documentation-site footer no longer wraps its social icon onto its own
-  left-aligned line, and it carries links to the repository, releases, changelog,
-  issue reporting and license.
+- Reflexive message dispatch to a destroyed `GameObject` or `Component` target now skips Unity hierarchy delivery instead of throwing `MissingReferenceException`; normal targeted
+  bus handlers still run.
+- Fix the Diagnostics Tooling Exerciser losing all live registrations after a reload-disabled Play Mode reset. Active receivers now rebuild their tokens and the runner restarts its
+  deterministic emissions on every activation ([#346](https://github.com/Ambiguous-Interactive/DxMessaging/issues/346)).
+- Pooled collection rentals now return to their pool when attaching them to a registration or reclamation owner throws, instead of remaining stranded after a failed ownership
+  transfer.
+- Documentation-site pages load faster. Every page was downloading the Mermaid renderer (about 950 KB compressed) whether or not it had a diagram, and pages that did have one
+  rendered it twice. Diagrams now go through the site theme's own Mermaid integration, which loads it only where a diagram exists and colors it from the site palette in both light
+  and dark. The display font is also linked rather than `@import`-ed, so it no longer waits on the stylesheet that requested it.
+- The documentation-site footer no longer wraps its social icon onto its own left-aligned line, and it carries links to the repository, releases, changelog, issue reporting and
+  license.
 
 ## [3.2.1]
 
 ### Changed
 
-- Removed the dead typed `MessageHandler.Handle*` callback methods and internalized the
-  three global callbacks still used by the message bus. These methods were nominally
-  public plumbing rather than supported registration APIs; bus dispatch and token
-  registration behavior are unchanged.
-- Refreshed the README banner (`docs/images/DxMessaging-banner.svg`): added
-  vertical separation between the tagline and the badge row, replaced the badges
-  with **Simple**, **MIT**, and the synced version, and re-drew the right panel
-  as one bus spine dispatching three aligned, color-coded message dots along
-  routes to labeled **Untargeted**, **Targeted**, and **Broadcast** destinations.
-- Simplified banner sync (`scripts/sync-banner-version.js`) to track only the
-  package version; the auto-derived test-count badge and its file-walking logic
-  were removed, along with the now-unneeded test-source triggers in the CI banner
-  gate and the pre-commit hook.
+- Removed the dead typed `MessageHandler.Handle*` callback methods and internalized the three global callbacks still used by the message bus. These methods were nominally public
+  plumbing rather than supported registration APIs; bus dispatch and token registration behavior are unchanged.
+- Refreshed the README banner (`docs/images/DxMessaging-banner.svg`): added vertical separation between the tagline and the badge row, replaced the badges with **Simple**, **MIT**,
+  and the synced version, and re-drew the right panel as one bus spine dispatching three aligned, color-coded message dots along routes to labeled **Untargeted**, **Targeted**, and
+  **Broadcast** destinations.
+- Simplified banner sync (`scripts/sync-banner-version.js`) to track only the package version; the auto-derived test-count badge and its file-walking logic were removed, along with
+  the now-unneeded test-source triggers in the CI banner gate and the pre-commit hook.
 
 ### Added
 
-- Added a **Diagnostics Tooling Exerciser** sample scene that deterministically
-  drives Message Monitor, Flow Graph, Inspector diagnostics, and Project
-  Settings with untargeted, targeted, broadcast, exact-source broadcast,
-  broadcast-without-source, and `RegisterGlobalAcceptAll` routes.
-- Project Settings now exposes the **Ignored Base-Call Types** list under
-  Inspector Checks, so project-level base-call suppressions can be reviewed and
-  edited from the same settings page as the overlay toggles.
-- Flow Graph now includes visible trace-id lanes and visible trace route-kind
-  lanes over visible trace paths, reporting path-membership breadth or
-  route-kind delivery breadth plus message, target, and context details without
-  changing export schema v5.
-- Message Monitor now includes visible message-type and context lanes over the
-  current filter, reporting entry counts, distinct context/message breadth,
-  entry share, context lists, message lists, and row-level Filter shortcuts,
-  including exact quoted context shortcuts, without changing JSON export.
-- Message Monitor filtering now supports typed `type:`, `message:`,
-  `context:`, and `stack:` facets over captured entry fields while preserving
-  existing plain text matching, supports quoted typed values with spaces, and
-  displays the active typed or plain filter with a Clear action.
+- Added a **Diagnostics Tooling Exerciser** sample scene that deterministically drives Message Monitor, Flow Graph, Inspector diagnostics, and Project Settings with untargeted,
+  targeted, broadcast, exact-source broadcast, broadcast-without-source, and `RegisterGlobalAcceptAll` routes.
+- Project Settings now exposes the **Ignored Base-Call Types** list under Inspector Checks, so project-level base-call suppressions can be reviewed and edited from the same
+  settings page as the overlay toggles.
+- Flow Graph now includes visible trace-id lanes and visible trace route-kind lanes over visible trace paths, reporting path-membership breadth or route-kind delivery breadth plus
+  message, target, and context details without changing export schema v5.
+- Message Monitor now includes visible message-type and context lanes over the current filter, reporting entry counts, distinct context/message breadth, entry share, context lists,
+  message lists, and row-level Filter shortcuts, including exact quoted context shortcuts, without changing JSON export.
+- Message Monitor filtering now supports typed `type:`, `message:`, `context:`, and `stack:` facets over captured entry fields while preserving existing plain text matching,
+  supports quoted typed values with spaces, and displays the active typed or plain filter with a Clear action.
 
 ## [3.2.0]
 
 ### Added
 
-- Three per-kind **marginal registration** benchmark scenarios
-  (`UntargetedRegistration_Marginal`, `TargetedRegistration_Marginal`,
-  `BroadcastRegistration_Marginal`) that measure the GC-allocation cost of an additional
-  same-type registration on an already-warm bus -- the surface the registration
-  allocation reductions target -- so the published performance tables now show per-kind
-  registration cost (allocation count + bytes), not just dispatch throughput. Each
-  registers 1000 more handlers of one warmed message type using distinct, pre-built
-  handler delegates, so the measured window captures only the registration machinery
-  (never the handler delegate, and never a same-handler refcount bump). They are
-  wall-clock (zero-throughput) rows whose allocation columns populate on the
-  profiler-bearing in-editor PlayMode/Mono leg and read `n/a` on the published Standalone
-  IL2CPP Release leg (which strips the profiler), exactly like the existing
-  registration-flood rows.
-- Benchmarks now report the total allocated BYTES per measurement batch (`gcAllocatedBytes`)
-  alongside the existing managed-allocation CALL count (`gcAllocations`). Bytes are
-  measured from a before/after delta of the live Unity
-  `ProfilerRecorder(ProfilerCategory.Memory, "GC Allocated In Frame").CurrentValue`
-  -- a within-frame `GC.Alloc`-hook byte accumulator that SUMS allocation-hook bytes
-  rather than measuring a heap-size difference, so it is exact (verified: 100 x
-  `byte[10000]` reads 1,003,200 bytes, run-to-run identical) and immune to mid-window
-  collections (a heavy-churn region that swung a `GC.GetTotalMemory` delta to -133 MB
-  read a stable 8,000,000 bytes here). The byte counter is profiler-dependent
-  like the count probe: in the editor and development players it is functional, and on
-  the published non-development Standalone IL2CPP Release leg -- where the profiler is
-  stripped -- BOTH metrics report the `Unmeasured` sentinel (rendered `n/a`), never a
-  fabricated `0`. Bytes are INFORMATIONAL -- the perf-delta PR comment renders byte
-  deltas goodness-signed (`N fewer bytes` / `N more bytes`) -- while the regression gate
-  stays on the allocation COUNT, which remains the canonical signal (Unity's own
-  Performance Testing package likewise reads the alloc-CALL count, not bytes). The
-  cross-library comparison tables now also surface this byte metric as a dedicated
-  GC-allocated-bytes matrix, and the Unity `SendMessage` comparison boxes its value
-  payload on every dispatch (as any real `SendMessage(value)` call must) so its
-  allocation columns show that real per-call cost instead of a misleading zero. New API:
-  `AllocationProbe.MeasureWithBytes` returning `AllocationProbe.AllocationSample`,
-  `AllocationProbe.Window.SampleBytes()`/`SampleBoth()`,
-  `AllocationProbe.BytesFunctional`, `BenchmarkMeasurement.GcAllocatedBytes`,
-  `ColdLatencyMeasurement.MedianGcAllocatedBytes`, and
-  `MinimumMeasurement<T>.GcAllocatedBytes`.
-- New "What's New in 3.x" documentation page (Getting Started) that summarizes
-  the user-visible improvements across the 3.x line -- faster zero-allocation
-  dispatch, the base-call analyzer and inspector overlay, project-wide settings,
-  memory-reclamation controls, `ReregisterOnEnableAfterRelease`, the clarified
-  `ToggleMessageHandler` semantics, Unity 6.4+/6.5 compatibility, and the
-  dependency-injection helpers -- with links to the authoritative changelog and
-  the migration guide.
+- Three per-kind **marginal registration** benchmark scenarios (`UntargetedRegistration_Marginal`, `TargetedRegistration_Marginal`, `BroadcastRegistration_Marginal`) that measure
+  the GC-allocation cost of an additional same-type registration on an already-warm bus -- the surface the registration allocation reductions target -- so the published performance
+  tables now show per-kind registration cost (allocation count + bytes), not just dispatch throughput. Each registers 1000 more handlers of one warmed message type using distinct,
+  pre-built handler delegates, so the measured window captures only the registration machinery (never the handler delegate, and never a same-handler refcount bump). They are
+  wall-clock (zero-throughput) rows whose allocation columns populate on the profiler-bearing in-editor PlayMode/Mono leg and read `n/a` on the published Standalone IL2CPP Release
+  leg (which strips the profiler), exactly like the existing registration-flood rows.
+- Benchmarks now report the total allocated BYTES per measurement batch (`gcAllocatedBytes`) alongside the existing managed-allocation CALL count (`gcAllocations`). Bytes are
+  measured from a before/after delta of the live Unity `ProfilerRecorder(ProfilerCategory.Memory, "GC Allocated In Frame").CurrentValue` -- a within-frame `GC.Alloc`-hook byte
+  accumulator that SUMS allocation-hook bytes rather than measuring a heap-size difference, so it is exact (verified: 100 x `byte[10000]` reads 1,003,200 bytes, run-to-run
+  identical) and immune to mid-window collections (a heavy-churn region that swung a `GC.GetTotalMemory` delta to -133 MB read a stable 8,000,000 bytes here). The byte counter is
+  profiler-dependent like the count probe: in the editor and development players it is functional, and on the published non-development Standalone IL2CPP Release leg -- where the
+  profiler is stripped -- BOTH metrics report the `Unmeasured` sentinel (rendered `n/a`), never a fabricated `0`. Bytes are INFORMATIONAL -- the perf-delta PR comment renders byte
+  deltas goodness-signed (`N fewer bytes` / `N more bytes`) -- while the regression gate stays on the allocation COUNT, which remains the canonical signal (Unity's own Performance
+  Testing package likewise reads the alloc-CALL count, not bytes). The cross-library comparison tables now also surface this byte metric as a dedicated GC-allocated-bytes matrix,
+  and the Unity `SendMessage` comparison boxes its value payload on every dispatch (as any real `SendMessage(value)` call must) so its allocation columns show that real per-call
+  cost instead of a misleading zero. New API: `AllocationProbe.MeasureWithBytes` returning `AllocationProbe.AllocationSample`,
+  `AllocationProbe.Window.SampleBytes()`/`SampleBoth()`, `AllocationProbe.BytesFunctional`, `BenchmarkMeasurement.GcAllocatedBytes`,
+  `ColdLatencyMeasurement.MedianGcAllocatedBytes`, and `MinimumMeasurement<T>.GcAllocatedBytes`.
+- New "What's New in 3.x" documentation page (Getting Started) that summarizes the user-visible improvements across the 3.x line -- faster zero-allocation dispatch, the base-call
+  analyzer and inspector overlay, project-wide settings, memory-reclamation controls, `ReregisterOnEnableAfterRelease`, the clarified `ToggleMessageHandler` semantics, Unity
+  6.4+/6.5 compatibility, and the dependency-injection helpers -- with links to the authoritative changelog and the migration guide.
 
 ### Fixed
 
-- The token-creation allocation guard no longer flakes in a warm editor. The
-  diagnostics-lazy win (token `Create` allocating 7 managed objects instead of 11) was
-  guarded by an absolute `GC.Alloc` recorder COUNT budget, but a warm, long-lived editor
-  domain attributes background allocations to whatever measurement window is open --
-  measured on the host editor, the minimum over 64 windows was ~19 allocations for that
-  7-allocation operation (median ~51), well above any budget tight enough to catch the
-  revert -- so the guard false-failed run-to-run. A measure-first probe also disproved the
-  assumption that the swing came from the `DxPools` collection pools: the steady refcount
-  registration path does not rent from them at all (hits = misses = 0), so the noise is
-  pure background-editor `GC.Alloc` pollution that no pool pre-warm can remove. The guard
-  is now a DETERMINISTIC state assertion -- after `Create` with diagnostics off, the lazy
-  `_callCounts`/`_emissionBuffer` backing fields must still be `null` -- which uses no
-  allocation probe, never flakes, and runs in the per-PR EditMode correctness leg rather
-  than the weekly perf-gated Allocation scope.
-- Two more memory-reclamation/registration allocation guards no longer flake in a warm
-  editor. The forced-trim guard measured a `GC.Alloc` COUNT budget over a 32-trim window
-  and the dirty-target reuse guard a per-batch count budget; both false-failed run-to-run
-  on the same warm-editor ambient-noise floor that the token-creation guard hit. The
-  forced-trim guard is now a DETERMINISTIC assertion on the exact `IMessageBus.TrimResult`
-  eviction counts (the first force-trim reclaims; every subsequent one is an idempotent
-  no-op that evicts nothing and leaves the live slot count stable) plus a `DxPools`
-  Misses-flat check (repeated no-op trims rent no fresh pooled collection); the
-  dirty-target guard now relies solely on its existing exact pool Hits/Misses assertions
-  (renting the warmed collection, never allocating a fresh one). Neither uses an allocation
-  probe, so neither flakes. The two deterministic registration STORAGE structural guards
-  (the by-value metadata parameter and the staging-function map value type) were also moved
-  from the weekly perf-gated Allocation suite into the per-PR EditMode correctness leg, so
-  they protect every PR. Internal test/quality change only; no public API or runtime
-  behavior change.
-- Benchmark and library-comparison allocation reporting is now honest. The harness
-  measured allocations with `GC.GetAllocatedBytesForCurrentThread()`, which returns
-  `0` for every allocation under Unity's Boehm GC (verified: a forced 1 MB array
-  allocation read back a `0`-byte delta), so the published "allocated bytes" column
-  was a vacuous `0` for every technology -- hiding real per-operation allocations
-  (Unity `SendMessage`, for example, boxes its value-type payload once per call).
-  The metric is now a COUNT of managed allocations from the reliable `GC.Alloc`
-  profiler recorder (new `AllocationProbe`), renamed `gcAllocations`, and reports an
-  `Unmeasured` sentinel (rendered `n/a`) -- never a fabricated `0` -- when no probe
-  is available on a backend. The perf-doc/PR-comment renderers, the regression gate,
-  and the methodology docs were updated accordingly; the doc's allocation column
-  reads `n/a` until the next CI run repopulates real counts.
-- Source generators (`[DxUntargetedMessage]`, `[DxTargetedMessage]`,
-  `[DxBroadcastMessage]`, `[DxAutoConstructor]`) now work in projects that do not use
-  assembly definitions. The generator and analyzer DLLs previously shipped under the
-  editor-only `Editor/Analyzers/` folder, which Unity scopes to the package's editor
-  assembly and assemblies that reference it -- so a consumer's runtime code in
-  `Assembly-CSharp` (or a runtime asmdef referencing only the runtime assembly) never
-  received the generator, and `[Dx*Message]` types failed to implement their generated
-  interface with cryptic `CS0315`/`CS0452` errors. The labeled DLLs now ship under
-  `Runtime/Analyzers/` (governed by the all-platforms runtime assembly), so Unity
-  applies the generator to the DxMessaging runtime assembly and every assembly that
-  references it, including the predefined `Assembly-CSharp`. No assembly definition is
-  required. Closes GitHub issue #229.
-- Documentation no longer teaches the obsolete `IMessageBus.GlobalDiagnosticsMode`
-  API. The reference, patterns, glossary, and migration guides now use
-  `IMessageBus.GlobalDiagnosticsTargets` with the `DiagnosticsTarget` flags enum
-  (matching the canonical diagnostics guide), and the API reference no longer shows a
-  write to the read-only `IMessageBus.DiagnosticsMode` property. A source-derived
-  drift-guard (`DocsObsoleteApiReferenceTests`) now fails the build if any published
-  doc references a member marked `[Obsolete]` in the runtime, so this cannot regress.
+- The token-creation allocation guard no longer flakes in a warm editor. The diagnostics-lazy win (token `Create` allocating 7 managed objects instead of 11) was guarded by an
+  absolute `GC.Alloc` recorder COUNT budget, but a warm, long-lived editor domain attributes background allocations to whatever measurement window is open -- measured on the host
+  editor, the minimum over 64 windows was ~19 allocations for that 7-allocation operation (median ~51), well above any budget tight enough to catch the revert -- so the guard
+  false-failed run-to-run. A measure-first probe also disproved the assumption that the swing came from the `DxPools` collection pools: the steady refcount registration path does
+  not rent from them at all (hits = misses = 0), so the noise is pure background-editor `GC.Alloc` pollution that no pool pre-warm can remove. The guard is now a DETERMINISTIC
+  state assertion -- after `Create` with diagnostics off, the lazy `_callCounts`/`_emissionBuffer` backing fields must still be `null` -- which uses no allocation probe, never
+  flakes, and runs in the per-PR EditMode correctness leg rather than the weekly perf-gated Allocation scope.
+- Two more memory-reclamation/registration allocation guards no longer flake in a warm editor. The forced-trim guard measured a `GC.Alloc` COUNT budget over a 32-trim window and
+  the dirty-target reuse guard a per-batch count budget; both false-failed run-to-run on the same warm-editor ambient-noise floor that the token-creation guard hit. The forced-trim
+  guard is now a DETERMINISTIC assertion on the exact `IMessageBus.TrimResult` eviction counts (the first force-trim reclaims; every subsequent one is an idempotent no-op that
+  evicts nothing and leaves the live slot count stable) plus a `DxPools` Misses-flat check (repeated no-op trims rent no fresh pooled collection); the dirty-target guard now relies
+  solely on its existing exact pool Hits/Misses assertions (renting the warmed collection, never allocating a fresh one). Neither uses an allocation probe, so neither flakes. The
+  two deterministic registration STORAGE structural guards (the by-value metadata parameter and the staging-function map value type) were also moved from the weekly perf-gated
+  Allocation suite into the per-PR EditMode correctness leg, so they protect every PR. Internal test/quality change only; no public API or runtime behavior change.
+- Benchmark and library-comparison allocation reporting is now honest. The harness measured allocations with `GC.GetAllocatedBytesForCurrentThread()`, which returns `0` for every
+  allocation under Unity's Boehm GC (verified: a forced 1 MB array allocation read back a `0`-byte delta), so the published "allocated bytes" column was a vacuous `0` for every
+  technology -- hiding real per-operation allocations (Unity `SendMessage`, for example, boxes its value-type payload once per call). The metric is now a COUNT of managed
+  allocations from the reliable `GC.Alloc` profiler recorder (new `AllocationProbe`), renamed `gcAllocations`, and reports an `Unmeasured` sentinel (rendered `n/a`) -- never a
+  fabricated `0` -- when no probe is available on a backend. The perf-doc/PR-comment renderers, the regression gate, and the methodology docs were updated accordingly; the doc's
+  allocation column reads `n/a` until the next CI run repopulates real counts.
+- Source generators (`[DxUntargetedMessage]`, `[DxTargetedMessage]`, `[DxBroadcastMessage]`, `[DxAutoConstructor]`) now work in projects that do not use assembly definitions. The
+  generator and analyzer DLLs previously shipped under the editor-only `Editor/Analyzers/` folder, which Unity scopes to the package's editor assembly and assemblies that reference
+  it -- so a consumer's runtime code in `Assembly-CSharp` (or a runtime asmdef referencing only the runtime assembly) never received the generator, and `[Dx*Message]` types failed
+  to implement their generated interface with cryptic `CS0315`/`CS0452` errors. The labeled DLLs now ship under `Runtime/Analyzers/` (governed by the all-platforms runtime
+  assembly), so Unity applies the generator to the DxMessaging runtime assembly and every assembly that references it, including the predefined `Assembly-CSharp`. No assembly
+  definition is required. Closes GitHub issue #229.
+- Documentation no longer teaches the obsolete `IMessageBus.GlobalDiagnosticsMode` API. The reference, patterns, glossary, and migration guides now use
+  `IMessageBus.GlobalDiagnosticsTargets` with the `DiagnosticsTarget` flags enum (matching the canonical diagnostics guide), and the API reference no longer shows a write to the
+  read-only `IMessageBus.DiagnosticsMode` property. A source-derived drift-guard (`DocsObsoleteApiReferenceTests`) now fails the build if any published doc references a member
+  marked `[Obsolete]` in the runtime, so this cannot regress.
 
 ### Changed
 
-- Registration now allocates one fewer managed object per handler in the common case. The
-  registration token stored every handle's de-registration in a per-handle holder object,
-  but the common case is EXACTLY ONE de-registration per handle, so the single
-  de-registration delegate is now stored INLINE in the token's de-registration map (with no
-  holder object); a holder is allocated only when a rare second de-registration accumulates
-  on the same handle (the re-entrant retarget-recovery replay). The ordering,
-  partial-failure, and rollback-baseline semantics are unchanged (pinned by the existing
-  `PendingDeregistrationStorageTests` and the full re-entrancy suite), and a new
-  `RegistrationStorageStructuralGuardTests.DeregistrationsStoreInlineActionNotPerHandleHolder`
-  deterministically guards the inline storage against regression. Internal change only; no
-  public API or behavior change.
-- **BREAKING (v4):** the `IMessageBus` registration contract now returns an opaque,
-  zero-allocation handle instead of a deregistration delegate. The 14
-  `IMessageBus.Register*<T>` methods return a new `readonly struct`
-  `DxMessaging.Core.MessageBus.MessageBusRegistration` (previously `System.Action`), and a
-  new `void IMessageBus.Deregister<T>(in MessageBusRegistration registration) where T : IMessage`
-  undoes a registration (call it with the same `T` you registered with; for
-  `RegisterGlobalAcceptAll`, any `T : IMessage` works since the global slot is not
-  type-keyed). This removes the per-registration bus-side deregistration **closure** (the
-  prior `Action` plus its display class) from the handler registration path -- roughly
-  **two fewer managed allocations per registration** -- by packing the deregistration
-  snapshot into the returned value handle and re-expressing the bus's deregistration logic
-  against it (behaviour and the four reentrancy invariants -- generation guard, identity
-  liveness / over-deregistration, token idempotency, no counter underflow -- are unchanged).
-  Custom `IMessageBus` implementers that wrap `MessageBus` (the
-  `DelegatingMessageBus`-style extension point) just forward the new members; from-scratch
-  implementers mint handles via the public `MessageBusRegistration(long, object)`
-  constructor and read them back in their own `Deregister<T>`.
-  **The Unity-facing surface is unaffected:** `MessageRegistrationToken` and
-  `MessageAwareComponent` keep their existing public shapes. The `MessageHandler.Register*`
-  facades were narrowed from `public` to `internal` (they now return the internal
-  `HandlerDeregistration`, still implicitly an `Action`) as part of this bus<->handler
-  boundary rework -- see the dedicated entry below; only code that called those facades
-  **directly** is affected. The larger per-registration allocation reduction (collapsing the
-  token/handler closures onto a single per-handle `Registration` object) landed on top of this
-  contract change -- see the entries below.
-- The published performance report no longer prints columns of `n/a`. The
-  Standalone IL2CPP leg runs in a Release player whose stripped profiler cannot
-  measure GC allocations or bytes, so the renderer now OMITS a memory column from a
-  per-scope dispatch table when every row is unmeasured (the Standalone table is
-  throughput-only), omits a whole cross-library memory matrix when no leg measured
-  that metric, and drops the unmeasured allocation/byte segment from each per-PR
-  delta cell -- instead of filling them with a wall of `n/a`. The real allocation
-  and byte numbers still publish from the in-editor PlayMode (Mono) leg, and `n/a`
-  now appears only as a genuine per-row or per-library cell (a metric measured for
-  the scope in general but missing for that one entry).
-- Registration allocates less. Each registration token's diagnostics-only
-  call-count and emission-history collections are now created lazily instead of
-  eagerly, so a token whose owner never enables diagnostics (the default) no longer
-  pays for them -- token creation drops from 11 to 7 managed allocations. The
-  per-registration metadata is now passed by value instead of through a closure
-  factory that was invoked immediately, removing one delegate allocation per handler
-  registration. Steady-state dispatch stays allocation-free, and diagnostics, the
-  inspector overlay, and all lifecycle behavior are unchanged.
-- Registering a handler OR a post-processor with the convenience `Action<T>` /
-  `Action<InstanceId, T>` overloads now allocates one fewer closure per registration.
-  This covers the handler registers (`RegisterUntargeted`, `RegisterTargeted`,
-  `RegisterTargetedWithoutTargeting`, the sourced-broadcast register, and
-  `RegisterBroadcastWithoutSource`) and the matching post-processor registers
-  (`RegisterTargetedPostProcessor`, `RegisterTargetedWithoutTargetingPostProcessor`, the
-  GameObject/Component/source broadcast post-processors, and
-  `RegisterBroadcastWithoutSourcePostProcessor`). Each such registration previously built
-  two delegates -- a diagnostics-augmented `Action` wrapper plus a separate by-ref
-  `FastHandler` adapter for the flat-dispatch path -- and now folds diagnostics into a
-  single by-ref `FastHandler` closure that is the dispatch target directly (also removing a
-  per-dispatch indirection). The public API is unchanged; the optimization is internal and
-  verified by differential allocation guards that pin the `Action` registration cost to the
-  already-optimal `FastHandler` registration cost. Diagnostics, deduplication, and dispatch
-  ordering are preserved.
-- Every registration kind now allocates about two fewer managed objects. The token used to
-  wrap each staged registration in a per-registration parameterless `Action` (a delegate plus
-  its display class) whose only job was to re-bundle the handle, the staging function, and the
-  de-registration bookkeeping; the token now stores each staging function directly and pairs it
-  with its handle in the replay queue, so that wrapper -- and the closure `InternalRegister`
-  needed to build it -- is gone. Measured cold-registration floor (FastHandler, diagnostics off):
-  untargeted drops from 14.69 to 12.69 managed allocations per registration (a clean -2.00), with
-  the same ~2-allocation reduction across targeted, broadcast, without-targeting/source, and
-  post-processor registrations (~12% fewer registration allocations overall). The de-registration
-  replay, rollback-on-failure, re-entrancy, and equal-priority registration-order semantics are
-  unchanged; the public API is unchanged. Pinned structurally by a deterministic guard that the
-  token stores the staging function (not an `Action` wrapper).
-- Every active registration now allocates about two fewer managed objects again. The token
-  tracked each handle's live de-registration in a per-handle holder that eagerly allocated a
-  `List` (plus its backing array) to hold what is almost always a single de-registration; the
-  holder now keeps that one de-registration inline and only allocates an overflow list on the
-  rare second de-registration for the same handle. Measured cold-registration floor (FastHandler,
-  diagnostics off): untargeted drops from 13.29 to 11.29 managed allocations per registration (a
-  clean -2.00), with the same ~2-allocation reduction across targeted and broadcast. The
-  insertion-order, partial-failure-retryable, and rollback-baseline de-registration semantics are
-  unchanged (verified by a differential simulation across every count/failure/start-index
-  combination); the public API is unchanged.
-- Each handler/post-processor registration now allocates one fewer managed object by replacing
-  its per-registration de-registration **closure** with a per-handle **object**. The typed
-  handler used to hand back a captured parameterless `Action` (a delegate plus the display class
-  holding the slot, cache key, priority, and generation it closed over) as the thing the token
-  would later invoke to tear the registration down; that closure is now a single per-handle
-  `HandlerDeregistration` object whose `Deregister()` instance method carries the same captured
-  state as plain fields (and converts implicitly to `Action`, so the token's replay/rollback
-  machinery is untouched). To let one non-generic object tear down a generic
-  `HandlerActionCache<TU>` without re-introducing a per-handler-delegate-type closure, the erased
-  `IHandlerActionCache` gained three non-generic operations (`ContainsEntry`, `BumpVersion`,
-  `DeregisterEntry`). The de-registration **order** (generation guard, slot-version liveness,
-  keyed-vs-scalar split, identity/over-de-registration check, version bump, bus de-register,
-  refcount decrement) is a faithful re-expression of the prior closure body, pinned by the 19
-  arbitrary-order `MixedOrderDeregistrationTests` and the full re-entrancy suite. Because these
-  `MessageHandler.Register*` facades now return the internal `HandlerDeregistration` (still
-  implicitly an `Action`), they were narrowed from `public` to `internal` -- this is part of the
-  v4 bus<->handler boundary rework and does NOT touch the Unity-facing surface
-  (`MessageRegistrationToken`, `MessageAwareComponent`); only code calling
-  `MessageHandler.Register*` **directly** is affected.
-- Every registration kind now allocates roughly half as many managed objects again by
-  collapsing the token's per-handle staging closures into one unified per-handle object.
-  Each registration previously staged a `Func<handle, HandlerDeregistration>` (a delegate plus
-  its display class capturing the target/source, user handler, and priority) whose nested
-  `AugmentedHandler` local function became a _second_ delegate (the diagnostics-augmented flat
-  invoker). Both are now a single per-handle `Registration` object stored in `_registrations`:
-  its fields hold the captured staging state, and its diagnostics-augmented invoker is an
-  _instance method_ bound to the object -- so `MessageHandler` still receives a `FastHandler<T>`
-  delegate and the hot dispatch path stays delegate-based (no virtual/interface call per
-  dispatch). A `Register()` method runs a kind-switch to call the matching
-  `MessageHandler.Register*` and reproduce the exact prior staging body per kind. Because the
-  constrained `MessageHandler.Register*<T>` calls require `T : ITargetedMessage` /
-  `IUntargetedMessage` / `IBroadcastMessage` (which a single `Registration<T> where T : IMessage`
-  cannot satisfy), the object is realized as three constraint-family generic subclasses plus one
-  non-generic global-accept-all subclass over a non-generic `Registration` base -- still a
-  unified per-handle object with a kind-switch, not a per-method subclass explosion. Measured
-  marginal cost (cold, FastHandler, diagnostics off) drops from ~9.3 to ~4.6 managed allocations
-  per registration (about half). The equal-priority registration-order dispatch, idempotent
-  double-deregister, partial-failure rollback, generation/slot-version guards, refcount handlers,
-  and diagnostics call-counts/emission semantics are all unchanged (pinned by the 19
-  `MixedOrderDeregistrationTests` and the full re-entrancy suite); the public API is unchanged.
-  Pinned structurally by a deterministic guard that `_registrations` stores the unified
-  `Registration` object, not a `Func`/`Action` wrapper.
-- Deregistration is now O(1) on the steady path. The v4 bus `Deregister<T>` had been
-  re-resolving the sink from the registration method (a `switch` plus `ScalarSinkForMethod` /
-  `ContextSinkForMethod`) and re-walking the whole sink -> type -> [context ->] priority ->
-  handler chain on every call -- even though the leaf handler-cache is already captured on the
-  registration handle. It now operates on that captured cache DIRECTLY, deferring the
-  re-resolution to a cold fallback taken only when the handler is not found there (the rare
-  post-sweep or over-deregistration case, which the fallback classifies as a silent no-op vs an
-  error). This removes the per-deregistration re-resolution that had regressed the
-  deregistration-heavy teardown path, with no change to dispatch, registration allocations, the
-  generation/sweep-staleness/over-deregistration guards, or the public API; the throw-safe
-  ordering (the handler-cache mutation stays after the throwing `IMessageBus.Deregister`) is
-  unchanged. A stale over-deregistration whose `(type, priority)` slot was reused by a different
-  handler now leaves the live registration completely untouched (new
-  `StaleOverDeregistrationTests` regression coverage). The token's de-registration store also
-  records the common first-registration in a single dictionary operation (`TryAdd`) instead of a
-  probe-then-insert pair.
-- The bug-report issue template now offers the package version as a dropdown of
-  released versions (with an `Other` fallback) instead of a free-text field, so
-  reports carry an exact, valid version. The list is generated from
-  `package.json`, `CHANGELOG.md`, and git tags, kept in sync by
-  `npm run check:issue-template-versions` (gated in `validate:all`), and
-  self-heals on the default branch via the `Update Issue Template Versions`
-  workflow. Closes GitHub issue #230.
-- The Roslyn source generator no longer copies its DLLs into the consumer's
-  `Assets/Plugins/Editor/` folder on editor load; it (with its pinned Roslyn dependency
-  DLLs) ships ready-to-use under the package's `Runtime/Analyzers/` folder
-  (RoslynAnalyzer-labeled, excluded from player builds). Projects upgrading from an
-  earlier version have the redundant in-project copy removed automatically during asset
-  import, before script compilation, so the package's copy and the old in-project copy
-  never both run the generator (which would otherwise duplicate generated members). No
-  manual action is required: the cleanup only removes the
-  `Assets/Plugins/Editor/WallstopStudios.DxMessaging` folder when it contains the
-  first-party source-generator DLL plus exact known legacy analyzer/dependency DLL names
-  the package created, and leaves any foreign DLL, foreign `.meta`, subfolder, or
-  other content untouched. If a mixed or incomplete legacy payload is detected, the
-  editor logs one warning with manual cleanup guidance instead of deleting the folder
-  silently.
+- Registration now allocates one fewer managed object per handler in the common case. The registration token stored every handle's de-registration in a per-handle holder object,
+  but the common case is EXACTLY ONE de-registration per handle, so the single de-registration delegate is now stored INLINE in the token's de-registration map (with no holder
+  object); a holder is allocated only when a rare second de-registration accumulates on the same handle (the re-entrant retarget-recovery replay). The ordering, partial-failure,
+  and rollback-baseline semantics are unchanged (pinned by the existing `PendingDeregistrationStorageTests` and the full re-entrancy suite), and a new
+  `RegistrationStorageStructuralGuardTests.DeregistrationsStoreInlineActionNotPerHandleHolder` deterministically guards the inline storage against regression. Internal change only;
+  no public API or behavior change.
+- **BREAKING (v4):** the `IMessageBus` registration contract now returns an opaque, zero-allocation handle instead of a deregistration delegate. The 14 `IMessageBus.Register*<T>`
+  methods return a new `readonly struct` `DxMessaging.Core.MessageBus.MessageBusRegistration` (previously `System.Action`), and a new
+  `void IMessageBus.Deregister<T>(in MessageBusRegistration registration) where T : IMessage` undoes a registration (call it with the same `T` you registered with; for
+  `RegisterGlobalAcceptAll`, any `T : IMessage` works since the global slot is not type-keyed). This removes the per-registration bus-side deregistration **closure** (the prior
+  `Action` plus its display class) from the handler registration path -- roughly **two fewer managed allocations per registration** -- by packing the deregistration snapshot into
+  the returned value handle and re-expressing the bus's deregistration logic against it (behaviour and the four reentrancy invariants -- generation guard, identity liveness /
+  over-deregistration, token idempotency, no counter underflow -- are unchanged). Custom `IMessageBus` implementers that wrap `MessageBus` (the `DelegatingMessageBus`-style
+  extension point) just forward the new members; from-scratch implementers mint handles via the public `MessageBusRegistration(long, object)` constructor and read them back in
+  their own `Deregister<T>`. **The Unity-facing surface is unaffected:** `MessageRegistrationToken` and `MessageAwareComponent` keep their existing public shapes. The
+  `MessageHandler.Register*` facades were narrowed from `public` to `internal` (they now return the internal `HandlerDeregistration`, still implicitly an `Action`) as part of this
+  bus<->handler boundary rework -- see the dedicated entry below; only code that called those facades **directly** is affected. The larger per-registration allocation reduction
+  (collapsing the token/handler closures onto a single per-handle `Registration` object) landed on top of this contract change -- see the entries below.
+- The published performance report no longer prints columns of `n/a`. The Standalone IL2CPP leg runs in a Release player whose stripped profiler cannot measure GC allocations or
+  bytes, so the renderer now OMITS a memory column from a per-scope dispatch table when every row is unmeasured (the Standalone table is throughput-only), omits a whole
+  cross-library memory matrix when no leg measured that metric, and drops the unmeasured allocation/byte segment from each per-PR delta cell -- instead of filling them with a wall
+  of `n/a`. The real allocation and byte numbers still publish from the in-editor PlayMode (Mono) leg, and `n/a` now appears only as a genuine per-row or per-library cell (a metric
+  measured for the scope in general but missing for that one entry).
+- Registration allocates less. Each registration token's diagnostics-only call-count and emission-history collections are now created lazily instead of eagerly, so a token whose
+  owner never enables diagnostics (the default) no longer pays for them -- token creation drops from 11 to 7 managed allocations. The per-registration metadata is now passed by
+  value instead of through a closure factory that was invoked immediately, removing one delegate allocation per handler registration. Steady-state dispatch stays allocation-free,
+  and diagnostics, the inspector overlay, and all lifecycle behavior are unchanged.
+- Registering a handler OR a post-processor with the convenience `Action<T>` / `Action<InstanceId, T>` overloads now allocates one fewer closure per registration. This covers the
+  handler registers (`RegisterUntargeted`, `RegisterTargeted`, `RegisterTargetedWithoutTargeting`, the sourced-broadcast register, and `RegisterBroadcastWithoutSource`) and the
+  matching post-processor registers (`RegisterTargetedPostProcessor`, `RegisterTargetedWithoutTargetingPostProcessor`, the GameObject/Component/source broadcast post-processors,
+  and `RegisterBroadcastWithoutSourcePostProcessor`). Each such registration previously built two delegates -- a diagnostics-augmented `Action` wrapper plus a separate by-ref
+  `FastHandler` adapter for the flat-dispatch path -- and now folds diagnostics into a single by-ref `FastHandler` closure that is the dispatch target directly (also removing a
+  per-dispatch indirection). The public API is unchanged; the optimization is internal and verified by differential allocation guards that pin the `Action` registration cost to the
+  already-optimal `FastHandler` registration cost. Diagnostics, deduplication, and dispatch ordering are preserved.
+- Every registration kind now allocates about two fewer managed objects. The token used to wrap each staged registration in a per-registration parameterless `Action` (a delegate
+  plus its display class) whose only job was to re-bundle the handle, the staging function, and the de-registration bookkeeping; the token now stores each staging function directly
+  and pairs it with its handle in the replay queue, so that wrapper -- and the closure `InternalRegister` needed to build it -- is gone. Measured cold-registration floor
+  (FastHandler, diagnostics off): untargeted drops from 14.69 to 12.69 managed allocations per registration (a clean -2.00), with the same ~2-allocation reduction across targeted,
+  broadcast, without-targeting/source, and post-processor registrations (~12% fewer registration allocations overall). The de-registration replay, rollback-on-failure, re-entrancy,
+  and equal-priority registration-order semantics are unchanged; the public API is unchanged. Pinned structurally by a deterministic guard that the token stores the staging
+  function (not an `Action` wrapper).
+- Every active registration now allocates about two fewer managed objects again. The token tracked each handle's live de-registration in a per-handle holder that eagerly allocated
+  a `List` (plus its backing array) to hold what is almost always a single de-registration; the holder now keeps that one de-registration inline and only allocates an overflow list
+  on the rare second de-registration for the same handle. Measured cold-registration floor (FastHandler, diagnostics off): untargeted drops from 13.29 to 11.29 managed allocations
+  per registration (a clean -2.00), with the same ~2-allocation reduction across targeted and broadcast. The insertion-order, partial-failure-retryable, and rollback-baseline
+  de-registration semantics are unchanged (verified by a differential simulation across every count/failure/start-index combination); the public API is unchanged.
+- Each handler/post-processor registration now allocates one fewer managed object by replacing its per-registration de-registration **closure** with a per-handle **object**. The
+  typed handler used to hand back a captured parameterless `Action` (a delegate plus the display class holding the slot, cache key, priority, and generation it closed over) as the
+  thing the token would later invoke to tear the registration down; that closure is now a single per-handle `HandlerDeregistration` object whose `Deregister()` instance method
+  carries the same captured state as plain fields (and converts implicitly to `Action`, so the token's replay/rollback machinery is untouched). To let one non-generic object tear
+  down a generic `HandlerActionCache<TU>` without re-introducing a per-handler-delegate-type closure, the erased `IHandlerActionCache` gained three non-generic operations
+  (`ContainsEntry`, `BumpVersion`, `DeregisterEntry`). The de-registration **order** (generation guard, slot-version liveness, keyed-vs-scalar split, identity/over-de-registration
+  check, version bump, bus de-register, refcount decrement) is a faithful re-expression of the prior closure body, pinned by the 19 arbitrary-order `MixedOrderDeregistrationTests`
+  and the full re-entrancy suite. Because these `MessageHandler.Register*` facades now return the internal `HandlerDeregistration` (still implicitly an `Action`), they were
+  narrowed from `public` to `internal` -- this is part of the v4 bus<->handler boundary rework and does NOT touch the Unity-facing surface (`MessageRegistrationToken`,
+  `MessageAwareComponent`); only code calling `MessageHandler.Register*` **directly** is affected.
+- Every registration kind now allocates roughly half as many managed objects again by collapsing the token's per-handle staging closures into one unified per-handle object. Each
+  registration previously staged a `Func<handle, HandlerDeregistration>` (a delegate plus its display class capturing the target/source, user handler, and priority) whose nested
+  `AugmentedHandler` local function became a _second_ delegate (the diagnostics-augmented flat invoker). Both are now a single per-handle `Registration` object stored in
+  `_registrations`: its fields hold the captured staging state, and its diagnostics-augmented invoker is an _instance method_ bound to the object -- so `MessageHandler` still
+  receives a `FastHandler<T>` delegate and the hot dispatch path stays delegate-based (no virtual/interface call per dispatch). A `Register()` method runs a kind-switch to call the
+  matching `MessageHandler.Register*` and reproduce the exact prior staging body per kind. Because the constrained `MessageHandler.Register*<T>` calls require
+  `T : ITargetedMessage` / `IUntargetedMessage` / `IBroadcastMessage` (which a single `Registration<T> where T : IMessage` cannot satisfy), the object is realized as three
+  constraint-family generic subclasses plus one non-generic global-accept-all subclass over a non-generic `Registration` base -- still a unified per-handle object with a
+  kind-switch, not a per-method subclass explosion. Measured marginal cost (cold, FastHandler, diagnostics off) drops from ~9.3 to ~4.6 managed allocations per registration (about
+  half). The equal-priority registration-order dispatch, idempotent double-deregister, partial-failure rollback, generation/slot-version guards, refcount handlers, and diagnostics
+  call-counts/emission semantics are all unchanged (pinned by the 19 `MixedOrderDeregistrationTests` and the full re-entrancy suite); the public API is unchanged. Pinned
+  structurally by a deterministic guard that `_registrations` stores the unified `Registration` object, not a `Func`/`Action` wrapper.
+- Deregistration is now O(1) on the steady path. The v4 bus `Deregister<T>` had been re-resolving the sink from the registration method (a `switch` plus `ScalarSinkForMethod` /
+  `ContextSinkForMethod`) and re-walking the whole sink -> type -> [context ->] priority -> handler chain on every call -- even though the leaf handler-cache is already captured on
+  the registration handle. It now operates on that captured cache DIRECTLY, deferring the re-resolution to a cold fallback taken only when the handler is not found there (the rare
+  post-sweep or over-deregistration case, which the fallback classifies as a silent no-op vs an error). This removes the per-deregistration re-resolution that had regressed the
+  deregistration-heavy teardown path, with no change to dispatch, registration allocations, the generation/sweep-staleness/over-deregistration guards, or the public API; the
+  throw-safe ordering (the handler-cache mutation stays after the throwing `IMessageBus.Deregister`) is unchanged. A stale over-deregistration whose `(type, priority)` slot was
+  reused by a different handler now leaves the live registration completely untouched (new `StaleOverDeregistrationTests` regression coverage). The token's de-registration store
+  also records the common first-registration in a single dictionary operation (`TryAdd`) instead of a probe-then-insert pair.
+- The bug-report issue template now offers the package version as a dropdown of released versions (with an `Other` fallback) instead of a free-text field, so reports carry an
+  exact, valid version. The list is generated from `package.json`, `CHANGELOG.md`, and git tags, kept in sync by `npm run check:issue-template-versions` (gated in `validate:all`),
+  and self-heals on the default branch via the `Update Issue Template Versions` workflow. Closes GitHub issue #230.
+- The Roslyn source generator no longer copies its DLLs into the consumer's `Assets/Plugins/Editor/` folder on editor load; it (with its pinned Roslyn dependency DLLs) ships
+  ready-to-use under the package's `Runtime/Analyzers/` folder (RoslynAnalyzer-labeled, excluded from player builds). Projects upgrading from an earlier version have the redundant
+  in-project copy removed automatically during asset import, before script compilation, so the package's copy and the old in-project copy never both run the generator (which would
+  otherwise duplicate generated members). No manual action is required: the cleanup only removes the `Assets/Plugins/Editor/WallstopStudios.DxMessaging` folder when it contains the
+  first-party source-generator DLL plus exact known legacy analyzer/dependency DLL names the package created, and leaves any foreign DLL, foreign `.meta`, subfolder, or other
+  content untouched. If a mixed or incomplete legacy payload is detected, the editor logs one warning with manual cleanup guidance instead of deleting the folder silently.
 
 ## [3.1.0]
 
 ### Added
 
-- Deregistration-speed benchmarks (`DeregistrationFlood_1000Types_Cold` and
-  `DeregistrationFlood_1000Types_WarmJit`): the teardown mirror of the existing
-  registration floods. Each stages 1000 live registrations untimed, then times
-  `MessageRegistrationToken.UnregisterAll()` (the production deregistration path).
-  Both are wall-clock (latency) rows alongside the registration floods in the
-  rendered dispatch tables (closes the deregistration ask in GitHub issue #31).
-- `MessageAwareComponent.ReregisterOnEnableAfterRelease`: opt-in virtual property
-  (default `false`, preserving existing behavior). When overridden to return
-  `true`, a component whose registration token was released (for example via
-  `MessagingComponent.Release`) re-creates its token and replays
-  `RegisterMessageHandlers` the next time it is enabled, instead of staying
-  permanently unregistered. The replay runs exactly once per release; plain
-  enable/disable cycles without a release never re-stage registrations.
+- Deregistration-speed benchmarks (`DeregistrationFlood_1000Types_Cold` and `DeregistrationFlood_1000Types_WarmJit`): the teardown mirror of the existing registration floods. Each
+  stages 1000 live registrations untimed, then times `MessageRegistrationToken.UnregisterAll()` (the production deregistration path). Both are wall-clock (latency) rows alongside
+  the registration floods in the rendered dispatch tables (closes the deregistration ask in GitHub issue #31).
+- `MessageAwareComponent.ReregisterOnEnableAfterRelease`: opt-in virtual property (default `false`, preserving existing behavior). When overridden to return `true`, a component
+  whose registration token was released (for example via `MessagingComponent.Release`) re-creates its token and replays `RegisterMessageHandlers` the next time it is enabled,
+  instead of staying permanently unregistered. The replay runs exactly once per release; plain enable/disable cycles without a release never re-stage registrations.
 
 ### Changed
 
-- The Unity object identity backing `InstanceId` (the dispatch key) is now read
-  through a single version-gated source, `InstanceId.StableId`. On Unity 6.4+ it
-  uses the non-deprecated `EntityId.ToULong(...)` accessor and keeps its low 32
-  bits -- exactly the value the legacy `GetInstanceID()` returned (verified across
-  `GameObject`, `Component`, and `ScriptableObject`); older Unity keeps
-  `GetInstanceID()`. This keeps the package compiling on Unity 6.5+, where
-  `GetInstanceID()` becomes a compile error, and removes its deprecation warning on
-  Unity 6.4+. The 32-bit dispatch key, equality, and hashing are unchanged. Closes
-  GitHub issue #208.
-- `MessagingComponent.ToggleMessageHandler(false)` is no longer silently ignored
-  while `emitMessagesWhenDisabled` is true: explicit toggle calls now always win,
-  in both directions. Instead, the Unity enable/disable lifecycle itself now skips
-  the handler toggle while `emitMessagesWhenDisabled` is true, so disabling the
-  component still keeps emission alive (the flag's documented purpose) AND an
-  explicit `ToggleMessageHandler(false)` is no longer reverted by a later
-  enable/disable cycle. Previously the veto made explicit deactivation requests
-  silent no-ops and `OnEnable` force-reactivated the handler. One consequence:
-  setting the flag while the handler is lifecycle-deactivated (disabled with the
-  flag clear) means a later enable no longer auto-reactivates - call
-  `ToggleMessageHandler(true)` to resume.
-- Removed the internal per-handler dispatch-link machinery (the ten
-  `*DispatchLink` wrapper classes, their lazily-populated slot array, and
-  the outer-generation guard) plus the vestigial non-global prefreeze
-  descriptors that the flattened dispatch had already stopped consuming:
-  snapshots for non-global slots no longer build per-handler bucket entry
-  arrays at all (they dispatch exclusively through the resolved flat
-  delegate arrays and keep count-only buckets for the legacy "found any
-  handlers" reporting), which removes one pooled array rent/fill/return
-  per priority bucket from every snapshot rebuild. No public API or
-  dispatch semantics change (verified emission-for-emission against the
-  previous implementation, including global accept-all mid-emission
-  mutation ordering, trim-then-re-register staleness, reset-mid-dispatch,
-  and zero steady-state allocations).
-- Each emission now consults a cached per-(bus, message-type, kind) dispatch
-  plan instead of re-resolving interceptor, global accept-all, and
-  post-processor sinks with multiple type-cache lookups per emit. When the
-  plan shows none of those features are present (the common case), a fast
-  emit lane runs only the handle phase: one plan fetch, one validity check,
-  snapshot acquisition, and the flat dispatch loop. Plans are invalidated by
-  a single bus-wide version stamp that every registration, deregistration,
-  interceptor/global/post mutation, sweep/Trim, `ResetState`, and runtime
-  settings reload bumps; mutations performed by handlers mid-emission are
-  re-detected at phase boundaries, so frozen-snapshot semantics, mid-emission
-  registration gating, interceptor re-targeting, and mid-dispatch reset
-  behavior are unchanged (verified emission-for-emission against the previous
-  implementation). Diagnostics mode and `MessagingDebug.enabled` are still
-  read live on every emission. Out-of-Unity rig measurements (directional):
-  one-handler throughput up roughly 1.5-1.7x per kind and four-handler
-  fan-out up ~35%, with feature-heavy paths unchanged within noise and zero
-  steady-state allocations.
-- The internal flat-dispatch shape assertion (`DebugAssertFlatShape`) moved
-  from `DEBUG` builds to the opt-in `DXMESSAGING_INTERNAL_CHECKS` scripting
-  define; it cost a type test per dispatch on Editor hot paths.
-- On IL2CPP players, the dispatch hot loops (flat snapshot walks, global
-  accept-all bucket walks, and global entry invokers) now opt out of the
-  generated per-iteration null and array-bounds checks via a vendored
-  internal `Unity.IL2CPP.CompilerServices.Il2CppSetOptionAttribute`. The
-  elided checks guard invariants the snapshot builder already guarantees
-  (frozen arrays, non-null handler/invoker pairs, `count` never exceeding
-  the array length), all pinned by tests; rig/diagnostic builds keep the
-  `DXMESSAGING_INTERNAL_CHECKS` shape assertions. No behavior change under
-  Mono or in the editor.
-- On IL2CPP players, the per-emit AOT untyped-dispatch bridge registration
-  (`EnsureAot*Bridge<T>`, IL2CPP-only) now runs when a message type's dispatch
-  plan is first built on a bus (the first typed emit) instead of on every emit,
-  removing a generic-static class-initialization check and a non-inlined call
-  from the steady-state IL2CPP dispatch prologue. The registration is latched
-  process-globally, so it actually executes once per type; the guarded call site
-  is simply reached at first plan build rather than on every emit. The bridge is
-  rooted before the first untyped dispatch of a type by either any registration
-  of that type or its first typed emit, so the untyped-dispatch contract is
-  unchanged (a never-touched type still throws the same missing-bridge error).
-  No behavior change under Mono or in the editor (the calls compile out there).
-- Dispatch for every message kind (untargeted, targeted, and broadcast;
-  handle and post-process phases) now resolves handlers to flat, pooled
-  delegate arrays at snapshot-build time instead of walking per-handler
-  dictionaries and dispatch links per message. Measured on Editor PlayMode
-  Mono x64 versus the previous release: one untargeted handler 17.5M to
-  22.1M emits/sec, four untargeted handlers 3.9M to 20.0M, one targeted
-  listener 11.4M to 15.7M, sixteen targeted listeners 0.73M to 8.7M, one
-  broadcast handler 8.0M to 15.6M, four post-processors 3.3M to 12.6M -
-  all with zero steady-state allocations, an 8% faster cold registration
-  flood, and unchanged dispatch semantics (snapshot freezing, priority and
-  registration order, mid-emission registration visibility). One deliberate
-  refinement: a handler that deactivates itself mid-emission now skips its
-  own remaining delegates in that emission for every kind (the active check
-  runs per delegate instead of once per handler), matching the documented
-  immediate-deactivation semantics. Mid-emission registration gating is
-  also now uniform: a delegate registered during an emission never fires in
-  that emission, for every kind and every registration shape. Previously a
-  handler registering a different-shaped delegate for the same type on its
-  own MessageHandler could fire it in the same emission, depending on
-  unrelated handler counts.
+- The Unity object identity backing `InstanceId` (the dispatch key) is now read through a single version-gated source, `InstanceId.StableId`. On Unity 6.4+ it uses the
+  non-deprecated `EntityId.ToULong(...)` accessor and keeps its low 32 bits -- exactly the value the legacy `GetInstanceID()` returned (verified across `GameObject`, `Component`,
+  and `ScriptableObject`); older Unity keeps `GetInstanceID()`. This keeps the package compiling on Unity 6.5+, where `GetInstanceID()` becomes a compile error, and removes its
+  deprecation warning on Unity 6.4+. The 32-bit dispatch key, equality, and hashing are unchanged. Closes GitHub issue #208.
+- `MessagingComponent.ToggleMessageHandler(false)` is no longer silently ignored while `emitMessagesWhenDisabled` is true: explicit toggle calls now always win, in both directions.
+  Instead, the Unity enable/disable lifecycle itself now skips the handler toggle while `emitMessagesWhenDisabled` is true, so disabling the component still keeps emission alive
+  (the flag's documented purpose) AND an explicit `ToggleMessageHandler(false)` is no longer reverted by a later enable/disable cycle. Previously the veto made explicit
+  deactivation requests silent no-ops and `OnEnable` force-reactivated the handler. One consequence: setting the flag while the handler is lifecycle-deactivated (disabled with the
+  flag clear) means a later enable no longer auto-reactivates - call `ToggleMessageHandler(true)` to resume.
+- Removed the internal per-handler dispatch-link machinery (the ten `*DispatchLink` wrapper classes, their lazily-populated slot array, and the outer-generation guard) plus the
+  vestigial non-global prefreeze descriptors that the flattened dispatch had already stopped consuming: snapshots for non-global slots no longer build per-handler bucket entry
+  arrays at all (they dispatch exclusively through the resolved flat delegate arrays and keep count-only buckets for the legacy "found any handlers" reporting), which removes one
+  pooled array rent/fill/return per priority bucket from every snapshot rebuild. No public API or dispatch semantics change (verified emission-for-emission against the previous
+  implementation, including global accept-all mid-emission mutation ordering, trim-then-re-register staleness, reset-mid-dispatch, and zero steady-state allocations).
+- Each emission now consults a cached per-(bus, message-type, kind) dispatch plan instead of re-resolving interceptor, global accept-all, and post-processor sinks with multiple
+  type-cache lookups per emit. When the plan shows none of those features are present (the common case), a fast emit lane runs only the handle phase: one plan fetch, one validity
+  check, snapshot acquisition, and the flat dispatch loop. Plans are invalidated by a single bus-wide version stamp that every registration, deregistration, interceptor/global/post
+  mutation, sweep/Trim, `ResetState`, and runtime settings reload bumps; mutations performed by handlers mid-emission are re-detected at phase boundaries, so frozen-snapshot
+  semantics, mid-emission registration gating, interceptor re-targeting, and mid-dispatch reset behavior are unchanged (verified emission-for-emission against the previous
+  implementation). Diagnostics mode and `MessagingDebug.enabled` are still read live on every emission. Out-of-Unity rig measurements (directional): one-handler throughput up
+  roughly 1.5-1.7x per kind and four-handler fan-out up ~35%, with feature-heavy paths unchanged within noise and zero steady-state allocations.
+- The internal flat-dispatch shape assertion (`DebugAssertFlatShape`) moved from `DEBUG` builds to the opt-in `DXMESSAGING_INTERNAL_CHECKS` scripting define; it cost a type test
+  per dispatch on Editor hot paths.
+- On IL2CPP players, the dispatch hot loops (flat snapshot walks, global accept-all bucket walks, and global entry invokers) now opt out of the generated per-iteration null and
+  array-bounds checks via a vendored internal `Unity.IL2CPP.CompilerServices.Il2CppSetOptionAttribute`. The elided checks guard invariants the snapshot builder already guarantees
+  (frozen arrays, non-null handler/invoker pairs, `count` never exceeding the array length), all pinned by tests; rig/diagnostic builds keep the `DXMESSAGING_INTERNAL_CHECKS` shape
+  assertions. No behavior change under Mono or in the editor.
+- On IL2CPP players, the per-emit AOT untyped-dispatch bridge registration (`EnsureAot*Bridge<T>`, IL2CPP-only) now runs when a message type's dispatch plan is first built on a bus
+  (the first typed emit) instead of on every emit, removing a generic-static class-initialization check and a non-inlined call from the steady-state IL2CPP dispatch prologue. The
+  registration is latched process-globally, so it actually executes once per type; the guarded call site is simply reached at first plan build rather than on every emit. The bridge
+  is rooted before the first untyped dispatch of a type by either any registration of that type or its first typed emit, so the untyped-dispatch contract is unchanged (a
+  never-touched type still throws the same missing-bridge error). No behavior change under Mono or in the editor (the calls compile out there).
+- Dispatch for every message kind (untargeted, targeted, and broadcast; handle and post-process phases) now resolves handlers to flat, pooled delegate arrays at snapshot-build time
+  instead of walking per-handler dictionaries and dispatch links per message. Measured on Editor PlayMode Mono x64 versus the previous release: one untargeted handler 17.5M to
+  22.1M emits/sec, four untargeted handlers 3.9M to 20.0M, one targeted listener 11.4M to 15.7M, sixteen targeted listeners 0.73M to 8.7M, one broadcast handler 8.0M to 15.6M, four
+  post-processors 3.3M to 12.6M - all with zero steady-state allocations, an 8% faster cold registration flood, and unchanged dispatch semantics (snapshot freezing, priority and
+  registration order, mid-emission registration visibility). One deliberate refinement: a handler that deactivates itself mid-emission now skips its own remaining delegates in that
+  emission for every kind (the active check runs per delegate instead of once per handler), matching the documented immediate-deactivation semantics. Mid-emission registration
+  gating is also now uniform: a delegate registered during an emission never fires in that emission, for every kind and every registration shape. Previously a handler registering a
+  different-shaped delegate for the same type on its own MessageHandler could fire it in the same emission, depending on unrelated handler counts.
 
 ### Fixed
 
-- Domain-reload advisory warnings are now re-evaluated after deferred Editor
-  settings creation/migration, so an initial passive load with no settings asset
-  cannot permanently skip an unsuppressed warning for that editor domain.
-- Token cleanup now clears token-local diagnostics and stale teardown state:
-  `UnregisterAll()`, `Dispose()`, final-handle removal, released
-  `MessagingComponent` tokens, and disposed registration leases no longer
-  retain metadata, call counts, emission history, or stale deregistration
-  closures that could report old registrations or over-deregister later.
-  Failed `Enable()` replays now roll back partial registrations before
-  throwing the original failure; failed active `RetargetMessageBus()` replays
-  roll back partial new-bus registrations and restore previous-bus
-  registrations that are not still live behind a failed rollback cleanup.
-  Deregistration actions that throw before cleanup remain retryable instead
-  of being forgotten, including through owning registration leases and
-  `MessagingComponent.Release()` retries. `ActivateOnBuild` failures now
-  clean up the partially built lease before throwing again; if cleanup cannot
-  complete, `MessageRegistrationBuildException` exposes the retryable lease
-  so callers can dispose it after resolving the cleanup failure.
-- Interceptors registered through a `MessageRegistrationToken` bound to a
-  custom bus (`MessageRegistrationToken.Create(handler, customBus)`) now land
-  on that bus. `RegisterUntargetedInterceptor`, `RegisterTargetedInterceptor`,
-  and `RegisterBroadcastInterceptor` previously dropped the token's bus and
-  registered on the handler's default (typically global) bus, so they never
-  saw custom-bus emissions and silently intercepted global traffic instead.
-  The fix also covers registrations staged while disabled (they activate on
-  the token's bus at `Enable()` time) and `RetargetMessageBus`, which now
-  re-routes interceptors along with every other registration kind.
-- Registering or deregistering a handler mid-emission and then emitting the
-  same message type reentrant-style from inside a handler no longer corrupts
-  the in-flight dispatch.
-  The nested emission's snapshot rebuild previously released the pooled
-  arrays the outer emission was still iterating
-  (`NullReferenceException` / `ArgumentOutOfRangeException`, or silent
-  cross-dispatch aliasing at deeper nesting). Displaced snapshots are now
-  released only after the outermost dispatch exits, each emission keeps its
-  own frozen-cache identity across nested emissions, and the broadcast
-  priority walk tolerates nested membership churn.
-- A `MessageRegistrationLease` whose `OnActivate` callback throws no longer
-  wedges its registrations. The lease previously recorded itself as inactive
-  while the registrations stayed live, so `Deactivate()` and `Dispose()`
-  silently refused to release them. The lease now marks itself active before
-  invoking the callback: the exception still propagates, and standard
-  `Deactivate()`/`Dispose()` teardown fully releases the registrations.
-- Calling `DxMessagingStaticState.Reset` (or resetting a bus) from inside a
-  message handler no longer crashes the in-flight emission. Targeted and
-  broadcast dispatch previously returned the active emission's pooled snapshot
-  arrays mid-iteration (`NullReferenceException` /
-  `ArgumentOutOfRangeException`); the teardown is now deferred until the
-  outermost dispatch exits, mirroring the existing `Trim` deferral, and the
-  remaining handlers in that emission short-circuit cleanly.
-- Equal-priority handlers now always dispatch in live registration order. The
-  documented "same priority uses registration order" contract previously broke
-  after remove/re-register churn (a new handler could dispatch in a removed
-  handler's old position), after `Disable()`/`Enable()` cycles (replay order
-  permuted), and across components (a newly created component could dispatch
-  in a destroyed component's old position). Handler caches, bus-side priority
-  buckets, and token replay now preserve insertion order explicitly.
-- Targeted and broadcast post-processors now follow an interceptor-rewritten
-  target/source. When an interceptor redirects a message via its
-  `ref InstanceId` parameter, post-processors registered for the rewritten id
-  run (previously the broadcast path never re-resolved the rewritten source,
-  and the targeted path preferred a stale pre-interceptor snapshot, so the
-  rewritten id's post-processors were silently skipped).
-- `DiagnosticsTarget` gating now matches its documented semantics. Player
-  builds previously enabled diagnostics for the `Editor` flag and ignored the
-  `Runtime` flag, and the Editor enabled diagnostics when only `Runtime` was
-  set. `Editor` now enables diagnostics only inside the Unity Editor,
-  `Runtime` only in player/runtime builds, and `All` in both, exactly as the
-  diagnostics guide describes.
-- Analyzer payload builds are now reproducible under the pinned
-  `SourceGenerators/global.json` SDK. The shipped analyzer and source-generator
-  DLLs no longer embed source revision or PDB metadata, CI double-builds them
-  into temporary payload directories before comparing against
-  `Editor/Analyzers`, and Unity runner maintenance now verifies or repairs the
+- Domain-reload advisory warnings are now re-evaluated after deferred Editor settings creation/migration, so an initial passive load with no settings asset cannot permanently skip
+  an unsuppressed warning for that editor domain.
+- Token cleanup now clears token-local diagnostics and stale teardown state: `UnregisterAll()`, `Dispose()`, final-handle removal, released `MessagingComponent` tokens, and
+  disposed registration leases no longer retain metadata, call counts, emission history, or stale deregistration closures that could report old registrations or over-deregister
+  later. Failed `Enable()` replays now roll back partial registrations before throwing the original failure; failed active `RetargetMessageBus()` replays roll back partial new-bus
+  registrations and restore previous-bus registrations that are not still live behind a failed rollback cleanup. Deregistration actions that throw before cleanup remain retryable
+  instead of being forgotten, including through owning registration leases and `MessagingComponent.Release()` retries. `ActivateOnBuild` failures now clean up the partially built
+  lease before throwing again; if cleanup cannot complete, `MessageRegistrationBuildException` exposes the retryable lease so callers can dispose it after resolving the cleanup
+  failure.
+- Interceptors registered through a `MessageRegistrationToken` bound to a custom bus (`MessageRegistrationToken.Create(handler, customBus)`) now land on that bus.
+  `RegisterUntargetedInterceptor`, `RegisterTargetedInterceptor`, and `RegisterBroadcastInterceptor` previously dropped the token's bus and registered on the handler's default
+  (typically global) bus, so they never saw custom-bus emissions and silently intercepted global traffic instead. The fix also covers registrations staged while disabled (they
+  activate on the token's bus at `Enable()` time) and `RetargetMessageBus`, which now re-routes interceptors along with every other registration kind.
+- Registering or deregistering a handler mid-emission and then emitting the same message type reentrant-style from inside a handler no longer corrupts the in-flight dispatch. The
+  nested emission's snapshot rebuild previously released the pooled arrays the outer emission was still iterating (`NullReferenceException` / `ArgumentOutOfRangeException`, or
+  silent cross-dispatch aliasing at deeper nesting). Displaced snapshots are now released only after the outermost dispatch exits, each emission keeps its own frozen-cache identity
+  across nested emissions, and the broadcast priority walk tolerates nested membership churn.
+- A `MessageRegistrationLease` whose `OnActivate` callback throws no longer wedges its registrations. The lease previously recorded itself as inactive while the registrations
+  stayed live, so `Deactivate()` and `Dispose()` silently refused to release them. The lease now marks itself active before invoking the callback: the exception still propagates,
+  and standard `Deactivate()`/`Dispose()` teardown fully releases the registrations.
+- Calling `DxMessagingStaticState.Reset` (or resetting a bus) from inside a message handler no longer crashes the in-flight emission. Targeted and broadcast dispatch previously
+  returned the active emission's pooled snapshot arrays mid-iteration (`NullReferenceException` / `ArgumentOutOfRangeException`); the teardown is now deferred until the outermost
+  dispatch exits, mirroring the existing `Trim` deferral, and the remaining handlers in that emission short-circuit cleanly.
+- Equal-priority handlers now always dispatch in live registration order. The documented "same priority uses registration order" contract previously broke after remove/re-register
+  churn (a new handler could dispatch in a removed handler's old position), after `Disable()`/`Enable()` cycles (replay order permuted), and across components (a newly created
+  component could dispatch in a destroyed component's old position). Handler caches, bus-side priority buckets, and token replay now preserve insertion order explicitly.
+- Targeted and broadcast post-processors now follow an interceptor-rewritten target/source. When an interceptor redirects a message via its `ref InstanceId` parameter,
+  post-processors registered for the rewritten id run (previously the broadcast path never re-resolved the rewritten source, and the targeted path preferred a stale pre-interceptor
+  snapshot, so the rewritten id's post-processors were silently skipped).
+- `DiagnosticsTarget` gating now matches its documented semantics. Player builds previously enabled diagnostics for the `Editor` flag and ignored the `Runtime` flag, and the Editor
+  enabled diagnostics when only `Runtime` was set. `Editor` now enables diagnostics only inside the Unity Editor, `Runtime` only in player/runtime builds, and `All` in both,
+  exactly as the diagnostics guide describes.
+- Analyzer payload builds are now reproducible under the pinned `SourceGenerators/global.json` SDK. The shipped analyzer and source-generator DLLs no longer embed source revision
+  or PDB metadata, CI double-builds them into temporary payload directories before comparing against `Editor/Analyzers`, and Unity runner maintenance now verifies or repairs the
   full active editor matrix outside ordinary test jobs.
-- IL2CPP builds now root untyped dispatch bridges for concrete
-  source-visible message types without changing the public API. The source
-  generator emits IL2CPP-only AOT bridge registration for attributed messages
-  and manual `IUntargetedMessage` / `ITargetedMessage` /
-  `IBroadcastMessage` implementations, while open generic definitions are
-  skipped until a closed generic type is used through the typed registration
-  path. Untyped dispatch also keeps separate per-kind delegate caches, so a
-  message type that participates in more than one dispatch kind can no longer
-  reuse the wrong cached delegate shape.
-- Unity projects no longer keep stale DxMessaging analyzer entries in `csc.rsp`; the setup script removes package-cache analyzer registrations so Unity loads the shipped analyzer and source generator once through the `RoslynAnalyzer`-labeled plugin copy. The base-call ignore sidecar's `-additionalfile:` entry is also re-synchronized after deferred sidecar regeneration, so first-load `OnValidate` writes and Inspector ignore-list edits repair missing `csc.rsp` wiring during the same editor session.
-- Provider-backed emit helpers now route sourced, targeted, and untargeted messages through the resolved `IMessageBus`, so custom bus and DI-provider callers no longer fall back to the global bus for interface-shaped message dispatch.
-- Standalone and IL2CPP player builds now compile. The dispatch hot path performs reinterpret casts that previously used `System.Runtime.CompilerServices.Unsafe`; the Unity Editor supplies that type, but player builds under the .NET Standard 2.0 profile do not, so editmode and playmode passed while standalone IL2CPP failed to build with `CS0103: The name 'Unsafe' does not exist in the current context`. Those calls now route through Unity's built-in `UnsafeUtility` (in `UnityEngine.CoreModule`), which resolves identically in the Editor and every player scripting backend. The change preserves the existing zero-allocation dispatch behavior and adds no package dependency or shipped assembly.
-- Shipped source generators now compile against Unity 2021-compatible Roslyn 3.8 APIs and use the classic `ISourceGenerator` entry point, preventing Unity 2021.3 analyzer-host load failures (`CS8032`) while preserving the generated message-id and auto-constructor output for newer Unity editors.
-- `MessageRegistrationToken.RemoveRegistration(handle)` now compiles cleanly on Unity 2021 while preserving the existing behavior of removing the active deregistration, staged registration, metadata, and diagnostic call-count entries.
-- Unity 2021.3 no longer aborts compilation with _Multiple precompiled assemblies with the same name_ (`PrecompiledAssemblyException`). The shipped Roslyn analyzer and source-generator DLLs are now excluded from every build platform (the Editor included) and activated solely by the `RoslynAnalyzer` asset label, so Unity treats them as compiler analyzers rather than managed precompiled assemblies that collide with the copy placed in the consuming project's `Assets/`. Generated message-id and auto-constructor output is unchanged.
-- The dependency-injection sample README (`Samples~/DI`) now links to the real `Runtime/Unity/Integrations/VContainer/VContainerRegistrationExtensions.cs`; the previous link dropped the `VContainer/` folder and resolved to a missing file.
+- IL2CPP builds now root untyped dispatch bridges for concrete source-visible message types without changing the public API. The source generator emits IL2CPP-only AOT bridge
+  registration for attributed messages and manual `IUntargetedMessage` / `ITargetedMessage` / `IBroadcastMessage` implementations, while open generic definitions are skipped until
+  a closed generic type is used through the typed registration path. Untyped dispatch also keeps separate per-kind delegate caches, so a message type that participates in more than
+  one dispatch kind can no longer reuse the wrong cached delegate shape.
+- Unity projects no longer keep stale DxMessaging analyzer entries in `csc.rsp`; the setup script removes package-cache analyzer registrations so Unity loads the shipped analyzer
+  and source generator once through the `RoslynAnalyzer`-labeled plugin copy. The base-call ignore sidecar's `-additionalfile:` entry is also re-synchronized after deferred sidecar
+  regeneration, so first-load `OnValidate` writes and Inspector ignore-list edits repair missing `csc.rsp` wiring during the same editor session.
+- Provider-backed emit helpers now route sourced, targeted, and untargeted messages through the resolved `IMessageBus`, so custom bus and DI-provider callers no longer fall back to
+  the global bus for interface-shaped message dispatch.
+- Standalone and IL2CPP player builds now compile. The dispatch hot path performs reinterpret casts that previously used `System.Runtime.CompilerServices.Unsafe`; the Unity Editor
+  supplies that type, but player builds under the .NET Standard 2.0 profile do not, so editmode and playmode passed while standalone IL2CPP failed to build with
+  `CS0103: The name 'Unsafe' does not exist in the current context`. Those calls now route through Unity's built-in `UnsafeUtility` (in `UnityEngine.CoreModule`), which resolves
+  identically in the Editor and every player scripting backend. The change preserves the existing zero-allocation dispatch behavior and adds no package dependency or shipped
+  assembly.
+- Shipped source generators now compile against Unity 2021-compatible Roslyn 3.8 APIs and use the classic `ISourceGenerator` entry point, preventing Unity 2021.3 analyzer-host load
+  failures (`CS8032`) while preserving the generated message-id and auto-constructor output for newer Unity editors.
+- `MessageRegistrationToken.RemoveRegistration(handle)` now compiles cleanly on Unity 2021 while preserving the existing behavior of removing the active deregistration, staged
+  registration, metadata, and diagnostic call-count entries.
+- Unity 2021.3 no longer aborts compilation with _Multiple precompiled assemblies with the same name_ (`PrecompiledAssemblyException`). The shipped Roslyn analyzer and
+  source-generator DLLs are now excluded from every build platform (the Editor included) and activated solely by the `RoslynAnalyzer` asset label, so Unity treats them as compiler
+  analyzers rather than managed precompiled assemblies that collide with the copy placed in the consuming project's `Assets/`. Generated message-id and auto-constructor output is
+  unchanged.
+- The dependency-injection sample README (`Samples~/DI`) now links to the real `Runtime/Unity/Integrations/VContainer/VContainerRegistrationExtensions.cs`; the previous link
+  dropped the `VContainer/` folder and resolved to a missing file.
 
 ## [3.0.1]
 
 ### Added
 
-- New Roslyn base-call analyzer (`MessageAwareComponentBaseCallAnalyzer`) that flags `MessageAwareComponent` subclasses whose lifecycle overrides forget to invoke `base.Awake()`, `base.OnEnable()`, `base.OnDisable()`, `base.OnDestroy()`, or `base.RegisterMessageHandlers()`. Introduces diagnostics `DXMSG006` (missing base call), `DXMSG007` (lifecycle method hidden with `new`), `DXMSG008` (opt-out marker), `DXMSG009` (method implicitly hides a lifecycle method without `override`/`new`), and `DXMSG010` (`base.{method}()` chains into an override that does not reach `MessageAwareComponent`). DXMSG006's diagnostic message is now per-method: each guarded method emits a sentence describing the runtime consequence (registration token never created, handlers not re-enabled, memory leak, etc.) so users immediately see what breaks. The inspector overlay HelpBox renders the same per-method sentences. Severity is tunable per project via `.editorconfig` (e.g. `dotnet_diagnostic.DXMSG006.severity = error`). Ships as a separate `WallstopStudios.DxMessaging.Analyzer.dll` deployed alongside the existing source-generator DLL by `SetupCscRsp` so it loads under both Unity 2021's Roslyn 3.8 analyzer host and newer Unity versions. Diagnostic help links now open the current analyzer reference page in the DxMessaging repository.
-- Runtime self-check breadcrumb on `MessageAwareComponent`: `OnEnable` now logs a one-time `Debug.LogError` per instance when the registration token is null, with a link to the DXMSG006 reference. Gated on `UNITY_EDITOR || DEBUG`, so release builds pay no cost. Catches the case where the analyzer DLL was disabled or did not run, surfacing the silent failure as a loud editor error instead.
-- New public `[DxIgnoreMissingBaseCall]` attribute (`DxMessaging.Core.Attributes`) for source-level opt-out of the base-call analyzer. Applied to a class, every guarded lifecycle method on that class is exempt; applied to a single method, only that method is exempt. The analyzer still emits an Info-level `DXMSG008` at the suppression site so opt-outs remain auditable, and the inspector overlay's snapshot honours the same scoping (method-level suppresses only the annotated method, type-level opts out the entire type). Not inherited -- derived classes must opt out explicitly.
-- New inspector overlay (`MessageAwareComponentInspectorOverlay`) for every `MessageAwareComponent` subclass: missing-base-call warnings reported by the analyzer or harvested from the Unity console are surfaced as a HelpBox in the inspector header without clobbering user-defined `[CustomEditor]`s (the overlay hooks `Editor.finishedDefaultHeaderGUI`). The overlay restores the previous session's report immediately on Unity Editor startup (loaded from `Library/DxMessaging/baseCallReport.json`) instead of waiting for the first post-reload scan to complete; the HelpBox is annotated `(cached from previous session -- refreshing...)` until the first scan refreshes it. A companion fallback editor (`MessageAwareComponentFallbackEditor`) hosts the overlay for subclasses with no other custom editor and renders the body via `DrawDefaultInspector()` so subclasses with no serialized fields no longer leave an empty vertical gap below the inspector header.
-- New DxMessaging project-wide settings asset (`DxMessagingSettings`, stored at `Assets/Editor/DxMessagingSettings.asset`) accessible from Unity's Project Settings. Controls diagnostics targets applied to `IMessageBus.GlobalDiagnosticsTargets`, the editor message buffer size, the domain-reload warning suppression, the base-call analyzer toggle, the project-wide base-call ignore list, and the optional Unity console bridge that feeds the inspector overlay.
-- New `docs/reference/analyzers.md` reference page documenting every `DXMSG###` diagnostic the package emits, with severity, source generator/analyzer, trigger conditions, message text, and code samples for each. Added to the Reference section of the documentation site navigation.
+- New Roslyn base-call analyzer (`MessageAwareComponentBaseCallAnalyzer`) that flags `MessageAwareComponent` subclasses whose lifecycle overrides forget to invoke `base.Awake()`,
+  `base.OnEnable()`, `base.OnDisable()`, `base.OnDestroy()`, or `base.RegisterMessageHandlers()`. Introduces diagnostics `DXMSG006` (missing base call), `DXMSG007` (lifecycle
+  method hidden with `new`), `DXMSG008` (opt-out marker), `DXMSG009` (method implicitly hides a lifecycle method without `override`/`new`), and `DXMSG010` (`base.{method}()` chains
+  into an override that does not reach `MessageAwareComponent`). DXMSG006's diagnostic message is now per-method: each guarded method emits a sentence describing the runtime
+  consequence (registration token never created, handlers not re-enabled, memory leak, etc.) so users immediately see what breaks. The inspector overlay HelpBox renders the same
+  per-method sentences. Severity is tunable per project via `.editorconfig` (e.g. `dotnet_diagnostic.DXMSG006.severity = error`). Ships as a separate
+  `WallstopStudios.DxMessaging.Analyzer.dll` deployed alongside the existing source-generator DLL by `SetupCscRsp` so it loads under both Unity 2021's Roslyn 3.8 analyzer host and
+  newer Unity versions. Diagnostic help links now open the current analyzer reference page in the DxMessaging repository.
+- Runtime self-check breadcrumb on `MessageAwareComponent`: `OnEnable` now logs a one-time `Debug.LogError` per instance when the registration token is null, with a link to the
+  DXMSG006 reference. Gated on `UNITY_EDITOR || DEBUG`, so release builds pay no cost. Catches the case where the analyzer DLL was disabled or did not run, surfacing the silent
+  failure as a loud editor error instead.
+- New public `[DxIgnoreMissingBaseCall]` attribute (`DxMessaging.Core.Attributes`) for source-level opt-out of the base-call analyzer. Applied to a class, every guarded lifecycle
+  method on that class is exempt; applied to a single method, only that method is exempt. The analyzer still emits an Info-level `DXMSG008` at the suppression site so opt-outs
+  remain auditable, and the inspector overlay's snapshot honours the same scoping (method-level suppresses only the annotated method, type-level opts out the entire type). Not
+  inherited -- derived classes must opt out explicitly.
+- New inspector overlay (`MessageAwareComponentInspectorOverlay`) for every `MessageAwareComponent` subclass: missing-base-call warnings reported by the analyzer or harvested from
+  the Unity console are surfaced as a HelpBox in the inspector header without clobbering user-defined `[CustomEditor]`s (the overlay hooks `Editor.finishedDefaultHeaderGUI`). The
+  overlay restores the previous session's report immediately on Unity Editor startup (loaded from `Library/DxMessaging/baseCallReport.json`) instead of waiting for the first
+  post-reload scan to complete; the HelpBox is annotated `(cached from previous session -- refreshing...)` until the first scan refreshes it. A companion fallback editor
+  (`MessageAwareComponentFallbackEditor`) hosts the overlay for subclasses with no other custom editor and renders the body via `DrawDefaultInspector()` so subclasses with no
+  serialized fields no longer leave an empty vertical gap below the inspector header.
+- New DxMessaging project-wide settings asset (`DxMessagingSettings`, stored at `Assets/Editor/DxMessagingSettings.asset`) accessible from Unity's Project Settings. Controls
+  diagnostics targets applied to `IMessageBus.GlobalDiagnosticsTargets`, the editor message buffer size, the domain-reload warning suppression, the base-call analyzer toggle, the
+  project-wide base-call ignore list, and the optional Unity console bridge that feeds the inspector overlay.
+- New `docs/reference/analyzers.md` reference page documenting every `DXMSG###` diagnostic the package emits, with severity, source generator/analyzer, trigger conditions, message
+  text, and code samples for each. Added to the Reference section of the documentation site navigation.
 - Added `llms.txt` plus README onboarding guidance so users can connect AI assistants with accurate DxMessaging package context.
-- Test-suite hardening: parameterized scenario fixture (`MessageScenario`, `MessageScenarios`, `ScenarioHarness`, `AllocationAssertions`) under `Tests/Runtime/TestUtilities/` enabling kind-parameterized tests.
-- Behavioural gap closures: `HandlerExceptionTests`, `ReentrantEmissionTests`, `NullAndInvalidInputTests`, `SingleThreadContractTests` pinning exception-in-handler, re-entrancy, null-input, and threading contracts.
+- Test-suite hardening: parameterized scenario fixture (`MessageScenario`, `MessageScenarios`, `ScenarioHarness`, `AllocationAssertions`) under `Tests/Runtime/TestUtilities/`
+  enabling kind-parameterized tests.
+- Behavioural gap closures: `HandlerExceptionTests`, `ReentrantEmissionTests`, `NullAndInvalidInputTests`, `SingleThreadContractTests` pinning exception-in-handler, re-entrancy,
+  null-input, and threading contracts.
 - `AllocationMatrixTests` covering zero-GC dispatch across kinds, interceptors, post-processors, diagnostics, and priority-based dispatch.
-- Expanded coverage now pins source-generator and analyzer behaviour that users rely on: generic / record struct / nested partial / nullable annotation cases for `DxMessageIdGenerator`; `[DxOptionalParameter]` permutations and DXMSG005 boundary cases for `DxAutoConstructorGenerator`; positive opt-out cases for `DxIgnoreMissingBaseCallAttribute`. No runtime API change.
-- Three new public read-only registration counters on `IMessageBus`: `RegisteredInterceptors`, `RegisteredPostProcessors`, and `RegisteredGlobalAcceptAll`. Lets diagnostic and leak-check tooling distinguish interceptor / post-processor / global accept-all leaks from regular handler leaks, and lets external monitors aggregate the bus's registration footprint without reflecting on internals. `MessageBus` aggregates the counters on each read by walking the per-message-type caches; consumers polling these properties in tight loops should snapshot at region boundaries.
-- Runtime memory-reclamation foundations: `DxMessagingRuntimeSettings` loads from `Resources/DxMessagingRuntimeSettings` and hot-reloads eviction cadence, enablement, trim opt-out, and pool-cap changes without recreating the bus. Pooled internal collections and typed/bus slot registries preserve existing dispatch APIs while making empty handler and interceptor slots reclaimable. `IMessageBus.Trim(force)` and `MessageHandler.TrimAll(force)` reset dirty empty slots and trim shared pools on demand, `OccupiedTypeSlots` / `OccupiedTargetSlots` expose the retained bus and dirty typed-handler slot footprint for diagnostics, and idle sweeps run from emits and Unity's PlayerLoop. New user-facing reference and tuning docs ship at `docs/reference/runtime-settings.md` (per-setting reference table) and `docs/guides/memory-reclamation.md` (forced trim, idle sweep, and pool tuning narrative).
-- New explicit-factory registration helpers across all three DI integrations: `VContainerRegistrationExtensions.RegisterDxMessagingBus`, `ReflexRegistrationExtensions.AddDxMessagingBus`, and `ZenjectRegistrationExtensions.BindDxMessagingBus`. Each helper exposes the bus under both the concrete `MessageBus` contract and the `IMessageBus` interface, accepts an overloadable lifetime where the container supports it, accepts a user-supplied `Func<TResolver, MessageBus>` factory, and accepts an `IDxMessagingClock` overload that constructs the bus through the new internal-only `MessageBus.CreateForInternalUse` factory so test-side clocks (for example `FakeClock`) can be injected through the container. The VContainer helper registers both contracts in one registration call, avoiding VContainer environments where chained `.AsSelf().As<IMessageBus>()` drops the concrete contract and fails with `No such registration of type: DxMessaging.Core.MessageBus.MessageBus`; the DI samples either call the helper directly or document the corresponding helper preference for their container shape.
+- Expanded coverage now pins source-generator and analyzer behaviour that users rely on: generic / record struct / nested partial / nullable annotation cases for
+  `DxMessageIdGenerator`; `[DxOptionalParameter]` permutations and DXMSG005 boundary cases for `DxAutoConstructorGenerator`; positive opt-out cases for
+  `DxIgnoreMissingBaseCallAttribute`. No runtime API change.
+- Three new public read-only registration counters on `IMessageBus`: `RegisteredInterceptors`, `RegisteredPostProcessors`, and `RegisteredGlobalAcceptAll`. Lets diagnostic and
+  leak-check tooling distinguish interceptor / post-processor / global accept-all leaks from regular handler leaks, and lets external monitors aggregate the bus's registration
+  footprint without reflecting on internals. `MessageBus` aggregates the counters on each read by walking the per-message-type caches; consumers polling these properties in tight
+  loops should snapshot at region boundaries.
+- Runtime memory-reclamation foundations: `DxMessagingRuntimeSettings` loads from `Resources/DxMessagingRuntimeSettings` and hot-reloads eviction cadence, enablement, trim opt-out,
+  and pool-cap changes without recreating the bus. Pooled internal collections and typed/bus slot registries preserve existing dispatch APIs while making empty handler and
+  interceptor slots reclaimable. `IMessageBus.Trim(force)` and `MessageHandler.TrimAll(force)` reset dirty empty slots and trim shared pools on demand, `OccupiedTypeSlots` /
+  `OccupiedTargetSlots` expose the retained bus and dirty typed-handler slot footprint for diagnostics, and idle sweeps run from emits and Unity's PlayerLoop. New user-facing
+  reference and tuning docs ship at `docs/reference/runtime-settings.md` (per-setting reference table) and `docs/guides/memory-reclamation.md` (forced trim, idle sweep, and pool
+  tuning narrative).
+- New explicit-factory registration helpers across all three DI integrations: `VContainerRegistrationExtensions.RegisterDxMessagingBus`,
+  `ReflexRegistrationExtensions.AddDxMessagingBus`, and `ZenjectRegistrationExtensions.BindDxMessagingBus`. Each helper exposes the bus under both the concrete `MessageBus`
+  contract and the `IMessageBus` interface, accepts an overloadable lifetime where the container supports it, accepts a user-supplied `Func<TResolver, MessageBus>` factory, and
+  accepts an `IDxMessagingClock` overload that constructs the bus through the new internal-only `MessageBus.CreateForInternalUse` factory so test-side clocks (for example
+  `FakeClock`) can be injected through the container. The VContainer helper registers both contracts in one registration call, avoiding VContainer environments where chained
+  `.AsSelf().As<IMessageBus>()` drops the concrete contract and fails with `No such registration of type: DxMessaging.Core.MessageBus.MessageBus`; the DI samples either call the
+  helper directly or document the corresponding helper preference for their container shape.
 
 ### Changed
 
-- Mutation tests now exercise every messaging kind (Untargeted/Targeted/Broadcast) via a single parameterized fixture (`[ValueSource(MessageScenarios.AllKinds)]`) across `MutationDuringEmissionTests`, `MutationInterceptorTests`, and `MutationDestructionTests`. Users get tighter cross-kind parity guarantees; no runtime API change. (~720 lines of duplication removed; test count preserved.)
-- Renamed `UntargetedTests`, `TargetedTests`, `BroadcastTests` to `EmitUntargetedSpecificTests`, `EmitTargetedSpecificTests`, `EmitBroadcastSpecificTests` to clarify that kind-common tests live in `EmitTests` and kind-specific tests live in the renamed files. (Test-suite hardening is test-only; no `Runtime/` behavior was modified.)
-- Documentation now warns up front that `MessageAwareComponent` subclasses must call `base.Awake()`, `base.OnEnable()`, `base.OnDisable()`, `base.OnDestroy()`, and `base.RegisterMessageHandlers()` from any override; admonitions added to the Quick Start, Getting Started Guide, Visual Guide, README, FAQ, and Troubleshooting pages all link to [`DXMSG006`](https://ambiguous-interactive.github.io/DxMessaging/reference/analyzers/#dxmsg006-missing-base-call) (issue #195).
+- Mutation tests now exercise every messaging kind (Untargeted/Targeted/Broadcast) via a single parameterized fixture (`[ValueSource(MessageScenarios.AllKinds)]`) across
+  `MutationDuringEmissionTests`, `MutationInterceptorTests`, and `MutationDestructionTests`. Users get tighter cross-kind parity guarantees; no runtime API change. (~720 lines of
+  duplication removed; test count preserved.)
+- Renamed `UntargetedTests`, `TargetedTests`, `BroadcastTests` to `EmitUntargetedSpecificTests`, `EmitTargetedSpecificTests`, `EmitBroadcastSpecificTests` to clarify that
+  kind-common tests live in `EmitTests` and kind-specific tests live in the renamed files. (Test-suite hardening is test-only; no `Runtime/` behavior was modified.)
+- Documentation now warns up front that `MessageAwareComponent` subclasses must call `base.Awake()`, `base.OnEnable()`, `base.OnDisable()`, `base.OnDestroy()`, and
+  `base.RegisterMessageHandlers()` from any override; admonitions added to the Quick Start, Getting Started Guide, Visual Guide, README, FAQ, and Troubleshooting pages all link to
+  [`DXMSG006`](https://ambiguous-interactive.github.io/DxMessaging/reference/analyzers/#dxmsg006-missing-base-call) (issue #195).
 
 ### Fixed
 
 - Cross-priority deregistration during in-flight emit no longer drops handlers from the current dispatch.
-  - Previously, when a handler at one priority removed a handler at a later priority of the same emission, the later priority's typed-handler stack was rebuilt from the now-mutated registry on first touch and the scheduled-for-removal handler was silently skipped, breaking the documented "frozen handler list per emission" contract.
+  - Previously, when a handler at one priority removed a handler at a later priority of the same emission, the later priority's typed-handler stack was rebuilt from the now-mutated
+    registry on first touch and the scheduled-for-removal handler was silently skipped, breaking the documented "frozen handler list per emission" contract.
   - This affected sourced-broadcast, broadcast-without-source, and targeted-without-targeting dispatch (the targeted/untargeted paths already pre-froze every bucket up-front).
-  - The bus now pre-freezes every priority bucket's typed-handler caches up-front for every dispatch surface (sourced-broadcast, broadcast-without-source, targeted-without-targeting) and uses the per-emission snapshot count for the dispatch-loop early-out.
-  - The sourced-broadcast and broadcast-without-source dispatch loops also no longer short-circuit on the live `cache.handlers.Count == 0` when the per-emission snapshot still holds the deregistered handler.
-  - Post-processor prefreeze no longer takes a single-bucket/single-entry fast-path that skipped pre-freezing per-MessageHandler post-processor caches; a regular handler that registers a new post-processor on the same MessageHandler+priority during its own callback now sees the new post-processor on the next emission, not the in-flight one.
-  - The same fix extends to cross-`MessageHandler` post-processor dispatch: the inner per-handler `RunFastHandlers` overload used by `TargetedWithoutTargeting`/`BroadcastWithoutSource` post-processors now consults the per-emission snapshot list directly instead of bailing on the live `cache.entries` count, so a sibling `MessageHandler` removing a not-yet-dispatched post-processor no longer silently skips the snapshot-pinned invocation.
-  - `RegisterGlobalAcceptAll` (`HandleGlobalUntargeted`/`HandleGlobalTargeted`/`HandleGlobalBroadcast`) is intentionally NOT covered by this fix. The bus's global accept-all dispatch path prefreezes lazily per-entry inside the dispatch loop, so a sibling `MessageHandler` that removes another's global registration mid-emit causes the removed handler to be skipped on the in-flight emission. The behavior is pinned by `MutationPostProcessorAcrossHandlersTests.RemoveOtherGlobalAcceptAllAcrossHandlersDuringDispatch`; if a future change introduces upfront global-handler prefreeze, that test must be updated to expect the snapshot semantics that the per-kind paths already provide.
-- `DxMessagingStaticState.Reset` is now race-safe against deferred deregistrations. Previously, when a message-aware component was destroyed but its disable callback had not yet run (Unity defers Object.Destroy to end of frame) and Reset ran in between, the deferred token teardown would log spurious "Received over-deregistration of {type} for {handler}" errors against the user's Unity console. The bus now stamps each captured deregister closure with a generation counter and silently no-ops closures captured before a Reset. Applied uniformly across every register entry point (untargeted, targeted, broadcast, GlobalAcceptAll, and all three interceptor kinds). The same race-safety guarantee is now propagated to user-installed custom global buses via `MessageBus.BumpResetGeneration()`, which `DxMessagingStaticState.Reset` invokes on the active global bus when it differs from the built-in default; the custom bus's sinks are intentionally left intact to avoid clobbering state the user installed it to preserve. User code is unaffected except that previously-spurious error logs disappear.
-- `MessageRegistrationToken.RemoveRegistration(handle)` no longer leaks the staged registration entry, so a `Disable()`/`Enable()` cycle after `RemoveRegistration` no longer silently re-registers the removed handler. The fix also drops the matching metadata and call-count entries so diagnostic mode does not accumulate stale handles.
-- Resolved [issue #204](https://github.com/Ambiguous-Interactive/DxMessaging/issues/204) (build artifacts and orphaned `.meta` files leaking into the npm tarball) and prevented its regression: `scripts/validate-npm-meta.js` validates real `npm pack --json --dry-run --ignore-scripts` output (and release tarballs via `--tarball`) by rejecting `bin/`, `obj/`, `*.pdb`, `*.tmp`, `*.csproj.user`, `.vs/`, `.idea/`, `*.suo`, `*.user`, and `*.DotSettings.user` paths, while enforcing `.meta` pairing for shipped Unity files and directories. The guard now runs in `validate:all`, pre-push hooks, and the release workflow.
+  - The bus now pre-freezes every priority bucket's typed-handler caches up-front for every dispatch surface (sourced-broadcast, broadcast-without-source,
+    targeted-without-targeting) and uses the per-emission snapshot count for the dispatch-loop early-out.
+  - The sourced-broadcast and broadcast-without-source dispatch loops also no longer short-circuit on the live `cache.handlers.Count == 0` when the per-emission snapshot still
+    holds the deregistered handler.
+  - Post-processor prefreeze no longer takes a single-bucket/single-entry fast-path that skipped pre-freezing per-MessageHandler post-processor caches; a regular handler that
+    registers a new post-processor on the same MessageHandler+priority during its own callback now sees the new post-processor on the next emission, not the in-flight one.
+  - The same fix extends to cross-`MessageHandler` post-processor dispatch: the inner per-handler `RunFastHandlers` overload used by
+    `TargetedWithoutTargeting`/`BroadcastWithoutSource` post-processors now consults the per-emission snapshot list directly instead of bailing on the live `cache.entries` count,
+    so a sibling `MessageHandler` removing a not-yet-dispatched post-processor no longer silently skips the snapshot-pinned invocation.
+  - `RegisterGlobalAcceptAll` (`HandleGlobalUntargeted`/`HandleGlobalTargeted`/`HandleGlobalBroadcast`) is intentionally NOT covered by this fix. The bus's global accept-all
+    dispatch path prefreezes lazily per-entry inside the dispatch loop, so a sibling `MessageHandler` that removes another's global registration mid-emit causes the removed handler
+    to be skipped on the in-flight emission. The behavior is pinned by `MutationPostProcessorAcrossHandlersTests.RemoveOtherGlobalAcceptAllAcrossHandlersDuringDispatch`; if a
+    future change introduces upfront global-handler prefreeze, that test must be updated to expect the snapshot semantics that the per-kind paths already provide.
+- `DxMessagingStaticState.Reset` is now race-safe against deferred deregistrations. Previously, when a message-aware component was destroyed but its disable callback had not yet
+  run (Unity defers Object.Destroy to end of frame) and Reset ran in between, the deferred token teardown would log spurious "Received over-deregistration of {type} for {handler}"
+  errors against the user's Unity console. The bus now stamps each captured deregister closure with a generation counter and silently no-ops closures captured before a Reset.
+  Applied uniformly across every register entry point (untargeted, targeted, broadcast, GlobalAcceptAll, and all three interceptor kinds). The same race-safety guarantee is now
+  propagated to user-installed custom global buses via `MessageBus.BumpResetGeneration()`, which `DxMessagingStaticState.Reset` invokes on the active global bus when it differs
+  from the built-in default; the custom bus's sinks are intentionally left intact to avoid clobbering state the user installed it to preserve. User code is unaffected except that
+  previously-spurious error logs disappear.
+- `MessageRegistrationToken.RemoveRegistration(handle)` no longer leaks the staged registration entry, so a `Disable()`/`Enable()` cycle after `RemoveRegistration` no longer
+  silently re-registers the removed handler. The fix also drops the matching metadata and call-count entries so diagnostic mode does not accumulate stale handles.
+- Resolved [issue #204](https://github.com/Ambiguous-Interactive/DxMessaging/issues/204) (build artifacts and orphaned `.meta` files leaking into the npm tarball) and prevented its
+  regression: `scripts/validate-npm-meta.js` validates real `npm pack --json --dry-run --ignore-scripts` output (and release tarballs via `--tarball`) by rejecting `bin/`, `obj/`,
+  `*.pdb`, `*.tmp`, `*.csproj.user`, `.vs/`, `.idea/`, `*.suo`, `*.user`, and `*.DotSettings.user` paths, while enforcing `.meta` pairing for shipped Unity files and directories.
+  The guard now runs in `validate:all`, pre-push hooks, and the release workflow.
 
 ## [2.2.0]
 
@@ -1099,7 +755,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Orphaned documentation pages in Concepts section now included in mkdocs.yml navigation
-- Burst compiler assembly resolution errors when using DxMessaging as a package on disk and building for player platforms. Benchmarks and integration test assembly definitions now specify Editor-only platform to prevent Burst from attempting to resolve these assemblies during player builds.
+- Burst compiler assembly resolution errors when using DxMessaging as a package on disk and building for player platforms. Benchmarks and integration test assembly definitions now
+  specify Editor-only platform to prevent Burst from attempting to resolve these assemblies during player builds.
 
 ## [2.1.5]
 

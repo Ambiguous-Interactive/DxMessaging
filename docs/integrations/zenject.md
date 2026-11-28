@@ -6,14 +6,16 @@
 
 ## Overview
 
-**Zenject** (also known as Extenject) is a dependency injection framework for Unity with extensive container, sub-container, and factory support. DxMessaging integrates with Zenject, allowing you to:
+**Zenject** (also known as Extenject) is a dependency injection framework for Unity with extensive container, sub-container, and factory support. DxMessaging integrates with
+Zenject, allowing you to:
 
 - **Inject `IMessageBus`** as a singleton dependency in any class
 - **Use DI for construction** + DxMessaging for events (best of both worlds)
 - **Create per-scope message buses** for scene or gameplay isolation
 - **Bridge to SignalBus** for gradual migration from Zenject Signals
 
-**Why combine DI + Messaging?** Use constructor injection for service dependencies (repositories, managers) and messaging for reactive events (damage taken, item collected), combining both approaches.
+**Why combine DI + Messaging?** Use constructor injection for service dependencies (repositories, managers) and messaging for reactive events (damage taken, item collected),
+combining both approaches.
 
 ---
 
@@ -24,9 +26,8 @@
 - DxMessaging installed via UPM
 - Zenject/Extenject installed (source or UPM)
 
-These examples require Zenject/Extenject. DxMessaging's `ZENJECT_PRESENT` Version
-Define applies to its integration assembly. Add your own assembly's Version Define
-if your application conditionally compiles framework-specific code; see
+These examples require Zenject/Extenject. DxMessaging's `ZENJECT_PRESENT` Version Define applies to its integration assembly. Add your own assembly's Version Define if your
+application conditionally compiles framework-specific code; see
 [Unity's assembly definition rules](https://docs.unity3d.com/2021.3/Documentation/Manual/ScriptCompilationAssemblyDefinitionFiles.html#define-symbols).
 
 ### 1. Create an Installer
@@ -56,9 +57,8 @@ public sealed class DxMessagingInstaller : MonoInstaller
 }
 ```
 
-The factory creates a builder backed by this container's resolved `IMessageBus`.
-`ZenjectBusProvider` is an alias for the existing provider type supplied by DxMessaging.
-Save the installer as `DxMessagingInstaller.cs`.
+The factory creates a builder backed by this container's resolved `IMessageBus`. `ZenjectBusProvider` is an alias for the existing provider type supplied by DxMessaging. Save the
+installer as `DxMessagingInstaller.cs`.
 
 #### Add to your ProjectContext
 
@@ -139,14 +139,12 @@ public sealed class GameInstaller : MonoInstaller
 }
 ```
 
-Add `GameInstaller` to the same context's installer list. Its `IInitializable` and
-`IDisposable` bindings connect the service's lease activation and cleanup to that
-context's lifetime. See [Extenject's installer setup](https://github.com/Mathijs-Bakker/Extenject#hello-world-example).
+Add `GameInstaller` to the same context's installer list. Its `IInitializable` and `IDisposable` bindings connect the service's lease activation and cleanup to that context's
+lifetime. See [Extenject's installer setup](https://github.com/Mathijs-Bakker/Extenject#hello-world-example).
 
 #### Start the README service
 
-For the README's `PlayerService`, add an `IInitializable` adapter. Zenject calls the adapter at
-startup, and the adapter activates the service's subscription.
+For the README's `PlayerService`, add an `IInitializable` adapter. Zenject calls the adapter at startup, and the adapter activates the service's subscription.
 
 ```csharp
 using Zenject;
@@ -164,9 +162,8 @@ public sealed class ReadmeServiceStartup : IInitializable
 }
 ```
 
-Add these bindings inside `InstallBindings()` in the context that owns the service. That context
-must have access to the bus and builder from the quick start. The `IDisposable` binding lets the
-context dispose the same `PlayerService` instance it passes to the adapter.
+Add these bindings inside `InstallBindings()` in the context that owns the service. That context must have access to the bus and builder from the quick start. The `IDisposable`
+binding lets the context dispose the same `PlayerService` instance it passes to the adapter.
 
 ```csharp
 Container.BindInterfacesAndSelfTo<PlayerService>().AsSingle();
@@ -200,16 +197,13 @@ public sealed class MessagingComponentConfigurator : MonoBehaviour
 #### Usage
 
 1. Add `MessagingComponentConfigurator` beside each `MessagingComponent` that should use the bus.
-1. Add a configured `SceneContext` to the scene; its injection pass calls `Construct` before
-   ordinary scene `Awake` methods. Create runtime prefabs through Zenject's prefab factories so they
-   receive injection too.
+1. Add a configured `SceneContext` to the scene; its injection pass calls `Construct` before ordinary scene `Awake` methods. Create runtime prefabs through Zenject's prefab
+   factories so they receive injection too.
 1. Keep component-specific bus/provider settings consistent with the container bus.
 
-`MessageAwareComponent.Awake` stages registrations and `OnEnable` activates them. Configuring in a
-separate component's `Awake` would depend on their relative execution order. `RebindActive` can move
-existing registrations, but it does not replay messages emitted before configuration. Parameterless
-emission shorthands still select the global bus; pass the container bus explicitly when emitting.
-See [Extenject's context order](https://github.com/Mathijs-Bakker/Extenject#zenject-order-of-operations).
+`MessageAwareComponent.Awake` stages registrations and `OnEnable` activates them. Configuring in a separate component's `Awake` would depend on their relative execution order.
+`RebindActive` can move existing registrations, but it does not replay messages emitted before configuration. Parameterless emission shorthands still select the global bus; pass
+the container bus explicitly when emitting. See [Extenject's context order](https://github.com/Mathijs-Bakker/Extenject#zenject-order-of-operations).
 
 Alternatively, derive from `MessageAwareComponent` and configure its bus during injection:
 
@@ -322,16 +316,13 @@ public sealed class DxToSignalBridge : IInitializable, IDisposable
 }
 ```
 
-The builder stages one subscription in the constructor. `Initialize()` activates the lease;
-repeated initialization keeps that same registration. `Dispose()` removes it, and initialization
-after disposal throws `ObjectDisposedException`. The bridge uses the builder's configured bus.
+The builder stages one subscription in the constructor. `Initialize()` activates the lease; repeated initialization keeps that same registration. `Dispose()` removes it, and
+initialization after disposal throws `ObjectDisposedException`. The bridge uses the builder's configured bus.
 
 ### Register the bridge in your installer
 
-Add these bindings to an installer on the same context as `DxMessagingInstaller`.
-Install Zenject's signal support once per context before declaring the signal. If another
-installer already installs `SignalBusInstaller`, keep that installation and add only the
-bridge binding and signal declaration below:
+Add these bindings to an installer on the same context as `DxMessagingInstaller`. Install Zenject's signal support once per context before declaring the signal. If another
+installer already installs `SignalBusInstaller`, keep that installation and add only the bridge binding and signal declaration below:
 
 ```csharp
 public override void InstallBindings()
@@ -348,9 +339,8 @@ public override void InstallBindings()
 
 ### Unit Tests
 
-With `GameStarted` and `GameInitializer` from Pattern 3 in scope, test their emission with a fresh
-bus. This plain NUnit test calls `Initialize()` directly; it does not test Zenject context startup
-or Unity injection order.
+With `GameStarted` and `GameInitializer` from Pattern 3 in scope, test their emission with a fresh bus. This plain NUnit test calls `Initialize()` directly; it does not test
+Zenject context startup or Unity injection order.
 
 ```csharp
 using DxMessaging.Core;

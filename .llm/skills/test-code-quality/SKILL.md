@@ -1,6 +1,11 @@
 ---
 name: test-code-quality
-description: "Keeping tests honest: importing production code instead of re-implementing it in the test file, bidirectional SYNC notes where duplication is unavoidable (PowerShell script plus JS test, browser-only code), accurate describe-block and header categorization (missing vs wrong type vs empty), eslint-disable-next-line placement, user-facing message wording matching real output, cross-library comparison-benchmark parity with honest N/A cells and .github/comparison-packages.json as the single source of pins, and the three MessageAwareComponent inspector-overlay invariants. Use when a test defines its own copy of production logic, when adding a SYNC note or a comparison bridge, or when touching the custom editor overlay."
+description:
+  "Keeping tests honest: importing production code instead of re-implementing it in the test file, bidirectional SYNC notes where duplication is unavoidable (PowerShell script plus
+  JS test, browser-only code), accurate describe-block and header categorization (missing vs wrong type vs empty), eslint-disable-next-line placement, user-facing message wording
+  matching real output, cross-library comparison-benchmark parity with honest N/A cells and .github/comparison-packages.json as the single source of pins, and the three
+  MessageAwareComponent inspector-overlay invariants. Use when a test defines its own copy of production logic, when adding a SYNC note or a comparison bridge, or when touching the
+  custom editor overlay."
 metadata:
   category: "testing"
   tags: "testing, documentation, linting, code-quality, javascript"
@@ -8,7 +13,8 @@ metadata:
 
 # Test Code Quality
 
-A test is only worth its runtime if it exercises the real production code, describes accurately what it covers, and reports numbers nobody had to fake. These rules cover all three, plus the two DxMessaging surfaces where honesty is easiest to lose: the cross-library comparison benchmarks and the inspector overlay.
+A test is only worth its runtime if it exercises the real production code, describes accurately what it covers, and reports numbers nobody had to fake. These rules cover all three,
+plus the two DxMessaging surfaces where honesty is easiest to lose: the cross-library comparison benchmarks and the inspector overlay.
 
 ## When to use
 
@@ -23,10 +29,13 @@ A test is only worth its runtime if it exercises the real production code, descr
 
 ### Test production code, never a local copy
 
-- Tests import and call production functions. Export whatever the tests need from the production module rather than re-declaring it. A local copy passes while production regresses, doubles maintenance, drifts, and reproduces its own bugs.
+- Tests import and call production functions. Export whatever the tests need from the production module rather than re-declaring it. A local copy passes while production regresses,
+  doubles maintenance, drifts, and reproduces its own bugs.
 - Legitimate test-local code: thin wrappers that call production and add assertions, test-data factories and generators, and custom matchers. None of these re-implement a rule.
-- Red flags in review: the test file defines validation constants, mirrors production utility functions, never imports the module it names, rivals the production file in size, or shares a bug with production.
-- Verify before merging: the test imports the production module, the production file shows coverage, a small mutation to production makes the test fail, and no function body is duplicated across the pair.
+- Red flags in review: the test file defines validation constants, mirrors production utility functions, never imports the module it names, rivals the production file in size, or
+  shares a bug with production.
+- Verify before merging: the test imports the production module, the production file shows coverage, a small mutation to production makes the test fail, and no function body is
+  duplicated across the pair.
 
 ### SYNC notes where duplication is forced
 
@@ -35,34 +44,47 @@ A test is only worth its runtime if it exercises the real production code, descr
 
 ### Accuracy of test documentation and messages
 
-- `describe()` names and file header comments must match the tests they actually contain. Categorize by JavaScript semantics, not by truthiness: `undefined` and `null` are MISSING; `""`, `0`, `false`, and `{}` are WRONG TYPE (all but `{}` are falsy); `[]` is truthy and is a correct-type EMPTY value.
-- `eslint-disable-next-line` suppresses exactly the next line - put it immediately above the offending line, inside the object or block if that is where the line is. Before adding any directive, confirm the linter is configured (`package.json` devDependencies, `.eslintrc*`, `eslint.config.*`); an unconfigured directive is dead code.
-- User-facing warning and error text must match real output terminology. Read the code that generates the output and grep for the actual heading or column name; add a `// SYNC:` comment naming that source. Test the message content when it names a specific column or label.
+- `describe()` names and file header comments must match the tests they actually contain. Categorize by JavaScript semantics, not by truthiness: `undefined` and `null` are MISSING;
+  `""`, `0`, `false`, and `{}` are WRONG TYPE (all but `{}` are falsy); `[]` is truthy and is a correct-type EMPTY value.
+- `eslint-disable-next-line` suppresses exactly the next line - put it immediately above the offending line, inside the object or block if that is where the line is. Before adding
+  any directive, confirm the linter is configured (`package.json` devDependencies, `.eslintrc*`, `eslint.config.*`); an unconfigured directive is dead code.
+- User-facing warning and error text must match real output terminology. Read the code that generates the output and grep for the actual heading or column name; add a `// SYNC:`
+  comment naming that source. Test the message content when it names a specific column or label.
 
 ### Comparison benchmark honesty
 
 - Every bridge implements `IMessagingTechBridge` using the library's own best-practice API for that scenario. Never route a library through DxMessaging-shaped glue.
-- An unsupported scenario renders `N/A`. Never substitute a stand-in or copy a number. `IMessagingTechBridge.DispatchedPayloadType(scenario)` declares what is actually dispatched, and `ComparisonBridgeContract.AssertStructScenarioPayloadFidelity` (`StructScenarioDispatchesNonPrimitiveStructPayload`) fails any bridge claiming `StructMessageNoBoxing` while dispatching a primitive or boxed value.
-- Do not hide an allocation a real caller pays. Unity `SendMessage(string, object)` boxes a value type on every call, so pass the value and let it box (cast to `object`, keep the backing field non-`const` so a literal `0` cannot bind to the `SendMessageOptions` overload). `ComparisonAllocationHonestyTests` pins both directions. Zenject's `SignalBus` boxes through internal `object` routing; that non-zero cost is real and is reported.
-- The harness checks canonical fan-out and current-row progress so dedup or a missing registration fails loudly. `ComparisonHarness.Run` builds and disposes a fresh bridge per case and uses a fresh `MessageBus` per DxMessaging scenario. Published comparisons run in a dedicated player, so do not add per-row full collections. Dedicated contract tests verify observable teardown; do not infer that progress accounting detects every form of leaked state.
-- Every public comparison row has an exact internal topology twin. `GlobalToOne` and
-  `GlobalToMany` use the existing dispatch rows; `ComparisonTopologyBenchmarks` independently
-  implements the other seven shapes, including the exact `ComparisonStructPayload`.
-  `ComparisonDispatchTopologyTests` executes both sides and pins actual registrations,
-  priorities, routes, diagnostics, fan-out, cleanup, and deliberate drift. Extra timing rows
-  require `PerfTopologyTwin`; keep them out of `PerfComparison` and `ComparisonContract` so
-  normal CI does not add timing windows. Topology coverage alone establishes neither
-  MessagePipe semantic parity nor equal throughput. The methodology runbook records the
-  remaining semantic-ledger work.
-- `.github/comparison-packages.json` is the ONLY home for the OpenUPM registry, the pinned comparison versions, and the required Unity built-in packages. Bump there, then hand-update every mirror in the same change: the asmdef `versionDefines` and same-asmdef `defineConstraints`, `.unity-test-project/Packages/manifest.json`, and `packages-lock.json`. One define per package - a shared define turns the asmdef gate into OR semantics.
+- An unsupported scenario renders `N/A`. Never substitute a stand-in or copy a number. `IMessagingTechBridge.DispatchedPayloadType(scenario)` declares what is actually dispatched,
+  and `ComparisonBridgeContract.AssertStructScenarioPayloadFidelity` (`StructScenarioDispatchesNonPrimitiveStructPayload`) fails any bridge claiming `StructMessageNoBoxing` while
+  dispatching a primitive or boxed value.
+- Do not hide an allocation a real caller pays. Unity `SendMessage(string, object)` boxes a value type on every call, so pass the value and let it box (cast to `object`, keep the
+  backing field non-`const` so a literal `0` cannot bind to the `SendMessageOptions` overload). `ComparisonAllocationHonestyTests` pins both directions. Zenject's `SignalBus` boxes
+  through internal `object` routing; that non-zero cost is real and is reported.
+- The harness checks canonical fan-out and current-row progress so dedup or a missing registration fails loudly. `ComparisonHarness.Run` builds and disposes a fresh bridge per case
+  and uses a fresh `MessageBus` per DxMessaging scenario. Published comparisons run in a dedicated player, so do not add per-row full collections. Dedicated contract tests verify
+  observable teardown; do not infer that progress accounting detects every form of leaked state.
+- Every public comparison row has an exact internal topology twin. `GlobalToOne` and `GlobalToMany` use the existing dispatch rows; `ComparisonTopologyBenchmarks` independently
+  implements the other seven shapes, including the exact `ComparisonStructPayload`. `ComparisonDispatchTopologyTests` executes both sides and pins actual registrations, priorities,
+  routes, diagnostics, fan-out, cleanup, and deliberate drift. Extra timing rows require `PerfTopologyTwin`; keep them out of `PerfComparison` and `ComparisonContract` so normal CI
+  does not add timing windows. Topology coverage alone establishes neither MessagePipe semantic parity nor equal throughput. The methodology runbook records the remaining
+  semantic-ledger work.
+- `.github/comparison-packages.json` is the ONLY home for the OpenUPM registry, the pinned comparison versions, and the required Unity built-in packages. Bump there, then
+  hand-update every mirror in the same change: the asmdef `versionDefines` and same-asmdef `defineConstraints`, `.unity-test-project/Packages/manifest.json`, and
+  `packages-lock.json`. One define per package - a shared define turns the asmdef gate into OR semantics.
 
 ### Inspector overlay invariants
 
-1. `MessageAwareComponentFallbackEditor` registers as a PRIMARY editor (`isFallback == false`) with `editorForChildClasses: true`, and its `OnInspectorGUI` calls `MessageAwareComponentInspectorOverlay.RenderInsideOnInspectorGUI(target)` then `DrawDefaultInspector()`. `isFallback = true` loses the missing-base-call HelpBox on Unity 2021 because `finishedDefaultHeaderGUI` is unreliable there; a hand-rolled body that skips `m_Script` leaves a visible empty gap under the header. Pinned by `FallbackEditorMustRegisterAsPrimaryNonFallbackEditorForChildClasses`.
-1. `BuildAndRenderOverlay` performs all gating up front and returns `false` before any `EditorGUILayout` call when `shape == 0`. Unity runs Layout and Repaint passes that must emit identical control counts; one stray layout call corrupts the window's layout cache.
-1. `RenderInsideOnInspectorGUI` never gates on `Event.current.type` and never latches per-Repaint. Cross-path dedupe happens in `DrawHeader`, which skips unconditionally when the editor is a `MessageAwareComponentFallbackEditor`.
+1. `MessageAwareComponentFallbackEditor` registers as a PRIMARY editor (`isFallback == false`) with `editorForChildClasses: true`, and its `OnInspectorGUI` calls
+   `MessageAwareComponentInspectorOverlay.RenderInsideOnInspectorGUI(target)` then `DrawDefaultInspector()`. `isFallback = true` loses the missing-base-call HelpBox on Unity 2021
+   because `finishedDefaultHeaderGUI` is unreliable there; a hand-rolled body that skips `m_Script` leaves a visible empty gap under the header. Pinned by
+   `FallbackEditorMustRegisterAsPrimaryNonFallbackEditorForChildClasses`.
+1. `BuildAndRenderOverlay` performs all gating up front and returns `false` before any `EditorGUILayout` call when `shape == 0`. Unity runs Layout and Repaint passes that must emit
+   identical control counts; one stray layout call corrupts the window's layout cache.
+1. `RenderInsideOnInspectorGUI` never gates on `Event.current.type` and never latches per-Repaint. Cross-path dedupe happens in `DrawHeader`, which skips unconditionally when the
+   editor is a `MessageAwareComponentFallbackEditor`.
 
-Tests here set `DxMessagingSettings.GetOrCreateSettings()._baseCallCheckEnabled = false` in setup and restore it in teardown, and declare subclasses as top-level `internal` types marked `[AddComponentMenu("")]`, because Unity cannot serialize private nested `MonoBehaviour` types across a domain reload.
+Tests here set `DxMessagingSettings.GetOrCreateSettings()._baseCallCheckEnabled = false` in setup and restore it in teardown, and declare subclasses as top-level `internal` types
+marked `[AddComponentMenu("")]`, because Unity cannot serialize private nested `MonoBehaviour` types across a domain reload.
 
 ## References
 

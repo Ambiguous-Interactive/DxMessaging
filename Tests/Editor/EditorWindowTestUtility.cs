@@ -41,8 +41,7 @@ namespace DxMessaging.Tests.Editor
 
         internal static DxMessagingTestHostWindow CreateWindow()
         {
-            DxMessagingTestHostWindow window =
-                ScriptableObject.CreateInstance<DxMessagingTestHostWindow>();
+            DxMessagingTestHostWindow window = ScriptableObject.CreateInstance<DxMessagingTestHostWindow>();
             window.titleContent = new GUIContent(DxMessagingTestHostWindow.TitleText);
             window.hideFlags = HideFlags.HideAndDontSave;
             CreatedWindows.Add(window);
@@ -166,9 +165,7 @@ namespace DxMessaging.Tests.Editor
 
         internal static void CloseLeakedTestHostWindows()
         {
-            foreach (
-                EditorWindow window in Resources.FindObjectsOfTypeAll<DxMessagingTestHostWindow>()
-            )
+            foreach (EditorWindow window in Resources.FindObjectsOfTypeAll<DxMessagingTestHostWindow>())
             {
                 CloseWindow(window);
             }
@@ -187,21 +184,13 @@ namespace DxMessaging.Tests.Editor
             foreach (Object dockArea in Resources.FindObjectsOfTypeAll(dockAreaType))
             {
                 object viewObject = ReadMember(dockArea, "actualView");
-                if (
-                    viewObject == null
-                    || viewObject.GetType().FullName != "UnityEditor.EditorWindow"
-                    || dockArea.name != "EditorWindow"
-                )
+                if (viewObject == null || viewObject.GetType().FullName != "UnityEditor.EditorWindow" || dockArea.name != "EditorWindow")
                 {
                     continue;
                 }
 
                 Object container = ReadMember(dockArea, "window") as Object;
-                if (
-                    container == null
-                    || container.GetType().FullName != "UnityEditor.ContainerWindow"
-                    || containers.Contains(container)
-                )
+                if (container == null || container.GetType().FullName != "UnityEditor.ContainerWindow" || containers.Contains(container))
                 {
                     continue;
                 }
@@ -209,17 +198,8 @@ namespace DxMessaging.Tests.Editor
                 containers.Add(container);
             }
 
-            System.Reflection.BindingFlags flags =
-                System.Reflection.BindingFlags.Instance
-                | System.Reflection.BindingFlags.Public
-                | System.Reflection.BindingFlags.NonPublic;
-            System.Reflection.MethodInfo closeMethod = containerWindowType.GetMethod(
-                "Close",
-                flags,
-                binder: null,
-                types: System.Type.EmptyTypes,
-                modifiers: null
-            );
+            System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic;
+            System.Reflection.MethodInfo closeMethod = containerWindowType.GetMethod("Close", flags, binder: null, types: System.Type.EmptyTypes, modifiers: null);
             if (closeMethod == null)
             {
                 return;
@@ -277,11 +257,7 @@ namespace DxMessaging.Tests.Editor
             string previous = null;
             for (int pass = 0; pass < MaxLayoutPasses; pass++)
             {
-                EditorSurfaceCapture.InvokeInheritedPanelMethod(
-                    window.rootVisualElement.panel,
-                    "ValidateLayout",
-                    Array.Empty<object>()
-                );
+                EditorSurfaceCapture.InvokeInheritedPanelMethod(window.rootVisualElement.panel, "ValidateLayout", Array.Empty<object>());
 
                 string current = DescribeLayout(window.rootVisualElement);
                 if (current == previous)
@@ -299,15 +275,7 @@ namespace DxMessaging.Tests.Editor
             foreach (VisualElement element in root.Query<VisualElement>().ToList())
             {
                 Rect layout = element.layout;
-                description
-                    .Append(layout.x)
-                    .Append(',')
-                    .Append(layout.y)
-                    .Append(',')
-                    .Append(layout.width)
-                    .Append(',')
-                    .Append(layout.height)
-                    .Append(';');
+                description.Append(layout.x).Append(',').Append(layout.y).Append(',').Append(layout.width).Append(',').Append(layout.height).Append(';');
             }
 
             return description.ToString();
@@ -322,10 +290,7 @@ namespace DxMessaging.Tests.Editor
         /// paints beneath. This assertion is what reports that on the 2021.3 leg; on newer editors
         /// it holds without the fix, because they size the container correctly.
         /// </summary>
-        internal static void AssertWrappingContainersContainTheirChildren(
-            VisualElement root,
-            string context
-        )
+        internal static void AssertWrappingContainersContainTheirChildren(VisualElement root, string context)
         {
             Assert.That(root, Is.Not.Null, $"{context} must render a root element.");
 
@@ -342,10 +307,7 @@ namespace DxMessaging.Tests.Editor
                     measurement. A box eight million pixels tall is not painting over anything a
                     reader can see, and asserting on it compares two sentinels.
                 */
-                if (
-                    float.IsNaN(element.resolvedStyle.height)
-                    || UnboundedLayoutSize <= element.resolvedStyle.height
-                )
+                if (float.IsNaN(element.resolvedStyle.height) || UnboundedLayoutSize <= element.resolvedStyle.height)
                 {
                     continue;
                 }
@@ -356,8 +318,7 @@ namespace DxMessaging.Tests.Editor
             Assert.That(
                 wrapping,
                 Is.Not.Empty,
-                $"{context} renders no wrapping container, so this assertion would pass "
-                    + "without checking anything. Point it at a surface that wraps."
+                $"{context} renders no wrapping container, so this assertion would pass " + "without checking anything. Point it at a surface that wraps."
             );
 
             foreach (VisualElement element in wrapping)
@@ -403,10 +364,7 @@ namespace DxMessaging.Tests.Editor
 
         private static object ReadMember(object instance, string memberName)
         {
-            System.Reflection.BindingFlags flags =
-                System.Reflection.BindingFlags.Instance
-                | System.Reflection.BindingFlags.Public
-                | System.Reflection.BindingFlags.NonPublic;
+            System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic;
             for (System.Type type = instance.GetType(); type != null; type = type.BaseType)
             {
                 System.Reflection.PropertyInfo property = type.GetProperty(memberName, flags);

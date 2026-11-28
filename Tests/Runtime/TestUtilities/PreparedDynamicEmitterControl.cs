@@ -30,8 +30,7 @@ namespace DxMessaging.Tests.Runtime
             _bus = bus ?? throw new ArgumentNullException(nameof(bus));
         }
 
-        internal void Emit(ref InstanceId target, ref TMessage message) =>
-            _bus.TargetedBroadcast(ref target, ref message);
+        internal void Emit(ref InstanceId target, ref TMessage message) => _bus.TargetedBroadcast(ref target, ref message);
     }
 
     /// <summary>Test-only broadcast binding; the caller supplies a live source per call.</summary>
@@ -45,7 +44,6 @@ namespace DxMessaging.Tests.Runtime
             _bus = bus ?? throw new ArgumentNullException(nameof(bus));
         }
 
-        internal void Emit(ref InstanceId source, ref TMessage message) =>
-            _bus.SourcedBroadcast(ref source, ref message);
+        internal void Emit(ref InstanceId source, ref TMessage message) => _bus.SourcedBroadcast(ref source, ref message);
     }
 }

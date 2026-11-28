@@ -58,39 +58,20 @@ namespace DxMessaging.Tests.Runtime.Core
         /// every handler, post-processor, interceptor, and global callback shape.
         /// </summary>
         [Test]
-        public void RegisterMethodThrowsOnNullHandler(
-            [ValueSource(nameof(NullHandlerCases))] NullHandlerCase testCase
-        )
+        public void RegisterMethodThrowsOnNullHandler([ValueSource(nameof(NullHandlerCases))] NullHandlerCase testCase)
         {
             using TokenScope scope = TokenScope.Create();
-            using LeakWatcher watcher = new(
-                scope.Bus,
-                label: testCase.Description,
-                watchSlots: true
-            );
+            using LeakWatcher watcher = new(scope.Bus, label: testCase.Description, watchSlots: true);
             int initialMetadataCount = scope.Token._metadata.Count;
-            ArgumentNullException ex = Assert.Throws<ArgumentNullException>(() =>
-                testCase.Action(scope.Token)
-            );
+            ArgumentNullException ex = Assert.Throws<ArgumentNullException>(() => testCase.Action(scope.Token));
             Assert.IsNotNull(ex, $"Expected ArgumentNullException for case '{testCase}'.");
-            Assert.AreEqual(
-                testCase.ParameterName,
-                ex.ParamName,
-                $"Case '{testCase}' must identify its public delegate parameter."
-            );
-            Assert.AreEqual(
-                initialMetadataCount,
-                scope.Token._metadata.Count,
-                $"Case '{testCase}' must not retain inaccessible token metadata."
-            );
+            Assert.AreEqual(testCase.ParameterName, ex.ParamName, $"Case '{testCase}' must identify its public delegate parameter.");
+            Assert.AreEqual(initialMetadataCount, scope.Token._metadata.Count, $"Case '{testCase}' must not retain inaccessible token metadata.");
             Assert.IsTrue(scope.Token.Enabled, $"Case '{testCase}' must leave the token enabled.");
 
             scope.Token.Disable();
             Assert.IsFalse(scope.Token.Enabled, $"Case '{testCase}' must still disable cleanly.");
-            Assert.DoesNotThrow(
-                scope.Token.Enable,
-                $"Case '{testCase}' must not poison a later enable."
-            );
+            Assert.DoesNotThrow(scope.Token.Enable, $"Case '{testCase}' must not poison a later enable.");
             Assert.IsTrue(scope.Token.Enabled, $"Case '{testCase}' must re-enable cleanly.");
         }
 
@@ -98,61 +79,32 @@ namespace DxMessaging.Tests.Runtime.Core
         public void DisabledTokenDefersNullHandlerRejectionUntilEnableWithoutLeaking()
         {
             BusType bus = new BusType();
-            MessageHandler handler = new MessageHandler(new InstanceId(OwnerInstanceId), bus)
-            {
-                active = true,
-            };
+            MessageHandler handler = new MessageHandler(new InstanceId(OwnerInstanceId), bus) { active = true };
             using MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
-            using (
-                LeakWatcher watcher = new(
-                    bus,
-                    label: "disabled token null handler",
-                    watchSlots: true
-                )
-            )
+            using (LeakWatcher watcher = new(bus, label: "disabled token null handler", watchSlots: true))
             {
-                MessageRegistrationHandle handle =
-                    token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>(
-                        (MessageHandler.FastHandlerWithContext<SimpleBroadcastMessage>)null
-                    );
+                MessageRegistrationHandle handle = token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>(
+                    (MessageHandler.FastHandlerWithContext<SimpleBroadcastMessage>)null
+                );
 
-                Assert.AreNotEqual(
-                    default(MessageRegistrationHandle),
-                    handle,
-                    "A disabled token must preserve the existing deferred-registration behavior."
-                );
-                Assert.AreEqual(
-                    1,
-                    token._metadata.Count,
-                    "The disabled token must stage one entry."
-                );
+                Assert.AreNotEqual(default(MessageRegistrationHandle), handle, "A disabled token must preserve the existing deferred-registration behavior.");
+                Assert.AreEqual(1, token._metadata.Count, "The disabled token must stage one entry.");
                 Assert.IsFalse(token.Enabled, "Staging must not enable the token.");
 
                 ArgumentNullException first = Assert.Throws<ArgumentNullException>(token.Enable);
                 Assert.AreEqual("broadcastHandler", first.ParamName);
                 Assert.IsFalse(token.Enabled, "A failed enable must leave the token disabled.");
-                Assert.AreEqual(
-                    1,
-                    token._metadata.Count,
-                    "A failed enable must preserve the staged entry for removal or retry."
-                );
+                Assert.AreEqual(1, token._metadata.Count, "A failed enable must preserve the staged entry for removal or retry.");
 
                 ArgumentNullException retry = Assert.Throws<ArgumentNullException>(token.Enable);
                 Assert.AreEqual("broadcastHandler", retry.ParamName);
                 Assert.IsFalse(token.Enabled, "A failed retry must leave the token disabled.");
-                Assert.AreEqual(
-                    1,
-                    token._metadata.Count,
-                    "A failed retry must preserve one entry."
-                );
+                Assert.AreEqual(1, token._metadata.Count, "A failed retry must preserve one entry.");
 
                 token.RemoveRegistration(handle);
                 Assert.AreEqual(0, token._metadata.Count, "Removing the bad entry must clear it.");
                 Assert.DoesNotThrow(token.Enable);
-                Assert.IsTrue(
-                    token.Enabled,
-                    "The token must be usable after removing the bad entry."
-                );
+                Assert.IsTrue(token.Enabled, "The token must be usable after removing the bad entry.");
             }
         }
 
@@ -161,9 +113,7 @@ namespace DxMessaging.Tests.Runtime.Core
         /// silently tolerates default handles, foreign handles, and double-remove.
         /// </summary>
         [Test]
-        public void RemoveRegistrationIsNoOpForUnknownHandle(
-            [ValueSource(nameof(NoOpHandleCases))] NoOpHandleCase testCase
-        )
+        public void RemoveRegistrationIsNoOpForUnknownHandle([ValueSource(nameof(NoOpHandleCases))] NoOpHandleCase testCase)
         {
             Assert.DoesNotThrow(() => testCase.Action());
         }
@@ -172,33 +122,20 @@ namespace DxMessaging.Tests.Runtime.Core
         public void StaleAndForeignHandlesCannotRemoveReusedArenaSlot()
         {
             using TokenScope scope = TokenScope.Create();
-            MessageRegistrationHandle stale =
-                scope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (in SimpleUntargetedMessage _) => { }
-                );
+            MessageRegistrationHandle stale = scope.Token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => { });
             scope.Token.RemoveRegistration(stale);
 
             int invocationCount = 0;
-            MessageRegistrationHandle current =
-                scope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (in SimpleUntargetedMessage _) => ++invocationCount
-                );
+            MessageRegistrationHandle current = scope.Token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => ++invocationCount);
             using TokenScope foreignScope = TokenScope.Create();
-            MessageRegistrationHandle foreign =
-                foreignScope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (in SimpleUntargetedMessage _) => { }
-                );
+            MessageRegistrationHandle foreign = foreignScope.Token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => { });
 
             Assert.DoesNotThrow(() => scope.Token.RemoveRegistration(stale));
             Assert.DoesNotThrow(() => scope.Token.RemoveRegistration(foreign));
 
             SimpleUntargetedMessage message = new();
             scope.Bus.EmitUntargeted(ref message);
-            Assert.AreEqual(
-                1,
-                invocationCount,
-                "Slot reuse must validate both the slot index and globally unique handle id."
-            );
+            Assert.AreEqual(1, invocationCount, "Slot reuse must validate both the slot index and globally unique handle id.");
 
             scope.Token.RemoveRegistration(current);
         }
@@ -211,17 +148,10 @@ namespace DxMessaging.Tests.Runtime.Core
             for (int i = 0; i < 6; ++i)
             {
                 int capture = i;
-                original.Add(
-                    scope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (in SimpleUntargetedMessage _) => GC.KeepAlive(capture)
-                    )
-                );
+                original.Add(scope.Token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => GC.KeepAlive(capture)));
             }
 
-            CollectionAssert.AllItemsAreUnique(
-                original,
-                "Every registration must receive a distinct handle."
-            );
+            CollectionAssert.AllItemsAreUnique(original, "Every registration must receive a distinct handle.");
             if (RegistrationSlotProperty != null)
             {
                 CollectionAssert.AreEqual(
@@ -235,78 +165,39 @@ namespace DxMessaging.Tests.Runtime.Core
             scope.Token.RemoveRegistration(original[2]);
             scope.Token.RemoveRegistration(original[5]);
 
-            MessageRegistrationHandle reuseTail =
-                scope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (in SimpleUntargetedMessage _) => { }
-                );
-            MessageRegistrationHandle reuseMiddle =
-                scope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (in SimpleUntargetedMessage _) => { }
-                );
-            MessageRegistrationHandle reuseHead =
-                scope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (in SimpleUntargetedMessage _) => { }
-                );
+            MessageRegistrationHandle reuseTail = scope.Token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => { });
+            MessageRegistrationHandle reuseMiddle = scope.Token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => { });
+            MessageRegistrationHandle reuseHead = scope.Token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => { });
 
-            CollectionAssert.AllItemsAreUnique(
-                new[] { reuseTail, reuseMiddle, reuseHead },
-                "Replacement registrations must receive distinct handles."
-            );
+            CollectionAssert.AllItemsAreUnique(new[] { reuseTail, reuseMiddle, reuseHead }, "Replacement registrations must receive distinct handles.");
             if (RegistrationSlotProperty != null)
             {
                 CollectionAssert.AreEqual(
                     new[] { 5, 2, 0 },
-                    new[]
-                    {
-                        GetRegistrationSlot(reuseTail),
-                        GetRegistrationSlot(reuseMiddle),
-                        GetRegistrationSlot(reuseHead),
-                    },
+                    new[] { GetRegistrationSlot(reuseTail), GetRegistrationSlot(reuseMiddle), GetRegistrationSlot(reuseHead) },
                     "The free list must reuse removed tail, middle, and head slots in O(1) LIFO order."
                 );
             }
-            MessageRegistrationHandle[] expectedLiveHandles =
-            {
-                original[1],
-                original[3],
-                original[4],
-                reuseTail,
-                reuseMiddle,
-                reuseHead,
-            };
-            IEnumerable<MessageRegistrationHandle> actualLiveHandles = scope.Token._metadata.Select(
-                entry => entry.Key
-            );
+            MessageRegistrationHandle[] expectedLiveHandles = { original[1], original[3], original[4], reuseTail, reuseMiddle, reuseHead };
+            IEnumerable<MessageRegistrationHandle> actualLiveHandles = scope.Token._metadata.Select(entry => entry.Key);
             if (RegistrationSlotProperty != null)
             {
-                CollectionAssert.AreEqual(
-                    expectedLiveHandles,
-                    actualLiveHandles,
-                    "Arena metadata enumeration must follow live registration order, not physical slot order."
-                );
+                CollectionAssert.AreEqual(expectedLiveHandles, actualLiveHandles, "Arena metadata enumeration must follow live registration order, not physical slot order.");
             }
             else
             {
-                CollectionAssert.AreEquivalent(
-                    expectedLiveHandles,
-                    actualLiveHandles,
-                    "Legacy dictionary metadata must contain exactly the surviving and replacement handles."
-                );
+                CollectionAssert.AreEquivalent(expectedLiveHandles, actualLiveHandles, "Legacy dictionary metadata must contain exactly the surviving and replacement handles.");
             }
         }
 
-        private static readonly System.Reflection.PropertyInfo RegistrationSlotProperty =
-            typeof(MessageRegistrationHandle).GetProperty(
-                "Slot",
-                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic
-            );
+        private static readonly System.Reflection.PropertyInfo RegistrationSlotProperty = typeof(MessageRegistrationHandle).GetProperty(
+            "Slot",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic
+        );
 
         private static int GetRegistrationSlot(MessageRegistrationHandle handle)
         {
-            Assert.IsNotNull(
-                RegistrationSlotProperty,
-                "The registration-slot accessor is required when the slot arena is present."
-            );
+            Assert.IsNotNull(RegistrationSlotProperty, "The registration-slot accessor is required when the slot arena is present.");
             return (int)RegistrationSlotProperty.GetValue(handle, null);
         }
 
@@ -320,10 +211,7 @@ namespace DxMessaging.Tests.Runtime.Core
             */
             using TokenScope scope = TokenScope.Create();
             int invocationCount = 0;
-            MessageRegistrationHandle handle = scope.Token.RegisterTargeted<SimpleTargetedMessage>(
-                default,
-                (in SimpleTargetedMessage _) => ++invocationCount
-            );
+            MessageRegistrationHandle handle = scope.Token.RegisterTargeted<SimpleTargetedMessage>(default, (in SimpleTargetedMessage _) => ++invocationCount);
 
             SimpleTargetedMessage message = new();
             message.EmitTargeted(default(InstanceId), scope.Bus);
@@ -341,11 +229,7 @@ namespace DxMessaging.Tests.Runtime.Core
             */
             using TokenScope scope = TokenScope.Create();
             int invocationCount = 0;
-            MessageRegistrationHandle handle =
-                scope.Token.RegisterBroadcast<SimpleBroadcastMessage>(
-                    default,
-                    (in SimpleBroadcastMessage _) => ++invocationCount
-                );
+            MessageRegistrationHandle handle = scope.Token.RegisterBroadcast<SimpleBroadcastMessage>(default, (in SimpleBroadcastMessage _) => ++invocationCount);
 
             SimpleBroadcastMessage message = new();
             message.EmitBroadcast(default(InstanceId), scope.Bus);
@@ -363,21 +247,14 @@ namespace DxMessaging.Tests.Runtime.Core
             DxMessagingStaticState.Reset();
 
             IMessageBus after = MessageHandler.MessageBus;
-            Assert.IsNotNull(
-                after,
-                "Global message bus must be re-established after DxMessagingStaticState.Reset."
-            );
+            Assert.IsNotNull(after, "Global message bus must be re-established after DxMessagingStaticState.Reset.");
         }
 
         [Test]
         public void SetGlobalMessageBusRejectsNullArgument()
         {
-            Assert.Throws<ArgumentNullException>(() =>
-                MessageHandler.SetGlobalMessageBus((BusType)null)
-            );
-            Assert.Throws<ArgumentNullException>(() =>
-                MessageHandler.SetGlobalMessageBus((IMessageBus)null)
-            );
+            Assert.Throws<ArgumentNullException>(() => MessageHandler.SetGlobalMessageBus((BusType)null));
+            Assert.Throws<ArgumentNullException>(() => MessageHandler.SetGlobalMessageBus((IMessageBus)null));
         }
 
         [Test]
@@ -410,17 +287,10 @@ namespace DxMessaging.Tests.Runtime.Core
             */
             using TokenScope scope = TokenScope.Create();
             int invocationCount = 0;
-            MessageRegistrationHandle handle =
-                scope.Token.RegisterUntargeted<ClassUntargetedMessage>(
-                    (in ClassUntargetedMessage _) => ++invocationCount
-                );
+            MessageRegistrationHandle handle = scope.Token.RegisterUntargeted<ClassUntargetedMessage>((in ClassUntargetedMessage _) => ++invocationCount);
 
             Assert.DoesNotThrow(() => scope.Bus.EmitUntargeted((ClassUntargetedMessage)null));
-            Assert.AreEqual(
-                1,
-                invocationCount,
-                "Handler should be invoked even with a null class payload because the bus does not dereference the message reference."
-            );
+            Assert.AreEqual(1, invocationCount, "Handler should be invoked even with a null class payload because the bus does not dereference the message reference.");
 
             scope.Token.RemoveRegistration(handle);
         }
@@ -434,14 +304,9 @@ namespace DxMessaging.Tests.Runtime.Core
                 through the bus to the emit call. The framework does not catch it.
             */
             using TokenScope scope = TokenScope.Create();
-            MessageRegistrationHandle handle =
-                scope.Token.RegisterUntargeted<ClassUntargetedMessage>(
-                    (in ClassUntargetedMessage message) => _ = message.GetType()
-                );
+            MessageRegistrationHandle handle = scope.Token.RegisterUntargeted<ClassUntargetedMessage>((in ClassUntargetedMessage message) => _ = message.GetType());
 
-            Assert.Throws<NullReferenceException>(() =>
-                scope.Bus.EmitUntargeted((ClassUntargetedMessage)null)
-            );
+            Assert.Throws<NullReferenceException>(() => scope.Bus.EmitUntargeted((ClassUntargetedMessage)null));
 
             scope.Token.RemoveRegistration(handle);
         }
@@ -450,9 +315,7 @@ namespace DxMessaging.Tests.Runtime.Core
         public void EmitUntargetedThroughNullBusThrows()
         {
             ClassUntargetedMessage message = new ClassUntargetedMessage();
-            Assert.Throws<ArgumentNullException>(() =>
-                MessageBusExtensions.EmitUntargeted((IMessageBus)null, message)
-            );
+            Assert.Throws<ArgumentNullException>(() => MessageBusExtensions.EmitUntargeted((IMessageBus)null, message));
         }
 
         [Test]
@@ -460,9 +323,7 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             SimpleTargetedMessage message = new();
             InstanceId target = new(TargetInstanceId);
-            Assert.Throws<ArgumentNullException>(() =>
-                MessageBusExtensions.EmitTargeted((IMessageBus)null, target, ref message)
-            );
+            Assert.Throws<ArgumentNullException>(() => MessageBusExtensions.EmitTargeted((IMessageBus)null, target, ref message));
         }
 
         [Test]
@@ -470,9 +331,7 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             SimpleBroadcastMessage message = new();
             InstanceId source = new(SourceInstanceId);
-            Assert.Throws<ArgumentNullException>(() =>
-                MessageBusExtensions.EmitBroadcast((IMessageBus)null, source, ref message)
-            );
+            Assert.Throws<ArgumentNullException>(() => MessageBusExtensions.EmitBroadcast((IMessageBus)null, source, ref message));
         }
 
         [Test]
@@ -483,16 +342,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 bus does not enforce a non-zero identifier on the dispatch path.
             */
             BusType bus = new BusType();
-            MessageHandler handler = new MessageHandler(new InstanceId(OwnerInstanceId), bus)
-            {
-                active = true,
-            };
+            MessageHandler handler = new MessageHandler(new InstanceId(OwnerInstanceId), bus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
             int invocationCount = 0;
-            _ = token.RegisterTargeted<SimpleTargetedMessage>(
-                default,
-                (in SimpleTargetedMessage _) => ++invocationCount
-            );
+            _ = token.RegisterTargeted<SimpleTargetedMessage>(default, (in SimpleTargetedMessage _) => ++invocationCount);
             token.Enable();
 
             SimpleTargetedMessage message = new();
@@ -507,241 +360,96 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             get
             {
-                yield return new NullHandlerCase(
-                    "RegisterUntargeted FastHandler null",
-                    "untargetedHandler",
-                    token =>
-                        token.RegisterUntargeted<SimpleUntargetedMessage>(
-                            (MessageHandler.FastHandler<SimpleUntargetedMessage>)null
-                        )
+                yield return new NullHandlerCase("RegisterUntargeted FastHandler null", "untargetedHandler", token =>
+                    token.RegisterUntargeted<SimpleUntargetedMessage>((MessageHandler.FastHandler<SimpleUntargetedMessage>)null)
                 );
-                yield return new NullHandlerCase(
-                    "RegisterUntargeted Action null",
-                    "untargetedHandler",
-                    token =>
-                        token.RegisterUntargeted<SimpleUntargetedMessage>(
-                            (Action<SimpleUntargetedMessage>)null
-                        )
+                yield return new NullHandlerCase("RegisterUntargeted Action null", "untargetedHandler", token =>
+                    token.RegisterUntargeted<SimpleUntargetedMessage>((Action<SimpleUntargetedMessage>)null)
                 );
-                yield return new NullHandlerCase(
-                    "RegisterTargeted FastHandler null",
-                    "targetedHandler",
-                    token =>
-                        token.RegisterTargeted<SimpleTargetedMessage>(
-                            new InstanceId(TargetInstanceId),
-                            (MessageHandler.FastHandler<SimpleTargetedMessage>)null
-                        )
+                yield return new NullHandlerCase("RegisterTargeted FastHandler null", "targetedHandler", token =>
+                    token.RegisterTargeted<SimpleTargetedMessage>(new InstanceId(TargetInstanceId), (MessageHandler.FastHandler<SimpleTargetedMessage>)null)
                 );
-                yield return new NullHandlerCase(
-                    "RegisterTargeted Action null",
-                    "targetedHandler",
-                    token =>
-                        token.RegisterTargeted<SimpleTargetedMessage>(
-                            new InstanceId(TargetInstanceId),
-                            (Action<SimpleTargetedMessage>)null
-                        )
+                yield return new NullHandlerCase("RegisterTargeted Action null", "targetedHandler", token =>
+                    token.RegisterTargeted<SimpleTargetedMessage>(new InstanceId(TargetInstanceId), (Action<SimpleTargetedMessage>)null)
                 );
-                yield return new NullHandlerCase(
-                    "RegisterBroadcast FastHandler null",
-                    "broadcastHandler",
-                    token =>
-                        token.RegisterBroadcast<SimpleBroadcastMessage>(
-                            new InstanceId(SourceInstanceId),
-                            (MessageHandler.FastHandler<SimpleBroadcastMessage>)null
-                        )
+                yield return new NullHandlerCase("RegisterBroadcast FastHandler null", "broadcastHandler", token =>
+                    token.RegisterBroadcast<SimpleBroadcastMessage>(new InstanceId(SourceInstanceId), (MessageHandler.FastHandler<SimpleBroadcastMessage>)null)
                 );
-                yield return new NullHandlerCase(
-                    "RegisterBroadcast Action null",
-                    "broadcastHandler",
-                    token =>
-                        token.RegisterBroadcast<SimpleBroadcastMessage>(
-                            new InstanceId(SourceInstanceId),
-                            (Action<SimpleBroadcastMessage>)null
-                        )
+                yield return new NullHandlerCase("RegisterBroadcast Action null", "broadcastHandler", token =>
+                    token.RegisterBroadcast<SimpleBroadcastMessage>(new InstanceId(SourceInstanceId), (Action<SimpleBroadcastMessage>)null)
                 );
-                yield return new NullHandlerCase(
-                    "RegisterTargetedPostProcessor FastHandler null",
-                    "targetedPostProcessor",
-                    token =>
-                        token.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
-                            new InstanceId(TargetInstanceId),
-                            (MessageHandler.FastHandler<SimpleTargetedMessage>)null
-                        )
+                yield return new NullHandlerCase("RegisterTargetedPostProcessor FastHandler null", "targetedPostProcessor", token =>
+                    token.RegisterTargetedPostProcessor<SimpleTargetedMessage>(new InstanceId(TargetInstanceId), (MessageHandler.FastHandler<SimpleTargetedMessage>)null)
                 );
-                yield return new NullHandlerCase(
-                    "RegisterTargetedPostProcessor Action null",
-                    "targetedPostProcessor",
-                    token =>
-                        token.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
-                            new InstanceId(TargetInstanceId),
-                            (Action<SimpleTargetedMessage>)null
-                        )
+                yield return new NullHandlerCase("RegisterTargetedPostProcessor Action null", "targetedPostProcessor", token =>
+                    token.RegisterTargetedPostProcessor<SimpleTargetedMessage>(new InstanceId(TargetInstanceId), (Action<SimpleTargetedMessage>)null)
                 );
-                yield return new NullHandlerCase(
-                    "RegisterTargetedWithoutTargeting FastHandler null",
-                    "messageHandler",
-                    token =>
-                        token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(
-                            (MessageHandler.FastHandlerWithContext<SimpleTargetedMessage>)null
-                        )
+                yield return new NullHandlerCase("RegisterTargetedWithoutTargeting FastHandler null", "messageHandler", token =>
+                    token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>((MessageHandler.FastHandlerWithContext<SimpleTargetedMessage>)null)
                 );
-                yield return new NullHandlerCase(
-                    "RegisterTargetedWithoutTargeting Action null",
-                    "messageHandler",
-                    token =>
-                        token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(
-                            (Action<InstanceId, SimpleTargetedMessage>)null
-                        )
+                yield return new NullHandlerCase("RegisterTargetedWithoutTargeting Action null", "messageHandler", token =>
+                    token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>((Action<InstanceId, SimpleTargetedMessage>)null)
                 );
-                yield return new NullHandlerCase(
-                    "RegisterTargetedWithoutTargetingPostProcessor FastHandler null",
-                    "postProcessor",
-                    token =>
-                        token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>(
-                            (MessageHandler.FastHandlerWithContext<SimpleTargetedMessage>)null
-                        )
+                yield return new NullHandlerCase("RegisterTargetedWithoutTargetingPostProcessor FastHandler null", "postProcessor", token =>
+                    token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>((MessageHandler.FastHandlerWithContext<SimpleTargetedMessage>)null)
                 );
-                yield return new NullHandlerCase(
-                    "RegisterTargetedWithoutTargetingPostProcessor Action null",
-                    "postProcessor",
-                    token =>
-                        token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>(
-                            (Action<InstanceId, SimpleTargetedMessage>)null
-                        )
+                yield return new NullHandlerCase("RegisterTargetedWithoutTargetingPostProcessor Action null", "postProcessor", token =>
+                    token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>((Action<InstanceId, SimpleTargetedMessage>)null)
                 );
-                yield return new NullHandlerCase(
-                    "RegisterUntargetedPostProcessor FastHandler null",
-                    "untargetedPostProcessor",
-                    token =>
-                        token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
-                            (MessageHandler.FastHandler<SimpleUntargetedMessage>)null
-                        )
+                yield return new NullHandlerCase("RegisterUntargetedPostProcessor FastHandler null", "untargetedPostProcessor", token =>
+                    token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>((MessageHandler.FastHandler<SimpleUntargetedMessage>)null)
                 );
-                yield return new NullHandlerCase(
-                    "RegisterBroadcastPostProcessor FastHandler null",
-                    "broadcastPostProcessor",
-                    token =>
-                        token.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(
-                            new InstanceId(SourceInstanceId),
-                            (MessageHandler.FastHandler<SimpleBroadcastMessage>)null
-                        )
+                yield return new NullHandlerCase("RegisterBroadcastPostProcessor FastHandler null", "broadcastPostProcessor", token =>
+                    token.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(new InstanceId(SourceInstanceId), (MessageHandler.FastHandler<SimpleBroadcastMessage>)null)
                 );
-                yield return new NullHandlerCase(
-                    "RegisterBroadcastPostProcessor Action null",
-                    "broadcastPostProcessor",
-                    token =>
-                        token.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(
-                            new InstanceId(SourceInstanceId),
-                            (Action<SimpleBroadcastMessage>)null
-                        )
+                yield return new NullHandlerCase("RegisterBroadcastPostProcessor Action null", "broadcastPostProcessor", token =>
+                    token.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(new InstanceId(SourceInstanceId), (Action<SimpleBroadcastMessage>)null)
                 );
-                yield return new NullHandlerCase(
-                    "RegisterBroadcastWithoutSource FastHandler null",
-                    "broadcastHandler",
-                    token =>
-                        token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>(
-                            (MessageHandler.FastHandlerWithContext<SimpleBroadcastMessage>)null
-                        )
+                yield return new NullHandlerCase("RegisterBroadcastWithoutSource FastHandler null", "broadcastHandler", token =>
+                    token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>((MessageHandler.FastHandlerWithContext<SimpleBroadcastMessage>)null)
                 );
-                yield return new NullHandlerCase(
-                    "RegisterBroadcastWithoutSource Action null",
-                    "broadcastHandler",
-                    token =>
-                        token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>(
-                            (Action<InstanceId, SimpleBroadcastMessage>)null
-                        )
+                yield return new NullHandlerCase("RegisterBroadcastWithoutSource Action null", "broadcastHandler", token =>
+                    token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>((Action<InstanceId, SimpleBroadcastMessage>)null)
                 );
-                yield return new NullHandlerCase(
-                    "RegisterBroadcastWithoutSourcePostProcessor FastHandler null",
-                    "broadcastHandler",
-                    token =>
-                        token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(
-                            (MessageHandler.FastHandlerWithContext<SimpleBroadcastMessage>)null
-                        )
+                yield return new NullHandlerCase("RegisterBroadcastWithoutSourcePostProcessor FastHandler null", "broadcastHandler", token =>
+                    token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>((MessageHandler.FastHandlerWithContext<SimpleBroadcastMessage>)null)
                 );
-                yield return new NullHandlerCase(
-                    "RegisterBroadcastWithoutSourcePostProcessor Action null",
-                    "broadcastHandler",
-                    token =>
-                        token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(
-                            (Action<InstanceId, SimpleBroadcastMessage>)null
-                        )
+                yield return new NullHandlerCase("RegisterBroadcastWithoutSourcePostProcessor Action null", "broadcastHandler", token =>
+                    token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>((Action<InstanceId, SimpleBroadcastMessage>)null)
                 );
-                yield return new NullHandlerCase(
-                    "RegisterGlobalAcceptAll Action untargeted null",
-                    "acceptAllUntargeted",
-                    token =>
-                        token.RegisterGlobalAcceptAll(
-                            (Action<IUntargetedMessage>)null,
-                            static (_, _) => { },
-                            static (_, _) => { }
-                        )
+                yield return new NullHandlerCase("RegisterGlobalAcceptAll Action untargeted null", "acceptAllUntargeted", token =>
+                    token.RegisterGlobalAcceptAll((Action<IUntargetedMessage>)null, static (_, _) => { }, static (_, _) => { })
                 );
-                yield return new NullHandlerCase(
-                    "RegisterGlobalAcceptAll Action targeted null",
-                    "acceptAllTargeted",
-                    token =>
-                        token.RegisterGlobalAcceptAll(
-                            static _ => { },
-                            (Action<InstanceId, ITargetedMessage>)null,
-                            static (_, _) => { }
-                        )
+                yield return new NullHandlerCase("RegisterGlobalAcceptAll Action targeted null", "acceptAllTargeted", token =>
+                    token.RegisterGlobalAcceptAll(static _ => { }, (Action<InstanceId, ITargetedMessage>)null, static (_, _) => { })
                 );
-                yield return new NullHandlerCase(
-                    "RegisterGlobalAcceptAll Action broadcast null",
-                    "acceptAllBroadcast",
-                    token =>
-                        token.RegisterGlobalAcceptAll(
-                            static _ => { },
-                            static (_, _) => { },
-                            (Action<InstanceId, IBroadcastMessage>)null
-                        )
+                yield return new NullHandlerCase("RegisterGlobalAcceptAll Action broadcast null", "acceptAllBroadcast", token =>
+                    token.RegisterGlobalAcceptAll(static _ => { }, static (_, _) => { }, (Action<InstanceId, IBroadcastMessage>)null)
                 );
-                yield return new NullHandlerCase(
-                    "RegisterGlobalAcceptAll FastHandler untargeted null",
-                    "acceptAllUntargeted",
-                    token =>
-                        token.RegisterGlobalAcceptAll(
-                            (MessageHandler.FastHandler<IUntargetedMessage>)null,
-                            static (in InstanceId _, in ITargetedMessage _) => { },
-                            static (in InstanceId _, in IBroadcastMessage _) => { }
-                        )
+                yield return new NullHandlerCase("RegisterGlobalAcceptAll FastHandler untargeted null", "acceptAllUntargeted", token =>
+                    token.RegisterGlobalAcceptAll(
+                        (MessageHandler.FastHandler<IUntargetedMessage>)null,
+                        static (in InstanceId _, in ITargetedMessage _) => { },
+                        static (in InstanceId _, in IBroadcastMessage _) => { }
+                    )
                 );
-                yield return new NullHandlerCase(
-                    "RegisterGlobalAcceptAll FastHandler targeted null",
-                    "acceptAllTargeted",
-                    token =>
-                        token.RegisterGlobalAcceptAll(
-                            static (in IUntargetedMessage _) => { },
-                            (MessageHandler.FastHandlerWithContext<ITargetedMessage>)null,
-                            static (in InstanceId _, in IBroadcastMessage _) => { }
-                        )
+                yield return new NullHandlerCase("RegisterGlobalAcceptAll FastHandler targeted null", "acceptAllTargeted", token =>
+                    token.RegisterGlobalAcceptAll(
+                        static (in IUntargetedMessage _) => { },
+                        (MessageHandler.FastHandlerWithContext<ITargetedMessage>)null,
+                        static (in InstanceId _, in IBroadcastMessage _) => { }
+                    )
                 );
-                yield return new NullHandlerCase(
-                    "RegisterGlobalAcceptAll FastHandler broadcast null",
-                    "acceptAllBroadcast",
-                    token =>
-                        token.RegisterGlobalAcceptAll(
-                            static (in IUntargetedMessage _) => { },
-                            static (in InstanceId _, in ITargetedMessage _) => { },
-                            (MessageHandler.FastHandlerWithContext<IBroadcastMessage>)null
-                        )
+                yield return new NullHandlerCase("RegisterGlobalAcceptAll FastHandler broadcast null", "acceptAllBroadcast", token =>
+                    token.RegisterGlobalAcceptAll(
+                        static (in IUntargetedMessage _) => { },
+                        static (in InstanceId _, in ITargetedMessage _) => { },
+                        (MessageHandler.FastHandlerWithContext<IBroadcastMessage>)null
+                    )
                 );
-                yield return new NullHandlerCase(
-                    "RegisterUntargetedInterceptor null",
-                    "interceptor",
-                    token => token.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(null)
-                );
-                yield return new NullHandlerCase(
-                    "RegisterTargetedInterceptor null",
-                    "interceptor",
-                    token => token.RegisterTargetedInterceptor<SimpleTargetedMessage>(null)
-                );
-                yield return new NullHandlerCase(
-                    "RegisterBroadcastInterceptor null",
-                    "interceptor",
-                    token => token.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(null)
-                );
+                yield return new NullHandlerCase("RegisterUntargetedInterceptor null", "interceptor", token => token.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(null));
+                yield return new NullHandlerCase("RegisterTargetedInterceptor null", "interceptor", token => token.RegisterTargetedInterceptor<SimpleTargetedMessage>(null));
+                yield return new NullHandlerCase("RegisterBroadcastInterceptor null", "interceptor", token => token.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(null));
             }
         }
 
@@ -757,28 +465,20 @@ namespace DxMessaging.Tests.Runtime.Core
                 yield return new NoOpHandleCase("Foreign handle", () =>
                 {
                     using TokenScope scope = TokenScope.Create();
-                    MessageRegistrationHandle foreign =
-                        MessageRegistrationHandle.CreateMessageRegistrationHandle();
+                    MessageRegistrationHandle foreign = MessageRegistrationHandle.CreateMessageRegistrationHandle();
                     scope.Token.RemoveRegistration(foreign);
                 });
                 yield return new NoOpHandleCase("Double remove of valid handle", () =>
                 {
                     using TokenScope scope = TokenScope.Create();
                     int invocationCount = 0;
-                    MessageRegistrationHandle handle =
-                        scope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
-                            (in SimpleUntargetedMessage _) => ++invocationCount
-                        );
+                    MessageRegistrationHandle handle = scope.Token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => ++invocationCount);
                     scope.Token.RemoveRegistration(handle);
                     scope.Token.RemoveRegistration(handle);
 
                     SimpleUntargetedMessage message = new();
                     scope.Bus.EmitUntargeted(ref message);
-                    Assert.AreEqual(
-                        0,
-                        invocationCount,
-                        "Doubled removal must not resurrect the handler."
-                    );
+                    Assert.AreEqual(0, invocationCount, "Doubled removal must not resurrect the handler.");
                 });
             }
         }
@@ -795,11 +495,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             public Action<MessageRegistrationToken> Action { get; }
 
-            public NullHandlerCase(
-                string description,
-                string parameterName,
-                Action<MessageRegistrationToken> action
-            )
+            public NullHandlerCase(string description, string parameterName, Action<MessageRegistrationToken> action)
             {
                 Description = description;
                 ParameterName = parameterName;
@@ -860,10 +556,7 @@ namespace DxMessaging.Tests.Runtime.Core
             internal static TokenScope Create()
             {
                 BusType bus = new BusType();
-                MessageHandler handler = new MessageHandler(new InstanceId(OwnerInstanceId), bus)
-                {
-                    active = true,
-                };
+                MessageHandler handler = new MessageHandler(new InstanceId(OwnerInstanceId), bus) { active = true };
                 MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
                 token.Enable();
                 return new TokenScope(bus, handler, token);

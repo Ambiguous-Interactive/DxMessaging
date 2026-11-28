@@ -27,22 +27,11 @@ namespace DxMessaging.Core
         /// Active bus rebinding from inside replay is rejected before mutation; defer it until the
         /// callback returns, or select PreserveRegistrations for future registrations.
         /// </remarks>
-        public MessageRegistrationHandle RegisterUntargeted<TMessage>(
-            Action<TMessage> untargetedHandler,
-            bool replayLatest,
-            int priority = 0
-        )
+        public MessageRegistrationHandle RegisterUntargeted<TMessage>(Action<TMessage> untargetedHandler, bool replayLatest, int priority = 0)
             where TMessage : IUntargetedMessage
         {
             return replayLatest
-                ? InternalRegister(
-                    new StickyUntargetedRegistration<TMessage>(
-                        this,
-                        RegistrationKind.UntargetedHandlerAction,
-                        untargetedHandler,
-                        priority
-                    )
-                )
+                ? InternalRegister(new StickyUntargetedRegistration<TMessage>(this, RegistrationKind.UntargetedHandlerAction, untargetedHandler, priority))
                 : RegisterUntargeted(untargetedHandler, priority);
         }
 
@@ -53,22 +42,11 @@ namespace DxMessaging.Core
         /// <param name="priority">Normal delivery order; lower values run first.</param>
         /// <returns>A token-owned handle for removal or group enrollment.</returns>
         /// <remarks>Uses the same replay, ownership and exception contract as the Action overload.</remarks>
-        public MessageRegistrationHandle RegisterUntargeted<TMessage>(
-            MessageHandler.FastHandler<TMessage> untargetedHandler,
-            bool replayLatest,
-            int priority = 0
-        )
+        public MessageRegistrationHandle RegisterUntargeted<TMessage>(MessageHandler.FastHandler<TMessage> untargetedHandler, bool replayLatest, int priority = 0)
             where TMessage : IUntargetedMessage
         {
             return replayLatest
-                ? InternalRegister(
-                    new StickyUntargetedRegistration<TMessage>(
-                        this,
-                        RegistrationKind.UntargetedHandlerFast,
-                        untargetedHandler,
-                        priority
-                    )
-                )
+                ? InternalRegister(new StickyUntargetedRegistration<TMessage>(this, RegistrationKind.UntargetedHandlerFast, untargetedHandler, priority))
                 : RegisterUntargeted(untargetedHandler, priority);
         }
 
@@ -81,18 +59,10 @@ namespace DxMessaging.Core
         /// <param name="priority">Normal delivery order; lower values run first.</param>
         /// <returns>A token-owned handle for removal or group enrollment.</returns>
         /// <remarks>Uses the same replay, ownership and exception contract as the Action overload.</remarks>
-        public MessageRegistrationHandle RegisterUntargeted<TMessage, TState>(
-            TState state,
-            StateHandler<TMessage, TState> handler,
-            bool replayLatest,
-            int priority = 0
-        )
+        public MessageRegistrationHandle RegisterUntargeted<TMessage, TState>(TState state, StateHandler<TMessage, TState> handler, bool replayLatest, int priority = 0)
             where TMessage : IUntargetedMessage
         {
-            StateBinding<TMessage, TState> binding = new StateBinding<TMessage, TState>(
-                state,
-                handler
-            );
+            StateBinding<TMessage, TState> binding = new StateBinding<TMessage, TState>(state, handler);
             return RegisterUntargeted<TMessage>(binding.Invoke, replayLatest, priority);
         }
 
@@ -136,9 +106,7 @@ namespace DxMessaging.Core
         {
             if (_stickyReplay != null && 0 < _stickyReplay.Depth)
             {
-                _stickyReplay.CancellationVersion = unchecked(
-                    _stickyReplay.CancellationVersion + 1
-                );
+                _stickyReplay.CancellationVersion = unchecked(_stickyReplay.CancellationVersion + 1);
             }
         }
 
@@ -154,27 +122,15 @@ namespace DxMessaging.Core
             internal long CancellationVersion;
         }
 
-        private sealed class StickyUntargetedRegistration<TMessage>
-            : UntargetedRegistration<TMessage>,
-                IStickyReplay
+        private sealed class StickyUntargetedRegistration<TMessage> : UntargetedRegistration<TMessage>, IStickyReplay
             where TMessage : IUntargetedMessage
         {
-            internal StickyUntargetedRegistration(
-                MessageRegistrationToken token,
-                RegistrationKind kind,
-                object userHandler,
-                int priority
-            )
+            internal StickyUntargetedRegistration(MessageRegistrationToken token, RegistrationKind kind, object userHandler, int priority)
                 : base(token, kind, userHandler, priority) { }
 
-            protected override MessageHandler.HandlerDeregistration RegisterCore(
-                IMessageBus messageBusOverride
-            )
+            protected override MessageHandler.HandlerDeregistration RegisterCore(IMessageBus messageBusOverride)
             {
-                StickyMessageExtensions.RequireStickyBus(
-                    ResolveRegistrationMessageBus(messageBusOverride)
-                        ?? Token._messageHandler.DefaultMessageBus
-                );
+                StickyMessageExtensions.RequireStickyBus(ResolveRegistrationMessageBus(messageBusOverride) ?? Token._messageHandler.DefaultMessageBus);
                 return base.RegisterCore(messageBusOverride);
             }
 
@@ -182,11 +138,7 @@ namespace DxMessaging.Core
             {
                 IStickyMessageBus bus = StickyMessageExtensions.RequireStickyBus(acceptedBus);
                 long cancellationVersion = Token._stickyReplay.CancellationVersion;
-                if (
-                    bus.TryGetLatest(out TMessage message)
-                    && cancellationVersion == Token._stickyReplay.CancellationVersion
-                    && Token.CanReplayLatest(this, Handle)
-                )
+                if (bus.TryGetLatest(out TMessage message) && cancellationVersion == Token._stickyReplay.CancellationVersion && Token.CanReplayLatest(this, Handle))
                 {
                     InvokeRetained(in message, acceptedBus);
                 }

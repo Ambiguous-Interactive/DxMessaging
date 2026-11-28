@@ -15,18 +15,11 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Tests;
 
 internal static class GeneratorTestUtilities
 {
-    private static readonly CSharpCompilationOptions WarningFatalCompilationOptions = new(
-        OutputKind.DynamicallyLinkedLibrary,
-        generalDiagnosticOption: ReportDiagnostic.Error
-    );
+    private static readonly CSharpCompilationOptions WarningFatalCompilationOptions = new(OutputKind.DynamicallyLinkedLibrary, generalDiagnosticOption: ReportDiagnostic.Error);
 
-    private static readonly CSharpParseOptions ParseOptions = new(
-        languageVersion: LanguageVersion.Latest,
-        documentationMode: DocumentationMode.Parse
-    );
+    private static readonly CSharpParseOptions ParseOptions = new(languageVersion: LanguageVersion.Latest, documentationMode: DocumentationMode.Parse);
 
-    private static readonly ImmutableArray<MetadataReference> CoreReferences =
-        BuildCoreReferences();
+    private static readonly ImmutableArray<MetadataReference> CoreReferences = BuildCoreReferences();
 
     /// <summary>
     /// Gets the framework references used by warning-fatal in-memory contract compilations.
@@ -35,9 +28,7 @@ internal static class GeneratorTestUtilities
 
     /// <summary>Builds against the shipped attributes rather than fixture replacements.</summary>
     /// <remarks>2026-11-11: Public attribute files moved to Runtime/Attributes; retain their real source after the assembly split.</remarks>
-    internal static CSharpCompilation CreateAutoConstructorCompilationFromShippedAttributes(
-        string source
-    )
+    internal static CSharpCompilation CreateAutoConstructorCompilationFromShippedAttributes(string source)
     {
         DirectoryInfo? root = new(AppContext.BaseDirectory);
         while (root != null && !File.Exists(Path.Combine(root.FullName, "package.json")))
@@ -46,31 +37,18 @@ internal static class GeneratorTestUtilities
         }
         if (root == null)
         {
-            throw new DirectoryNotFoundException(
-                "Find the repository containing the test assembly."
-            );
+            throw new DirectoryNotFoundException("Find the repository containing the test assembly.");
         }
         string attributes = Path.Combine(root.FullName, "Runtime", "Attributes");
         CSharpParseOptions parseOptions = new(LanguageVersion.CSharp9);
         List<SyntaxTree> trees = new();
-        foreach (
-            string file in new[]
-            {
-                "DxAutoConstructorAttribute.cs",
-                "DxOptionalParameterAttribute.cs",
-            }
-        )
+        foreach (string file in new[] { "DxAutoConstructorAttribute.cs", "DxOptionalParameterAttribute.cs" })
         {
             string path = Path.Combine(attributes, file);
             trees.Add(CSharpSyntaxTree.ParseText(File.ReadAllText(path), parseOptions, path));
         }
         trees.Add(CSharpSyntaxTree.ParseText(source, parseOptions, "UserSource.cs"));
-        return CSharpCompilation.Create(
-            "OptionalParameterConsumer",
-            trees,
-            CoreReferences,
-            WarningFatalCompilationOptions
-        );
+        return CSharpCompilation.Create("OptionalParameterConsumer", trees, CoreReferences, WarningFatalCompilationOptions);
     }
 
     internal static GeneratorDriverRunResult RunDxAutoConstructor(string userSource)
@@ -111,45 +89,25 @@ internal static class GeneratorTestUtilities
         return driver.GetRunResult();
     }
 
-    internal static ImmutableArray<Diagnostic> CompileDxMessageIdGeneratedOutput(
-        string userSource,
-        params string[] preprocessorSymbols
-    )
+    internal static ImmutableArray<Diagnostic> CompileDxMessageIdGeneratedOutput(string userSource, params string[] preprocessorSymbols)
     {
-        CSharpParseOptions parseOptions = ParseOptions.WithPreprocessorSymbols(
-            preprocessorSymbols ?? Array.Empty<string>()
-        );
+        CSharpParseOptions parseOptions = ParseOptions.WithPreprocessorSymbols(preprocessorSymbols ?? Array.Empty<string>());
         GeneratorDriverRunResult result = RunDxMessageId(userSource);
 
         return CompileGeneratedOutput(userSource, result, parseOptions);
     }
 
-    internal static ImmutableArray<Diagnostic> CompileGeneratedOutput(
-        string userSource,
-        GeneratorDriverRunResult result
-    )
+    internal static ImmutableArray<Diagnostic> CompileGeneratedOutput(string userSource, GeneratorDriverRunResult result)
     {
         return CompileGeneratedOutput(userSource, result, ParseOptions);
     }
 
-    internal static ImmutableArray<Diagnostic> CompileGeneratedOutput(
-        string userSource,
-        GeneratorDriverRunResult result,
-        LanguageVersion languageVersion
-    )
+    internal static ImmutableArray<Diagnostic> CompileGeneratedOutput(string userSource, GeneratorDriverRunResult result, LanguageVersion languageVersion)
     {
-        return CompileGeneratedOutput(
-            userSource,
-            result,
-            ParseOptions.WithLanguageVersion(languageVersion)
-        );
+        return CompileGeneratedOutput(userSource, result, ParseOptions.WithLanguageVersion(languageVersion));
     }
 
-    private static ImmutableArray<Diagnostic> CompileGeneratedOutput(
-        string userSource,
-        GeneratorDriverRunResult result,
-        CSharpParseOptions parseOptions
-    )
+    private static ImmutableArray<Diagnostic> CompileGeneratedOutput(string userSource, GeneratorDriverRunResult result, CSharpParseOptions parseOptions)
     {
         List<SyntaxTree> syntaxTrees = new()
         {
@@ -159,13 +117,7 @@ internal static class GeneratorTestUtilities
         syntaxTrees.AddRange(
             result
                 .Results.SelectMany(static run => run.GeneratedSources)
-                .Select(generated =>
-                    CSharpSyntaxTree.ParseText(
-                        generated.SourceText.ToString(),
-                        parseOptions,
-                        path: generated.HintName
-                    )
-                )
+                .Select(generated => CSharpSyntaxTree.ParseText(generated.SourceText.ToString(), parseOptions, path: generated.HintName))
         );
 
         CSharpCompilation compilation = CSharpCompilation.Create(
@@ -178,17 +130,9 @@ internal static class GeneratorTestUtilities
         return compilation.GetDiagnostics();
     }
 
-    internal static ImmutableArray<Diagnostic> RunBaseCallAnalyzer(
-        string userSource,
-        params (string path, string contents)[] additionalFiles
-    )
+    internal static ImmutableArray<Diagnostic> RunBaseCallAnalyzer(string userSource, params (string path, string contents)[] additionalFiles)
     {
-        return RunBaseCallAnalyzerCore(
-            userSource,
-            compilationOptions: null,
-            Array.Empty<string>(),
-            additionalFiles
-        );
+        return RunBaseCallAnalyzerCore(userSource, compilationOptions: null, Array.Empty<string>(), additionalFiles);
     }
 
     /// <summary>
@@ -197,18 +141,9 @@ internal static class GeneratorTestUtilities
     /// example a MessageAwareComponent that DOES declare OnApplicationPause -- without changing
     /// the shared fixture every other test compiles against.
     /// </summary>
-    internal static ImmutableArray<Diagnostic> RunBaseCallAnalyzerWithExtraSources(
-        string userSource,
-        params string[] extraStubSources
-    )
+    internal static ImmutableArray<Diagnostic> RunBaseCallAnalyzerWithExtraSources(string userSource, params string[] extraStubSources)
     {
-        return RunBaseCallAnalyzerCore(
-            userSource,
-            compilationOptions: null,
-            Array.Empty<string>(),
-            Array.Empty<(string path, string contents)>(),
-            extraStubSources
-        );
+        return RunBaseCallAnalyzerCore(userSource, compilationOptions: null, Array.Empty<string>(), Array.Empty<(string path, string contents)>(), extraStubSources);
     }
 
     /// <summary>
@@ -217,19 +152,9 @@ internal static class GeneratorTestUtilities
     /// CS0108 from hiding a non-virtual member). Without the allowlist, the harness rejects any
     /// compiler warning the fixture intentionally produces.
     /// </summary>
-    internal static ImmutableArray<Diagnostic> RunBaseCallAnalyzerWithExtraSourcesAllowingWarnings(
-        string userSource,
-        string[] allowedWarningIds,
-        params string[] extraStubSources
-    )
+    internal static ImmutableArray<Diagnostic> RunBaseCallAnalyzerWithExtraSourcesAllowingWarnings(string userSource, string[] allowedWarningIds, params string[] extraStubSources)
     {
-        return RunBaseCallAnalyzerCore(
-            userSource,
-            compilationOptions: null,
-            allowedWarningIds,
-            Array.Empty<(string path, string contents)>(),
-            extraStubSources
-        );
+        return RunBaseCallAnalyzerCore(userSource, compilationOptions: null, allowedWarningIds, Array.Empty<(string path, string contents)>(), extraStubSources);
     }
 
     /// <summary>
@@ -254,17 +179,11 @@ internal static class GeneratorTestUtilities
         );
 
         CompilationWithAnalyzers compilationWithAnalyzers = compilation.WithAnalyzers(
-            ImmutableArray.Create<DiagnosticAnalyzer>(
-                new MessageAwareComponentBaseCallAnalyzer(),
-                new MessageAwareComponentBaseCallAnalyzer()
-            ),
+            ImmutableArray.Create<DiagnosticAnalyzer>(new MessageAwareComponentBaseCallAnalyzer(), new MessageAwareComponentBaseCallAnalyzer()),
             new AnalyzerOptions(ImmutableArray<AdditionalText>.Empty)
         );
 
-        return compilationWithAnalyzers
-            .GetAnalyzerDiagnosticsAsync(CancellationToken.None)
-            .GetAwaiter()
-            .GetResult();
+        return compilationWithAnalyzers.GetAnalyzerDiagnosticsAsync(CancellationToken.None).GetAwaiter().GetResult();
     }
 
     internal static ImmutableArray<Diagnostic> RunBaseCallAnalyzerAllowingCompilerWarnings(
@@ -273,12 +192,7 @@ internal static class GeneratorTestUtilities
         params (string path, string contents)[] additionalFiles
     )
     {
-        return RunBaseCallAnalyzerCore(
-            userSource,
-            compilationOptions: null,
-            allowedWarningIds,
-            additionalFiles
-        );
+        return RunBaseCallAnalyzerCore(userSource, compilationOptions: null, allowedWarningIds, additionalFiles);
     }
 
     /// <summary>
@@ -292,23 +206,14 @@ internal static class GeneratorTestUtilities
         params (string path, string contents)[] additionalFiles
     )
     {
-        return RunBaseCallAnalyzerCore(
-            userSource,
-            compilationOptions,
-            Array.Empty<string>(),
-            additionalFiles
-        );
+        return RunBaseCallAnalyzerCore(userSource, compilationOptions, Array.Empty<string>(), additionalFiles);
     }
 
     internal static PortableExecutableReference CompileBaseCallAnalyzerParent(string parentSource)
     {
         CSharpCompilation compilation = CSharpCompilation.Create(
             assemblyName: "AnalyzerReferencedParentTests",
-            syntaxTrees: new[]
-            {
-                CSharpSyntaxTree.ParseText(SharedStubs, ParseOptions),
-                CSharpSyntaxTree.ParseText(parentSource, ParseOptions),
-            },
+            syntaxTrees: new[] { CSharpSyntaxTree.ParseText(SharedStubs, ParseOptions), CSharpSyntaxTree.ParseText(parentSource, ParseOptions) },
             references: CoreReferences,
             options: WarningFatalCompilationOptions
         );
@@ -316,30 +221,15 @@ internal static class GeneratorTestUtilities
         Microsoft.CodeAnalysis.Emit.EmitResult result = compilation.Emit(image);
         if (!result.Success)
         {
-            throw new InvalidOperationException(
-                "Referenced parent did not compile cleanly:\n"
-                    + string.Join(
-                        "\n",
-                        result.Diagnostics.Select(diagnostic => diagnostic.ToString())
-                    )
-            );
+            throw new InvalidOperationException("Referenced parent did not compile cleanly:\n" + string.Join("\n", result.Diagnostics.Select(diagnostic => diagnostic.ToString())));
         }
 
         return MetadataReference.CreateFromImage(image.ToArray());
     }
 
-    internal static ImmutableArray<Diagnostic> RunBaseCallAnalyzerWithCompiledParent(
-        string userSource,
-        PortableExecutableReference compiledParent
-    )
+    internal static ImmutableArray<Diagnostic> RunBaseCallAnalyzerWithCompiledParent(string userSource, PortableExecutableReference compiledParent)
     {
-        return RunBaseCallAnalyzerCore(
-            userSource,
-            compilationOptions: null,
-            Array.Empty<string>(),
-            Array.Empty<(string path, string contents)>(),
-            compiledParent: compiledParent
-        );
+        return RunBaseCallAnalyzerCore(userSource, compilationOptions: null, Array.Empty<string>(), Array.Empty<(string path, string contents)>(), compiledParent: compiledParent);
     }
 
     private static ImmutableArray<Diagnostic> RunBaseCallAnalyzerCore(
@@ -354,8 +244,7 @@ internal static class GeneratorTestUtilities
         SyntaxTree stubs = CSharpSyntaxTree.ParseText(SharedStubs, ParseOptions);
         SyntaxTree userTree = CSharpSyntaxTree.ParseText(userSource, ParseOptions);
 
-        CSharpCompilationOptions effectiveOptions = compilationOptions
-            ?? new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary);
+        CSharpCompilationOptions effectiveOptions = compilationOptions ?? new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary);
 
         List<SyntaxTree> syntaxTrees = new(extraStubSources?.Length + 2 ?? 2);
         if (compiledParent is null)
@@ -367,19 +256,14 @@ internal static class GeneratorTestUtilities
         {
             for (int i = 0; i < extraStubSources.Length; i++)
             {
-                syntaxTrees.Insert(
-                    1,
-                    CSharpSyntaxTree.ParseText(extraStubSources[i], ParseOptions)
-                );
+                syntaxTrees.Insert(1, CSharpSyntaxTree.ParseText(extraStubSources[i], ParseOptions));
             }
         }
 
         CSharpCompilation compilation = CSharpCompilation.Create(
             assemblyName: "AnalyzerTests",
             syntaxTrees: syntaxTrees,
-            references: compiledParent is null
-                ? CoreReferences
-                : CoreReferences.Add(compiledParent),
+            references: compiledParent is null ? CoreReferences : CoreReferences.Add(compiledParent),
             options: effectiveOptions
         );
 
@@ -388,15 +272,10 @@ internal static class GeneratorTestUtilities
             the positive DXMSG009 fixtures intentionally produce the compiler/analyzer pair.
         */
         ImmutableArray<Diagnostic> compileDiags = compilation.GetDiagnostics();
-        ImmutableArray<Diagnostic> blockingErrors = compileDiags
-            .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
-            .ToImmutableArray();
+        ImmutableArray<Diagnostic> blockingErrors = compileDiags.Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error).ToImmutableArray();
         if (!blockingErrors.IsEmpty)
         {
-            throw new InvalidOperationException(
-                "Test source did not compile cleanly:\n"
-                    + string.Join("\n", blockingErrors.Select(d => d.ToString()))
-            );
+            throw new InvalidOperationException("Test source did not compile cleanly:\n" + string.Join("\n", blockingErrors.Select(d => d.ToString())));
         }
 
         ImmutableArray<AdditionalText> texts = (additionalFiles ?? Array.Empty<(string, string)>())
@@ -409,12 +288,9 @@ internal static class GeneratorTestUtilities
             analyzerOptions
         );
 
-        Task<ImmutableArray<Diagnostic>> task =
-            compilationWithAnalyzers.GetAnalyzerDiagnosticsAsync(CancellationToken.None);
+        Task<ImmutableArray<Diagnostic>> task = compilationWithAnalyzers.GetAnalyzerDiagnosticsAsync(CancellationToken.None);
         ImmutableArray<Diagnostic> analyzerDiagnostics = task.GetAwaiter().GetResult();
-        Diagnostic[] warnings = compileDiags
-            .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Warning)
-            .ToArray();
+        Diagnostic[] warnings = compileDiags.Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Warning).ToArray();
         Diagnostic[] unexpectedWarnings = warnings
             .Where(compilerWarning =>
                 !allowedWarningIds.Contains(compilerWarning.Id, StringComparer.Ordinal)
@@ -422,21 +298,15 @@ internal static class GeneratorTestUtilities
                     string.Equals(compilerWarning.Id, "CS0114", StringComparison.Ordinal)
                     && analyzerDiagnostics.Any(analyzerDiagnostic =>
                         string.Equals(analyzerDiagnostic.Id, "DXMSG009", StringComparison.Ordinal)
-                        && analyzerDiagnostic.Location.SourceTree
-                            == compilerWarning.Location.SourceTree
-                        && analyzerDiagnostic.Location.SourceSpan.IntersectsWith(
-                            compilerWarning.Location.SourceSpan
-                        )
+                        && analyzerDiagnostic.Location.SourceTree == compilerWarning.Location.SourceTree
+                        && analyzerDiagnostic.Location.SourceSpan.IntersectsWith(compilerWarning.Location.SourceSpan)
                     )
                 )
             )
             .ToArray();
         if (unexpectedWarnings.Length != 0)
         {
-            throw new InvalidOperationException(
-                "Test source produced unexpected compiler warnings:\n"
-                    + string.Join("\n", unexpectedWarnings.Select(d => d.ToString()))
-            );
+            throw new InvalidOperationException("Test source produced unexpected compiler warnings:\n" + string.Join("\n", unexpectedWarnings.Select(d => d.ToString())));
         }
 
         string[] emittedAllowedWarningIds = warnings
@@ -444,9 +314,7 @@ internal static class GeneratorTestUtilities
             .Select(diagnostic => diagnostic.Id)
             .OrderBy(id => id, StringComparer.Ordinal)
             .ToArray();
-        string[] expectedWarningIds = allowedWarningIds
-            .OrderBy(id => id, StringComparer.Ordinal)
-            .ToArray();
+        string[] expectedWarningIds = allowedWarningIds.OrderBy(id => id, StringComparer.Ordinal).ToArray();
         if (!emittedAllowedWarningIds.SequenceEqual(expectedWarningIds, StringComparer.Ordinal))
         {
             throw new InvalidOperationException(
@@ -462,9 +330,7 @@ internal static class GeneratorTestUtilities
     /// Exposed to tests that need to exercise <see cref="WallstopStudios.DxMessaging.SourceGenerators.Analyzers.IgnoreListReader"/>
     /// directly (e.g. verifying the cache contract across repeat calls with different cancellation tokens).
     /// </summary>
-    internal static AnalyzerOptions BuildAnalyzerOptions(
-        params (string path, string contents)[] additionalFiles
-    )
+    internal static AnalyzerOptions BuildAnalyzerOptions(params (string path, string contents)[] additionalFiles)
     {
         ImmutableArray<AdditionalText> texts = (additionalFiles ?? Array.Empty<(string, string)>())
             .Select(t => (AdditionalText)new InMemoryAdditionalText(t.path, t.contents))

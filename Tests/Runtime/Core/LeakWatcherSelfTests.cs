@@ -20,15 +20,9 @@ namespace DxMessaging.Tests.Runtime.Core
     public sealed class LeakWatcherSelfTests : MessagingTestBase
     {
         [Test]
-        public void WatcherPassesWhenAllHandlesAreRemoved(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void WatcherPassesWhenAllHandlesAreRemoved([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(WatcherPassesWhenAllHandlesAreRemoved) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(WatcherPassesWhenAllHandlesAreRemoved) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -38,32 +32,16 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 int initial = watcher.InitialSnapshot;
                 MessageRegistrationHandle handle = RegisterCountingHandler(scenario, token, hostId);
-                Assert.GreaterOrEqual(
-                    watcher.Snapshot,
-                    initial + 1,
-                    "[{0}] Watcher.Snapshot must reflect the new registration in real time.",
-                    scenario.Kind
-                );
+                Assert.GreaterOrEqual(watcher.Snapshot, initial + 1, "[{0}] Watcher.Snapshot must reflect the new registration in real time.", scenario.Kind);
                 token.RemoveRegistration(handle);
-                Assert.AreEqual(
-                    initial,
-                    watcher.Snapshot,
-                    "[{0}] Watcher.Snapshot must return to the initial value after removal.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(initial, watcher.Snapshot, "[{0}] Watcher.Snapshot must return to the initial value after removal.", scenario.Kind);
             }
         }
 
         [Test]
-        public void WatcherDetectsLeakedRegistrationWhenNotThrowing(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void WatcherDetectsLeakedRegistrationWhenNotThrowing([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(WatcherDetectsLeakedRegistrationWhenNotThrowing) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(WatcherDetectsLeakedRegistrationWhenNotThrowing) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -74,13 +52,7 @@ namespace DxMessaging.Tests.Runtime.Core
             int observedLeak = 0;
             try
             {
-                using (
-                    LeakWatcher watcher = new LeakWatcher(
-                        bus: MessageHandler.MessageBus,
-                        throwOnLeak: false,
-                        label: scenario.DisplayName
-                    )
-                )
+                using (LeakWatcher watcher = new LeakWatcher(bus: MessageHandler.MessageBus, throwOnLeak: false, label: scenario.DisplayName))
                 {
                     leaked = RegisterCountingHandler(scenario, token, hostId);
                     leakedRegistered = true;
@@ -88,21 +60,11 @@ namespace DxMessaging.Tests.Runtime.Core
                         Intentionally NOT removing the registration before Dispose so
                         the watcher records the leak.
                     */
-                    Assert.GreaterOrEqual(
-                        watcher.LeakedRegistrations,
-                        1,
-                        "[{0}] LeakedRegistrations must report >=1 while a leaked handle is still live.",
-                        scenario.Kind
-                    );
+                    Assert.GreaterOrEqual(watcher.LeakedRegistrations, 1, "[{0}] LeakedRegistrations must report >=1 while a leaked handle is still live.", scenario.Kind);
                     observedLeak = watcher.LeakedRegistrations;
                 }
 
-                Assert.GreaterOrEqual(
-                    observedLeak,
-                    1,
-                    "[{0}] Watcher must observe at least one leaked registration before disposal.",
-                    scenario.Kind
-                );
+                Assert.GreaterOrEqual(observedLeak, 1, "[{0}] Watcher must observe at least one leaked registration before disposal.", scenario.Kind);
             }
             finally
             {
@@ -121,15 +83,9 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void WatcherThrowsOnLeakWhenConfiguredTo(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void WatcherThrowsOnLeakWhenConfiguredTo([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(WatcherThrowsOnLeakWhenConfiguredTo) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(WatcherThrowsOnLeakWhenConfiguredTo) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -153,15 +109,9 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void WatcherWithSlotsPassesAfterExplicitTrim(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void WatcherWithSlotsPassesAfterExplicitTrim([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(WatcherWithSlotsPassesAfterExplicitTrim) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(WatcherWithSlotsPassesAfterExplicitTrim) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -173,35 +123,19 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 int initialSlots = watcher.InitialSlotSnapshot;
                 MessageRegistrationHandle handle = RegisterCountingHandler(scenario, token, hostId);
-                Assert.GreaterOrEqual(
-                    watcher.SlotSnapshot,
-                    initialSlots + 1,
-                    "[{0}] Watcher.SlotSnapshot must reflect occupied slots while registered.",
-                    scenario.Kind
-                );
+                Assert.GreaterOrEqual(watcher.SlotSnapshot, initialSlots + 1, "[{0}] Watcher.SlotSnapshot must reflect occupied slots while registered.", scenario.Kind);
 
                 token.RemoveRegistration(handle);
                 _ = bus.Trim(force: true);
 
-                Assert.AreEqual(
-                    initialSlots,
-                    watcher.SlotSnapshot,
-                    "[{0}] Watcher.SlotSnapshot must return to the initial value after trim.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(initialSlots, watcher.SlotSnapshot, "[{0}] Watcher.SlotSnapshot must return to the initial value after trim.", scenario.Kind);
             }
         }
 
         [Test]
-        public void WatcherWithSlotsDetectsUnreclaimedSlotWhenNotThrowing(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void WatcherWithSlotsDetectsUnreclaimedSlotWhenNotThrowing([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(WatcherWithSlotsDetectsUnreclaimedSlotWhenNotThrowing) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(WatcherWithSlotsDetectsUnreclaimedSlotWhenNotThrowing) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -216,19 +150,9 @@ namespace DxMessaging.Tests.Runtime.Core
             string deltaDescription;
             try
             {
-                using (
-                    LeakWatcher watcher = LeakWatcher.WatchWithSlots(
-                        bus,
-                        throwOnLeak: false,
-                        label: scenario.DisplayName
-                    )
-                )
+                using (LeakWatcher watcher = LeakWatcher.WatchWithSlots(bus, throwOnLeak: false, label: scenario.DisplayName))
                 {
-                    MessageRegistrationHandle handle = RegisterCountingHandler(
-                        scenario,
-                        token,
-                        hostId
-                    );
+                    MessageRegistrationHandle handle = RegisterCountingHandler(scenario, token, hostId);
                     token.RemoveRegistration(handle);
 
                     leakedRegistrations = watcher.LeakedRegistrations;
@@ -238,18 +162,8 @@ namespace DxMessaging.Tests.Runtime.Core
                     deltaDescription = watcher.DescribeDelta();
                 }
 
-                Assert.AreEqual(
-                    0,
-                    leakedRegistrations,
-                    "[{0}] WatchWithSlots must keep registration and slot leak accounting separate.",
-                    scenario.Kind
-                );
-                Assert.GreaterOrEqual(
-                    leakedSlots,
-                    1,
-                    "[{0}] WatchWithSlots must detect occupied slots left behind after deregistration without trim.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(0, leakedRegistrations, "[{0}] WatchWithSlots must keep registration and slot leak accounting separate.", scenario.Kind);
+                Assert.GreaterOrEqual(leakedSlots, 1, "[{0}] WatchWithSlots must detect occupied slots left behind after deregistration without trim.", scenario.Kind);
                 Assert.AreEqual(leakedSlots, leakedTypeSlots + leakedTargetSlots);
                 StringAssert.Contains("TypeSlots", deltaDescription);
                 StringAssert.Contains("TargetSlots", deltaDescription);
@@ -261,15 +175,9 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void WatcherWithSlotsThrowsOnSlotOnlyLeak(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void WatcherWithSlotsThrowsOnSlotOnlyLeak([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(WatcherWithSlotsThrowsOnSlotOnlyLeak) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(WatcherWithSlotsThrowsOnSlotOnlyLeak) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -297,15 +205,9 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void DefaultWatcherIgnoresSlotOnlyFootprint(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void DefaultWatcherIgnoresSlotOnlyFootprint([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(DefaultWatcherIgnoresSlotOnlyFootprint) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(DefaultWatcherIgnoresSlotOnlyFootprint) + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -317,25 +219,11 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 using (LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName))
                 {
-                    MessageRegistrationHandle handle = RegisterCountingHandler(
-                        scenario,
-                        token,
-                        hostId
-                    );
+                    MessageRegistrationHandle handle = RegisterCountingHandler(scenario, token, hostId);
                     token.RemoveRegistration(handle);
 
-                    Assert.GreaterOrEqual(
-                        watcher.LeakedSlots,
-                        1,
-                        "[{0}] The default watcher should still report slot drift.",
-                        scenario.Kind
-                    );
-                    Assert.AreEqual(
-                        0,
-                        watcher.LeakedRegistrations,
-                        "[{0}] Registration counters must be clean before default watcher disposal.",
-                        scenario.Kind
-                    );
+                    Assert.GreaterOrEqual(watcher.LeakedSlots, 1, "[{0}] The default watcher should still report slot drift.", scenario.Kind);
+                    Assert.AreEqual(0, watcher.LeakedRegistrations, "[{0}] Registration counters must be clean before default watcher disposal.", scenario.Kind);
                 }
             }
             finally
@@ -347,11 +235,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void HandlerStorageWatcherDetectsDeferredContextAfterRegistrationsDrain(
             [Values(false, true)] bool throwOnLeak,
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.KindsWithComponentTarget)
-            )]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.KindsWithComponentTarget))] MessageScenario scenario
         )
         {
             MessageBus bus = MessageBus.CreateForInternalUse(new FakeClock(), idleEvictionTicks: 0);
@@ -360,32 +244,15 @@ namespace DxMessaging.Tests.Runtime.Core
             token.Enable();
             InstanceId anchorContext = new InstanceId(702);
             InstanceId transientContext = new InstanceId(703);
-            MessageRegistrationHandle anchor = RegisterCountingHandler(
-                scenario,
-                token,
-                anchorContext
-            );
-            LeakWatcher watcher = new LeakWatcher(
-                bus,
-                throwOnLeak,
-                scenario.DisplayName,
-                handler: handler
-            );
+            MessageRegistrationHandle anchor = RegisterCountingHandler(scenario, token, anchorContext);
+            LeakWatcher watcher = new LeakWatcher(bus, throwOnLeak, scenario.DisplayName, handler: handler);
             LeakWatcher defaultWatcher = new LeakWatcher(bus);
             try
             {
                 MessageRegistrationHandle transient = default;
-                transient = RegisterCountingHandler(scenario, token, transientContext, () =>
-                    token.RemoveRegistration(transient)
-                );
+                transient = RegisterCountingHandler(scenario, token, transientContext, () => token.RemoveRegistration(transient));
                 EmitCountingMessage(scenario, bus, transientContext);
-                Assert.AreEqual(
-                    0,
-                    watcher.LeakedRegistrations,
-                    "[{0}, throw={1}] the transient registration must be removed before checking storage.",
-                    scenario.Kind,
-                    throwOnLeak
-                );
+                Assert.AreEqual(0, watcher.LeakedRegistrations, "[{0}, throw={1}] the transient registration must be removed before checking storage.", scenario.Kind, throwOnLeak);
                 Assert.AreEqual(
                     1,
                     watcher.LeakedHandlerContexts,
@@ -393,13 +260,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     scenario.Kind,
                     throwOnLeak
                 );
-                Assert.AreEqual(
-                    1,
-                    watcher.LeakedHandlerPriorityCaches,
-                    "[{0}, throw={1}] the watcher must detect the retained empty priority cache.",
-                    scenario.Kind,
-                    throwOnLeak
-                );
+                Assert.AreEqual(1, watcher.LeakedHandlerPriorityCaches, "[{0}, throw={1}] the watcher must detect the retained empty priority cache.", scenario.Kind, throwOnLeak);
                 Assert.DoesNotThrow(
                     defaultWatcher.Dispose,
                     "[{0}, throw={1}] default registration-only watching must ignore retained handler storage.",
@@ -408,57 +269,24 @@ namespace DxMessaging.Tests.Runtime.Core
                 );
                 if (throwOnLeak)
                 {
-                    AssertionException exception = Assert.Throws<AssertionException>(
-                        watcher.Dispose
-                    );
+                    AssertionException exception = Assert.Throws<AssertionException>(watcher.Dispose);
                     StringAssert.Contains("HandlerContexts 1->2", exception.Message);
                     StringAssert.Contains("HandlerPriorityCaches 1->2", exception.Message);
                 }
                 else
                 {
-                    Assert.DoesNotThrow(
-                        watcher.Dispose,
-                        "[{0}] non-throwing mode must record handler storage without failing.",
-                        scenario.Kind
-                    );
+                    Assert.DoesNotThrow(watcher.Dispose, "[{0}] non-throwing mode must record handler storage without failing.", scenario.Kind);
                 }
 
                 _ = bus.Trim(force: true);
-                Assert.AreEqual(
-                    1,
-                    watcher.LeakedHandlerContexts,
-                    "[{0}] disposal must freeze context drift before a later trim.",
-                    scenario.Kind
-                );
-                Assert.AreEqual(
-                    1,
-                    watcher.LeakedHandlerPriorityCaches,
-                    "[{0}] disposal must freeze priority-cache drift before a later trim.",
-                    scenario.Kind
-                );
-                using LeakWatcher trimmedWatcher = LeakWatcher.WatchWithSlots(
-                    bus,
-                    handler: handler
-                );
-                MessageRegistrationHandle replacement = RegisterCountingHandler(
-                    scenario,
-                    token,
-                    transientContext
-                );
+                Assert.AreEqual(1, watcher.LeakedHandlerContexts, "[{0}] disposal must freeze context drift before a later trim.", scenario.Kind);
+                Assert.AreEqual(1, watcher.LeakedHandlerPriorityCaches, "[{0}] disposal must freeze priority-cache drift before a later trim.", scenario.Kind);
+                using LeakWatcher trimmedWatcher = LeakWatcher.WatchWithSlots(bus, handler: handler);
+                MessageRegistrationHandle replacement = RegisterCountingHandler(scenario, token, transientContext);
                 token.RemoveRegistration(replacement);
                 _ = bus.Trim(force: true);
-                Assert.AreEqual(
-                    0,
-                    trimmedWatcher.LeakedHandlerContexts,
-                    "[{0}] successful cleanup must restore the live context baseline.",
-                    scenario.Kind
-                );
-                Assert.AreEqual(
-                    0,
-                    trimmedWatcher.LeakedHandlerPriorityCaches,
-                    "[{0}] successful cleanup must restore the live priority-cache baseline.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(0, trimmedWatcher.LeakedHandlerContexts, "[{0}] successful cleanup must restore the live context baseline.", scenario.Kind);
+                Assert.AreEqual(0, trimmedWatcher.LeakedHandlerPriorityCaches, "[{0}] successful cleanup must restore the live priority-cache baseline.", scenario.Kind);
             }
             finally
             {
@@ -470,21 +298,14 @@ namespace DxMessaging.Tests.Runtime.Core
 
         [Test]
         public void HandlerStorageCountsRetainedPrioritiesAndOnlyTheRequestedBus(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario
         )
         {
             MessageBus bus = MessageBus.CreateForInternalUse(new FakeClock(), idleEvictionTicks: 0);
-            MessageBus otherBus = MessageBus.CreateForInternalUse(
-                new FakeClock(),
-                idleEvictionTicks: 0
-            );
+            MessageBus otherBus = MessageBus.CreateForInternalUse(new FakeClock(), idleEvictionTicks: 0);
             MessageHandler handler = new MessageHandler(new InstanceId(710), bus) { active = true };
             using MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
-            using MessageRegistrationToken otherToken = MessageRegistrationToken.Create(
-                handler,
-                otherBus
-            );
+            using MessageRegistrationToken otherToken = MessageRegistrationToken.Create(handler, otherBus);
             token.Enable();
             otherToken.Enable();
             using LeakWatcher watcher = LeakWatcher.WatchWithSlots(bus, handler: handler);
@@ -492,18 +313,8 @@ namespace DxMessaging.Tests.Runtime.Core
             try
             {
                 handler.GetRetainedStorageCounts(bus, out int contexts, out int priorities);
-                Assert.AreEqual(
-                    0,
-                    contexts + priorities,
-                    "[{0}] querying an unused bus must report no retained storage.",
-                    scenario.Kind
-                );
-                Assert.AreEqual(
-                    0,
-                    handler._handlersByTypeByMessageBus.Count,
-                    "[{0}] the query must not create bus storage.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(0, contexts + priorities, "[{0}] querying an unused bus must report no retained storage.", scenario.Kind);
+                Assert.AreEqual(0, handler._handlersByTypeByMessageBus.Count, "[{0}] the query must not create bus storage.", scenario.Kind);
                 _ = RegisterCountingHandler(scenario, token, new InstanceId(711));
                 _ = RegisterCountingHandler(scenario, token, new InstanceId(711), priority: 1);
                 _ = RegisterCountingHandler(scenario, token, new InstanceId(712));
@@ -526,36 +337,20 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     case MessageKind.Untargeted:
                     {
-                        _ = token.RegisterUntargeted<ComplexUntargetedMessage>(
-                            (in ComplexUntargetedMessage _) => { }
-                        );
-                        _ = token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
-                            (in SimpleUntargetedMessage _) => { }
-                        );
+                        _ = token.RegisterUntargeted<ComplexUntargetedMessage>((in ComplexUntargetedMessage _) => { });
+                        _ = token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => { });
                         break;
                     }
                     case MessageKind.Targeted:
                     {
-                        _ = token.RegisterTargeted<ComplexTargetedMessage>(
-                            sharedContext,
-                            (in ComplexTargetedMessage _) => { }
-                        );
-                        _ = token.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
-                            sharedContext,
-                            (in SimpleTargetedMessage _) => { }
-                        );
+                        _ = token.RegisterTargeted<ComplexTargetedMessage>(sharedContext, (in ComplexTargetedMessage _) => { });
+                        _ = token.RegisterTargetedPostProcessor<SimpleTargetedMessage>(sharedContext, (in SimpleTargetedMessage _) => { });
                         break;
                     }
                     case MessageKind.Broadcast:
                     {
-                        _ = token.RegisterBroadcast<ComplexBroadcastMessage>(
-                            sharedContext,
-                            (in ComplexBroadcastMessage _) => { }
-                        );
-                        _ = token.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(
-                            sharedContext,
-                            (in SimpleBroadcastMessage _) => { }
-                        );
+                        _ = token.RegisterBroadcast<ComplexBroadcastMessage>(sharedContext, (in ComplexBroadcastMessage _) => { });
+                        _ = token.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(sharedContext, (in SimpleBroadcastMessage _) => { });
                         break;
                     }
                 }
@@ -573,18 +368,8 @@ namespace DxMessaging.Tests.Runtime.Core
                     scenario.Kind
                 );
                 handler.GetRetainedStorageCounts(otherBus, out contexts, out priorities);
-                Assert.AreEqual(
-                    scenario.Kind == MessageKind.Untargeted ? 0 : 1,
-                    contexts,
-                    "[{0}] the other bus must retain only its own context.",
-                    scenario.Kind
-                );
-                Assert.AreEqual(
-                    1,
-                    priorities,
-                    "[{0}] the other bus must retain only its own priority cache.",
-                    scenario.Kind
-                );
+                Assert.AreEqual(scenario.Kind == MessageKind.Untargeted ? 0 : 1, contexts, "[{0}] the other bus must retain only its own context.", scenario.Kind);
+                Assert.AreEqual(1, priorities, "[{0}] the other bus must retain only its own priority cache.", scenario.Kind);
             }
             finally
             {
@@ -595,11 +380,7 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private static void EmitCountingMessage(
-            MessageScenario scenario,
-            MessageBus bus,
-            InstanceId context
-        )
+        private static void EmitCountingMessage(MessageScenario scenario, MessageBus bus, InstanceId context)
         {
             if (scenario.Kind == MessageKind.Targeted)
             {
@@ -625,48 +406,26 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 case MessageKind.Untargeted:
                 {
-                    return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
-                        scenario,
-                        token,
-                        (in SimpleUntargetedMessage _) => onMessage?.Invoke(),
-                        priority
-                    );
+                    return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(scenario, token, (in SimpleUntargetedMessage _) => onMessage?.Invoke(), priority);
                 }
                 case MessageKind.Targeted:
                 {
-                    return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        target,
-                        (in SimpleTargetedMessage _) => onMessage?.Invoke(),
-                        priority
-                    );
+                    return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(scenario, token, target, (in SimpleTargetedMessage _) => onMessage?.Invoke(), priority);
                 }
                 case MessageKind.Broadcast:
                 {
-                    return ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        target,
-                        (in SimpleBroadcastMessage _) => onMessage?.Invoke(),
-                        priority
-                    );
+                    return ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(scenario, token, target, (in SimpleBroadcastMessage _) => onMessage?.Invoke(), priority);
                 }
                 default:
                 {
-                    throw new System.ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new System.ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
 
         private static IDisposable ForceTrimEnabledSettings()
         {
-            DxMessagingRuntimeSettings settings =
-                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            DxMessagingRuntimeSettings settings = ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
             settings._enableTrimApi = true;
             settings._evictionEnabled = true;
             settings._idleEvictionSeconds = 0f;
@@ -680,10 +439,7 @@ namespace DxMessaging.Tests.Runtime.Core
             private readonly DxMessagingRuntimeSettings _settings;
             private bool _disposed;
 
-            public RuntimeSettingsScope(
-                IDisposable overrideToken,
-                DxMessagingRuntimeSettings settings
-            )
+            public RuntimeSettingsScope(IDisposable overrideToken, DxMessagingRuntimeSettings settings)
             {
                 _overrideToken = overrideToken;
                 _settings = settings;

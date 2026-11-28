@@ -1,11 +1,11 @@
 # Regex Pattern Documentation
 
-> **One-line summary**: Document regex patterns accurately by describing what they actually match,
-> including all flag-dependent behavior.
+> **One-line summary**: Document regex patterns accurately by describing what they actually match, including all flag-dependent behavior.
 
 ## Overview
 
-This skill covers best practices for documenting regular expression patterns. Accurate comments are critical because regex behavior changes dramatically based on flags, and misleading comments cause maintenance bugs. Many subtle bugs arise when comments describe intended behavior rather than actual behavior.
+This skill covers best practices for documenting regular expression patterns. Accurate comments are critical because regex behavior changes dramatically based on flags, and
+misleading comments cause maintenance bugs. Many subtle bugs arise when comments describe intended behavior rather than actual behavior.
 
 ## Solution
 

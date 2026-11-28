@@ -19,15 +19,9 @@ namespace DxMessaging.Tests.Runtime.Core
         /// three message kinds via <see cref="MessageScenarios.AllKinds"/>.
         /// </summary>
         [Test]
-        public void GlobalAcceptAllAddDuringEmission(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void GlobalAcceptAllAddDuringEmission([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(GlobalAcceptAllAddDuringEmission) + "_" + scenario,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(GlobalAcceptAllAddDuringEmission) + "_" + scenario, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent comp = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
@@ -47,78 +41,35 @@ namespace DxMessaging.Tests.Runtime.Core
             });
 
             EmitForScenario(scenario, host);
-            Assert.AreEqual(
-                1,
-                counts[0],
-                "[{0}] Handler should run once on the first emission.",
-                scenario.Kind
-            );
-            Assert.AreEqual(
-                0,
-                counts[1],
-                "[{0}] Global-accept-all added mid-emission must not fire in the same emission.",
-                scenario.Kind
-            );
+            Assert.AreEqual(1, counts[0], "[{0}] Handler should run once on the first emission.", scenario.Kind);
+            Assert.AreEqual(0, counts[1], "[{0}] Global-accept-all added mid-emission must not fire in the same emission.", scenario.Kind);
 
             EmitForScenario(scenario, host);
-            Assert.AreEqual(
-                2,
-                counts[0],
-                "[{0}] Handler should run again on the second emission.",
-                scenario.Kind
-            );
-            Assert.AreEqual(
-                1,
-                counts[1],
-                "[{0}] Global-accept-all must fire once on the next emission.",
-                scenario.Kind
-            );
+            Assert.AreEqual(2, counts[0], "[{0}] Handler should run again on the second emission.", scenario.Kind);
+            Assert.AreEqual(1, counts[1], "[{0}] Global-accept-all must fire once on the next emission.", scenario.Kind);
 
             token.RemoveRegistration(adder);
         }
 
-        private static MessageRegistrationHandle RegisterCounter(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            InstanceId target,
-            Action onInvoked
-        )
+        private static MessageRegistrationHandle RegisterCounter(MessageScenario scenario, MessageRegistrationToken token, InstanceId target, Action onInvoked)
         {
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
                 {
-                    return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
-                        scenario,
-                        token,
-                        (in SimpleUntargetedMessage _) => onInvoked()
-                    );
+                    return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(scenario, token, (in SimpleUntargetedMessage _) => onInvoked());
                 }
                 case MessageKind.Targeted:
                 {
-                    return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        target,
-                        (in SimpleTargetedMessage _) => onInvoked()
-                    );
+                    return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(scenario, token, target, (in SimpleTargetedMessage _) => onInvoked());
                 }
                 case MessageKind.Broadcast:
                 {
-                    return ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        target,
-                        (in SimpleBroadcastMessage _) => onInvoked()
-                    );
+                    return ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(scenario, token, target, (in SimpleBroadcastMessage _) => onInvoked());
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "MutationGlobalAddTests requires a supported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "MutationGlobalAddTests requires a supported message kind.");
                 }
             }
         }
@@ -147,11 +98,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "MutationGlobalAddTests requires a supported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "MutationGlobalAddTests requires a supported message kind.");
                 }
             }
         }

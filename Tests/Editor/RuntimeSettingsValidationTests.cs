@@ -26,14 +26,8 @@ namespace DxMessaging.Tests.Editor
     public sealed class RuntimeSettingsValidationTests
     {
         private static readonly Type SettingsType = typeof(DxMessagingRuntimeSettings);
-        private static readonly MethodInfo ValidateMethod = SettingsType.GetMethod(
-            "OnValidate",
-            BindingFlags.Instance | BindingFlags.NonPublic
-        );
-        private static readonly MethodInfo ProcessMethod = SettingsType.GetMethod(
-            "ProcessPendingValidations",
-            BindingFlags.Static | BindingFlags.NonPublic
-        );
+        private static readonly MethodInfo ValidateMethod = SettingsType.GetMethod("OnValidate", BindingFlags.Instance | BindingFlags.NonPublic);
+        private static readonly MethodInfo ProcessMethod = SettingsType.GetMethod("ProcessPendingValidations", BindingFlags.Static | BindingFlags.NonPublic);
         private readonly List<DxMessagingRuntimeSettings> _owned = new();
         private readonly List<DxMessagingRuntimeSettings> _savedPending = new();
         private ConcurrentQueue<DxMessagingRuntimeSettings> _pending;
@@ -42,30 +36,11 @@ namespace DxMessaging.Tests.Editor
         [SetUp]
         public void PreserveValidationState()
         {
-            Assert.That(
-                EditorApplication.isCompiling,
-                Is.False,
-                "Compilation must settle before validation tests."
-            );
-            Assert.That(
-                EditorApplication.isUpdating,
-                Is.False,
-                "Imports must settle before validation tests."
-            );
-            Assert.That(
-                ProcessMethod,
-                Is.Not.Null,
-                "Production must own its deferred validation callback."
-            );
-            FieldInfo pendingField = SettingsType.GetField(
-                "PendingValidations",
-                BindingFlags.Static | BindingFlags.NonPublic
-            );
-            Assert.That(
-                pendingField,
-                Is.Not.Null,
-                "Production must retain pending validations until an idle update."
-            );
+            Assert.That(EditorApplication.isCompiling, Is.False, "Compilation must settle before validation tests.");
+            Assert.That(EditorApplication.isUpdating, Is.False, "Imports must settle before validation tests.");
+            Assert.That(ProcessMethod, Is.Not.Null, "Production must own its deferred validation callback.");
+            FieldInfo pendingField = SettingsType.GetField("PendingValidations", BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(pendingField, Is.Not.Null, "Production must retain pending validations until an idle update.");
             _pending = (ConcurrentQueue<DxMessagingRuntimeSettings>)pendingField.GetValue(null);
             while (_pending.TryDequeue(out DxMessagingRuntimeSettings settings))
             {
@@ -135,24 +110,12 @@ namespace DxMessaging.Tests.Editor
                 settings._bufferMaxDistinctEntries = i;
                 Validate(settings);
             }
-            Assert.That(
-                calls,
-                Is.Zero,
-                $"{validationCount} validations must defer subscriber side effects."
-            );
+            Assert.That(calls, Is.Zero, $"{validationCount} validations must defer subscriber side effects.");
             Process();
             Assert.That(calls, Is.EqualTo(1), "One asset must produce one pending notification.");
-            Assert.That(
-                lastValue,
-                Is.EqualTo(validationCount - 1),
-                "Delivery must observe the final validated values."
-            );
+            Assert.That(lastValue, Is.EqualTo(validationCount - 1), "Delivery must observe the final validated values.");
             Process();
-            Assert.That(
-                calls,
-                Is.EqualTo(1),
-                "An empty update must not repeat a delivered notification."
-            );
+            Assert.That(calls, Is.EqualTo(1), "An empty update must not repeat a delivered notification.");
         }
 
         [TestCase(1)]
@@ -190,19 +153,11 @@ namespace DxMessaging.Tests.Editor
             {
                 worker.Join();
             }
-            Assert.That(
-                failures,
-                Is.All.Null,
-                "Worker validation must not call thread-bound Unity APIs."
-            );
+            Assert.That(failures, Is.All.Null, "Worker validation must not call thread-bound Unity APIs.");
             Assert.That(calls, Is.Zero, "Worker validation must not run subscribers.");
             Process();
             Assert.That(calls, Is.EqualTo(1), "Concurrent requests for one asset must coalesce.");
-            Assert.That(
-                deliveryThread,
-                Is.EqualTo(mainThread),
-                "The Editor callback must own subscriber delivery."
-            );
+            Assert.That(deliveryThread, Is.EqualTo(mainThread), "The Editor callback must own subscriber delivery.");
         }
 
         [Test]
@@ -217,11 +172,7 @@ namespace DxMessaging.Tests.Editor
             Validate(first);
             Assert.That(seen, Is.Empty, "Validation must not notify synchronously.");
             Process();
-            CollectionAssert.AreEqual(
-                new[] { first, second },
-                seen,
-                "Distinct assets must retain their first queued order."
-            );
+            CollectionAssert.AreEqual(new[] { first, second }, seen, "Distinct assets must retain their first queued order.");
         }
 
         [Test]
@@ -240,11 +191,7 @@ namespace DxMessaging.Tests.Editor
             Validate(settings);
             Assert.That(calls, Is.Zero, "The initial validation must defer delivery.");
             Process();
-            Assert.That(
-                calls,
-                Is.EqualTo(1),
-                "Reentrant validation must not drain inside the same update."
-            );
+            Assert.That(calls, Is.EqualTo(1), "Reentrant validation must not drain inside the same update.");
             Process();
             Assert.That(calls, Is.EqualTo(2), "The next update must retain the reentrant request.");
         }
@@ -257,15 +204,8 @@ namespace DxMessaging.Tests.Editor
             DxMessagingRuntimeSettings.SettingsChanged += _ => calls++;
             Validate(settings);
             Object.DestroyImmediate(settings);
-            Assert.That(
-                calls,
-                Is.Zero,
-                "Delivery must remain deferred until destruction completes."
-            );
-            Assert.DoesNotThrow(
-                Process,
-                "A queued destroyed Unity object must be discarded safely."
-            );
+            Assert.That(calls, Is.Zero, "Delivery must remain deferred until destruction completes.");
+            Assert.DoesNotThrow(Process, "A queued destroyed Unity object must be discarded safely.");
             Assert.That(calls, Is.Zero, "Destroyed assets must not notify subscribers.");
         }
 
@@ -279,17 +219,9 @@ namespace DxMessaging.Tests.Editor
             settings.MarkAsFallbackInstance();
             Assert.That(calls, Is.Zero, "Fallback creation must not invoke subscribers.");
             Process();
-            Assert.That(
-                calls,
-                Is.Zero,
-                "A queued fallback must not overwrite live-bus settings later."
-            );
+            Assert.That(calls, Is.Zero, "A queued fallback must not overwrite live-bus settings later.");
             DxMessagingRuntimeSettings.RaiseSettingsChanged(settings);
-            Assert.That(
-                calls,
-                Is.EqualTo(1),
-                "Explicit internal notifications must retain synchronous delivery."
-            );
+            Assert.That(calls, Is.EqualTo(1), "Explicit internal notifications must retain synchronous delivery.");
         }
 
         [Test]
@@ -309,22 +241,11 @@ namespace DxMessaging.Tests.Editor
             Validate(first);
             Validate(second);
             Assert.That(calls, Is.Zero, "Subscriber failures must occur outside validation.");
-            TargetInvocationException failure = Assert.Throws<TargetInvocationException>(
-                Process,
-                "The Editor callback must preserve subscriber failures."
-            );
-            Assert.That(
-                failure.InnerException,
-                Is.TypeOf<InvalidOperationException>(),
-                "The original subscriber exception must remain visible."
-            );
+            TargetInvocationException failure = Assert.Throws<TargetInvocationException>(Process, "The Editor callback must preserve subscriber failures.");
+            Assert.That(failure.InnerException, Is.TypeOf<InvalidOperationException>(), "The original subscriber exception must remain visible.");
             Assert.That(calls, Is.EqualTo(1), "The failing notification must stop this callback.");
             Process();
-            Assert.That(
-                calls,
-                Is.EqualTo(2),
-                "Unprocessed assets must survive a subscriber failure."
-            );
+            Assert.That(calls, Is.EqualTo(2), "Unprocessed assets must survive a subscriber failure.");
         }
 
         [Test]
@@ -339,31 +260,11 @@ namespace DxMessaging.Tests.Editor
             int calls = 0;
             DxMessagingRuntimeSettings.SettingsChanged += _ => calls++;
             Validate(settings);
-            Assert.That(
-                settings.IdleEvictionSeconds,
-                Is.Zero,
-                "Validation must clamp idle age locally."
-            );
-            Assert.That(
-                settings.EvictionTickIntervalSeconds,
-                Is.Zero,
-                "Validation must clamp cadence locally."
-            );
-            Assert.That(
-                settings.BufferMaxDistinctEntries,
-                Is.Zero,
-                "Validation must clamp pool capacity locally."
-            );
-            Assert.That(
-                settings.MessageBufferSize,
-                Is.Zero,
-                "Validation must clamp message capacity locally."
-            );
-            Assert.That(
-                settings.RegistrationLogCapacity,
-                Is.Zero,
-                "Validation must clamp log capacity locally."
-            );
+            Assert.That(settings.IdleEvictionSeconds, Is.Zero, "Validation must clamp idle age locally.");
+            Assert.That(settings.EvictionTickIntervalSeconds, Is.Zero, "Validation must clamp cadence locally.");
+            Assert.That(settings.BufferMaxDistinctEntries, Is.Zero, "Validation must clamp pool capacity locally.");
+            Assert.That(settings.MessageBufferSize, Is.Zero, "Validation must clamp message capacity locally.");
+            Assert.That(settings.RegistrationLogCapacity, Is.Zero, "Validation must clamp log capacity locally.");
             Assert.That(calls, Is.Zero, "Normalization must not trigger subscriber side effects.");
         }
 
@@ -379,62 +280,28 @@ namespace DxMessaging.Tests.Editor
             int mainThread = Environment.CurrentManagedThreadId;
             int savedBufferSize = IMessageBus.GlobalMessageBufferSize;
             PoolDiagnosticsSnapshot savedDiagnostics = DxPools.DescribeAll();
-            ContextMapPoolBenchmarkObservation savedContext =
-                MessageBusInspection.ObserveContextMapPoolForBenchmark();
-            List<(
-                object Pool,
-                PropertyInfo Capacity,
-                PropertyInfo Lru,
-                int SavedCapacity,
-                bool SavedLru
-            )> pools = new();
+            ContextMapPoolBenchmarkObservation savedContext = MessageBusInspection.ObserveContextMapPoolForBenchmark();
+            List<(object Pool, PropertyInfo Capacity, PropertyInfo Lru, int SavedCapacity, bool SavedLru)> pools = new();
             int largestCapacity = 0;
-            foreach (
-                FieldInfo field in typeof(DxPools).GetFields(
-                    BindingFlags.Static | BindingFlags.NonPublic
-                )
-            )
+            foreach (FieldInfo field in typeof(DxPools).GetFields(BindingFlags.Static | BindingFlags.NonPublic))
             {
-                if (
-                    !field.FieldType.IsGenericType
-                    || field.FieldType.GetGenericTypeDefinition() != typeof(CollectionPool<>)
-                )
+                if (!field.FieldType.IsGenericType || field.FieldType.GetGenericTypeDefinition() != typeof(CollectionPool<>))
                 {
                     continue;
                 }
                 object pool = field.GetValue(null);
-                PropertyInfo capacity = field.FieldType.GetProperty(
-                    nameof(CollectionPool<object>.MaxRetained)
-                );
-                PropertyInfo lru = field.FieldType.GetProperty(
-                    nameof(CollectionPool<object>.UseLru)
-                );
+                PropertyInfo capacity = field.FieldType.GetProperty(nameof(CollectionPool<object>.MaxRetained));
+                PropertyInfo lru = field.FieldType.GetProperty(nameof(CollectionPool<object>.UseLru));
                 int savedCapacity = (int)capacity.GetValue(pool);
                 pools.Add((pool, capacity, lru, savedCapacity, (bool)lru.GetValue(pool)));
                 largestCapacity = Math.Max(largestCapacity, savedCapacity);
             }
-            Assert.That(
-                pools,
-                Is.Not.Empty,
-                "The integration test must observe production shared pools."
-            );
-            Assert.That(
-                largestCapacity,
-                Is.LessThan(int.MaxValue - 2),
-                "The owned settings must raise caps without evicting existing entries."
-            );
-            using IDisposable registry =
-                MessageBusInspection.IsolateIdleSweepRegistryForBenchmark();
-            using IDisposable contextPool =
-                MessageBusInspection.IsolateContextMapPoolForBenchmark();
-            using EditorStaticFieldScope busSubscription = new(
-                typeof(MessageBus),
-                "RuntimeSettingsSubscribed"
-            );
-            using EditorStaticFieldScope provider = new(
-                typeof(DxMessagingRuntimeSettingsProvider),
-                "_cached"
-            );
+            Assert.That(pools, Is.Not.Empty, "The integration test must observe production shared pools.");
+            Assert.That(largestCapacity, Is.LessThan(int.MaxValue - 2), "The owned settings must raise caps without evicting existing entries.");
+            using IDisposable registry = MessageBusInspection.IsolateIdleSweepRegistryForBenchmark();
+            using IDisposable contextPool = MessageBusInspection.IsolateContextMapPoolForBenchmark();
+            using EditorStaticFieldScope busSubscription = new(typeof(MessageBus), "RuntimeSettingsSubscribed");
+            using EditorStaticFieldScope provider = new(typeof(DxMessagingRuntimeSettingsProvider), "_cached");
             busSubscription.Set("RuntimeSettingsSubscribed", false);
             try
             {
@@ -448,11 +315,7 @@ namespace DxMessaging.Tests.Editor
                 int deliveryThread = -1;
                 DxMessagingRuntimeSettings.SettingsChanged += current =>
                 {
-                    Assert.That(
-                        current,
-                        Is.SameAs(settings),
-                        "Only the owned settings may notify while this fixture isolates the queue."
-                    );
+                    Assert.That(current, Is.SameAs(settings), "Only the owned settings may notify while this fixture isolates the queue.");
                     ++calls;
                     deliveryThread = Environment.CurrentManagedThreadId;
                 };
@@ -461,66 +324,29 @@ namespace DxMessaging.Tests.Editor
                 {
                     yield return null;
                 }
-                Assert.That(
-                    _pending.Contains(settings),
-                    Is.False,
-                    "The production Editor callback must drain initial validation without a direct Process call."
-                );
+                Assert.That(_pending.Contains(settings), Is.False, "The production Editor callback must drain initial validation without a direct Process call.");
                 calls = 0;
                 using SerializedObject serialized = new(settings);
                 for (int change = 0; change < 2; ++change)
                 {
-                    serialized.FindProperty(nameof(settings._messageBufferSize)).intValue =
-                        7 + change;
-                    serialized.FindProperty(nameof(settings._registrationLogCapacity)).intValue =
-                        11 + change;
-                    serialized.FindProperty(nameof(settings._bufferMaxDistinctEntries)).intValue =
-                        largestCapacity + 2;
-                    Assert.That(
-                        serialized.ApplyModifiedPropertiesWithoutUndo(),
-                        Is.True,
-                        $"Serialized change {change} must reach Unity validation."
-                    );
+                    serialized.FindProperty(nameof(settings._messageBufferSize)).intValue = 7 + change;
+                    serialized.FindProperty(nameof(settings._registrationLogCapacity)).intValue = 11 + change;
+                    serialized.FindProperty(nameof(settings._bufferMaxDistinctEntries)).intValue = largestCapacity + 2;
+                    Assert.That(serialized.ApplyModifiedPropertiesWithoutUndo(), Is.True, $"Serialized change {change} must reach Unity validation.");
                 }
-                Assert.That(
-                    _pending.Contains(settings),
-                    Is.True,
-                    "Unity must invoke real OnValidate and queue the owned settings."
-                );
-                Assert.That(
-                    calls,
-                    Is.Zero,
-                    "Serialization must not notify subscribers synchronously."
-                );
-                Assert.That(
-                    MessageBusInspection.ReadField(bus, "_emissionBufferCapacity"),
-                    Is.EqualTo(3),
-                    "The live bus must retain its original buffer until an Editor update."
-                );
-                foreach (
-                    (object pool, PropertyInfo capacity, PropertyInfo _, int _, bool _) in pools
-                )
+                Assert.That(_pending.Contains(settings), Is.True, "Unity must invoke real OnValidate and queue the owned settings.");
+                Assert.That(calls, Is.Zero, "Serialization must not notify subscribers synchronously.");
+                Assert.That(MessageBusInspection.ReadField(bus, "_emissionBufferCapacity"), Is.EqualTo(3), "The live bus must retain its original buffer until an Editor update.");
+                foreach ((object pool, PropertyInfo capacity, PropertyInfo _, int _, bool _) in pools)
                 {
-                    Assert.That(
-                        capacity.GetValue(pool),
-                        Is.EqualTo(largestCapacity + 1),
-                        "Shared pools must retain their original cap until an Editor update."
-                    );
+                    Assert.That(capacity.GetValue(pool), Is.EqualTo(largestCapacity + 1), "Shared pools must retain their original cap until an Editor update.");
                 }
                 for (int update = 0; update < 10 && calls == 0; ++update)
                 {
                     yield return null;
                 }
-                Assert.That(
-                    calls,
-                    Is.EqualTo(1),
-                    "Two native validations must coalesce through automatic Editor updates."
-                );
-                Assert.That(
-                    deliveryThread,
-                    Is.EqualTo(mainThread),
-                    "The real Editor callback must own subscriber delivery."
-                );
+                Assert.That(calls, Is.EqualTo(1), "Two native validations must coalesce through automatic Editor updates.");
+                Assert.That(deliveryThread, Is.EqualTo(mainThread), "The real Editor callback must own subscriber delivery.");
                 Assert.That(
                     MessageBusInspection.ReadField(bus, "_emissionBufferCapacity"),
                     Is.EqualTo(8),
@@ -531,55 +357,29 @@ namespace DxMessaging.Tests.Editor
                     Is.EqualTo(12),
                     "The production subscriber must apply the final registration-history cap."
                 );
-                foreach (
-                    (object pool, PropertyInfo capacity, PropertyInfo _, int _, bool _) in pools
-                )
+                foreach ((object pool, PropertyInfo capacity, PropertyInfo _, int _, bool _) in pools)
                 {
-                    Assert.That(
-                        capacity.GetValue(pool),
-                        Is.EqualTo(largestCapacity + 2),
-                        "The production subscriber must configure every shared pool."
-                    );
+                    Assert.That(capacity.GetValue(pool), Is.EqualTo(largestCapacity + 2), "The production subscriber must configure every shared pool.");
                 }
                 yield return null;
-                Assert.That(
-                    calls,
-                    Is.EqualTo(1),
-                    "An unchanged Editor update must not repeat the notification."
-                );
+                Assert.That(calls, Is.EqualTo(1), "An unchanged Editor update must not repeat the notification.");
             }
             finally
             {
-                foreach (
-                    (
-                        object pool,
-                        PropertyInfo capacity,
-                        PropertyInfo lru,
-                        int savedCapacity,
-                        bool savedLru
-                    ) in pools
-                )
+                foreach ((object pool, PropertyInfo capacity, PropertyInfo lru, int savedCapacity, bool savedLru) in pools)
                 {
                     lru.SetValue(pool, savedLru);
                     capacity.SetValue(pool, savedCapacity);
                 }
-                MessageBusInspection.ConfigureContextMapPoolForBenchmark(
-                    savedContext.UseLru,
-                    savedContext.MaxRetained
-                );
+                MessageBusInspection.ConfigureContextMapPoolForBenchmark(savedContext.UseLru, savedContext.MaxRetained);
                 IMessageBus.GlobalMessageBufferSize = savedBufferSize;
             }
-            Assert.That(
-                DxPools.DescribeAll(),
-                Is.EqualTo(savedDiagnostics),
-                "The test must preserve cached shared entries and all lifetime counters."
-            );
+            Assert.That(DxPools.DescribeAll(), Is.EqualTo(savedDiagnostics), "The test must preserve cached shared entries and all lifetime counters.");
         }
 
         private DxMessagingRuntimeSettings CreateSettings()
         {
-            DxMessagingRuntimeSettings settings =
-                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            DxMessagingRuntimeSettings settings = ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
             settings.hideFlags = HideFlags.HideAndDontSave;
             _owned.Add(settings);
             return settings;

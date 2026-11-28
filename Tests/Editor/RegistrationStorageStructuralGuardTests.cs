@@ -55,29 +55,13 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void InternalRegisterDerivesMetadataFromRegistration()
         {
-            MethodInfo internalRegister = typeof(MessageRegistrationToken).GetMethod(
-                "InternalRegister",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
-            Assert.That(
-                internalRegister,
-                Is.Not.Null,
-                "MessageRegistrationToken.InternalRegister was renamed; update this guard."
-            );
+            MethodInfo internalRegister = typeof(MessageRegistrationToken).GetMethod("InternalRegister", BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.That(internalRegister, Is.Not.Null, "MessageRegistrationToken.InternalRegister was renamed; update this guard.");
 
-            Assert.That(
-                internalRegister.GetParameters(),
-                Has.Length.EqualTo(1),
-                "InternalRegister must not receive a duplicate metadata descriptor."
-            );
+            Assert.That(internalRegister.GetParameters(), Has.Length.EqualTo(1), "InternalRegister must not receive a duplicate metadata descriptor.");
             Type registrationType = internalRegister.GetParameters()[0].ParameterType;
             Assert.That(
-                registrationType
-                    .GetProperty(
-                        "Metadata",
-                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
-                    )
-                    ?.PropertyType,
+                registrationType.GetProperty("Metadata", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.PropertyType,
                 Is.EqualTo(typeof(MessageRegistrationMetadata)),
                 "The unified Registration object must derive its own diagnostic metadata."
             );
@@ -101,23 +85,13 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void RegistrationArenaStoresUnifiedRegistrationObjectAndOrderLinks()
         {
-            FieldInfo slots = typeof(MessageRegistrationToken).GetField(
-                "_slots",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
-            Assert.That(
-                slots,
-                Is.Not.Null,
-                "MessageRegistrationToken._slots was renamed; update this guard."
-            );
+            FieldInfo slots = typeof(MessageRegistrationToken).GetField("_slots", BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.That(slots, Is.Not.Null, "MessageRegistrationToken._slots was renamed; update this guard.");
 
             Assert.That(slots.FieldType.IsArray, Is.True);
             Type slotType = slots.FieldType.GetElementType();
             Assert.That(slotType, Is.Not.Null);
-            FieldInfo registration = slotType.GetField(
-                "Registration",
-                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
-            );
+            FieldInfo registration = slotType.GetField("Registration", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             Assert.That(registration, Is.Not.Null);
             Type valueType = registration.FieldType;
 
@@ -138,9 +112,7 @@ namespace DxMessaging.Tests.Editor
             );
             Assert.That(
                 valueType,
-                Is.Not.EqualTo(
-                    typeof(Func<MessageRegistrationHandle, MessageHandler.HandlerDeregistration>)
-                ),
+                Is.Not.EqualTo(typeof(Func<MessageRegistrationHandle, MessageHandler.HandlerDeregistration>)),
                 "MessageRegistrationToken.RegistrationSlot must NOT store the staging Func."
             );
             Assert.That(
@@ -153,22 +125,14 @@ namespace DxMessaging.Tests.Editor
             Assert.That(
                 valueType.Name,
                 Is.EqualTo("Registration"),
-                "MessageRegistrationToken._registrations value type must be the nested "
-                    + "'Registration' object; update this guard if it was renamed."
+                "MessageRegistrationToken._registrations value type must be the nested " + "'Registration' object; update this guard if it was renamed."
             );
-            Assert.That(
-                valueType.DeclaringType,
-                Is.EqualTo(typeof(MessageRegistrationToken)),
-                "The Registration object must remain nested in MessageRegistrationToken."
-            );
+            Assert.That(valueType.DeclaringType, Is.EqualTo(typeof(MessageRegistrationToken)), "The Registration object must remain nested in MessageRegistrationToken.");
 
             foreach (string linkName in new[] { "Previous", "Next", "NextFree" })
             {
                 Assert.That(
-                    slotType.GetField(
-                        linkName,
-                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
-                    ),
+                    slotType.GetField(linkName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic),
                     Is.Not.Null,
                     $"RegistrationSlot must retain its O(1) {linkName} link."
                 );
@@ -191,21 +155,11 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void RegistrationArenaStoresInlineDeregistrationNotPerHandleMap()
         {
-            FieldInfo slots = typeof(MessageRegistrationToken).GetField(
-                "_slots",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
+            FieldInfo slots = typeof(MessageRegistrationToken).GetField("_slots", BindingFlags.Instance | BindingFlags.NonPublic);
             Assert.That(slots, Is.Not.Null);
             Type slotType = slots.FieldType.GetElementType();
-            FieldInfo deregistration = slotType.GetField(
-                "Deregistration",
-                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
-            );
-            Assert.That(
-                deregistration,
-                Is.Not.Null,
-                "RegistrationSlot must own its live teardown state."
-            );
+            FieldInfo deregistration = slotType.GetField("Deregistration", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            Assert.That(deregistration, Is.Not.Null, "RegistrationSlot must own its live teardown state.");
             Assert.That(
                 deregistration.FieldType,
                 Is.EqualTo(typeof(object)),
@@ -214,10 +168,7 @@ namespace DxMessaging.Tests.Editor
                     + "PendingDeregistration holder)."
             );
             Assert.That(
-                typeof(MessageRegistrationToken).GetField(
-                    "_deregistrations",
-                    BindingFlags.Instance | BindingFlags.NonPublic
-                ),
+                typeof(MessageRegistrationToken).GetField("_deregistrations", BindingFlags.Instance | BindingFlags.NonPublic),
                 Is.Null,
                 "A parallel deregistration dictionary duplicates arena state."
             );
@@ -226,22 +177,10 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void RegistrationObjectsOwnReusableTeardownState()
         {
-            Type registration = typeof(MessageRegistrationToken).GetNestedType(
-                "Registration",
-                BindingFlags.NonPublic
-            );
-            Type typedRegistration = typeof(MessageRegistrationToken).GetNestedType(
-                "Registration`1",
-                BindingFlags.NonPublic
-            );
-            Type interceptorRegistration = typeof(MessageRegistrationToken).GetNestedType(
-                "InterceptorRegistration`1",
-                BindingFlags.NonPublic
-            );
-            Type globalRegistration = typeof(MessageRegistrationToken).GetNestedType(
-                "GlobalAcceptAllRegistration",
-                BindingFlags.NonPublic
-            );
+            Type registration = typeof(MessageRegistrationToken).GetNestedType("Registration", BindingFlags.NonPublic);
+            Type typedRegistration = typeof(MessageRegistrationToken).GetNestedType("Registration`1", BindingFlags.NonPublic);
+            Type interceptorRegistration = typeof(MessageRegistrationToken).GetNestedType("InterceptorRegistration`1", BindingFlags.NonPublic);
+            Type globalRegistration = typeof(MessageRegistrationToken).GetNestedType("GlobalAcceptAllRegistration", BindingFlags.NonPublic);
 
             Assert.That(registration, Is.Not.Null);
             Assert.That(
@@ -250,72 +189,38 @@ namespace DxMessaging.Tests.Editor
                 "The existing Registration object must execute its own common-case teardown."
             );
 
-            FieldInfo typedState = typedRegistration?.GetField(
-                "_typedDeregistration",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
-            FieldInfo interceptorState = interceptorRegistration?.GetField(
-                "_deregistration",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
-            FieldInfo globalState = globalRegistration?.GetField(
-                "_deregistration",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
-            Assert.That(
-                typedState?.FieldType.IsValueType,
-                Is.True,
-                "Typed registrations must embed reusable teardown state rather than a second object."
-            );
-            Assert.That(
-                interceptorState?.FieldType.IsValueType,
-                Is.True,
-                "Interceptor registrations must embed reusable teardown state rather than a second object."
-            );
-            Assert.That(
-                globalState?.FieldType.IsValueType,
-                Is.True,
-                "Global accept-all registrations must embed their composite teardown state rather than a second object."
-            );
+            FieldInfo typedState = typedRegistration?.GetField("_typedDeregistration", BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo interceptorState = interceptorRegistration?.GetField("_deregistration", BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo globalState = globalRegistration?.GetField("_deregistration", BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.That(typedState?.FieldType.IsValueType, Is.True, "Typed registrations must embed reusable teardown state rather than a second object.");
+            Assert.That(interceptorState?.FieldType.IsValueType, Is.True, "Interceptor registrations must embed reusable teardown state rather than a second object.");
+            Assert.That(globalState?.FieldType.IsValueType, Is.True, "Global accept-all registrations must embed their composite teardown state rather than a second object.");
             Assert.That(
                 typedRegistration.GetFields(BindingFlags.Instance | BindingFlags.NonPublic),
-                Has.None.Matches<FieldInfo>(field =>
-                    field.FieldType == typeof(MessageHandler.HandlerDeregistration)
-                ),
+                Has.None.Matches<FieldInfo>(field => field.FieldType == typeof(MessageHandler.HandlerDeregistration)),
                 "The typed common path must not retain an allocation-backed teardown wrapper."
             );
             Assert.That(
                 interceptorRegistration.GetFields(BindingFlags.Instance | BindingFlags.NonPublic),
-                Has.None.Matches<FieldInfo>(field =>
-                    field.FieldType == typeof(MessageHandler.HandlerDeregistration)
-                ),
+                Has.None.Matches<FieldInfo>(field => field.FieldType == typeof(MessageHandler.HandlerDeregistration)),
                 "The interceptor common path must not retain an allocation-backed teardown wrapper."
             );
             Assert.That(
                 globalRegistration.GetFields(BindingFlags.Instance | BindingFlags.NonPublic),
-                Has.None.Matches<FieldInfo>(field =>
-                    field.FieldType == typeof(MessageHandler.HandlerDeregistration)
-                ),
+                Has.None.Matches<FieldInfo>(field => field.FieldType == typeof(MessageHandler.HandlerDeregistration)),
                 "The global accept-all common path must not retain an allocation-backed teardown wrapper."
             );
 
             Type globalStateType = globalState.FieldType;
-            FieldInfo[] componentStates = globalStateType.GetFields(
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
+            FieldInfo[] componentStates = globalStateType.GetFields(BindingFlags.Instance | BindingFlags.NonPublic);
             Assert.That(
                 componentStates,
-                Has.Exactly(3)
-                    .Matches<FieldInfo>(field =>
-                        field.FieldType == typeof(MessageHandler.GlobalHandlerDeregistrationState)
-                    ),
+                Has.Exactly(3).Matches<FieldInfo>(field => field.FieldType == typeof(MessageHandler.GlobalHandlerDeregistrationState)),
                 "The composite global teardown must store three value sub-handler states, not Action wrappers."
             );
             Assert.That(
                 componentStates,
-                Has.None.Matches<FieldInfo>(field =>
-                    typeof(Delegate).IsAssignableFrom(field.FieldType)
-                ),
+                Has.None.Matches<FieldInfo>(field => typeof(Delegate).IsAssignableFrom(field.FieldType)),
                 "The composite global teardown must not retain delegate-backed teardown wrappers."
             );
         }
@@ -323,26 +228,13 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void RegistrationHandleStoresIdAndArenaSlotWithoutCachedHash()
         {
-            FieldInfo id = typeof(MessageRegistrationHandle).GetField(
-                "_id",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
-            FieldInfo slot = typeof(MessageRegistrationHandle).GetField(
-                "_slot",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
-            FieldInfo cachedHash = typeof(MessageRegistrationHandle).GetField(
-                "_hashCode",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
+            FieldInfo id = typeof(MessageRegistrationHandle).GetField("_id", BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo slot = typeof(MessageRegistrationHandle).GetField("_slot", BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo cachedHash = typeof(MessageRegistrationHandle).GetField("_hashCode", BindingFlags.Instance | BindingFlags.NonPublic);
 
             Assert.That(id?.FieldType, Is.EqualTo(typeof(long)));
             Assert.That(slot?.FieldType, Is.EqualTo(typeof(int)));
-            Assert.That(
-                cachedHash,
-                Is.Null,
-                "The handle hash must be computed from id instead of duplicating the slot field."
-            );
+            Assert.That(cachedHash, Is.Null, "The handle hash must be computed from id instead of duplicating the slot field.");
         }
 
         /// <summary>
@@ -357,11 +249,7 @@ namespace DxMessaging.Tests.Editor
         public void AllBusRegisterMethodsReturnMessageBusRegistrationHandle()
         {
             int registerMethods = 0;
-            foreach (
-                MethodInfo method in typeof(IMessageBus).GetMethods(
-                    BindingFlags.Public | BindingFlags.Instance
-                )
-            )
+            foreach (MethodInfo method in typeof(IMessageBus).GetMethods(BindingFlags.Public | BindingFlags.Instance))
             {
                 if (!method.Name.StartsWith("Register", StringComparison.Ordinal))
                 {
@@ -378,32 +266,12 @@ namespace DxMessaging.Tests.Editor
                 );
             }
 
-            Assert.That(
-                registerMethods,
-                Is.EqualTo(14),
-                "Expected the 14 IMessageBus.Register* methods; update this guard if the "
-                    + "registration surface changes."
-            );
+            Assert.That(registerMethods, Is.EqualTo(14), "Expected the 14 IMessageBus.Register* methods; update this guard if the " + "registration surface changes.");
 
-            MethodInfo deregister = typeof(IMessageBus).GetMethod(
-                "Deregister",
-                BindingFlags.Public | BindingFlags.Instance
-            );
-            Assert.That(
-                deregister,
-                Is.Not.Null,
-                "IMessageBus must expose Deregister<T>(in MessageBusRegistration)."
-            );
-            Assert.That(
-                deregister.IsGenericMethodDefinition,
-                Is.True,
-                "IMessageBus.Deregister must be generic in the message type T."
-            );
-            Assert.That(
-                deregister.ReturnType,
-                Is.EqualTo(typeof(void)),
-                "IMessageBus.Deregister<T> must return void."
-            );
+            MethodInfo deregister = typeof(IMessageBus).GetMethod("Deregister", BindingFlags.Public | BindingFlags.Instance);
+            Assert.That(deregister, Is.Not.Null, "IMessageBus must expose Deregister<T>(in MessageBusRegistration).");
+            Assert.That(deregister.IsGenericMethodDefinition, Is.True, "IMessageBus.Deregister must be generic in the message type T.");
+            Assert.That(deregister.ReturnType, Is.EqualTo(typeof(void)), "IMessageBus.Deregister<T> must return void.");
         }
     }
 }

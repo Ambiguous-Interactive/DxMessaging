@@ -27,11 +27,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
     public readonly struct StickyBenchmarkCase
     {
-        public StickyBenchmarkCase(
-            StickyBenchmarkOperation operation,
-            bool referencePayload,
-            StickyBenchmarkCallback callback
-        )
+        public StickyBenchmarkCase(StickyBenchmarkOperation operation, bool referencePayload, StickyBenchmarkCallback callback)
         {
             Operation = operation;
             ReferencePayload = referencePayload;
@@ -41,8 +37,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         public StickyBenchmarkOperation Operation { get; }
         public bool ReferencePayload { get; }
         public StickyBenchmarkCallback Callback { get; }
-        public string Key =>
-            $"Sticky_Warm_{Operation}_{(ReferencePayload ? "Class" : "Struct")}_{Callback}";
+        public string Key => $"Sticky_Warm_{Operation}_{(ReferencePayload ? "Class" : "Struct")}_{Callback}";
     }
 
     /// <summary>
@@ -67,28 +62,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         {
             foreach (bool referencePayload in new[] { false, true })
             {
-                foreach (
-                    StickyBenchmarkOperation operation in new[]
-                    {
-                        StickyBenchmarkOperation.OrdinaryEmit,
-                        StickyBenchmarkOperation.StickyEmit,
-                    }
-                )
+                foreach (StickyBenchmarkOperation operation in new[] { StickyBenchmarkOperation.OrdinaryEmit, StickyBenchmarkOperation.StickyEmit })
                 {
-                    foreach (
-                        StickyBenchmarkCallback callback in new[]
-                        {
-                            StickyBenchmarkCallback.None,
-                            StickyBenchmarkCallback.Action,
-                            StickyBenchmarkCallback.Fast,
-                        }
-                    )
+                    foreach (StickyBenchmarkCallback callback in new[] { StickyBenchmarkCallback.None, StickyBenchmarkCallback.Action, StickyBenchmarkCallback.Fast })
                     {
-                        StickyBenchmarkCase benchmarkCase = new(
-                            operation,
-                            referencePayload,
-                            callback
-                        );
+                        StickyBenchmarkCase benchmarkCase = new(operation, referencePayload, callback);
                         yield return new TestCaseData(benchmarkCase).SetName(benchmarkCase.Key);
                     }
                 }
@@ -101,11 +79,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     }
                 )
                 {
-                    StickyBenchmarkCase benchmarkCase = new(
-                        operation,
-                        referencePayload,
-                        StickyBenchmarkCallback.None
-                    );
+                    StickyBenchmarkCase benchmarkCase = new(operation, referencePayload, StickyBenchmarkCallback.None);
                     yield return new TestCaseData(benchmarkCase).SetName(benchmarkCase.Key);
                 }
             }
@@ -113,15 +87,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         public static DispatchBenchmarkResult RunScenario(StickyBenchmarkCase benchmarkCase)
         {
-            return benchmarkCase.ReferencePayload
-                ? Measure(benchmarkCase, new ReferenceMessage(PayloadValue))
-                : Measure(benchmarkCase, new ValueMessage(PayloadValue));
+            return benchmarkCase.ReferencePayload ? Measure(benchmarkCase, new ReferenceMessage(PayloadValue)) : Measure(benchmarkCase, new ValueMessage(PayloadValue));
         }
 
-        private static DispatchBenchmarkResult Measure<TMessage>(
-            StickyBenchmarkCase benchmarkCase,
-            TMessage message
-        )
+        private static DispatchBenchmarkResult Measure<TMessage>(StickyBenchmarkCase benchmarkCase, TMessage message)
             where TMessage : IValue
         {
             using IDisposable registry = BenchmarkProtocol.IsolateIdleSweepRegistry();
@@ -153,10 +122,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 : RunForContract(benchmarkCase, new ValueMessage(PayloadValue));
         }
 
-        private static StickyWorkloadObservation RunForContract<TMessage>(
-            StickyBenchmarkCase benchmarkCase,
-            TMessage message
-        )
+        private static StickyWorkloadObservation RunForContract<TMessage>(StickyBenchmarkCase benchmarkCase, TMessage message)
             where TMessage : IValue
         {
             using IDisposable registry = BenchmarkProtocol.IsolateIdleSweepRegistry();
@@ -288,31 +254,17 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     _case.Operation == StickyBenchmarkOperation.LatestPresent
                     || _case.Operation == StickyBenchmarkOperation.LatestAbsent
                     || _case.Operation == StickyBenchmarkOperation.LatestMissingType;
-                long expectedCalls =
-                    !lookup && _case.Callback != StickyBenchmarkCallback.None ? operations : 0;
+                long expectedCalls = !lookup && _case.Callback != StickyBenchmarkCallback.None ? operations : 0;
                 Assert.That(_calls, Is.EqualTo(expectedCalls), context);
                 Assert.That(_sum, Is.EqualTo(expectedCalls * PayloadValue), context);
-                Assert.That(
-                    _found,
-                    Is.EqualTo(
-                        _case.Operation == StickyBenchmarkOperation.LatestPresent ? operations : 0
-                    ),
-                    context
-                );
+                Assert.That(_found, Is.EqualTo(_case.Operation == StickyBenchmarkOperation.LatestPresent ? operations : 0), context);
                 bool present = _bus.TryGetLatest(out TMessage latest);
                 Assert.That(
                     present,
-                    Is.EqualTo(
-                        _case.Operation != StickyBenchmarkOperation.LatestAbsent
-                            && _case.Operation != StickyBenchmarkOperation.LatestMissingType
-                    ),
+                    Is.EqualTo(_case.Operation != StickyBenchmarkOperation.LatestAbsent && _case.Operation != StickyBenchmarkOperation.LatestMissingType),
                     context
                 );
-                Assert.That(
-                    _bus.TryGetLatest<OtherMessage>(out _),
-                    Is.EqualTo(_case.Operation == StickyBenchmarkOperation.LatestMissingType),
-                    context
-                );
+                Assert.That(_bus.TryGetLatest<OtherMessage>(out _), Is.EqualTo(_case.Operation == StickyBenchmarkOperation.LatestMissingType), context);
                 if (present)
                 {
                     Assert.That(latest.Value, Is.EqualTo(PayloadValue), context);
@@ -320,23 +272,14 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 }
                 if (lookup)
                 {
-                    Assert.That(
-                        _observed,
-                        Is.EqualTo(present ? _message : default(TMessage)),
-                        context
-                    );
+                    Assert.That(_observed, Is.EqualTo(present ? _message : default(TMessage)), context);
                 }
                 Assert.That(_bus.DiagnosticsMode, Is.False, context);
                 Assert.That(_token.DiagnosticMode, Is.False, context);
-                Assert.That(
-                    BenchmarkProtocol.CountRegistrations(_token),
-                    Is.EqualTo(_case.Callback == StickyBenchmarkCallback.None ? 0 : 1),
-                    context
-                );
+                Assert.That(BenchmarkProtocol.CountRegistrations(_token), Is.EqualTo(_case.Callback == StickyBenchmarkCallback.None ? 0 : 1), context);
             }
 
-            internal StickyWorkloadObservation Observe() =>
-                new(_calls, _sum, _found, _bus.RegisteredUntargeted);
+            internal StickyWorkloadObservation Observe() => new(_calls, _sum, _found, _bus.RegisteredUntargeted);
 
             public void Dispose()
             {

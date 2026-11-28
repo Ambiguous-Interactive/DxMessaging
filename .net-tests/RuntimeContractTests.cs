@@ -17,20 +17,13 @@ public sealed class RuntimeContractTests
     {
         Type selected = typeof(AttributeMessage<bool>);
         DxMessaging.Core.Attributes.DxAotMessageAttribute attribute = new(selected);
-        Assert.That(
-            attribute.MessageType,
-            Is.SameAs(selected),
-            "The attribute must retain the selected closed Type."
-        );
+        Assert.That(attribute.MessageType, Is.SameAs(selected), "The attribute must retain the selected closed Type.");
     }
 
     [Test]
     public void AotSelectionAttributeRejectsNullType()
     {
-        Assert.Throws<ArgumentNullException>(
-            () => new DxMessaging.Core.Attributes.DxAotMessageAttribute(null!),
-            "A null type cannot identify a message bridge."
-        );
+        Assert.Throws<ArgumentNullException>(() => new DxMessaging.Core.Attributes.DxAotMessageAttribute(null!), "A null type cannot identify a message bridge.");
     }
 
     private readonly struct AttributeMessage<T> : IUntargetedMessage<AttributeMessage<T>> { }
@@ -44,9 +37,7 @@ public sealed class RuntimeContractTests
             "The plain .NET runtime must load without Unity assemblies."
         );
         Assert.That(
-            typeof(MessageBus).Assembly.GetType(
-                "DxMessaging.Core.Configuration.DxMessagingRuntimeSettingsProvider"
-            ),
+            typeof(MessageBus).Assembly.GetType("DxMessaging.Core.Configuration.DxMessagingRuntimeSettingsProvider"),
             Is.Null,
             "The ScriptableObject settings provider is Unity-only."
         );
@@ -54,8 +45,7 @@ public sealed class RuntimeContractTests
 
     [Test]
     public void DispatchAndTokenLifecycleWorkWithoutUnity(
-        [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-            MessageScenario scenario,
+        [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
         [Values(false, true)] bool untyped,
         [Values(false, true)] bool classMessage,
         [Values(false, true)] bool diagnostics
@@ -71,12 +61,7 @@ public sealed class RuntimeContractTests
         }
     }
 
-    private static void Exercise<T>(
-        MessageScenario scenario,
-        bool untyped,
-        T message,
-        bool diagnostics
-    )
+    private static void Exercise<T>(MessageScenario scenario, bool untyped, T message, bool diagnostics)
         where T : IUntargetedMessage, ITargetedMessage, IBroadcastMessage
     {
         MessageBus bus = new MessageBus { DiagnosticsMode = diagnostics };
@@ -87,18 +72,10 @@ public sealed class RuntimeContractTests
             bool fail = false;
             void Receive(in T value)
             {
-                Assert.That(
-                    value,
-                    Is.EqualTo(message),
-                    "Payload fields must survive typed and untyped dispatch."
-                );
+                Assert.That(value, Is.EqualTo(message), "Payload fields must survive typed and untyped dispatch.");
                 if (!typeof(T).IsValueType)
                 {
-                    Assert.That(
-                        value,
-                        Is.SameAs((object)message),
-                        "Class-message identity must survive dispatch."
-                    );
+                    Assert.That(value, Is.SameAs((object)message), "Class-message identity must survive dispatch.");
                 }
                 calls++;
                 if (fail)
@@ -111,23 +88,9 @@ public sealed class RuntimeContractTests
                 InstanceId context = new InstanceId(int.MinValue);
                 MessageRegistrationHandle registration = scenario.Kind switch
                 {
-                    MessageKind.Untargeted => ScenarioHarness.RegisterUntargeted<T>(
-                        scenario,
-                        token,
-                        Receive
-                    ),
-                    MessageKind.Targeted => ScenarioHarness.RegisterTargeted<T>(
-                        scenario,
-                        token,
-                        context,
-                        Receive
-                    ),
-                    MessageKind.Broadcast => ScenarioHarness.RegisterBroadcast<T>(
-                        scenario,
-                        token,
-                        context,
-                        Receive
-                    ),
+                    MessageKind.Untargeted => ScenarioHarness.RegisterUntargeted<T>(scenario, token, Receive),
+                    MessageKind.Targeted => ScenarioHarness.RegisterTargeted<T>(scenario, token, context, Receive),
+                    MessageKind.Broadcast => ScenarioHarness.RegisterBroadcast<T>(scenario, token, context, Receive),
                     _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
                 };
                 void Emit()
@@ -183,21 +146,14 @@ public sealed class RuntimeContractTests
                 token.RemoveRegistration(registration);
                 token.RemoveRegistration(registration);
                 Emit();
-                Assert.That(
-                    calls,
-                    Is.EqualTo(3),
-                    "Repeated removal must not restore a registration."
-                );
+                Assert.That(calls, Is.EqualTo(3), "Repeated removal must not restore a registration.");
             }
             bus.Trim(force: true);
         }
     }
 
     [Test]
-    public void StaticResetPreservesPlainNetUsability(
-        [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-            MessageScenario scenario
-    )
+    public void StaticResetPreservesPlainNetUsability([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
     {
         DxMessagingStaticState.Reset();
         MessageBus bus = (MessageBus)MessageHandler.MessageBus;
@@ -205,9 +161,7 @@ public sealed class RuntimeContractTests
         {
             MessageHandler owner = new MessageHandler(new InstanceId(12), bus) { active = true };
             using (MessageRegistrationToken stale = MessageRegistrationToken.Create(owner, bus))
-            using (
-                MessageRegistrationToken replacement = MessageRegistrationToken.Create(owner, bus)
-            )
+            using (MessageRegistrationToken replacement = MessageRegistrationToken.Create(owner, bus))
             {
                 int staleCalls = 0;
                 int replacementCalls = 0;
@@ -221,10 +175,7 @@ public sealed class RuntimeContractTests
                 {
                     replacementCalls++;
                 }
-                void Register(
-                    MessageRegistrationToken token,
-                    MessageHandler.FastHandler<StructMessage> callback
-                )
+                void Register(MessageRegistrationToken token, MessageHandler.FastHandler<StructMessage> callback)
                 {
                     switch (scenario.Kind)
                     {
@@ -257,31 +208,15 @@ public sealed class RuntimeContractTests
                 }
                 Register(stale, Old);
                 Emit();
-                Assert.That(
-                    staleCalls,
-                    Is.EqualTo(1),
-                    "The global registration must be live before reset."
-                );
+                Assert.That(staleCalls, Is.EqualTo(1), "The global registration must be live before reset.");
                 DxMessagingStaticState.Reset();
                 DxMessagingStaticState.Reset();
-                Assert.That(
-                    MessageHandler.MessageBus,
-                    Is.SameAs(bus),
-                    "Reset must restore the original global bus."
-                );
+                Assert.That(MessageHandler.MessageBus, Is.SameAs(bus), "Reset must restore the original global bus.");
                 Register(replacement, Current);
                 stale.Dispose();
                 Emit();
-                Assert.That(
-                    staleCalls,
-                    Is.EqualTo(1),
-                    "Reset must clear old global registrations."
-                );
-                Assert.That(
-                    replacementCalls,
-                    Is.EqualTo(1),
-                    "A stale token must not remove the post-reset global registration."
-                );
+                Assert.That(staleCalls, Is.EqualTo(1), "Reset must clear old global registrations.");
+                Assert.That(replacementCalls, Is.EqualTo(1), "A stale token must not remove the post-reset global registration.");
             }
             bus.Trim(force: true);
         }
@@ -302,21 +237,9 @@ public sealed class RuntimeContractTests
         GC.KeepAlive(retained);
         Assert.Multiple(() =>
         {
-            Assert.That(
-                emptyOwnerAlive,
-                Is.False,
-                "The empty-handle control must release its private bus."
-            );
-            Assert.That(
-                retainedOwnerAlive,
-                Is.False,
-                "A consumed raw handle must not retain its bus and unrelated subscriptions."
-            );
-            Assert.That(
-                ownerAliveAfterClear,
-                Is.False,
-                "Clearing the handle must also release the owner."
-            );
+            Assert.That(emptyOwnerAlive, Is.False, "The empty-handle control must release its private bus.");
+            Assert.That(retainedOwnerAlive, Is.False, "A consumed raw handle must not retain its bus and unrelated subscriptions.");
+            Assert.That(ownerAliveAfterClear, Is.False, "Clearing the handle must also release the owner.");
         });
     }
 
@@ -329,11 +252,7 @@ public sealed class RuntimeContractTests
         using LeakWatcher leaks = new LeakWatcher(origin);
         MessageBusRegistration registration = origin.RegisterUntargeted<StructMessage>(handler);
         origin.Deregister<StructMessage>(in registration);
-        return new ConsumedHandleProbe
-        {
-            Handle = retainHandle ? registration : default,
-            Owner = new WeakReference(origin),
-        };
+        return new ConsumedHandleProbe { Handle = retainHandle ? registration : default, Owner = new WeakReference(origin) };
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]

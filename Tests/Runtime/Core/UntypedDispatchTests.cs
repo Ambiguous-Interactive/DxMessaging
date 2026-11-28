@@ -16,15 +16,9 @@ namespace DxMessaging.Tests.Runtime.Core
     public sealed class UntypedDispatchTests : MessagingTestBase
     {
         [Test]
-        public void UntypedDispatchUsesKindSpecificDelegateCaches(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void UntypedDispatchUsesKindSpecificDelegateCaches([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(UntypedDispatchUsesKindSpecificDelegateCaches) + "_" + scenario,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(UntypedDispatchUsesKindSpecificDelegateCaches) + "_" + scenario, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -40,21 +34,9 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 try
                 {
-                    handles.Add(
-                        token.RegisterUntargeted<MultiKindMessage>(
-                            (in MultiKindMessage _) => ++untargetedCount
-                        )
-                    );
-                    handles.Add(
-                        token.RegisterTargeted<MultiKindMessage>(target, (in MultiKindMessage _) =>
-                            ++targetedCount
-                        )
-                    );
-                    handles.Add(
-                        token.RegisterBroadcast<MultiKindMessage>(source, (in MultiKindMessage _) =>
-                            ++broadcastCount
-                        )
-                    );
+                    handles.Add(token.RegisterUntargeted<MultiKindMessage>((in MultiKindMessage _) => ++untargetedCount));
+                    handles.Add(token.RegisterTargeted<MultiKindMessage>(target, (in MultiKindMessage _) => ++targetedCount));
+                    handles.Add(token.RegisterBroadcast<MultiKindMessage>(source, (in MultiKindMessage _) => ++broadcastCount));
 
                     DispatchUntyped(bus, MessageKind.Untargeted, target, source);
                     DispatchUntyped(bus, MessageKind.Targeted, target, source);
@@ -100,8 +82,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
         [Test]
         public void TypedDispatchSeedsBridgeForPrivateManualMessageBeforeUntypedDispatch(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario
         )
         {
             IMessageBus bus = MessageHandler.MessageBus;
@@ -116,10 +97,7 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void FirstUntypedDispatchUsesGeneratedAotBridge(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void FirstUntypedDispatchUsesGeneratedAotBridge([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             IMessageBus bus = new BusType();
             InstanceId target = new(0x6A17_3001);
@@ -130,28 +108,15 @@ namespace DxMessaging.Tests.Runtime.Core
                 "[{0}] A source-generated message must support its first-ever untyped dispatch without a prior registration or typed emit.",
                 scenario.Kind
             );
-            Assert.AreEqual(
-                1,
-                bus.EmissionId,
-                "[{0}] The generated bridge must enter the typed dispatch path exactly once.",
-                scenario.Kind
-            );
+            Assert.AreEqual(1, bus.EmissionId, "[{0}] The generated bridge must enter the typed dispatch path exactly once.", scenario.Kind);
         }
 
-        public readonly struct MultiKindMessage
-            : IUntargetedMessage,
-                ITargetedMessage,
-                IBroadcastMessage
+        public readonly struct MultiKindMessage : IUntargetedMessage, ITargetedMessage, IBroadcastMessage
         {
             public Type MessageType => typeof(MultiKindMessage);
         }
 
-        private static void DispatchUntyped(
-            IMessageBus bus,
-            MessageKind kind,
-            InstanceId target,
-            InstanceId source
-        )
+        private static void DispatchUntyped(IMessageBus bus, MessageKind kind, InstanceId target, InstanceId source)
         {
             MultiKindMessage message = new();
             switch (kind)
@@ -170,20 +135,12 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private readonly struct PrivateManualMessage
-            : IUntargetedMessage,
-                ITargetedMessage,
-                IBroadcastMessage
+        private readonly struct PrivateManualMessage : IUntargetedMessage, ITargetedMessage, IBroadcastMessage
         {
             public Type MessageType => typeof(PrivateManualMessage);
         }
 
-        private static void DispatchTypedPrivateManualMessage(
-            IMessageBus bus,
-            MessageKind kind,
-            InstanceId target,
-            InstanceId source
-        )
+        private static void DispatchTypedPrivateManualMessage(IMessageBus bus, MessageKind kind, InstanceId target, InstanceId source)
         {
             PrivateManualMessage message = new();
             switch (kind)
@@ -202,12 +159,7 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private static void DispatchUntypedPrivateManualMessage(
-            IMessageBus bus,
-            MessageKind kind,
-            InstanceId target,
-            InstanceId source
-        )
+        private static void DispatchUntypedPrivateManualMessage(IMessageBus bus, MessageKind kind, InstanceId target, InstanceId source)
         {
             PrivateManualMessage message = new();
             switch (kind)
@@ -226,12 +178,7 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private static void DispatchFirstGeneratedMessage(
-            IMessageBus bus,
-            MessageKind kind,
-            InstanceId target,
-            InstanceId source
-        )
+        private static void DispatchFirstGeneratedMessage(IMessageBus bus, MessageKind kind, InstanceId target, InstanceId source)
         {
             switch (kind)
             {
@@ -265,8 +212,7 @@ namespace DxMessaging.Tests.Runtime.Core
     {
         [Test]
         public void BoxedPayloadValuesAndInterceptorMutationsSurviveEveryBridge(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
             [Values(false, true)] bool invokeAotBridge,
             [Values(false, true)] bool mutate
         )
@@ -274,10 +220,7 @@ namespace DxMessaging.Tests.Runtime.Core
             const long marker = 0x12345678_76543210L;
             const int value = 0x13572468;
             BusType bus = new() { DiagnosticsMode = false };
-            using LeakWatcher leaks = new(
-                bus: bus,
-                label: $"{scenario.Kind}, aot={invokeAotBridge}, mutate={mutate}"
-            );
+            using LeakWatcher leaks = new(bus: bus, label: $"{scenario.Kind}, aot={invokeAotBridge}, mutate={mutate}");
             MessageHandler handler = new(new InstanceId(0x6A17_4001), bus) { active = true };
             using MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
             token.DiagnosticMode = false;
@@ -295,73 +238,39 @@ namespace DxMessaging.Tests.Runtime.Core
                 case MessageKind.Untargeted:
                     _ = token.RegisterUntargeted<NonEmptyManualMessage>(RecordOriginalRoute);
                     _ = token.RegisterUntargetedInterceptor<NonEmptyManualMessage>(Intercept);
-                    _ = token.RegisterUntargetedPostProcessor<NonEmptyManualMessage>(
-                        RecordUntargetedPost
-                    );
+                    _ = token.RegisterUntargetedPostProcessor<NonEmptyManualMessage>(RecordUntargetedPost);
                     break;
                 case MessageKind.Targeted:
                     _ = token.RegisterTargeted<NonEmptyManualMessage>(context, RecordOriginalRoute);
-                    _ = token.RegisterTargeted<NonEmptyManualMessage>(
-                        rewrittenContext,
-                        RecordRewrittenRoute
-                    );
-                    _ = token.RegisterTargetedInterceptor<NonEmptyManualMessage>(
-                        InterceptWithContext
-                    );
-                    _ = token.RegisterTargetedWithoutTargetingPostProcessor<NonEmptyManualMessage>(
-                        RecordContextPost
-                    );
+                    _ = token.RegisterTargeted<NonEmptyManualMessage>(rewrittenContext, RecordRewrittenRoute);
+                    _ = token.RegisterTargetedInterceptor<NonEmptyManualMessage>(InterceptWithContext);
+                    _ = token.RegisterTargetedWithoutTargetingPostProcessor<NonEmptyManualMessage>(RecordContextPost);
                     break;
                 case MessageKind.Broadcast:
-                    _ = token.RegisterBroadcast<NonEmptyManualMessage>(
-                        context,
-                        RecordOriginalRoute
-                    );
-                    _ = token.RegisterBroadcast<NonEmptyManualMessage>(
-                        rewrittenContext,
-                        RecordRewrittenRoute
-                    );
-                    _ = token.RegisterBroadcastInterceptor<NonEmptyManualMessage>(
-                        InterceptWithContext
-                    );
-                    _ = token.RegisterBroadcastWithoutSourcePostProcessor<NonEmptyManualMessage>(
-                        RecordContextPost
-                    );
+                    _ = token.RegisterBroadcast<NonEmptyManualMessage>(context, RecordOriginalRoute);
+                    _ = token.RegisterBroadcast<NonEmptyManualMessage>(rewrittenContext, RecordRewrittenRoute);
+                    _ = token.RegisterBroadcastInterceptor<NonEmptyManualMessage>(InterceptWithContext);
+                    _ = token.RegisterBroadcastWithoutSourcePostProcessor<NonEmptyManualMessage>(RecordContextPost);
                     break;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(scenario));
             }
             object boxed = original;
-            Action emit = CreateEmit<NonEmptyManualMessage>(
-                bus,
-                scenario.Kind,
-                context,
-                boxed,
-                invokeAotBridge
-            );
+            Action emit = CreateEmit<NonEmptyManualMessage>(bus, scenario.Kind, context, boxed, invokeAotBridge);
             emit();
             emit();
             string label = $"[{scenario.Kind}] aot={invokeAotBridge}, mutate={mutate}";
             (long Marker, int Value) expected = mutate ? (marker + 9, value + 7) : (marker, value);
-            int expectedContext =
-                scenario.Kind == MessageKind.Untargeted
-                    ? 0
-                    : (mutate ? rewrittenContext.Id : context.Id);
+            int expectedContext = scenario.Kind == MessageKind.Untargeted ? 0 : (mutate ? rewrittenContext.Id : context.Id);
             CollectionAssert.AreEqual(
                 new[] { expected, expected },
                 observed,
-                label
-                    + ": first and repeated dispatch must deliver the actual struct fields and interceptor changes."
+                label + ": first and repeated dispatch must deliver the actual struct fields and interceptor changes."
             );
             CollectionAssert.AreEqual(
-                new[]
-                {
-                    (expectedContext, expected.Marker, expected.Value),
-                    (expectedContext, expected.Marker, expected.Value),
-                },
+                new[] { (expectedContext, expected.Marker, expected.Value), (expectedContext, expected.Marker, expected.Value) },
                 postObserved,
-                label
-                    + ": post-processors must observe the bridge's internal final payload and routed context."
+                label + ": post-processors must observe the bridge's internal final payload and routed context."
             );
             Assert.That(
                 originalRouteCalls,
@@ -373,23 +282,14 @@ namespace DxMessaging.Tests.Runtime.Core
                 Is.EqualTo(scenario.Kind != MessageKind.Untargeted && mutate ? 2 : 0),
                 label + ": context mutation must dispatch through the rewritten route."
             );
-            Assert.That(
-                interceptions,
-                Is.EqualTo(2),
-                label + ": both dispatches must execute the real interceptor."
-            );
+            Assert.That(interceptions, Is.EqualTo(2), label + ": both dispatches must execute the real interceptor.");
             NonEmptyManualMessage unchanged = (NonEmptyManualMessage)boxed;
             Assert.That(
                 (unchanged.Marker, unchanged.Value),
                 Is.EqualTo((marker, value)),
-                label
-                    + ": untyped dispatch must mutate a typed local copy, preserving the caller's preboxed payload."
+                label + ": untyped dispatch must mutate a typed local copy, preserving the caller's preboxed payload."
             );
-            Assert.That(
-                bus.EmissionId,
-                Is.EqualTo(2),
-                label + ": each bridge must enter typed dispatch exactly once."
-            );
+            Assert.That(bus.EmissionId, Is.EqualTo(2), label + ": each bridge must enter typed dispatch exactly once.");
             return;
 
             void RecordOriginalRoute(in NonEmptyManualMessage message)
@@ -404,11 +304,9 @@ namespace DxMessaging.Tests.Runtime.Core
                 observed.Add((message.Marker, message.Value));
             }
 
-            void RecordUntargetedPost(in NonEmptyManualMessage message) =>
-                postObserved.Add((0, message.Marker, message.Value));
+            void RecordUntargetedPost(in NonEmptyManualMessage message) => postObserved.Add((0, message.Marker, message.Value));
 
-            void RecordContextPost(in InstanceId routedContext, in NonEmptyManualMessage message) =>
-                postObserved.Add((routedContext.Id, message.Marker, message.Value));
+            void RecordContextPost(in InstanceId routedContext, in NonEmptyManualMessage message) => postObserved.Add((routedContext.Id, message.Marker, message.Value));
 
             bool Intercept(ref NonEmptyManualMessage message)
             {
@@ -420,16 +318,9 @@ namespace DxMessaging.Tests.Runtime.Core
                 return true;
             }
 
-            bool InterceptWithContext(
-                ref InstanceId routedContext,
-                ref NonEmptyManualMessage message
-            )
+            bool InterceptWithContext(ref InstanceId routedContext, ref NonEmptyManualMessage message)
             {
-                Assert.That(
-                    routedContext,
-                    Is.EqualTo(context),
-                    $"[{scenario.Kind}]: the bridge must preserve the actual target/source."
-                );
+                Assert.That(routedContext, Is.EqualTo(context), $"[{scenario.Kind}]: the bridge must preserve the actual target/source.");
                 if (mutate)
                 {
                     routedContext = rewrittenContext;
@@ -439,10 +330,7 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void AotBridgeInvokesSuppliedCustomBusWithoutUnwrappingIt(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void AotBridgeInvokesSuppliedCustomBusWithoutUnwrappingIt([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             BusType bus = new() { DiagnosticsMode = false };
             using LeakWatcher leaks = new(bus: bus, label: $"{scenario.Kind} custom AOT bridge");
@@ -477,50 +365,16 @@ namespace DxMessaging.Tests.Runtime.Core
                     throw new ArgumentOutOfRangeException(nameof(scenario));
             }
             string label = $"[{scenario.Kind}] custom AOT bridge";
-            Assert.That(
-                customBus.Calls,
-                Is.EqualTo(1),
-                label + ": setup must root exactly one custom typed call."
-            );
-            Assert.That(
-                bus.EmissionId,
-                Is.EqualTo(1),
-                label + ": the explicit custom seed must forward once."
-            );
-            Assert.That(
-                calls,
-                Is.Zero,
-                label + ": setup must run before the callback is registered."
-            );
+            Assert.That(customBus.Calls, Is.EqualTo(1), label + ": setup must root exactly one custom typed call.");
+            Assert.That(bus.EmissionId, Is.EqualTo(1), label + ": the explicit custom seed must forward once.");
+            Assert.That(calls, Is.Zero, label + ": setup must run before the callback is registered.");
             object boxed = payload;
-            Action emit = CreateEmit<CustomBusMessage>(
-                customBus,
-                scenario.Kind,
-                context,
-                boxed,
-                invokeAotBridge: true
-            );
+            Action emit = CreateEmit<CustomBusMessage>(customBus, scenario.Kind, context, boxed, invokeAotBridge: true);
             emit();
-            Assert.That(
-                customBus.Calls,
-                Is.EqualTo(2),
-                label + ": the real bridge must invoke the supplied custom bus."
-            );
-            Assert.That(
-                bus.EmissionId,
-                Is.EqualTo(2),
-                label + ": the bridge must forward once after the seed."
-            );
-            Assert.That(
-                calls,
-                Is.EqualTo(1),
-                label + ": only the bridge dispatch must reach the callback."
-            );
-            Assert.That(
-                received,
-                Is.EqualTo(173),
-                label + ": custom forwarding must preserve the boxed payload."
-            );
+            Assert.That(customBus.Calls, Is.EqualTo(2), label + ": the real bridge must invoke the supplied custom bus.");
+            Assert.That(bus.EmissionId, Is.EqualTo(2), label + ": the bridge must forward once after the seed.");
+            Assert.That(calls, Is.EqualTo(1), label + ": only the bridge dispatch must reach the callback.");
+            Assert.That(received, Is.EqualTo(173), label + ": custom forwarding must preserve the boxed payload.");
             return;
 
             void Receive(in CustomBusMessage message)
@@ -543,29 +397,20 @@ namespace DxMessaging.Tests.Runtime.Core
                 base.UntargetedBroadcast(ref message);
             }
 
-            public override void TargetedBroadcast<TMessage>(
-                ref InstanceId target,
-                ref TMessage message
-            )
+            public override void TargetedBroadcast<TMessage>(ref InstanceId target, ref TMessage message)
             {
                 ++Calls;
                 base.TargetedBroadcast(ref target, ref message);
             }
 
-            public override void SourcedBroadcast<TMessage>(
-                ref InstanceId source,
-                ref TMessage message
-            )
+            public override void SourcedBroadcast<TMessage>(ref InstanceId source, ref TMessage message)
             {
                 ++Calls;
                 base.SourcedBroadcast(ref source, ref message);
             }
         }
 
-        private readonly struct CustomBusMessage
-            : IUntargetedMessage,
-                ITargetedMessage,
-                IBroadcastMessage
+        private readonly struct CustomBusMessage : IUntargetedMessage, ITargetedMessage, IBroadcastMessage
         {
             internal CustomBusMessage(int value) => Value = value;
 
@@ -573,24 +418,15 @@ namespace DxMessaging.Tests.Runtime.Core
             public Type MessageType => typeof(CustomBusMessage);
         }
 
-        private static Action CreateEmit<T>(
-            IMessageBus bus,
-            MessageKind kind,
-            InstanceId context,
-            object boxed,
-            bool invokeAotBridge
-        )
+        private static Action CreateEmit<T>(IMessageBus bus, MessageKind kind, InstanceId context, object boxed, bool invokeAotBridge)
         {
             if (!invokeAotBridge)
             {
                 return kind switch
                 {
-                    MessageKind.Untargeted => () =>
-                        bus.UntypedUntargetedBroadcast((IUntargetedMessage)boxed),
-                    MessageKind.Targeted => () =>
-                        bus.UntypedTargetedBroadcast(context, (ITargetedMessage)boxed),
-                    MessageKind.Broadcast => () =>
-                        bus.UntypedSourcedBroadcast(context, (IBroadcastMessage)boxed),
+                    MessageKind.Untargeted => () => bus.UntypedUntargetedBroadcast((IUntargetedMessage)boxed),
+                    MessageKind.Targeted => () => bus.UntypedTargetedBroadcast(context, (ITargetedMessage)boxed),
+                    MessageKind.Broadcast => () => bus.UntypedSourcedBroadcast(context, (IBroadcastMessage)boxed),
                     _ => throw new ArgumentOutOfRangeException(nameof(kind)),
                 };
             }
@@ -605,43 +441,26 @@ namespace DxMessaging.Tests.Runtime.Core
                 Registration must root this exact closed bridge and its typed dispatch target.
                 Reflection lets Mono/.NET execute the same AOT body as IL2CPP public dispatch.
             */
-            MethodInfo method = typeof(BusType)
-                .GetMethod(name, BindingFlags.Static | BindingFlags.NonPublic)
-                ?.MakeGenericMethod(typeof(T));
+            MethodInfo method = typeof(BusType).GetMethod(name, BindingFlags.Static | BindingFlags.NonPublic)?.MakeGenericMethod(typeof(T));
             Assert.That(method, Is.Not.Null, $"[{kind}]: the production AOT bridge must exist.");
             switch (kind)
             {
                 case MessageKind.Untargeted:
                     Action<IMessageBus, IUntargetedMessage> untargeted =
-                        (Action<IMessageBus, IUntargetedMessage>)
-                            Delegate.CreateDelegate(
-                                typeof(Action<IMessageBus, IUntargetedMessage>),
-                                method
-                            );
+                        (Action<IMessageBus, IUntargetedMessage>)Delegate.CreateDelegate(typeof(Action<IMessageBus, IUntargetedMessage>), method);
                     return () => untargeted(bus, (IUntargetedMessage)boxed);
                 case MessageKind.Targeted:
                     Action<IMessageBus, InstanceId, ITargetedMessage> targeted =
-                        (Action<IMessageBus, InstanceId, ITargetedMessage>)
-                            Delegate.CreateDelegate(
-                                typeof(Action<IMessageBus, InstanceId, ITargetedMessage>),
-                                method
-                            );
+                        (Action<IMessageBus, InstanceId, ITargetedMessage>)Delegate.CreateDelegate(typeof(Action<IMessageBus, InstanceId, ITargetedMessage>), method);
                     return () => targeted(bus, context, (ITargetedMessage)boxed);
                 default:
                     Action<IMessageBus, InstanceId, IBroadcastMessage> broadcast =
-                        (Action<IMessageBus, InstanceId, IBroadcastMessage>)
-                            Delegate.CreateDelegate(
-                                typeof(Action<IMessageBus, InstanceId, IBroadcastMessage>),
-                                method
-                            );
+                        (Action<IMessageBus, InstanceId, IBroadcastMessage>)Delegate.CreateDelegate(typeof(Action<IMessageBus, InstanceId, IBroadcastMessage>), method);
                     return () => broadcast(bus, context, (IBroadcastMessage)boxed);
             }
         }
 
-        private readonly struct NonEmptyManualMessage
-            : IUntargetedMessage,
-                ITargetedMessage,
-                IBroadcastMessage
+        private readonly struct NonEmptyManualMessage : IUntargetedMessage, ITargetedMessage, IBroadcastMessage
         {
             internal readonly long Marker;
             internal readonly int Value;

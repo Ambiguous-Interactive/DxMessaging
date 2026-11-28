@@ -59,11 +59,7 @@ namespace DxMessaging.Tests.Editor.Allocations
                 Assert.Ignore("GC.Alloc allocation probe is non-functional on this backend.");
             }
 
-            Assert.That(
-                captureOn,
-                Is.GreaterThan(0L),
-                "Capture-on emissions must allocate; otherwise the comparison proves nothing."
-            );
+            Assert.That(captureOn, Is.GreaterThan(0L), "Capture-on emissions must allocate; otherwise the comparison proves nothing.");
 
             double removedShare = 1d - ((double)captureOff / captureOn);
             Assert.That(
@@ -79,10 +75,7 @@ namespace DxMessaging.Tests.Editor.Allocations
 
         private static long MeasureEmitAllocations(bool captureStackTraces)
         {
-            using DiagnosticsScope scope = new(
-                DiagnosticsTarget.All,
-                diagnosticsStackTraces: captureStackTraces
-            );
+            using DiagnosticsScope scope = new(DiagnosticsTarget.All, diagnosticsStackTraces: captureStackTraces);
 
             MessageBus bus = MessageBus.CreateForInternalUse(
                 StopwatchClock.Instance,

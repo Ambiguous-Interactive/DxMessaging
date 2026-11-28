@@ -21,9 +21,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
         public void CompileClosedFunction()
         {
             Assert.That(BurstCompiler.IsEnabled, Is.True);
-            _function = BurstCompiler.CompileFunctionPointer<NumericBatchDelegate>(
-                PureBatchKernels.Pointer
-            );
+            _function = BurstCompiler.CompileFunctionPointer<NumericBatchDelegate>(PureBatchKernels.Pointer);
             _invoke = _function.Invoke;
             Assert.That(_function.IsCreated, Is.True);
         }
@@ -59,9 +57,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                     failures.Add(failure);
                 }
             }
-            TestContext.WriteLine(
-                $"Pure batch cleanup: owners={_owned.Count}; all three containers released once after known jobs completed."
-            );
+            TestContext.WriteLine($"Pure batch cleanup: owners={_owned.Count}; all three containers released once after known jobs completed.");
             _owned.Clear();
             if (failures.Count != 0)
             {
@@ -70,11 +66,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
         }
 
         [Test]
-        public void AllPathsPreserveEveryOutputAndGuardsWithPartialFinalBatch(
-            [Values] PureBatchPath path,
-            [Values(1, 4, 16, 64, 128, 256)] int batch,
-            [Values(0, 3)] int rounds
-        )
+        public void AllPathsPreserveEveryOutputAndGuardsWithPartialFinalBatch([Values] PureBatchPath path, [Values(1, 4, 16, 64, 128, 256)] int batch, [Values(0, 3)] int rounds)
         {
             using BufferOwner owner = Create(1027);
             NativeNumericPayload[] original = owner.Input.ToArray();
@@ -92,42 +84,20 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
             {
                 checksum = unchecked(checksum + owner.Output[index]);
             }
-            int entries =
-                path == PureBatchPath.PointerScalar
-                    ? owner.Count
-                    : (owner.Count + batch - 1) / batch;
+            int entries = path == PureBatchPath.PointerScalar ? owner.Count : (owner.Count + batch - 1) / batch;
             TestContext.WriteLine(
                 $"Pure batch: path={path},batch={batch},rounds={rounds},items={owner.Count},kernelEntries={entries},mode={(path == PureBatchPath.Managed ? 1 : 0)},checksum={checksum}; timing unmeasured."
             );
         }
 
         [Test]
-        public void FrozenIndependentGoldenVectorsAgreeAcrossAllPaths(
-            [Values(0, 3)] int rounds,
-            [Values(0, 1, 2, 3, 4, 5)] int vector
-        )
+        public void FrozenIndependentGoldenVectorsAgreeAcrossAllPaths([Values(0, 3)] int rounds, [Values(0, 1, 2, 3, 4, 5)] int vector)
         {
             int[] producer = { 0, 1, -1, int.MinValue, int.MaxValue, 17 };
             int[] sequence = { 0, 1, -1, int.MaxValue, int.MinValue, 29 };
             long[] value = { 0, 1, -1, long.MinValue, long.MaxValue, 81985529216486895L };
-            long[] simple =
-            {
-                0,
-                99,
-                -99,
-                9223371830696345599L,
-                -9223371830696345698L,
-                81985529216488573L,
-            };
-            long[] mixed =
-            {
-                6392512781046991133L,
-                6133562355747626131L,
-                297763689130802543L,
-                -8091143960558176489L,
-                -362853752901266012L,
-                9008981355231998747L,
-            };
+            long[] simple = { 0, 99, -99, 9223371830696345599L, -9223371830696345698L, 81985529216488573L };
+            long[] mixed = { 6392512781046991133L, 6133562355747626131L, 297763689130802543L, -8091143960558176489L, -362853752901266012L, 9008981355231998747L };
             long expected = rounds == 0 ? simple[vector] : mixed[vector];
             using BufferOwner owner = Create(1);
             owner.Input[1] = new NativeNumericPayload
@@ -151,55 +121,32 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
         {
             using BufferOwner owner = Create(4);
             long[] original = owner.Output.ToArray();
-            Assert.Throws<ArgumentOutOfRangeException>(() =>
-                owner.Run(PureBatchPath.Managed, 0, 0, _function, _invoke)
-            );
-            Assert.Throws<ArgumentOutOfRangeException>(() =>
-                owner.Run(PureBatchPath.Managed, -1, 0, _function, _invoke)
-            );
-            Assert.Throws<ArgumentOutOfRangeException>(() =>
-                owner.Run(PureBatchPath.Managed, 257, 0, _function, _invoke)
-            );
-            Assert.Throws<ArgumentOutOfRangeException>(() =>
-                owner.Run((PureBatchPath)99, 1, 0, _function, _invoke)
-            );
-            Assert.Throws<ArgumentOutOfRangeException>(() =>
-                owner.Run(PureBatchPath.Managed, 1, -1, _function, _invoke)
-            );
-            Assert.Throws<ArgumentException>(() =>
-                owner.Run(PureBatchPath.PointerBatch, 1, 0, default, _invoke)
-            );
-            Assert.Throws<ArgumentNullException>(() =>
-                owner.Run(PureBatchPath.PointerScalar, 1, 0, _function, null)
-            );
+            Assert.Throws<ArgumentOutOfRangeException>(() => owner.Run(PureBatchPath.Managed, 0, 0, _function, _invoke));
+            Assert.Throws<ArgumentOutOfRangeException>(() => owner.Run(PureBatchPath.Managed, -1, 0, _function, _invoke));
+            Assert.Throws<ArgumentOutOfRangeException>(() => owner.Run(PureBatchPath.Managed, 257, 0, _function, _invoke));
+            Assert.Throws<ArgumentOutOfRangeException>(() => owner.Run((PureBatchPath)99, 1, 0, _function, _invoke));
+            Assert.Throws<ArgumentOutOfRangeException>(() => owner.Run(PureBatchPath.Managed, 1, -1, _function, _invoke));
+            Assert.Throws<ArgumentException>(() => owner.Run(PureBatchPath.PointerBatch, 1, 0, default, _invoke));
+            Assert.Throws<ArgumentNullException>(() => owner.Run(PureBatchPath.PointerScalar, 1, 0, _function, null));
             CollectionAssert.AreEqual(original, owner.Output.ToArray());
-            CollectionAssert.AreEqual(
-                Enumerable.Repeat(-1, owner.Count).ToArray(),
-                owner.Modes.ToArray()
-            );
+            CollectionAssert.AreEqual(Enumerable.Repeat(-1, owner.Count).ToArray(), owner.Modes.ToArray());
             Assert.Throws<ArgumentOutOfRangeException>(() => new BufferOwner(0));
             Assert.Throws<ArgumentOutOfRangeException>(() => new BufferOwner(4097));
         }
 
         [Test]
-        public void PendingJobRejectsResetOrReuseAndDisposalCompletesBeforeRelease(
-            [Values(PureBatchPath.JobDirect, PureBatchPath.JobPointer)] PureBatchPath path
-        )
+        public void PendingJobRejectsResetOrReuseAndDisposalCompletesBeforeRelease([Values(PureBatchPath.JobDirect, PureBatchPath.JobPointer)] PureBatchPath path)
         {
             BufferOwner owner = Create(1027);
             owner.Schedule(path, 64, 3, _function);
             Assert.Throws<InvalidOperationException>(() => owner.Reset());
-            Assert.Throws<InvalidOperationException>(() =>
-                owner.Run(PureBatchPath.Managed, 64, 3, _function, _invoke)
-            );
+            Assert.Throws<InvalidOperationException>(() => owner.Run(PureBatchPath.Managed, 64, 3, _function, _invoke));
             owner.Dispose();
             Assert.That(owner.CompletedJob, Is.True);
             Assert.That(owner.CompletedNative, Is.True);
             Assert.That(owner.ReleaseCount, Is.EqualTo(3));
             Assert.Throws<ObjectDisposedException>(() => owner.Reset());
-            Assert.Throws<ObjectDisposedException>(() =>
-                owner.Run(path, 64, 3, _function, _invoke)
-            );
+            Assert.Throws<ObjectDisposedException>(() => owner.Run(path, 64, 3, _function, _invoke));
         }
 
         [Test]
@@ -214,10 +161,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                     owner.Run(path, 4, repeat, _function, _invoke);
                     owner.AssertModes(path, 4);
                     owner.AssertGuards();
-                    Assert.That(
-                        owner.Output[1],
-                        Is.EqualTo(PureBatchKernels.Compute(owner.Input[1], repeat))
-                    );
+                    Assert.That(owner.Output[1], Is.EqualTo(PureBatchKernels.Compute(owner.Input[1], repeat)));
                 }
             }
         }
@@ -259,10 +203,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                     Input[0] = Input[count + 1] = InputGuard();
                     for (int index = 0; index < count; ++index)
                     {
-                        NativeNumericPayload payload = NativeNumericPayload.Create(
-                            index % 4,
-                            index
-                        );
+                        NativeNumericPayload payload = NativeNumericPayload.Create(index % 4, index);
                         payload.Value =
                             index % 3 == 0 ? long.MinValue + index
                             : index % 3 == 1 ? long.MaxValue - index
@@ -291,13 +232,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                 }
             }
 
-            internal void Run(
-                PureBatchPath path,
-                int batch,
-                int rounds,
-                FunctionPointer<NumericBatchDelegate> function,
-                NumericBatchDelegate invoke
-            )
+            internal void Run(PureBatchPath path, int batch, int rounds, FunctionPointer<NumericBatchDelegate> function, NumericBatchDelegate invoke)
             {
                 Validate(path, batch, rounds, function);
                 if (path == PureBatchPath.JobDirect || path == PureBatchPath.JobPointer)
@@ -306,10 +241,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                     Complete();
                     return;
                 }
-                if (
-                    (path == PureBatchPath.PointerBatch || path == PureBatchPath.PointerScalar)
-                    && invoke == null
-                )
+                if ((path == PureBatchPath.PointerBatch || path == PureBatchPath.PointerScalar) && invoke == null)
                 {
                     throw new ArgumentNullException(nameof(invoke));
                 }
@@ -324,43 +256,20 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                     switch (path)
                     {
                         case PureBatchPath.Managed:
-                            PureBatchKernels.Managed(
-                                count,
-                                input + offset + 1,
-                                output + offset + 1,
-                                modes + entry,
-                                rounds
-                            );
+                            PureBatchKernels.Managed(count, input + offset + 1, output + offset + 1, modes + entry, rounds);
                             break;
                         case PureBatchPath.BurstDirect:
-                            PureBatchKernels.Direct(
-                                count,
-                                input + offset + 1,
-                                output + offset + 1,
-                                modes + entry,
-                                rounds
-                            );
+                            PureBatchKernels.Direct(count, input + offset + 1, output + offset + 1, modes + entry, rounds);
                             break;
                         default:
-                            invoke(
-                                count,
-                                input + offset + 1,
-                                output + offset + 1,
-                                modes + entry,
-                                rounds
-                            );
+                            invoke(count, input + offset + 1, output + offset + 1, modes + entry, rounds);
                             break;
                     }
                     ++entry;
                 }
             }
 
-            internal void Schedule(
-                PureBatchPath path,
-                int batch,
-                int rounds,
-                FunctionPointer<NumericBatchDelegate> function
-            )
+            internal void Schedule(PureBatchPath path, int batch, int rounds, FunctionPointer<NumericBatchDelegate> function)
             {
                 Validate(path, batch, rounds, function);
                 if (path != PureBatchPath.JobDirect && path != PureBatchPath.JobPointer)
@@ -398,37 +307,16 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                 }
             }
 
-            private void Validate(
-                PureBatchPath path,
-                int batch,
-                int rounds,
-                FunctionPointer<NumericBatchDelegate> function
-            )
+            private void Validate(PureBatchPath path, int batch, int rounds, FunctionPointer<NumericBatchDelegate> function)
             {
                 RequireIdle();
-                if (
-                    batch < 1
-                    || 256 < batch
-                    || rounds < 0
-                    || 3 < rounds
-                    || path < PureBatchPath.Managed
-                    || PureBatchPath.JobPointer < path
-                )
+                if (batch < 1 || 256 < batch || rounds < 0 || 3 < rounds || path < PureBatchPath.Managed || PureBatchPath.JobPointer < path)
                 {
                     throw new ArgumentOutOfRangeException(nameof(batch));
                 }
-                if (
-                    (
-                        path == PureBatchPath.PointerBatch
-                        || path == PureBatchPath.PointerScalar
-                        || path == PureBatchPath.JobPointer
-                    ) && !function.IsCreated
-                )
+                if ((path == PureBatchPath.PointerBatch || path == PureBatchPath.PointerScalar || path == PureBatchPath.JobPointer) && !function.IsCreated)
                 {
-                    throw new ArgumentException(
-                        "A compiled function is required.",
-                        nameof(function)
-                    );
+                    throw new ArgumentException("A compiled function is required.", nameof(function));
                 }
             }
 
@@ -440,28 +328,21 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                 }
                 if (HasPending)
                 {
-                    throw new InvalidOperationException(
-                        "Complete the known job before reset or reuse."
-                    );
+                    throw new InvalidOperationException("Complete the known job before reset or reuse.");
                 }
             }
 
             internal void AssertModes(PureBatchPath path, int batch)
             {
                 RequireIdle();
-                int entries =
-                    path == PureBatchPath.PointerScalar ? Count : (Count + batch - 1) / batch;
+                int entries = path == PureBatchPath.PointerScalar ? Count : (Count + batch - 1) / batch;
                 int mode = path == PureBatchPath.Managed ? 1 : 0;
                 int[] expected = Enumerable.Repeat(-1, Count).ToArray();
                 for (int index = 0; index < entries; ++index)
                 {
                     expected[index] = mode;
                 }
-                CollectionAssert.AreEqual(
-                    expected,
-                    Modes.ToArray(),
-                    "Exact entry count and compiler mode; no fallback."
-                );
+                CollectionAssert.AreEqual(expected, Modes.ToArray(), "Exact entry count and compiler mode; no fallback.");
             }
 
             internal void AssertGuards()

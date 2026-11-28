@@ -2,8 +2,7 @@
 
 ## Snapshot Semantics: Frozen Listener Lists
 
-DxMessaging freezes listener lists at the phase boundaries described below. Changing
-registrations does not rewrite an already captured list for the current emission.
+DxMessaging freezes listener lists at the phase boundaries described below. Changing registrations does not rewrite an already captured list for the current emission.
 
 ### What this means for a captured list
 
@@ -13,39 +12,27 @@ Typed handler and post-processor snapshots keep their callback membership once c
 - Removing a registration does not remove its callback from that snapshot.
 - The acquisition points below determine whether a change affects a later phase of the same emission.
 
-Interceptors run **before** the bus captures the handler snapshot. When an interceptor removes a
-handler, the bus leaves it out of that list and does **not** call it for the current message.
-Deregistering a handler from another handler or from a post-processor follows
-the frozen rule above; deregistering a handler from an interceptor takes effect
-immediately. The bus captures post-processor snapshots before interceptors run, so they
-follow the frozen rule in every case.
+Interceptors run **before** the bus captures the handler snapshot. When an interceptor removes a handler, the bus leaves it out of that list and does **not** call it for the
+current message. Deregistering a handler from another handler or from a post-processor follows the frozen rule above; deregistering a handler from an interceptor takes effect
+immediately. The bus captures post-processor snapshots before interceptors run, so they follow the frozen rule in every case.
 
-In 3.2.3 and later, this rule also covers the first post-processor registered
-for a message type and one registered for a target or source that an interceptor
-selects during the emission. Both start on the next emission. A processor removed
-from an interceptor-selected route still finishes the current emission.
+In 3.2.3 and later, this rule also covers the first post-processor registered for a message type and one registered for a target or source that an interceptor selects during the
+emission. Both start on the next emission. A processor removed from an interceptor-selected route still finishes the current emission.
 
-Global accept-all subscriptions freeze each `MessageHandler`'s lists when the bus
-reaches that handler. An earlier handler can change what a later handler
-receives in the same emission. Each handler's fast callbacks run before its `Action` callbacks.
-If that handler has no live `Action` registrations when the bus reaches its `Action` list,
-the bus skips that list.
+Global accept-all subscriptions freeze each `MessageHandler`'s lists when the bus reaches that handler. An earlier handler can change what a later handler receives in the same
+emission. Each handler's fast callbacks run before its `Action` callbacks. If that handler has no live `Action` registrations when the bus reaches its `Action` list, the bus skips
+that list.
 
-Without-context handle phases have separate acquisition points. The bus captures targeted without-targeting
-handlers when that phase begins, so a keyed handler can change its callbacks.
-Without-source broadcast handlers reuse a populated snapshot captured before keyed handling;
-when that route was empty, the later phase can capture newly registered handlers.
+Without-context handle phases have separate acquisition points. The bus captures targeted without-targeting handlers when that phase begins, so a keyed handler can change its
+callbacks. Without-source broadcast handlers reuse a populated snapshot captured before keyed handling; when that route was empty, the later phase can capture newly registered
+handlers.
 
-**Fixed in v4.0.0:** A nested global emission uses the changed registrations while
-the outer emission keeps its captured callbacks. Removing a peer and registering a
-replacement before a nested emit no longer drops the outer peer or delivers the
-outer message to the replacement. Reset still stops the invalidated emission.
+**Fixed in v4.0.0:** A nested global emission uses the changed registrations while the outer emission keeps its captured callbacks. Removing a peer and registering a replacement
+before a nested emit no longer drops the outer peer or delivers the outer message to the replacement. Reset still stops the invalidated emission.
 
-If a callback resets a `MessageBus` or bumps its reset generation, that emission stops
-before any remaining handler or post-processor phase. This includes the later
-without-targeting or without-source handle phase, even when the callback registers
-replacement listeners before returning. A nested or later emission uses the
-registrations that remain after the reset.
+If a callback resets a `MessageBus` or bumps its reset generation, that emission stops before any remaining handler or post-processor phase. This includes the later
+without-targeting or without-source handle phase, even when the callback registers replacement listeners before returning. A nested or later emission uses the registrations that
+remain after the reset.
 
 #### Example
 
@@ -73,7 +60,8 @@ secondEvent.Emit();  // Both DoWork() and ProcessLater() execute
 - Ensures all listeners see a consistent view of the registration state
 - Makes debugging and reasoning about message flow easier
 
-This snapshot behavior is extensively tested in the [Mutation During Emission tests](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Tests/Runtime/Core/MutationDuringEmissionTests.cs).
+This snapshot behavior is extensively tested in the
+[Mutation During Emission tests](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Tests/Runtime/Core/MutationDuringEmissionTests.cs).
 
 ### Handler activity during callbacks
 
@@ -85,29 +73,24 @@ The built-in `MessageBus` reads `MessageHandler.active` at these points:
 | Global accept-all                                                              | Before entering a handler's group        | Remaining callbacks in a group already running can still run. Nested and later emissions check activity again on group entry. |
 | Interceptors                                                                   | The owner activity field is not checked. | Registered callbacks keep running.                                                                                            |
 
-Changing activity leaves registrations in place. Call `token.Disable()` to remove live token
-registrations, or `token.UnregisterAll()` to clear staging as well. Callbacks already captured
-follow the snapshot rules above. Reset and exception handling still apply.
+Changing activity leaves registrations in place. Call `token.Disable()` to remove live token registrations, or `token.UnregisterAll()` to clear staging as well. Callbacks already
+captured follow the snapshot rules above. Reset and exception handling still apply.
 
 ---
 
 ## Execution order
 
-The built-in `MessageBus` orders typed handlers and post-processors within each message type,
-route, and phase.
+The built-in `MessageBus` orders typed handlers and post-processors within each message type, route, and phase.
 
 1. Lower priority values run first.
-1. At the same priority, the bus visits each `MessageHandler` in the order it joined that group.
-   A handler joins when the bus receives its first live registration for the group.
-1. Within each `MessageHandler`, fast (readonly by-reference) callbacks run before `Action`
-   callbacks. The callbacks of each kind run in registration order.
+1. At the same priority, the bus visits each `MessageHandler` in the order it joined that group. A handler joins when the bus receives its first live registration for the group.
+1. Within each `MessageHandler`, fast (readonly by-reference) callbacks run before `Action` callbacks. The callbacks of each kind run in registration order.
 
-For example, register an `Action` on handler A, a fast callback on handler B, and a fast callback
-on handler A at the same priority. The bus calls A's fast callback, A's `Action`, then B's fast
-callback.
+For example, register an `Action` on handler A, a fast callback on handler B, and a fast callback on handler A at the same priority. The bus calls A's fast callback, A's `Action`,
+then B's fast callback.
 
-Interceptors run by ascending priority and use registration order at the same priority.
-Global accept-all callbacks run in a separate phase using the per-handler lists described above.
+Interceptors run by ascending priority and use registration order at the same priority. Global accept-all callbacks run in a separate phase using the per-handler lists described
+above.
 
 Untargeted pipeline
 
@@ -134,8 +117,7 @@ Broadcast pipeline
 1. Broadcast Post-Processors for `T` registered for the specific `source`
 1. Broadcast-Without-Source Post-Processors for `T` (listen for all sources)
 
-Without-targeting and without-source registrations run in separate phases after their
-corresponding specific-target or specific-source phases.
+Without-targeting and without-source registrations run in separate phases after their corresponding specific-target or specific-source phases.
 
 Visual overview
 
@@ -223,9 +205,8 @@ MessageBusRegistration registration = bus.RegisterTargetedInterceptor<ApplyDamag
 bus.Deregister<ApplyDamage>(in registration);
 ```
 
-Calls through `MessageRegistrationToken` are owned by that token. Calls made directly on
-`IMessageBus` return raw handles; retain them and call `Deregister<T>(in registration)` with
-the exact registered message type when the owner shuts down.
+Calls through `MessageRegistrationToken` are owned by that token. Calls made directly on `IMessageBus` return raw handles; retain them and call `Deregister<T>(in registration)`
+with the exact registered message type when the owner shuts down.
 
 ### Real-world use cases
 
@@ -633,10 +614,8 @@ No **Avoid for:**
 Post-processors
 
 - Observe after handlers. Use them for logging, metrics, replay records, or follow-up emission.
-- Keep gameplay and presentation state changes in handlers. A completed dispatch does not
-  reveal whether a handler applied the payload to health, inventory, UI, or another state.
-- Post-processors cannot cancel delivery. Use an interceptor when a message must be rejected
-  or normalized before handlers run.
+- Keep gameplay and presentation state changes in handlers. A completed dispatch does not reveal whether a handler applied the payload to health, inventory, UI, or another state.
+- Post-processors cannot cancel delivery. Use an interceptor when a message must be rejected or normalized before handlers run.
 - Per category and scope (per target/source or all):
   - Untargeted: `RegisterUntargetedPostProcessor<T>`
   - Targeted (specific): `RegisterTargetedPostProcessor<T>(target, ...)`

@@ -30,15 +30,10 @@ namespace DxMessaging.Tests.Runtime.Unity
         [Test]
         public void DefaultReleasedListenerStaysUnregisteredAcrossEnableCycles()
         {
-            GameObject host = new(
-                nameof(DefaultReleasedListenerStaysUnregisteredAcrossEnableCycles),
-                typeof(MessagingComponent),
-                typeof(ReregisteringMessageAwareComponent)
-            );
+            GameObject host = new(nameof(DefaultReleasedListenerStaysUnregisteredAcrossEnableCycles), typeof(MessagingComponent), typeof(ReregisteringMessageAwareComponent));
             _spawned.Add(host);
             MessagingComponent messaging = host.GetComponent<MessagingComponent>();
-            ReregisteringMessageAwareComponent listener =
-                host.GetComponent<ReregisteringMessageAwareComponent>();
+            ReregisteringMessageAwareComponent listener = host.GetComponent<ReregisteringMessageAwareComponent>();
             listener.reregisterOnEnableAfterRelease = false;
 
             int count = 0;
@@ -48,10 +43,7 @@ namespace DxMessaging.Tests.Runtime.Unity
             message.EmitUntargeted();
             Assert.AreEqual(1, count, "Positive control: listener should receive while active.");
 
-            Assert.IsTrue(
-                messaging.Release(listener),
-                "Releasing the registered listener should succeed."
-            );
+            Assert.IsTrue(messaging.Release(listener), "Releasing the registered listener should succeed.");
 
             message.EmitUntargeted();
             Assert.AreEqual(1, count, "Released listener must stop receiving.");
@@ -61,37 +53,20 @@ namespace DxMessaging.Tests.Runtime.Unity
                 listener.enabled = false;
                 listener.enabled = true;
                 message.EmitUntargeted();
-                Assert.AreEqual(
-                    1,
-                    count,
-                    $"Cycle {cycle}: with the default opt-out, enable/disable cycles after a "
-                        + "release must not resurrect registrations."
-                );
+                Assert.AreEqual(1, count, $"Cycle {cycle}: with the default opt-out, enable/disable cycles after a " + "release must not resurrect registrations.");
             }
 
-            Assert.AreEqual(
-                1,
-                listener.registerInvocationCount,
-                "RegisterMessageHandlers must run only from Awake when the opt-in is off."
-            );
+            Assert.AreEqual(1, listener.registerInvocationCount, "RegisterMessageHandlers must run only from Awake when the opt-in is off.");
         }
 
         [Test]
         public void OptInReregistersOnNextEnableAfterRelease()
         {
-            GameObject host = new(
-                nameof(OptInReregistersOnNextEnableAfterRelease),
-                typeof(MessagingComponent),
-                typeof(ReregisteringMessageAwareComponent)
-            );
+            GameObject host = new(nameof(OptInReregistersOnNextEnableAfterRelease), typeof(MessagingComponent), typeof(ReregisteringMessageAwareComponent));
             _spawned.Add(host);
             MessagingComponent messaging = host.GetComponent<MessagingComponent>();
-            ReregisteringMessageAwareComponent listener =
-                host.GetComponent<ReregisteringMessageAwareComponent>();
-            Assert.IsTrue(
-                listener.reregisterOnEnableAfterRelease,
-                "Precondition: the fixture component opts in by default."
-            );
+            ReregisteringMessageAwareComponent listener = host.GetComponent<ReregisteringMessageAwareComponent>();
+            Assert.IsTrue(listener.reregisterOnEnableAfterRelease, "Precondition: the fixture component opts in by default.");
 
             int count = 0;
             listener.untargetedHandler = () => ++count;
@@ -108,78 +83,39 @@ namespace DxMessaging.Tests.Runtime.Unity
             using (LeakWatcher watcher = LeakWatcher.Watch(label: "OptInReregister"))
             {
                 MessageRegistrationToken originalToken = listener.Token;
-                Assert.IsTrue(
-                    messaging.Release(listener),
-                    "Releasing the registered listener should succeed."
-                );
+                Assert.IsTrue(messaging.Release(listener), "Releasing the registered listener should succeed.");
 
                 message.EmitUntargeted();
-                Assert.AreEqual(
-                    1,
-                    count,
-                    "Released listener must stop receiving until the next enable cycle."
-                );
+                Assert.AreEqual(1, count, "Released listener must stop receiving until the next enable cycle.");
 
                 listener.enabled = false;
                 listener.enabled = true;
 
                 message.EmitUntargeted();
-                Assert.AreEqual(
-                    2,
-                    count,
-                    "Opting in must re-register the released listener on the next enable."
-                );
-                Assert.AreNotSame(
-                    originalToken,
-                    listener.Token,
-                    "Re-registration must mint a fresh token; the released token stays dead."
-                );
-                Assert.AreEqual(
-                    2,
-                    listener.registerInvocationCount,
-                    "RegisterMessageHandlers must replay exactly once for the release."
-                );
+                Assert.AreEqual(2, count, "Opting in must re-register the released listener on the next enable.");
+                Assert.AreNotSame(originalToken, listener.Token, "Re-registration must mint a fresh token; the released token stays dead.");
+                Assert.AreEqual(2, listener.registerInvocationCount, "RegisterMessageHandlers must replay exactly once for the release.");
 
                 listener.enabled = false;
                 message.EmitUntargeted();
-                Assert.AreEqual(
-                    2,
-                    count,
-                    "The re-created token must still honor MessageRegistrationTiedToEnableStatus."
-                );
+                Assert.AreEqual(2, count, "The re-created token must still honor MessageRegistrationTiedToEnableStatus.");
 
                 listener.enabled = true;
                 message.EmitUntargeted();
-                Assert.AreEqual(
-                    3,
-                    count,
-                    "Re-enabling after re-registration must deliver exactly once per emit."
-                );
-                Assert.AreEqual(
-                    2,
-                    listener.registerInvocationCount,
-                    "Plain enable cycles after the recovery replay must not re-register again."
-                );
+                Assert.AreEqual(3, count, "Re-enabling after re-registration must deliver exactly once per emit.");
+                Assert.AreEqual(2, listener.registerInvocationCount, "Plain enable cycles after the recovery replay must not re-register again.");
             }
 
-            Assert.IsTrue(
-                messaging.Release(listener),
-                "Releasing the re-registered listener should succeed."
-            );
+            Assert.IsTrue(messaging.Release(listener), "Releasing the re-registered listener should succeed.");
         }
 
         [Test]
         public void OptInReplacesEnabledTokenWhoseBusWasReset()
         {
-            GameObject host = new(
-                nameof(OptInReplacesEnabledTokenWhoseBusWasReset),
-                typeof(MessagingComponent),
-                typeof(ReregisteringMessageAwareComponent)
-            );
+            GameObject host = new(nameof(OptInReplacesEnabledTokenWhoseBusWasReset), typeof(MessagingComponent), typeof(ReregisteringMessageAwareComponent));
             _spawned.Add(host);
             MessagingComponent messaging = host.GetComponent<MessagingComponent>();
-            ReregisteringMessageAwareComponent listener =
-                host.GetComponent<ReregisteringMessageAwareComponent>();
+            ReregisteringMessageAwareComponent listener = host.GetComponent<ReregisteringMessageAwareComponent>();
             int count = 0;
             listener.untargetedHandler = () => ++count;
             SimpleUntargetedMessage message = new();
@@ -192,62 +128,32 @@ namespace DxMessaging.Tests.Runtime.Unity
             {
                 DxMessagingStaticState.Reset();
 
-                Assert.IsTrue(
-                    originalToken.Enabled,
-                    "The reset reproducer requires a token whose enabled flag outlives its bus sinks."
-                );
-                Assert.AreEqual(
-                    0,
-                    MessageHandler.MessageBus.RegisteredUntargeted,
-                    "Static reset must clear the live bus registration beneath the enabled token."
-                );
+                Assert.IsTrue(originalToken.Enabled, "The reset reproducer requires a token whose enabled flag outlives its bus sinks.");
+                Assert.AreEqual(0, MessageHandler.MessageBus.RegisteredUntargeted, "Static reset must clear the live bus registration beneath the enabled token.");
                 message.EmitUntargeted();
                 Assert.AreEqual(1, count, "The stale enabled token must not deliver after reset.");
 
-                Assert.IsTrue(
-                    messaging.Release(listener),
-                    "The stale token must remain safely releasable after the bus generation changes."
-                );
+                Assert.IsTrue(messaging.Release(listener), "The stale token must remain safely releasable after the bus generation changes.");
                 listener.enabled = false;
                 listener.enabled = true;
 
-                Assert.AreNotSame(
-                    originalToken,
-                    listener.Token,
-                    "Recovery must replace the stale enabled token."
-                );
+                Assert.AreNotSame(originalToken, listener.Token, "Recovery must replace the stale enabled token.");
                 Assert.IsTrue(listener.Token.Enabled, "The replacement token should be enabled.");
-                Assert.AreEqual(
-                    1,
-                    MessageHandler.MessageBus.RegisteredUntargeted,
-                    "The replacement token should restore one live registration."
-                );
+                Assert.AreEqual(1, MessageHandler.MessageBus.RegisteredUntargeted, "The replacement token should restore one live registration.");
                 message.EmitUntargeted();
                 Assert.AreEqual(2, count, "Delivery should resume through the replacement token.");
-                Assert.AreEqual(
-                    2,
-                    listener.registerInvocationCount,
-                    "Recovery should replay registrations exactly once."
-                );
+                Assert.AreEqual(2, listener.registerInvocationCount, "Recovery should replay registrations exactly once.");
             }
 
-            Assert.IsTrue(
-                messaging.Release(listener),
-                "Releasing the replacement token should succeed."
-            );
+            Assert.IsTrue(messaging.Release(listener), "Releasing the replacement token should succeed.");
         }
 
         [Test]
         public void OptInDoesNotReplayRegistrationsWithoutARelease()
         {
-            GameObject host = new(
-                nameof(OptInDoesNotReplayRegistrationsWithoutARelease),
-                typeof(MessagingComponent),
-                typeof(ReregisteringMessageAwareComponent)
-            );
+            GameObject host = new(nameof(OptInDoesNotReplayRegistrationsWithoutARelease), typeof(MessagingComponent), typeof(ReregisteringMessageAwareComponent));
             _spawned.Add(host);
-            ReregisteringMessageAwareComponent listener =
-                host.GetComponent<ReregisteringMessageAwareComponent>();
+            ReregisteringMessageAwareComponent listener = host.GetComponent<ReregisteringMessageAwareComponent>();
 
             int count = 0;
             listener.untargetedHandler = () => ++count;
@@ -261,11 +167,7 @@ namespace DxMessaging.Tests.Runtime.Unity
             {
                 listener.enabled = false;
                 message.EmitUntargeted();
-                Assert.AreEqual(
-                    expected,
-                    count,
-                    $"Cycle {cycle}: emit while disabled must not deliver."
-                );
+                Assert.AreEqual(expected, count, $"Cycle {cycle}: emit while disabled must not deliver.");
 
                 listener.enabled = true;
                 message.EmitUntargeted();
@@ -273,46 +175,29 @@ namespace DxMessaging.Tests.Runtime.Unity
                 Assert.AreEqual(
                     expected,
                     count,
-                    $"Cycle {cycle}: emit after re-enable must deliver exactly once; a higher "
-                        + "count means the opt-in replayed registrations without a release."
+                    $"Cycle {cycle}: emit after re-enable must deliver exactly once; a higher " + "count means the opt-in replayed registrations without a release."
                 );
             }
 
-            Assert.AreEqual(
-                1,
-                listener.registerInvocationCount,
-                "RegisterMessageHandlers must run only from Awake while the token is never released."
-            );
+            Assert.AreEqual(1, listener.registerInvocationCount, "RegisterMessageHandlers must run only from Awake while the token is never released.");
         }
 
         [Test]
         public void OptInAdoptsManuallyRecreatedTokenWithoutReplaying()
         {
-            GameObject host = new(
-                nameof(OptInAdoptsManuallyRecreatedTokenWithoutReplaying),
-                typeof(MessagingComponent),
-                typeof(ReregisteringMessageAwareComponent)
-            );
+            GameObject host = new(nameof(OptInAdoptsManuallyRecreatedTokenWithoutReplaying), typeof(MessagingComponent), typeof(ReregisteringMessageAwareComponent));
             _spawned.Add(host);
             MessagingComponent messaging = host.GetComponent<MessagingComponent>();
-            ReregisteringMessageAwareComponent listener =
-                host.GetComponent<ReregisteringMessageAwareComponent>();
+            ReregisteringMessageAwareComponent listener = host.GetComponent<ReregisteringMessageAwareComponent>();
 
             int componentCount = 0;
             listener.untargetedHandler = () => ++componentCount;
 
             SimpleUntargetedMessage message = new();
             message.EmitUntargeted();
-            Assert.AreEqual(
-                1,
-                componentCount,
-                "Positive control: listener should receive while active."
-            );
+            Assert.AreEqual(1, componentCount, "Positive control: listener should receive while active.");
 
-            Assert.IsTrue(
-                messaging.Release(listener),
-                "Releasing the registered listener should succeed."
-            );
+            Assert.IsTrue(messaging.Release(listener), "Releasing the registered listener should succeed.");
 
             /*
                 Manual recovery path: user code re-creates the token and stages its own
@@ -328,48 +213,23 @@ namespace DxMessaging.Tests.Runtime.Unity
             listener.enabled = false;
             listener.enabled = true;
 
-            Assert.AreSame(
-                manualToken,
-                listener.Token,
-                "Enable must adopt the manually re-created live token."
-            );
-            Assert.AreEqual(
-                1,
-                listener.registerInvocationCount,
-                "Adopting a manual token must not replay RegisterMessageHandlers."
-            );
+            Assert.AreSame(manualToken, listener.Token, "Enable must adopt the manually re-created live token.");
+            Assert.AreEqual(1, listener.registerInvocationCount, "Adopting a manual token must not replay RegisterMessageHandlers.");
 
             message.EmitUntargeted();
-            Assert.AreEqual(
-                1,
-                manualCount,
-                "The adopted token's manually staged registration must deliver."
-            );
-            Assert.AreEqual(
-                1,
-                componentCount,
-                "The component handler was never staged on the manual token, so the "
-                    + "component callback must not fire."
-            );
+            Assert.AreEqual(1, manualCount, "The adopted token's manually staged registration must deliver.");
+            Assert.AreEqual(1, componentCount, "The component handler was never staged on the manual token, so the " + "component callback must not fire.");
 
-            Assert.IsTrue(
-                messaging.Release(listener),
-                "Releasing the adopted listener should succeed."
-            );
+            Assert.IsTrue(messaging.Release(listener), "Releasing the adopted listener should succeed.");
         }
 
         [Test]
         public void OptInWithRegistrationNotTiedToEnableStagesButDoesNotEnable()
         {
-            GameObject host = new(
-                nameof(OptInWithRegistrationNotTiedToEnableStagesButDoesNotEnable),
-                typeof(MessagingComponent),
-                typeof(ReregisteringMessageAwareComponent)
-            );
+            GameObject host = new(nameof(OptInWithRegistrationNotTiedToEnableStagesButDoesNotEnable), typeof(MessagingComponent), typeof(ReregisteringMessageAwareComponent));
             _spawned.Add(host);
             MessagingComponent messaging = host.GetComponent<MessagingComponent>();
-            ReregisteringMessageAwareComponent listener =
-                host.GetComponent<ReregisteringMessageAwareComponent>();
+            ReregisteringMessageAwareComponent listener = host.GetComponent<ReregisteringMessageAwareComponent>();
             listener.tieRegistrationToEnableStatus = false;
 
             int count = 0;
@@ -385,53 +245,29 @@ namespace DxMessaging.Tests.Runtime.Unity
             message.EmitUntargeted();
             Assert.AreEqual(1, count, "Positive control: manually enabled token delivers.");
 
-            Assert.IsTrue(
-                messaging.Release(listener),
-                "Releasing the registered listener should succeed."
-            );
+            Assert.IsTrue(messaging.Release(listener), "Releasing the registered listener should succeed.");
 
             listener.enabled = false;
             listener.enabled = true;
 
             message.EmitUntargeted();
-            Assert.AreEqual(
-                1,
-                count,
-                "Recovery re-creates and stages the token, but with the lifecycle tie "
-                    + "disabled nothing enables it automatically."
-            );
-            Assert.AreEqual(
-                2,
-                listener.registerInvocationCount,
-                "The recovery replay must still have staged the registrations."
-            );
+            Assert.AreEqual(1, count, "Recovery re-creates and stages the token, but with the lifecycle tie " + "disabled nothing enables it automatically.");
+            Assert.AreEqual(2, listener.registerInvocationCount, "The recovery replay must still have staged the registrations.");
 
             listener.Token.Enable();
             message.EmitUntargeted();
-            Assert.AreEqual(
-                2,
-                count,
-                "Manually enabling the recovered token must resume delivery."
-            );
+            Assert.AreEqual(2, count, "Manually enabling the recovered token must resume delivery.");
 
-            Assert.IsTrue(
-                messaging.Release(listener),
-                "Releasing the recovered listener should succeed."
-            );
+            Assert.IsTrue(messaging.Release(listener), "Releasing the recovered listener should succeed.");
         }
 
         [Test]
         public void OptInRecoversFromReleaseWhileDisabled()
         {
-            GameObject host = new(
-                nameof(OptInRecoversFromReleaseWhileDisabled),
-                typeof(MessagingComponent),
-                typeof(ReregisteringMessageAwareComponent)
-            );
+            GameObject host = new(nameof(OptInRecoversFromReleaseWhileDisabled), typeof(MessagingComponent), typeof(ReregisteringMessageAwareComponent));
             _spawned.Add(host);
             MessagingComponent messaging = host.GetComponent<MessagingComponent>();
-            ReregisteringMessageAwareComponent listener =
-                host.GetComponent<ReregisteringMessageAwareComponent>();
+            ReregisteringMessageAwareComponent listener = host.GetComponent<ReregisteringMessageAwareComponent>();
 
             int count = 0;
             listener.untargetedHandler = () => ++count;
@@ -447,27 +283,17 @@ namespace DxMessaging.Tests.Runtime.Unity
             using (LeakWatcher watcher = LeakWatcher.Watch(label: "OptInReleaseWhileDisabled"))
             {
                 listener.enabled = false;
-                Assert.IsTrue(
-                    messaging.Release(listener),
-                    "Releasing a disabled listener should succeed."
-                );
+                Assert.IsTrue(messaging.Release(listener), "Releasing a disabled listener should succeed.");
 
                 message.EmitUntargeted();
                 Assert.AreEqual(1, count, "Released and disabled listener must not receive.");
 
                 listener.enabled = true;
                 message.EmitUntargeted();
-                Assert.AreEqual(
-                    2,
-                    count,
-                    "Enabling after a release-while-disabled must re-register and resume delivery."
-                );
+                Assert.AreEqual(2, count, "Enabling after a release-while-disabled must re-register and resume delivery.");
             }
 
-            Assert.IsTrue(
-                messaging.Release(listener),
-                "Releasing the recovered listener should succeed."
-            );
+            Assert.IsTrue(messaging.Release(listener), "Releasing the recovered listener should succeed.");
         }
     }
 }

@@ -18,29 +18,12 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
     {
         private readonly List<GpuPureOwner> _owners = new();
         private static GpuPureTests _retainedFixture;
-        private const string AssetPath =
-            "Packages/com.wallstop-studios.dxmessaging/Tests/Runtime/NativeCollectionsResearch/GpuPureKernels.compute";
+        private const string AssetPath = "Packages/com.wallstop-studios.dxmessaging/Tests/Runtime/NativeCollectionsResearch/GpuPureKernels.compute";
         private ComputeShader _asset;
         private static readonly int[] Producers = { 0, 1, -1, int.MinValue, int.MaxValue, 17 };
         private static readonly int[] Sequences = { 0, 1, -1, int.MaxValue, int.MinValue, 29 };
-        private static readonly long[] Values =
-        {
-            0,
-            1,
-            -1,
-            long.MinValue,
-            long.MaxValue,
-            81985529216486895L,
-        };
-        private static readonly long[] Simple =
-        {
-            0,
-            99,
-            -99,
-            9223371830696345599L,
-            -9223371830696345698L,
-            81985529216488573L,
-        };
+        private static readonly long[] Values = { 0, 1, -1, long.MinValue, long.MaxValue, 81985529216486895L };
+        private static readonly long[] Simple = { 0, 99, -99, 9223371830696345599L, -9223371830696345698L, 81985529216488573L };
         private static readonly long[] Mixed =
         {
             6392512781046991133L,
@@ -66,15 +49,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                 Vector = vector;
             }
 
-            public override string ToString() =>
-                string.Format(
-                    CultureInfo.InvariantCulture,
-                    "count{0}-batch{1}-rounds{2}-vector{3}",
-                    Count,
-                    Batch,
-                    Rounds,
-                    Vector
-                );
+            public override string ToString() => string.Format(CultureInfo.InvariantCulture, "count{0}-batch{1}-rounds{2}-vector{3}", Count, Batch, Rounds, Vector);
         }
 
         public static IEnumerable<Case> Matrix()
@@ -111,9 +86,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
             _asset = AssetDatabase.LoadAssetAtPath<ComputeShader>(AssetPath);
             Assert.That(_asset, Is.Not.Null);
             _retainedFixture = this;
-            TestContext.WriteLine(
-                $"GPU pure capabilities: device={SystemInfo.graphicsDeviceName};api={SystemInfo.graphicsDeviceType};compute=true;fence=true;asyncReadback=true"
-            );
+            TestContext.WriteLine($"GPU pure capabilities: device={SystemInfo.graphicsDeviceName};api={SystemInfo.graphicsDeviceType};compute=true;fence=true;asyncReadback=true");
         }
 
         [OneTimeTearDown]
@@ -170,9 +143,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                     failures.Add(failure);
                 }
             }
-            _owners.RemoveAll(owner =>
-                !owner.HasPending && !owner.HasResources && owner.ScratchCleared
-            );
+            _owners.RemoveAll(owner => !owner.HasPending && !owner.HasResources && owner.ScratchCleared);
             if (_owners.Count == 0)
             {
                 base.TearDownManagedResources();
@@ -181,11 +152,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                 );
             }
             else
-                failures.Add(
-                    new InvalidOperationException(
-                        "Retain fixture and clones until every GPU root is released."
-                    )
-                );
+                failures.Add(new InvalidOperationException("Retain fixture and clones until every GPU root is released."));
             yield return null;
             if (failures.Count != 0)
                 throw new AggregateException(failures);
@@ -236,16 +203,8 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
             for (int i = 0; i < owner.Count; ++i)
             {
                 long expected = PureBatchKernels.Compute(owner.OriginalInput[i + 1], rounds);
-                Assert.That(
-                    stage[i + 1],
-                    Is.EqualTo(expected),
-                    $"{kind}: count={owner.Count};batch={batch};rounds={rounds};index={i}"
-                );
-                Assert.That(
-                    final[i + 1],
-                    Is.EqualTo(Consume(expected, i)),
-                    $"{kind}: count={owner.Count};batch={batch};rounds={rounds};index={i}"
-                );
+                Assert.That(stage[i + 1], Is.EqualTo(expected), $"{kind}: count={owner.Count};batch={batch};rounds={rounds};index={i}");
+                Assert.That(final[i + 1], Is.EqualTo(Consume(expected, i)), $"{kind}: count={owner.Count};batch={batch};rounds={rounds};index={i}");
                 stageSum = unchecked(stageSum + stage[i + 1]);
                 finalSum = unchecked(finalSum + final[i + 1]);
             }
@@ -261,9 +220,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
         }
 
         [UnityTest]
-        public IEnumerator GpuConsumerUsesResidentStageBeforeUntimedOracle(
-            [ValueSource(nameof(Matrix))] Case row
-        )
+        public IEnumerator GpuConsumerUsesResidentStageBeforeUntimedOracle([ValueSource(nameof(Matrix))] Case row)
         {
             GpuPureOwner owner = Create(row.Count);
             Assert.That(owner.TrySubmit(row.Batch, row.Rounds), Is.True, row.ToString());
@@ -273,19 +230,9 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
         }
 
         [UnityTest]
-        public IEnumerator SignedGoldenVectorsIncludeMaximumRoundCount(
-            [ValueSource(nameof(Goldens))] Case row
-        )
+        public IEnumerator SignedGoldenVectorsIncludeMaximumRoundCount([ValueSource(nameof(Goldens))] Case row)
         {
-            long[] maximum =
-            {
-                -4786109065817771447L,
-                2087148930895262372L,
-                -449705407519791139L,
-                -7771358583956589301L,
-                -4743555500161493718L,
-                -8903653924201765931L,
-            };
+            long[] maximum = { -4786109065817771447L, 2087148930895262372L, -449705407519791139L, -7771358583956589301L, -4743555500161493718L, -8903653924201765931L };
             GpuPureOwner owner = Create(1);
             owner.OriginalInput[1] = new NativeNumericPayload
             {
@@ -302,18 +249,11 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                 : row.Rounds == 3 ? Mixed[row.Vector]
                 : maximum[row.Vector];
             Assert.That(owner.ObservedStage[1].Signed, Is.EqualTo(expected), row.ToString());
-            Verify(
-                owner,
-                row.Batch,
-                row.Rounds,
-                "golden" + row.Vector.ToString(CultureInfo.InvariantCulture)
-            );
+            Verify(owner, row.Batch, row.Rounds, "golden" + row.Vector.ToString(CultureInfo.InvariantCulture));
         }
 
         [UnityTest]
-        public IEnumerator ThreadGroupTailNeverWritesOuterGuards(
-            [ValueSource(nameof(ThreadGroupEdges))] Case row
-        )
+        public IEnumerator ThreadGroupTailNeverWritesOuterGuards([ValueSource(nameof(ThreadGroupEdges))] Case row)
         {
             GpuPureOwner owner = Create(row.Count);
             Assert.That(owner.TrySubmit(row.Batch, row.Rounds), Is.True, row.ToString());
@@ -323,9 +263,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
         }
 
         [UnityTest]
-        public IEnumerator PendingOperationsRejectBeforeResourceReuse(
-            [ValueSource(nameof(PendingOperations))] int operation
-        )
+        public IEnumerator PendingOperationsRejectBeforeResourceReuse([ValueSource(nameof(PendingOperations))] int operation)
         {
             GpuPureOwner owner = Create(257);
             Assert.That(owner.TrySubmit(64, 3), Is.True);
@@ -343,9 +281,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
         }
 
         [UnityTest]
-        public IEnumerator SeparateShaderBindingsAndBuffersSurviveOtherOwnerRelease(
-            [ValueSource(nameof(IsolationBatches))] int batch
-        )
+        public IEnumerator SeparateShaderBindingsAndBuffersSurviveOtherOwnerRelease([ValueSource(nameof(IsolationBatches))] int batch)
         {
             GpuPureOwner first = Create(17),
                 second = Create(17);
@@ -386,12 +322,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
             for (int rounds = 0; rounds < 4; ++rounds)
             {
                 owner.Reset();
-                Assert.That(
-                    owner.ObservedInput == null
-                        && owner.ObservedStage == null
-                        && owner.ObservedFinal == null,
-                    Is.True
-                );
+                Assert.That(owner.ObservedInput == null && owner.ObservedStage == null && owner.ObservedFinal == null, Is.True);
                 Assert.That(owner.TrySubmit(4, rounds), Is.True);
                 owner.BeginUntimedObservation();
                 Assert.Throws<InvalidOperationException>(() => owner.BeginUntimedObservation());
@@ -445,14 +376,8 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
         {
             Assert.That(Marshal.SizeOf<NativeNumericPayload>(), Is.EqualTo(16));
             Assert.That(Marshal.SizeOf<GpuWordPair>(), Is.EqualTo(8));
-            Assert.That(
-                Marshal.OffsetOf<GpuWordPair>(nameof(GpuWordPair.Low)).ToInt32(),
-                Is.EqualTo(0)
-            );
-            Assert.That(
-                Marshal.OffsetOf<GpuWordPair>(nameof(GpuWordPair.High)).ToInt32(),
-                Is.EqualTo(4)
-            );
+            Assert.That(Marshal.OffsetOf<GpuWordPair>(nameof(GpuWordPair.Low)).ToInt32(), Is.EqualTo(0));
+            Assert.That(Marshal.OffsetOf<GpuWordPair>(nameof(GpuWordPair.High)).ToInt32(), Is.EqualTo(4));
             Assert.That(UnsafeUtility.IsBlittable<NativeNumericPayload>(), Is.True);
             Assert.That(UnsafeUtility.IsBlittable<ManagedReferencePayload>(), Is.False);
             ManagedReferencePayload managed = new() { Reference = new object() };
@@ -491,11 +416,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
             });
             thread.Start();
             Assert.That(thread.Join(5000), Is.True);
-            Assert.That(
-                caught,
-                Is.TypeOf<InvalidOperationException>(),
-                operation.ToString(CultureInfo.InvariantCulture)
-            );
+            Assert.That(caught, Is.TypeOf<InvalidOperationException>(), operation.ToString(CultureInfo.InvariantCulture));
             Assert.That(owner.HasPending, Is.False);
             Assert.That(owner.HasBuffers, Is.True);
             Assert.That(owner.ReleaseCount, Is.EqualTo(0));

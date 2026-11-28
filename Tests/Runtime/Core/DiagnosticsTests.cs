@@ -32,22 +32,19 @@ namespace DxMessaging.Tests.Runtime.Core
             InvalidOperationException sentinel = new("Intentional callback failure.");
             try
             {
-                MessageRegistrationHandle handle =
-                    token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (in SimpleUntargetedMessage message) =>
+                MessageRegistrationHandle handle = token.RegisterUntargeted<SimpleUntargetedMessage>(
+                    (in SimpleUntargetedMessage message) =>
+                    {
+                        trace.Add("A:" + bus.EmissionId);
+                        if (bus.EmissionId == 1)
                         {
-                            trace.Add("A:" + bus.EmissionId);
-                            if (bus.EmissionId == 1)
-                            {
-                                throw sentinel;
-                            }
+                            throw sentinel;
                         }
-                    );
+                    }
+                );
                 token.Enable();
                 SimpleUntargetedMessage payload = new();
-                InvalidOperationException caught = Assert.Throws<InvalidOperationException>(() =>
-                    bus.UntargetedBroadcast(ref payload)
-                );
+                InvalidOperationException caught = Assert.Throws<InvalidOperationException>(() => bus.UntargetedBroadcast(ref payload));
                 Assert.AreSame(sentinel, caught);
                 Assert.AreEqual(1, bus.EmissionId);
                 Assert.AreEqual(1, bus.RegisteredUntargeted);
@@ -93,19 +90,14 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void TokenDiagnosticModeTracksEmissions()
         {
-            GameObject host = new(
-                nameof(TokenDiagnosticModeTracksEmissions),
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(TokenDiagnosticModeTracksEmissions), typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
             token.DiagnosticMode = true;
 
             int count = 0;
-            MessageRegistrationHandle handle = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                _ => ++count
-            );
+            MessageRegistrationHandle handle = token.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++count);
 
             SimpleUntargetedMessage message = new();
             message.EmitUntargeted();
@@ -133,9 +125,7 @@ namespace DxMessaging.Tests.Runtime.Core
             token.Enable();
 
             int count = 0;
-            MessageRegistrationHandle handle = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                _ => ++count
-            );
+            MessageRegistrationHandle handle = token.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++count);
 
             SimpleUntargetedMessage message = new();
             customBus.UntargetedBroadcast(ref message);
@@ -146,26 +136,10 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(1, count);
             Assert.AreEqual(1, busEmissions.Count);
             Assert.AreEqual(1, tokenEmissions.Count);
-            Assert.Greater(
-                busEmissions[0].traceId,
-                0,
-                "Bus-side diagnostics must stamp the dispatch trace id."
-            );
-            Assert.AreEqual(
-                busEmissions[0].traceId,
-                tokenEmissions[0].traceId,
-                "Token-side diagnostics must use the same trace id as the bus emission."
-            );
-            Assert.AreEqual(
-                default(MessageRegistrationHandle),
-                busEmissions[0].registrationHandle,
-                "Bus-side diagnostics are emission records, not delivery records."
-            );
-            Assert.AreEqual(
-                handle,
-                tokenEmissions[0].registrationHandle,
-                "Token-side diagnostics must identify the delivered registration."
-            );
+            Assert.Greater(busEmissions[0].traceId, 0, "Bus-side diagnostics must stamp the dispatch trace id.");
+            Assert.AreEqual(busEmissions[0].traceId, tokenEmissions[0].traceId, "Token-side diagnostics must use the same trace id as the bus emission.");
+            Assert.AreEqual(default(MessageRegistrationHandle), busEmissions[0].registrationHandle, "Bus-side diagnostics are emission records, not delivery records.");
+            Assert.AreEqual(handle, tokenEmissions[0].registrationHandle, "Token-side diagnostics must identify the delivered registration.");
 
             token.Dispose();
             handler.active = false;
@@ -184,9 +158,7 @@ namespace DxMessaging.Tests.Runtime.Core
             token.Enable();
 
             int count = 0;
-            MessageRegistrationHandle handle = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                _ => ++count
-            );
+            MessageRegistrationHandle handle = token.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++count);
 
             token.RetargetMessageBus(newBus, MessageBusRebindMode.PreserveRegistrations);
 
@@ -201,11 +173,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(1, originalBusEmissions.Count);
             Assert.AreEqual(0, newBusEmissions.Count);
             Assert.AreEqual(1, tokenEmissions.Count);
-            Assert.AreEqual(
-                originalBusEmissions[0].traceId,
-                tokenEmissions[0].traceId,
-                "Preserved registrations must trace against the bus that still owns the live delegate."
-            );
+            Assert.AreEqual(originalBusEmissions[0].traceId, tokenEmissions[0].traceId, "Preserved registrations must trace against the bus that still owns the live delegate.");
             Assert.AreEqual(handle, tokenEmissions[0].registrationHandle);
 
             token.Dispose();
@@ -214,17 +182,10 @@ namespace DxMessaging.Tests.Runtime.Core
 
         [Test]
         public void ActionRegistrationDiagnosticsRecordedThroughFlatBusDispatch(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.AllKindsIncludingWithoutContext)
-            )]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKindsIncludingWithoutContext))] MessageScenario scenario
         )
         {
-            RunActionRegistrationDiagnosticsScenario(
-                scenario,
-                nameof(ActionRegistrationDiagnosticsRecordedThroughFlatBusDispatch)
-            );
+            RunActionRegistrationDiagnosticsScenario(scenario, nameof(ActionRegistrationDiagnosticsRecordedThroughFlatBusDispatch));
         }
 
         [Test]
@@ -237,16 +198,12 @@ namespace DxMessaging.Tests.Runtime.Core
                 MessageHandler handler = new(host) { active = true };
                 MessageBus customBus = new() { DiagnosticsMode = true };
 
-                MessageRegistrationToken token = MessageRegistrationToken.Create(
-                    handler,
-                    customBus
-                );
+                MessageRegistrationToken token = MessageRegistrationToken.Create(handler, customBus);
                 token.DiagnosticMode = true;
                 token.Enable();
 
                 int count = 0;
-                MessageRegistrationHandle handle =
-                    token.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++count);
+                MessageRegistrationHandle handle = token.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++count);
 
                 SimpleUntargetedMessage message = new();
                 for (int i = 0; i < 3; ++i)
@@ -265,32 +222,21 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void EmissionSiteCaptureIsOptInOnBothBusAndTokenRecords(
-            [Values(true, false)] bool captureStackTraces
-        )
+        public void EmissionSiteCaptureIsOptInOnBothBusAndTokenRecords([Values(true, false)] bool captureStackTraces)
         {
-            using (
-                new DiagnosticsScope(
-                    DiagnosticsTarget.All,
-                    diagnosticsStackTraces: captureStackTraces
-                )
-            )
+            using (new DiagnosticsScope(DiagnosticsTarget.All, diagnosticsStackTraces: captureStackTraces))
             {
                 GameObject host = new(nameof(EmissionSiteCaptureIsOptInOnBothBusAndTokenRecords));
                 _spawned.Add(host);
                 MessageHandler handler = new(host) { active = true };
                 MessageBus customBus = new() { DiagnosticsMode = true };
 
-                MessageRegistrationToken token = MessageRegistrationToken.Create(
-                    handler,
-                    customBus
-                );
+                MessageRegistrationToken token = MessageRegistrationToken.Create(handler, customBus);
                 token.DiagnosticMode = true;
                 token.Enable();
 
                 int count = 0;
-                MessageRegistrationHandle handle =
-                    token.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++count);
+                MessageRegistrationHandle handle = token.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++count);
 
                 SimpleUntargetedMessage message = new();
                 message.EmitUntargeted(customBus);
@@ -298,40 +244,19 @@ namespace DxMessaging.Tests.Runtime.Core
 
                 CyclicBuffer<MessageEmissionData> busBuffer = GetEmissionBuffer(customBus);
                 CyclicBuffer<MessageEmissionData> tokenBuffer = GetEmissionBuffer(token);
-                Assert.AreEqual(
-                    1,
-                    busBuffer.Count,
-                    "The bus must record the emission whether or not the site is captured."
-                );
-                Assert.AreEqual(
-                    1,
-                    tokenBuffer.Count,
-                    "The token must record the delivery whether or not the site is captured."
-                );
+                Assert.AreEqual(1, busBuffer.Count, "The bus must record the emission whether or not the site is captured.");
+                Assert.AreEqual(1, tokenBuffer.Count, "The token must record the delivery whether or not the site is captured.");
 
-                foreach (
-                    (string source, CyclicBuffer<MessageEmissionData> buffer) in new[]
-                    {
-                        ("bus", busBuffer),
-                        ("token", tokenBuffer),
-                    }
-                )
+                foreach ((string source, CyclicBuffer<MessageEmissionData> buffer) in new[] { ("bus", busBuffer), ("token", tokenBuffer) })
                 {
                     string capturedTrace = buffer[0].stackTrace;
                     if (captureStackTraces)
                     {
-                        Assert.IsFalse(
-                            string.IsNullOrWhiteSpace(capturedTrace),
-                            $"The {source} record must carry an emission site when capture is enabled."
-                        );
+                        Assert.IsFalse(string.IsNullOrWhiteSpace(capturedTrace), $"The {source} record must carry an emission site when capture is enabled.");
                     }
                     else
                     {
-                        Assert.AreEqual(
-                            string.Empty,
-                            capturedTrace,
-                            $"The {source} record must not pay for an emission site when capture is disabled."
-                        );
+                        Assert.AreEqual(string.Empty, capturedTrace, $"The {source} record must not pay for an emission site when capture is disabled.");
                     }
                 }
 
@@ -341,16 +266,12 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private static Dictionary<MessageRegistrationHandle, int> GetCallCounts(
-            MessageRegistrationToken token
-        )
+        private static Dictionary<MessageRegistrationHandle, int> GetCallCounts(MessageRegistrationToken token)
         {
             return token._callCounts;
         }
 
-        private static CyclicBuffer<MessageEmissionData> GetEmissionBuffer(
-            MessageRegistrationToken token
-        )
+        private static CyclicBuffer<MessageEmissionData> GetEmissionBuffer(MessageRegistrationToken token)
         {
             return token._emissionBuffer;
         }
@@ -360,10 +281,7 @@ namespace DxMessaging.Tests.Runtime.Core
             return bus._emissionBuffer;
         }
 
-        private void RunActionRegistrationDiagnosticsScenario(
-            MessageScenario scenario,
-            string testName
-        )
+        private void RunActionRegistrationDiagnosticsScenario(MessageScenario scenario, string testName)
         {
             MessageBus bus = new() { DiagnosticsMode = true };
             GameObject host = new(testName + "_" + scenario.DisplayName);
@@ -375,45 +293,20 @@ namespace DxMessaging.Tests.Runtime.Core
 
             using LeakWatcher watcher = new(bus, label: scenario.DisplayName);
             int userCallCount = 0;
-            MessageRegistrationHandle handle = RegisterActionHandler(
-                scenario,
-                token,
-                handler.owner,
-                () => ++userCallCount
-            );
+            MessageRegistrationHandle handle = RegisterActionHandler(scenario, token, handler.owner, () => ++userCallCount);
 
             try
             {
                 EmitThroughBus(scenario, bus, handler.owner);
 
-                Assert.AreEqual(
-                    1,
-                    userCallCount,
-                    "[{0}] User Action handler must run exactly once.",
-                    scenario.DisplayName
-                );
+                Assert.AreEqual(1, userCallCount, "[{0}] User Action handler must run exactly once.", scenario.DisplayName);
 
                 Dictionary<MessageRegistrationHandle, int> callCounts = GetCallCounts(token);
-                Assert.IsTrue(
-                    callCounts.TryGetValue(handle, out int recordedCount),
-                    "[{0}] Diagnostics call-count entry missing for handle {1}.",
-                    scenario.DisplayName,
-                    handle
-                );
-                Assert.AreEqual(
-                    1,
-                    recordedCount,
-                    "[{0}] Diagnostics call count must match the delivered Action handler.",
-                    scenario.DisplayName
-                );
+                Assert.IsTrue(callCounts.TryGetValue(handle, out int recordedCount), "[{0}] Diagnostics call-count entry missing for handle {1}.", scenario.DisplayName, handle);
+                Assert.AreEqual(1, recordedCount, "[{0}] Diagnostics call count must match the delivered Action handler.", scenario.DisplayName);
 
                 CyclicBuffer<MessageEmissionData> emissions = GetEmissionBuffer(token);
-                Assert.AreEqual(
-                    1,
-                    emissions.Count,
-                    "[{0}] Diagnostics emission history must record the delivered Action handler.",
-                    scenario.DisplayName
-                );
+                Assert.AreEqual(1, emissions.Count, "[{0}] Diagnostics emission history must record the delivered Action handler.", scenario.DisplayName);
             }
             finally
             {
@@ -423,47 +316,26 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private static MessageRegistrationHandle RegisterActionHandler(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            InstanceId context,
-            Action onCall
-        )
+        private static MessageRegistrationHandle RegisterActionHandler(MessageScenario scenario, MessageRegistrationToken token, InstanceId context, Action onCall)
         {
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
-                    return token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (SimpleUntargetedMessage _) => onCall()
-                    );
+                    return token.RegisterUntargeted<SimpleUntargetedMessage>((SimpleUntargetedMessage _) => onCall());
                 case MessageKind.Targeted:
-                    return token.RegisterTargeted<SimpleTargetedMessage>(
-                        context,
-                        (SimpleTargetedMessage _) => onCall()
-                    );
+                    return token.RegisterTargeted<SimpleTargetedMessage>(context, (SimpleTargetedMessage _) => onCall());
                 case MessageKind.Broadcast:
-                    return token.RegisterBroadcast<SimpleBroadcastMessage>(
-                        context,
-                        (SimpleBroadcastMessage _) => onCall()
-                    );
+                    return token.RegisterBroadcast<SimpleBroadcastMessage>(context, (SimpleBroadcastMessage _) => onCall());
                 case MessageKind.TargetedWithoutTargeting:
-                    return token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(
-                        (InstanceId _, SimpleTargetedMessage _) => onCall()
-                    );
+                    return token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>((InstanceId _, SimpleTargetedMessage _) => onCall());
                 case MessageKind.BroadcastWithoutSource:
-                    return token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>(
-                        (InstanceId _, SimpleBroadcastMessage _) => onCall()
-                    );
+                    return token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>((InstanceId _, SimpleBroadcastMessage _) => onCall());
                 default:
                     throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, null);
             }
         }
 
-        private static void EmitThroughBus(
-            MessageScenario scenario,
-            MessageBus bus,
-            InstanceId context
-        )
+        private static void EmitThroughBus(MessageScenario scenario, MessageBus bus, InstanceId context)
         {
             switch (scenario.Kind)
             {
@@ -501,19 +373,14 @@ namespace DxMessaging.Tests.Runtime.Core
                 Verify the default GlobalMessageBufferSize matches the DefaultMessageBufferSize constant
                 to ensure consistency between the static property and the constant.
             */
-            Assert.AreEqual(
-                IMessageBus.DefaultMessageBufferSize,
-                100,
-                "DefaultMessageBufferSize constant should be 100."
-            );
+            Assert.AreEqual(IMessageBus.DefaultMessageBufferSize, 100, "DefaultMessageBufferSize constant should be 100.");
         }
 
         [Test]
         public void RuntimeSettingsMessageBufferSizeResizesExistingAndNewBuses()
         {
             using DiagnosticsScope bufferScope = new();
-            DxMessagingRuntimeSettings settings =
-                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            DxMessagingRuntimeSettings settings = ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
             IDisposable overrideToken = null;
             try
             {
@@ -551,16 +418,12 @@ namespace DxMessaging.Tests.Runtime.Core
                 MessageHandler handler = new(host) { active = true };
                 MessageBus customBus = new() { DiagnosticsMode = true };
 
-                MessageRegistrationToken token = MessageRegistrationToken.Create(
-                    handler,
-                    customBus
-                );
+                MessageRegistrationToken token = MessageRegistrationToken.Create(handler, customBus);
                 token.DiagnosticMode = true;
                 token.Enable();
 
                 int count = 0;
-                MessageRegistrationHandle handle =
-                    token.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++count);
+                MessageRegistrationHandle handle = token.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++count);
 
                 SimpleUntargetedMessage message = new();
                 for (int i = 0; i < 5; ++i)
@@ -569,19 +432,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
 
                 // Messages should still be delivered to handlers
-                Assert.AreEqual(
-                    5,
-                    count,
-                    "Messages should still be delivered even with zero buffer size."
-                );
+                Assert.AreEqual(5, count, "Messages should still be delivered even with zero buffer size.");
 
                 // But the emission buffer should remain empty (emissions are silently discarded)
                 CyclicBuffer<MessageEmissionData> busBuffer = GetEmissionBuffer(customBus);
-                Assert.AreEqual(
-                    0,
-                    busBuffer.Count,
-                    "Zero buffer size should discard all emissions."
-                );
+                Assert.AreEqual(0, busBuffer.Count, "Zero buffer size should discard all emissions.");
 
                 token.RemoveRegistration(handle);
                 token.Disable();

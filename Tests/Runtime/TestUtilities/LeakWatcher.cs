@@ -113,28 +113,16 @@ namespace DxMessaging.Tests.Runtime
         /// </param>
         /// <param name="watchSlots">Whether disposal also enforces bus slot occupancy.</param>
         /// <param name="handler">Optional handler whose retained storage must return to baseline.</param>
-        public LeakWatcher(
-            IMessageBus bus = null,
-            bool throwOnLeak = true,
-            string label = null,
-            bool watchSlots = false,
-            MessageHandler handler = null
-        )
+        public LeakWatcher(IMessageBus bus = null, bool throwOnLeak = true, string label = null, bool watchSlots = false, MessageHandler handler = null)
         {
             _bus = bus ?? MessageHandler.MessageBus;
             if (_bus == null)
             {
-                throw new InvalidOperationException(
-                    "LeakWatcher requires a non-null bus. The global bus is null; "
-                        + "ensure DxMessagingStaticState.Reset has run."
-                );
+                throw new InvalidOperationException("LeakWatcher requires a non-null bus. The global bus is null; " + "ensure DxMessagingStaticState.Reset has run.");
             }
 
             IMessageBus registrationCountSource = _bus;
-            while (
-                registrationCountSource is DelegatingMessageBus forwardingBus
-                && forwardingBus.RegistrationCountSource != null
-            )
+            while (registrationCountSource is DelegatingMessageBus forwardingBus && forwardingBus.RegistrationCountSource != null)
             {
                 registrationCountSource = forwardingBus.RegistrationCountSource;
             }
@@ -155,11 +143,7 @@ namespace DxMessaging.Tests.Runtime
             _initialTargetSlotCount = _bus.OccupiedTargetSlots;
             if (_handler != null)
             {
-                _handler.GetRetainedStorageCounts(
-                    _bus,
-                    out _initialHandlerContexts,
-                    out _initialHandlerPriorityCaches
-                );
+                _handler.GetRetainedStorageCounts(_bus, out _initialHandlerContexts, out _initialHandlerPriorityCaches);
             }
         }
 
@@ -194,20 +178,9 @@ namespace DxMessaging.Tests.Runtime
         /// <param name="label">Optional scope label for failure diagnostics.</param>
         /// <param name="handler">Optional handler whose storage is checked on this bus.</param>
         /// <returns>A watcher with bus slot checks and optional handler storage checks enabled.</returns>
-        public static LeakWatcher WatchWithSlots(
-            IMessageBus bus,
-            bool throwOnLeak = true,
-            string label = null,
-            MessageHandler handler = null
-        )
+        public static LeakWatcher WatchWithSlots(IMessageBus bus, bool throwOnLeak = true, string label = null, MessageHandler handler = null)
         {
-            return new LeakWatcher(
-                bus: bus,
-                throwOnLeak: throwOnLeak,
-                label: label,
-                watchSlots: true,
-                handler: handler
-            );
+            return new LeakWatcher(bus: bus, throwOnLeak: throwOnLeak, label: label, watchSlots: true, handler: handler);
         }
 
         /// <summary>
@@ -247,9 +220,7 @@ namespace DxMessaging.Tests.Runtime
         /// The live occupied-slot count across per-message-type and
         /// per-target/source slots. Updates on each read until disposal.
         /// </summary>
-        public int SlotSnapshot =>
-            (_disposed ? _finalTypeSlotCount : _bus.OccupiedTypeSlots)
-            + (_disposed ? _finalTargetSlotCount : _bus.OccupiedTargetSlots);
+        public int SlotSnapshot => (_disposed ? _finalTypeSlotCount : _bus.OccupiedTypeSlots) + (_disposed ? _finalTargetSlotCount : _bus.OccupiedTargetSlots);
 
         /// <summary>
         /// The occupied-slot count captured at construction.
@@ -267,25 +238,21 @@ namespace DxMessaging.Tests.Runtime
         /// Each pre-disposal access pays the same cold registration walk as
         /// <see cref="Snapshot"/>. Snapshot at region boundaries.
         /// </remarks>
-        public int LeakedRegistrations =>
-            (_disposed ? _finalLiveRegistrations : Snapshot) - _initialLiveRegistrations;
+        public int LeakedRegistrations => (_disposed ? _finalLiveRegistrations : Snapshot) - _initialLiveRegistrations;
 
         /// <summary>
         /// Number of occupied per-message-type slots leaked relative to the
         /// initial snapshot. Negative values indicate the watched region
         /// reclaimed slots it did not create.
         /// </summary>
-        public int LeakedTypeSlots =>
-            (_disposed ? _finalTypeSlotCount : _bus.OccupiedTypeSlots) - _initialTypeSlotCount;
+        public int LeakedTypeSlots => (_disposed ? _finalTypeSlotCount : _bus.OccupiedTypeSlots) - _initialTypeSlotCount;
 
         /// <summary>
         /// Number of occupied per-target/source slots leaked relative to the
         /// initial snapshot. Negative values indicate the watched region
         /// reclaimed slots it did not create.
         /// </summary>
-        public int LeakedTargetSlots =>
-            (_disposed ? _finalTargetSlotCount : _bus.OccupiedTargetSlots)
-            - _initialTargetSlotCount;
+        public int LeakedTargetSlots => (_disposed ? _finalTargetSlotCount : _bus.OccupiedTargetSlots) - _initialTargetSlotCount;
 
         /// <summary>
         /// Total occupied slot drift relative to the initial snapshot.
@@ -334,16 +301,10 @@ namespace DxMessaging.Tests.Runtime
             int currentTargeted = _disposed ? _finalTargeted : _bus.RegisteredTargeted;
             int currentBroadcast = _disposed ? _finalBroadcast : _bus.RegisteredBroadcast;
             int currentInterceptors = _disposed ? _finalInterceptors : _bus.RegisteredInterceptors;
-            int currentPostProcessors = _disposed
-                ? _finalPostProcessors
-                : _bus.RegisteredPostProcessors;
-            int currentGlobalAcceptAll = _disposed
-                ? _finalGlobalAcceptAll
-                : _bus.RegisteredGlobalAcceptAll;
+            int currentPostProcessors = _disposed ? _finalPostProcessors : _bus.RegisteredPostProcessors;
+            int currentGlobalAcceptAll = _disposed ? _finalGlobalAcceptAll : _bus.RegisteredGlobalAcceptAll;
             int currentTypeSlotCount = _disposed ? _finalTypeSlotCount : _bus.OccupiedTypeSlots;
-            int currentTargetSlotCount = _disposed
-                ? _finalTargetSlotCount
-                : _bus.OccupiedTargetSlots;
+            int currentTargetSlotCount = _disposed ? _finalTargetSlotCount : _bus.OccupiedTargetSlots;
 
             int currentLiveRegistrations = _disposed ? _finalLiveRegistrations : Snapshot;
             int delta = currentLiveRegistrations - _initialLiveRegistrations;
@@ -403,11 +364,7 @@ namespace DxMessaging.Tests.Runtime
             _finalTargetSlotCount = _bus.OccupiedTargetSlots;
             if (_handler != null)
             {
-                _handler.GetRetainedStorageCounts(
-                    _bus,
-                    out _finalHandlerContexts,
-                    out _finalHandlerPriorityCaches
-                );
+                _handler.GetRetainedStorageCounts(_bus, out _finalHandlerContexts, out _finalHandlerPriorityCaches);
             }
 
             int delta = _finalLiveRegistrations - _initialLiveRegistrations;
@@ -421,15 +378,8 @@ namespace DxMessaging.Tests.Runtime
             int typeSlotDelta = _finalTypeSlotCount - _initialTypeSlotCount;
             int targetSlotDelta = _finalTargetSlotCount - _initialTargetSlotCount;
             bool slotDeltaIsClean = !_watchSlots || (typeSlotDelta == 0 && targetSlotDelta == 0);
-            bool handlerStorageIsClean =
-                _finalHandlerContexts == _initialHandlerContexts
-                && _finalHandlerPriorityCaches == _initialHandlerPriorityCaches;
-            if (
-                delta == 0
-                && registrationCountersAreClean
-                && slotDeltaIsClean
-                && handlerStorageIsClean
-            )
+            bool handlerStorageIsClean = _finalHandlerContexts == _initialHandlerContexts && _finalHandlerPriorityCaches == _initialHandlerPriorityCaches;
+            if (delta == 0 && registrationCountersAreClean && slotDeltaIsClean && handlerStorageIsClean)
             {
                 return;
             }

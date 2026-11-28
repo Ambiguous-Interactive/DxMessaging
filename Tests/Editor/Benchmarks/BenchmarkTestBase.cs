@@ -48,8 +48,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
 
         protected void RecordBenchmark(string label, int count, TimeSpan duration, bool allocating)
         {
-            long operationsPerSecond =
-                duration.TotalSeconds <= 0.0 ? 0 : (long)Math.Floor(count / duration.TotalSeconds);
+            long operationsPerSecond = duration.TotalSeconds <= 0.0 ? 0 : (long)Math.Floor(count / duration.TotalSeconds);
 
             if (_session != null)
             {
@@ -86,9 +85,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             RunWithComponent((component, _) => action(component));
         }
 
-        protected void RunWithComponent(
-            Action<EmptyMessageAwareComponent, MessageRegistrationToken> action
-        )
+        protected void RunWithComponent(Action<EmptyMessageAwareComponent, MessageRegistrationToken> action)
         {
             if (action == null)
             {
@@ -99,13 +96,10 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             MessageRegistrationToken token = null;
             try
             {
-                EmptyMessageAwareComponent component =
-                    go.GetComponent<EmptyMessageAwareComponent>();
+                EmptyMessageAwareComponent component = go.GetComponent<EmptyMessageAwareComponent>();
                 if (component == null)
                 {
-                    throw new InvalidOperationException(
-                        "Benchmark GameObject was missing EmptyMessageAwareComponent."
-                    );
+                    throw new InvalidOperationException("Benchmark GameObject was missing EmptyMessageAwareComponent.");
                 }
 
                 token = GetOrCreateEnabledToken(go, component);
@@ -127,10 +121,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             }
         }
 
-        private static MessageRegistrationToken GetOrCreateEnabledToken(
-            GameObject go,
-            EmptyMessageAwareComponent component
-        )
+        private static MessageRegistrationToken GetOrCreateEnabledToken(GameObject go, EmptyMessageAwareComponent component)
         {
             MessageRegistrationToken token = component.Token;
             if (token == null)
@@ -138,9 +129,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
                 MessagingComponent messagingComponent = go.GetComponent<MessagingComponent>();
                 if (messagingComponent == null)
                 {
-                    throw new InvalidOperationException(
-                        $"Benchmark GameObject '{go.name}' is missing {nameof(MessagingComponent)}."
-                    );
+                    throw new InvalidOperationException($"Benchmark GameObject '{go.name}' is missing {nameof(MessagingComponent)}.");
                 }
 
                 token = messagingComponent.Create(component);

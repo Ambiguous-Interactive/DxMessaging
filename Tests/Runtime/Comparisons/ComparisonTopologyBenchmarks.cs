@@ -29,8 +29,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             ComparisonScenario.StructMessageNoBoxing,
         };
 
-        internal static string RowKey(ComparisonScenario scenario) =>
-            $"InternalComparisonTwin_{ComparisonScenarios.Key(scenario)}";
+        internal static string RowKey(ComparisonScenario scenario) => $"InternalComparisonTwin_{ComparisonScenarios.Key(scenario)}";
 
         private static IEnumerable<TestCaseData> Cases()
         {
@@ -53,11 +52,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                     return BenchmarkProtocol.BatchSize;
                 }
             );
-            AssertAccounting(
-                scenario,
-                warmup + measurement.TotalEmittedOperations,
-                workload.Progress
-            );
+            AssertAccounting(scenario, warmup + measurement.TotalEmittedOperations, workload.Progress);
             workload.Dispose();
             AssertClean(workload.Bus, scenario.ToString());
             DispatchBenchmarkResult result = DispatchBenchmarkResult.ForEmitScenario(
@@ -72,11 +67,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             TestContext.Out.WriteLine(result.ToCsvRow());
         }
 
-        internal static void AssertAccounting(
-            ComparisonScenario scenario,
-            long totalOperations,
-            long observed
-        ) =>
+        internal static void AssertAccounting(ComparisonScenario scenario, long totalOperations, long observed) =>
             Assert.AreEqual(
                 ComparisonScenarios.ExpectedInvocationsPerOperation(scenario) * totalOperations,
                 observed,
@@ -86,10 +77,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         internal static void AssertClean(MessageBus bus, string label) =>
             CollectionAssert.AreEqual(
                 new[] { "bus:0:0:0:0:0:0", "diagnostics:False" },
-                DispatchThroughputBenchmarks.CaptureTopologyForContract(
-                    bus,
-                    Array.Empty<MessageRegistrationToken>()
-                ),
+                DispatchThroughputBenchmarks.CaptureTopologyForContract(bus, Array.Empty<MessageRegistrationToken>()),
                 $"[{label}] Teardown must clear all six registration counters."
             );
 
@@ -121,19 +109,13 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                     case ComparisonScenario.KeyedToOneOfMany:
                         for (int index = 0; index < 16; index++)
                         {
-                            _ = Token.RegisterTargeted<SimpleTargetedMessage>(
-                                new InstanceId(41000 + index),
-                                CountTargeted
-                            );
+                            _ = Token.RegisterTargeted<SimpleTargetedMessage>(new InstanceId(41000 + index), CountTargeted);
                         }
                         break;
                     case ComparisonScenario.PriorityOrderedDispatch:
                         for (int priority = 0; priority < 4; priority++)
                         {
-                            _ = Token.RegisterUntargeted<SimpleUntargetedMessage>(
-                                _handler,
-                                priority
-                            );
+                            _ = Token.RegisterUntargeted<SimpleUntargetedMessage>(_handler, priority);
                         }
                         break;
                     case ComparisonScenario.FilteredDispatch:
@@ -141,16 +123,12 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                         _ = Token.RegisterUntargeted<SimpleUntargetedMessage>(_handler);
                         break;
                     case ComparisonScenario.PostProcessingDispatch:
-                        _ = Token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
-                            PostProcess
-                        );
+                        _ = Token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(PostProcess);
                         _ = Token.RegisterUntargeted<SimpleUntargetedMessage>(_handler);
                         break;
                     case ComparisonScenario.InterceptedPostProcessingDispatch:
                         _ = Token.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(Allow);
-                        _ = Token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
-                            PostProcess
-                        );
+                        _ = Token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(PostProcess);
                         _ = Token.RegisterUntargeted<SimpleUntargetedMessage>(_handler);
                         break;
                     case ComparisonScenario.SubscribeUnsubscribeChurn:
@@ -166,10 +144,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
 
             internal MessageRegistrationToken AddToken()
             {
-                MessageHandler handler = new(new InstanceId(42000 + Tokens.Count), Bus)
-                {
-                    active = true,
-                };
+                MessageHandler handler = new(new InstanceId(42000 + Tokens.Count), Bus) { active = true };
                 MessageRegistrationToken token = MessageRegistrationToken.Create(handler, Bus);
                 token.DiagnosticMode = false;
                 token.Enable();
@@ -177,8 +152,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 return token;
             }
 
-            internal string[] CaptureTopology() =>
-                DispatchThroughputBenchmarks.CaptureTopologyForContract(Bus, Tokens);
+            internal string[] CaptureTopology() => DispatchThroughputBenchmarks.CaptureTopologyForContract(Bus, Tokens);
 
             internal void EmitMany(int count)
             {
@@ -200,8 +174,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                     case ComparisonScenario.SubscribeUnsubscribeChurn:
                         for (int index = 0; index < count; index++)
                         {
-                            MessageRegistrationHandle handle =
-                                Token.RegisterUntargeted<SimpleUntargetedMessage>(_handler);
+                            MessageRegistrationHandle handle = Token.RegisterUntargeted<SimpleUntargetedMessage>(_handler);
                             Token.RemoveRegistration(handle);
                             Progress++;
                         }

@@ -21,11 +21,9 @@ namespace DxMessaging.Editor.Settings
     {
         private const string SettingsPath = "Assets/Editor/DxMessagingSettings.asset";
 
-        private static readonly Func<string, DxMessagingSettings> PassiveLoadAtPath =
-            AssetDatabase.LoadAssetAtPath<DxMessagingSettings>;
+        private static readonly Func<string, DxMessagingSettings> PassiveLoadAtPath = AssetDatabase.LoadAssetAtPath<DxMessagingSettings>;
         private static readonly Func<string[]> PassiveFindGuids = FindSettingsGuids;
-        private static readonly Func<string, string> PassiveGuidToPath =
-            AssetDatabase.GUIDToAssetPath;
+        private static readonly Func<string, string> PassiveGuidToPath = AssetDatabase.GUIDToAssetPath;
 
         private static int _settingsRevision;
         private static int _cachedSettingsRevision = -1;
@@ -40,12 +38,7 @@ namespace DxMessaging.Editor.Settings
             Interlocked.Increment(ref _settingsRevision);
         }
 
-        internal static void NotifyAssetsChanged(
-            string[] importedAssets,
-            string[] deletedAssets,
-            string[] movedAssets,
-            string[] movedFromAssetPaths
-        )
+        internal static void NotifyAssetsChanged(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths)
         {
             if (
                 !ContainsSettingsChange(importedAssets)
@@ -78,11 +71,7 @@ namespace DxMessaging.Editor.Settings
                     moves/deletes of the selected asset or its folder, including legacy paths.
                     Do not query AssetDatabase from an import callback to classify a new asset.
                 */
-                if (
-                    path.EndsWith(".asset", StringComparison.OrdinalIgnoreCase)
-                    || IsAssetOrParentPath(path, SettingsPath)
-                    || IsAssetOrParentPath(path, _cachedSettingsPath)
-                )
+                if (path.EndsWith(".asset", StringComparison.OrdinalIgnoreCase) || IsAssetOrParentPath(path, SettingsPath) || IsAssetOrParentPath(path, _cachedSettingsPath))
                 {
                     return true;
                 }
@@ -95,10 +84,7 @@ namespace DxMessaging.Editor.Settings
             return !string.IsNullOrEmpty(settingsPath)
                 && (
                     string.Equals(changedPath, settingsPath, StringComparison.OrdinalIgnoreCase)
-                    || settingsPath.StartsWith(
-                        changedPath.TrimEnd('/') + "/",
-                        StringComparison.OrdinalIgnoreCase
-                    )
+                    || settingsPath.StartsWith(changedPath.TrimEnd('/') + "/", StringComparison.OrdinalIgnoreCase)
                 );
         }
 
@@ -202,11 +188,7 @@ namespace DxMessaging.Editor.Settings
                         setter is safe to invoke from any editor context (OnValidate, button click,
                         etc.) without risking AssetDatabase reentrancy.
                     */
-                    EditorApplication.delayCall += DxMessaging
-                        .Editor
-                        .Analyzers
-                        .DxMessagingConsoleHarvester
-                        .RequestRescan;
+                    EditorApplication.delayCall += DxMessaging.Editor.Analyzers.DxMessagingConsoleHarvester.RequestRescan;
                 }
             }
         }
@@ -262,10 +244,7 @@ namespace DxMessaging.Editor.Settings
         {
             get
             {
-                if (
-                    _diagnosticsTargets == DiagnosticsTarget.Off
-                    && _legacyEnableDiagnosticsInEditor
-                )
+                if (_diagnosticsTargets == DiagnosticsTarget.Off && _legacyEnableDiagnosticsInEditor)
                 {
                     return DiagnosticsTarget.Editor;
                 }
@@ -299,17 +278,10 @@ namespace DxMessaging.Editor.Settings
             return AssetDatabase.FindAssets($"t:{nameof(DxMessagingSettings)}");
         }
 
-        internal static DxMessagingSettings LoadSettingsPassive(
-            Func<string, DxMessagingSettings> loadAtPath,
-            Func<string[]> findGuids,
-            Func<string, string> guidToPath
-        )
+        internal static DxMessagingSettings LoadSettingsPassive(Func<string, DxMessagingSettings> loadAtPath, Func<string[]> findGuids, Func<string, string> guidToPath)
         {
             int revision = SettingsRevision;
-            if (
-                _cachedSettingsRevision == revision
-                && (ReferenceEquals(_cachedSettings, null) || _cachedSettings != null)
-            )
+            if (_cachedSettingsRevision == revision && (ReferenceEquals(_cachedSettings, null) || _cachedSettings != null))
             {
                 return _cachedSettings;
             }
@@ -458,11 +430,7 @@ namespace DxMessaging.Editor.Settings
                 return;
             }
             EnsureIgnoreListInitialized();
-            if (
-                _baseCallIgnoredTypes.Any(entry =>
-                    string.Equals(entry, fullyQualifiedTypeName, System.StringComparison.Ordinal)
-                )
-            )
+            if (_baseCallIgnoredTypes.Any(entry => string.Equals(entry, fullyQualifiedTypeName, System.StringComparison.Ordinal)))
             {
                 return;
             }
@@ -486,9 +454,7 @@ namespace DxMessaging.Editor.Settings
             {
                 return;
             }
-            int removed = _baseCallIgnoredTypes.RemoveAll(entry =>
-                string.Equals(entry, fullyQualifiedTypeName, System.StringComparison.Ordinal)
-            );
+            int removed = _baseCallIgnoredTypes.RemoveAll(entry => string.Equals(entry, fullyQualifiedTypeName, System.StringComparison.Ordinal));
             if (0 < removed)
             {
                 EditorUtility.SetDirty(this);
@@ -505,10 +471,7 @@ namespace DxMessaging.Editor.Settings
             }
             catch (System.Exception ex)
             {
-                DxMessaging.Editor.DxMessagingEditorLog.LogWarning(
-                    "Failed to regenerate base-call ignore sidecar.",
-                    ex
-                );
+                DxMessaging.Editor.DxMessagingEditorLog.LogWarning("Failed to regenerate base-call ignore sidecar.", ex);
             }
         }
     }

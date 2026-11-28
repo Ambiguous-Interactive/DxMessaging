@@ -75,11 +75,7 @@ namespace DxMessaging.Tests.Editor
             AddLegacySettings();
             for (int i = 0; i < 64; i++)
             {
-                Assert.That(
-                    Read(),
-                    Is.SameAs(settings),
-                    "The canonical asset must take precedence."
-                );
+                Assert.That(Read(), Is.SameAs(settings), "The canonical asset must take precedence.");
             }
             Assert.That(_loads, Is.EqualTo(1), "An unchanged live asset must load once.");
             Assert.That(_searches, Is.Zero, "The canonical asset requires no project-wide search.");
@@ -93,21 +89,9 @@ namespace DxMessaging.Tests.Editor
             settings._baseCallCheckEnabled = false;
             settings._useConsoleBridge = true;
             DxMessagingSettings current = Read();
-            Assert.That(
-                current._baseCallCheckEnabled,
-                Is.False,
-                "Cached assets retain live edits."
-            );
-            Assert.That(
-                current._useConsoleBridge,
-                Is.True,
-                "Bridge edits must be visible immediately."
-            );
-            Assert.That(
-                _searches,
-                Is.EqualTo(1),
-                "Live reads must not repeat the fallback search."
-            );
+            Assert.That(current._baseCallCheckEnabled, Is.False, "Cached assets retain live edits.");
+            Assert.That(current._useConsoleBridge, Is.True, "Bridge edits must be visible immediately.");
+            Assert.That(_searches, Is.EqualTo(1), "Live reads must not repeat the fallback search.");
             Assert.That(_loads, Is.EqualTo(2), "Only canonical and legacy paths should be loaded.");
         }
 
@@ -128,50 +112,30 @@ namespace DxMessaging.Tests.Editor
             Assert.That(
                 DxMessagingEditorIdle.CanMutateAssetDatabase(),
                 Is.True,
-                "Compilation must finish before the guarded rescan calls. "
-                    + $"Compiling={EditorApplication.isCompiling}, updating={EditorApplication.isUpdating}."
+                "Compilation must finish before the guarded rescan calls. " + $"Compiling={EditorApplication.isCompiling}, updating={EditorApplication.isUpdating}."
             );
             DxMessagingSettings settings = CreateSettings(DefaultPath);
             settings._baseCallCheckEnabled = false;
             DxMessagingSettings.InvalidateSettingsCache();
             Read();
-            using EditorStaticFieldScope harvesterState = new(
-                typeof(DxMessagingConsoleHarvester),
-                "_lastSettingsRevision"
-            );
+            using EditorStaticFieldScope harvesterState = new(typeof(DxMessagingConsoleHarvester), "_lastSettingsRevision");
+            harvesterState.Set("_lastSettingsRevision", -1);
+            DxMessagingConsoleHarvester.RescanNow();
+            Assert.That(MessageBusInspection.ReadField(typeof(DxMessagingConsoleHarvester), "_lastSettingsRevision"), Is.EqualTo(DxMessagingSettings.SettingsRevision));
             harvesterState.Set("_lastSettingsRevision", -1);
             DxMessagingConsoleHarvester.RescanNow();
             Assert.That(
-                MessageBusInspection.ReadField(
-                    typeof(DxMessagingConsoleHarvester),
-                    "_lastSettingsRevision"
-                ),
-                Is.EqualTo(DxMessagingSettings.SettingsRevision)
-            );
-            harvesterState.Set("_lastSettingsRevision", -1);
-            DxMessagingConsoleHarvester.RescanNow();
-            Assert.That(
-                MessageBusInspection.ReadField(
-                    typeof(DxMessagingConsoleHarvester),
-                    "_lastSettingsRevision"
-                ),
+                MessageBusInspection.ReadField(typeof(DxMessagingConsoleHarvester), "_lastSettingsRevision"),
                 Is.EqualTo(DxMessagingSettings.SettingsRevision),
                 "Both real idle rescans must consume the current settings revision."
             );
-            Assert.That(
-                _loads,
-                Is.EqualTo(1),
-                "The harvester must reuse the already-loaded asset."
-            );
+            Assert.That(_loads, Is.EqualTo(1), "The harvester must reuse the already-loaded asset.");
             Assert.That(_searches, Is.Zero, "The harvester must not add a project-wide search.");
         }
 
         [TestCase(true, false)]
         [TestCase(false, true)]
-        public void MasterCheckChangesDeferOneRescanAndUnchangedValuesDoNot(
-            bool initialValue,
-            bool changedValue
-        )
+        public void MasterCheckChangesDeferOneRescanAndUnchangedValuesDoNot(bool initialValue, bool changedValue)
         {
             DxMessagingSettings settings = CreateSettings(DefaultPath);
             settings._baseCallCheckEnabled = initialValue;
@@ -185,11 +149,7 @@ namespace DxMessaging.Tests.Editor
                     "Enabling or disabling checks must defer a rescan without running it synchronously."
                 );
                 settings.BaseCallCheckEnabled = changedValue;
-                Assert.That(
-                    EditorApplication.delayCall?.GetInvocationList().Length ?? 0,
-                    Is.EqualTo(callbacks + 1),
-                    "Assigning an unchanged value must not add another callback."
-                );
+                Assert.That(EditorApplication.delayCall?.GetInvocationList().Length ?? 0, Is.EqualTo(callbacks + 1), "Assigning an unchanged value must not add another callback.");
             }
             finally
             {
@@ -214,19 +174,11 @@ namespace DxMessaging.Tests.Editor
                 channel == "move" ? changed : empty,
                 channel == "move-from" ? changed : empty
             );
-            Assert.That(
-                DxMessagingSettings.SettingsRevision,
-                Is.Not.EqualTo(revision),
-                "Every settings asset-change channel must invalidate the cached revision."
-            );
+            Assert.That(DxMessagingSettings.SettingsRevision, Is.Not.EqualTo(revision), "Every settings asset-change channel must invalidate the cached revision.");
             Assert.That(_searches, Is.EqualTo(1), "Import notification must not query settings.");
             Assert.That(_loads, Is.EqualTo(1), "Import notification must not load settings.");
             Assert.That(Read(), Is.SameAs(settings), "The next read must discover the new asset.");
-            Assert.That(
-                _searches,
-                Is.EqualTo(2),
-                "The next revision permits exactly one new search."
-            );
+            Assert.That(_searches, Is.EqualTo(2), "The next revision permits exactly one new search.");
         }
 
         [Test]
@@ -241,11 +193,7 @@ namespace DxMessaging.Tests.Editor
                 Array.Empty<string>(),
                 Array.Empty<string>()
             );
-            Assert.That(
-                DxMessagingSettings.SettingsRevision,
-                Is.EqualTo(revision),
-                "Empty paths and unrelated source/folder changes must not invalidate settings."
-            );
+            Assert.That(DxMessagingSettings.SettingsRevision, Is.EqualTo(revision), "Empty paths and unrelated source/folder changes must not invalidate settings.");
             Read();
             Assert.That(_searches, Is.EqualTo(1), "Unrelated changes must not amplify searches.");
         }
@@ -259,17 +207,8 @@ namespace DxMessaging.Tests.Editor
             const string newPath = "Assets/Renamed/Settings.asset";
             _assets[newPath] = settings;
             _guidPaths["legacy"] = newPath;
-            DxMessagingSettings.NotifyAssetsChanged(
-                Array.Empty<string>(),
-                Array.Empty<string>(),
-                new[] { "Assets/Renamed" },
-                new[] { "Assets/Legacy" }
-            );
-            Assert.That(
-                Read(),
-                Is.SameAs(settings),
-                "Folder moves must re-resolve the same asset."
-            );
+            DxMessagingSettings.NotifyAssetsChanged(Array.Empty<string>(), Array.Empty<string>(), new[] { "Assets/Renamed" }, new[] { "Assets/Legacy" });
+            Assert.That(Read(), Is.SameAs(settings), "Folder moves must re-resolve the same asset.");
             Assert.That(_searches, Is.EqualTo(2), "A folder move must invalidate the legacy path.");
         }
 
@@ -281,11 +220,7 @@ namespace DxMessaging.Tests.Editor
             _assets.Remove(LegacyPath);
             _guids = Array.Empty<string>();
             DxMessagingSettings.NotifyAssetsChanged(null, new[] { LegacyPath }, null, null);
-            Assert.That(
-                Read() == null,
-                Is.True,
-                "A deleted setting must not retain its live reference."
-            );
+            Assert.That(Read() == null, Is.True, "A deleted setting must not retain its live reference.");
             Assert.That(Read() == null, Is.True, "The new miss must be cached.");
             Assert.That(_searches, Is.EqualTo(2), "Deletion must produce one replacement lookup.");
         }
@@ -297,11 +232,7 @@ namespace DxMessaging.Tests.Editor
             Read();
             Object.DestroyImmediate(settings);
             DxMessagingSettings replacement = AddLegacySettings();
-            Assert.That(
-                Read(),
-                Is.SameAs(replacement),
-                "Unity's destroyed-object null must trigger a new lookup, not a cached miss."
-            );
+            Assert.That(Read(), Is.SameAs(replacement), "Unity's destroyed-object null must trigger a new lookup, not a cached miss.");
             Assert.That(_searches, Is.EqualTo(2), "Destroyed objects must be resolved again.");
         }
 
@@ -311,16 +242,8 @@ namespace DxMessaging.Tests.Editor
             DxMessagingSettings settings = AddLegacySettings();
             _guids = new[] { "missing-path", "missing-asset", "legacy" };
             _guidPaths["missing-asset"] = "Assets/Missing.asset";
-            Assert.That(
-                Read(),
-                Is.SameAs(settings),
-                "Invalid early GUIDs must not hide a valid asset."
-            );
-            Assert.That(
-                _resolutions,
-                Is.EqualTo(3),
-                "Every earlier invalid entry must be examined."
-            );
+            Assert.That(Read(), Is.SameAs(settings), "Invalid early GUIDs must not hide a valid asset.");
+            Assert.That(_resolutions, Is.EqualTo(3), "Every earlier invalid entry must be examined.");
             Assert.That(_loads, Is.EqualTo(3), "Do not load an empty GUID path.");
         }
 
@@ -328,12 +251,7 @@ namespace DxMessaging.Tests.Editor
         public void FailedSearchDoesNotPublishACompletedMiss()
         {
             Assert.Throws<InvalidOperationException>(
-                () =>
-                    DxMessagingSettings.LoadSettingsPassive(
-                        Load,
-                        () => throw new InvalidOperationException("injected search failure"),
-                        Resolve
-                    ),
+                () => DxMessagingSettings.LoadSettingsPassive(Load, () => throw new InvalidOperationException("injected search failure"), Resolve),
                 "The injected lookup failure must escape before publishing a cache entry."
             );
             DxMessagingSettings settings = AddLegacySettings();
@@ -356,11 +274,7 @@ namespace DxMessaging.Tests.Editor
             );
             Assert.That(first, Is.SameAs(settings), "The current load may return the live object.");
             Assert.That(Read(), Is.SameAs(settings), "The invalidated revision must reload.");
-            Assert.That(
-                _loads,
-                Is.EqualTo(2),
-                "An in-flight invalidation must not be overwritten."
-            );
+            Assert.That(_loads, Is.EqualTo(2), "An in-flight invalidation must not be overwritten.");
         }
 
         [Test]
@@ -369,11 +283,7 @@ namespace DxMessaging.Tests.Editor
             Read();
             DxMessagingSettings settings = CreateSettings(DefaultPath);
             DxMessagingSettings.InvalidateSettingsCache();
-            Assert.That(
-                Read(),
-                Is.SameAs(settings),
-                "A fresh revision must discover canonical settings."
-            );
+            Assert.That(Read(), Is.SameAs(settings), "A fresh revision must discover canonical settings.");
             Assert.That(_loads, Is.EqualTo(2), "A reset revision requires a fresh canonical load.");
         }
 

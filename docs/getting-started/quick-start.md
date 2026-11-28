@@ -2,7 +2,8 @@
 
 <a id="quick-start-your-first-message-in-5-minutes"></a>
 
-[Back to Index](index.md) | [Getting Started](getting-started.md) | [Visual Guide](visual-guide.md) | [Samples](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/Samples~)
+[Back to Index](index.md) | [Getting Started](getting-started.md) | [Visual Guide](visual-guide.md) |
+[Samples](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/Samples~)
 
 ---
 
@@ -28,9 +29,8 @@ https://github.com/Ambiguous-Interactive/DxMessaging.git
 
 ## Your First Message (3 Steps)
 
-> **Handler version:** These examples use the 4.0 `in` signature. With a 3.x package, use
-> `ref DamageRequested message` for the receiver callback parameter instead. Keep the registration
-> and emission calls unchanged. See the [4.0 migration guide](../guides/migration-guide.md#migrating-to-400).
+> **Handler version:** These examples use the 4.0 `in` signature. With a 3.x package, use `ref DamageRequested message` for the receiver callback parameter instead. Keep the
+> registration and emission calls unchanged. See the [4.0 migration guide](../guides/migration-guide.md#migrating-to-400).
 
 ### Step 1: Define a damage command
 
@@ -47,8 +47,7 @@ public readonly partial struct DamageRequested
 }
 ```
 
-The source generator adds the constructor and targeted message identity. The emit helper is a
-DxMessaging extension method.
+The source generator adds the constructor and targeted message identity. The emit helper is a DxMessaging extension method.
 
 ### Step 2: Receive damage
 
@@ -80,7 +79,9 @@ public sealed class DamageReceiver : MessageAwareComponent
 
 > **Important**
 >
-> If you override any of the lifecycle methods that DxMessaging hooks, your override **must** call the matching base method first. Forgetting this is silent: no errors, no compile failure, just dead handlers. The Roslyn analyzer (DXMSG006) and the [Inspector overlay](../guides/inspector-overlay.md) will flag the mistake, but they fire after the broken code is already written.
+> If you override any of the lifecycle methods that DxMessaging hooks, your override **must** call the matching base method first. Forgetting this is silent: no errors, no compile
+> failure, just dead handlers. The Roslyn analyzer (DXMSG006) and the [Inspector overlay](../guides/inspector-overlay.md) will flag the mistake, but they fire after the broken code
+> is already written.
 
 The five guarded methods, with what breaks if you forget the base call:
 
@@ -92,10 +93,9 @@ The five guarded methods, with what breaks if you forget the base call:
 | `base.OnDestroy()`               | Registrations leak past the component's lifetime; held references prevent GC.                           |
 | `base.RegisterMessageHandlers()` | Registrations declared by a parent component do not register.                                           |
 
-Declare `Start`, `Update`, `FixedUpdate`, and `LateUpdate` as ordinary Unity message methods;
-`MessageAwareComponent` does not declare them as virtual methods to override. Its virtual
-`OnApplicationQuit` implementation does nothing. An override needs no base call for messaging
-cleanup. Preserve any quit behavior implemented by an intermediate parent class.
+Declare `Start`, `Update`, `FixedUpdate`, and `LateUpdate` as ordinary Unity message methods; `MessageAwareComponent` does not declare them as virtual methods to override. Its
+virtual `OnApplicationQuit` implementation does nothing. An override needs no base call for messaging cleanup. Preserve any quit behavior implemented by an intermediate parent
+class.
 
 See [DXMSG006 in the analyzer reference](../reference/analyzers.md#dxmsg006-missing-base-call) and the symptom-first [troubleshooting guide](../reference/troubleshooting.md).
 
@@ -121,17 +121,13 @@ public sealed class Hazard : MonoBehaviour
 
 #### Try it in Play Mode
 
-1. Add two 3D cubes to an empty scene. Name them **Hazard** and **Target**. Set their positions
-   to `(0, 0, 0)` and `(3, 0, 0)`, respectively.
-1. Attach `Hazard` to **Hazard** and leave **Damage** at 25. On its Box Collider, enable
-   **Is Trigger**. Add a Rigidbody, enable **Is Kinematic**, and disable **Use Gravity**.
+1. Add two 3D cubes to an empty scene. Name them **Hazard** and **Target**. Set their positions to `(0, 0, 0)` and `(3, 0, 0)`, respectively.
+1. Attach `Hazard` to **Hazard** and leave **Damage** at 25. On its Box Collider, enable **Is Trigger**. Add a Rigidbody, enable **Is Kinematic**, and disable **Use Gravity**.
 1. Attach `DamageReceiver` to **Target**. Keep its Box Collider with **Is Trigger** disabled.
-1. Enter Play Mode. In the Inspector for **Hazard**, set **Transform > Position > X** to 3.
-   The hazard now overlaps the target.
+1. Enter Play Mode. In the Inspector for **Hazard**, set **Transform > Position > X** to 3. The hazard now overlaps the target.
 1. In the Unity Console, select `Health: 75`. Unity highlights **Target** in the Hierarchy.
 
-The trigger supplies the target GameObject. The hazard sends the command without a reference to
-the receiver component.
+The trigger supplies the target GameObject. The hazard sends the command without a reference to the receiver component.
 
 ---
 
@@ -149,9 +145,8 @@ Registration cleanup is automatic. Messages are type-safe.
 
 ## What You Built
 
-The hazard and damage receiver share only the `DamageRequested` contract. You can add shields,
-breakable props, enemies, or test doubles without changing `Hazard`. Use the message-type guide next
-to learn when a global announcement or source-bound event fits better than this targeted command.
+The hazard and damage receiver share only the `DamageRequested` contract. You can add shields, breakable props, enemies, or test doubles without changing `Hazard`. Use the
+message-type guide next to learn when a global announcement or source-bound event fits better than this targeted command.
 
 ---
 
@@ -163,7 +158,8 @@ to learn when a global announcement or source-bound event fits better than this 
   - -> [Visual Guide](visual-guide.md) - Pictures and analogies
 - **Try Real Examples**
   - -> [Mini Combat sample](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Samples~/Mini%20Combat/README.md) - Working combat example
-  - -> [UI Buttons + Inspector sample](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Samples~/UI%20Buttons%20%2B%20Inspector/README.md) - See diagnostics in action
+  - -> [UI Buttons + Inspector sample](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Samples~/UI%20Buttons%20%2B%20Inspector/README.md) - See diagnostics in
+    action
 - **Go Deeper**
   - -> [Message Types](../concepts/message-types.md) - When to use which type
   - -> [Common Patterns](../guides/patterns.md) - Real-world solutions

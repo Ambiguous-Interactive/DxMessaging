@@ -9,18 +9,11 @@ namespace WallstopStudios.DxMessaging.Docs.Tests;
 
 internal static class DocsSnippetCompiler
 {
-    private static readonly CSharpParseOptions ParseOptions = new(
-        languageVersion: LanguageVersion.Latest,
-        documentationMode: DocumentationMode.Parse
-    );
+    private static readonly CSharpParseOptions ParseOptions = new(languageVersion: LanguageVersion.Latest, documentationMode: DocumentationMode.Parse);
 
-    private static readonly CSharpParseOptions DocumentationParseOptions = new(
-        languageVersion: LanguageVersion.Latest,
-        documentationMode: DocumentationMode.Diagnose
-    );
+    private static readonly CSharpParseOptions DocumentationParseOptions = new(languageVersion: LanguageVersion.Latest, documentationMode: DocumentationMode.Diagnose);
 
-    private static readonly ImmutableArray<MetadataReference> CoreReferences =
-        BuildCoreReferences();
+    private static readonly ImmutableArray<MetadataReference> CoreReferences = BuildCoreReferences();
 
     private static readonly Lazy<SyntaxTree> BusFirstApi = new(BuildBusFirstApi);
     private static readonly Lazy<SyntaxTree> TestSupportApi = new(BuildTestSupportApi);
@@ -38,19 +31,15 @@ internal static class DocsSnippetCompiler
         "UnityEngine",
     };
 
-    private static readonly CSharpCompilationOptions CompilationOptions =
-        new CSharpCompilationOptions(
-            OutputKind.DynamicallyLinkedLibrary,
-            generalDiagnosticOption: ReportDiagnostic.Error
-        );
+    private static readonly CSharpCompilationOptions CompilationOptions = new CSharpCompilationOptions(
+        OutputKind.DynamicallyLinkedLibrary,
+        generalDiagnosticOption: ReportDiagnostic.Error
+    );
 
     internal static ImmutableArray<Diagnostic> CompileSnippet(string userSource)
     {
         SyntaxTree stubs = CSharpSyntaxTree.ParseText(SharedStubs, ParseOptions);
-        SyntaxTree userTree = CSharpSyntaxTree.ParseText(
-            NormalizeSnippet(userSource),
-            ParseOptions
-        );
+        SyntaxTree userTree = CSharpSyntaxTree.ParseText(NormalizeSnippet(userSource), ParseOptions);
 
         CSharpCompilation compilation = CSharpCompilation.Create(
             assemblyName: "DocsSnippetCompilation",
@@ -58,24 +47,13 @@ internal static class DocsSnippetCompiler
             references: CoreReferences,
             options: CompilationOptions
         );
-        GeneratorDriver driver = CSharpGeneratorDriver.Create(
-            new ISourceGenerator[] { new DxAutoConstructorGenerator() },
-            parseOptions: ParseOptions
-        );
-        driver.RunGeneratorsAndUpdateCompilation(
-            compilation,
-            out Compilation generatedCompilation,
-            out ImmutableArray<Diagnostic> generatorDiagnostics
-        );
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(new ISourceGenerator[] { new DxAutoConstructorGenerator() }, parseOptions: ParseOptions);
+        driver.RunGeneratorsAndUpdateCompilation(compilation, out Compilation generatedCompilation, out ImmutableArray<Diagnostic> generatorDiagnostics);
 
         ImmutableArray<Diagnostic> compilerDiagnostics = generatedCompilation.GetDiagnostics();
         ImmutableArray<Diagnostic> strictGeneratorDiagnostics = generatorDiagnostics
             .Where(diagnostic => diagnostic.Severity >= DiagnosticSeverity.Warning)
-            .Select(diagnostic =>
-                diagnostic.Severity == DiagnosticSeverity.Warning
-                    ? PromoteToError(diagnostic)
-                    : diagnostic
-            )
+            .Select(diagnostic => diagnostic.Severity == DiagnosticSeverity.Warning ? PromoteToError(diagnostic) : diagnostic)
             .ToImmutableArray();
         ImmutableArray<Diagnostic> documentationDiagnostics = CSharpSyntaxTree
             .ParseText(userSource, DocumentationParseOptions)
@@ -83,9 +61,7 @@ internal static class DocsSnippetCompiler
             .Where(IsDocumentationCommentDiagnostic)
             .Select(PromoteToError)
             .ToImmutableArray();
-        return compilerDiagnostics
-            .AddRange(strictGeneratorDiagnostics)
-            .AddRange(documentationDiagnostics);
+        return compilerDiagnostics.AddRange(strictGeneratorDiagnostics).AddRange(documentationDiagnostics);
     }
 
     /// <summary>Finds the checkout containing the real API declarations used by documentation tests.</summary>
@@ -107,45 +83,21 @@ internal static class DocsSnippetCompiler
     /// <summary>Imports public recorder and lifecycle declarations directly from shipped source.</summary>
     private static SyntaxTree BuildTestSupportApi()
     {
-        string[] files =
-        {
-            "Runtime/Testing/MessageRecorder.cs",
-            "Runtime/Unity/MessagingLifecycle.cs",
-            "Runtime/Unity/MessagingComponent.cs",
-        };
-        CompilationUnitSyntax declarations = SyntaxFactory
-            .CompilationUnit()
-            .WithMembers(
-                SyntaxFactory.List<MemberDeclarationSyntax>(files.Select(BuildSupportApiScope))
-            );
-        return CSharpSyntaxTree.ParseText(
-            declarations.NormalizeWhitespace().ToFullString(),
-            ParseOptions,
-            "ProductionSupportApi.cs"
-        );
+        string[] files = { "Runtime/Testing/MessageRecorder.cs", "Runtime/Unity/MessagingLifecycle.cs", "Runtime/Unity/MessagingComponent.cs" };
+        CompilationUnitSyntax declarations = SyntaxFactory.CompilationUnit().WithMembers(SyntaxFactory.List<MemberDeclarationSyntax>(files.Select(BuildSupportApiScope)));
+        return CSharpSyntaxTree.ParseText(declarations.NormalizeWhitespace().ToFullString(), ParseOptions, "ProductionSupportApi.cs");
     }
 
     /// <summary>Replaces implementation bodies while preserving public parameter and return contracts.</summary>
     private static NamespaceDeclarationSyntax BuildSupportApiScope(string relativePath)
     {
         string path = Path.Combine(FindRepositoryRoot(), relativePath);
-        CompilationUnitSyntax source = CSharpSyntaxTree
-            .ParseText(
-                File.ReadAllText(path),
-                ParseOptions.WithPreprocessorSymbols("UNITY_2021_3_OR_NEWER")
-            )
-            .GetCompilationUnitRoot();
-        NamespaceDeclarationSyntax scope = source
-            .Members.OfType<NamespaceDeclarationSyntax>()
-            .Single();
+        CompilationUnitSyntax source = CSharpSyntaxTree.ParseText(File.ReadAllText(path), ParseOptions.WithPreprocessorSymbols("UNITY_2021_3_OR_NEWER")).GetCompilationUnitRoot();
+        NamespaceDeclarationSyntax scope = source.Members.OfType<NamespaceDeclarationSyntax>().Single();
         List<MemberDeclarationSyntax> types = new();
         BlockSyntax stubBody = SyntaxFactory.Block(
             SyntaxFactory.ThrowStatement(
-                SyntaxFactory
-                    .ObjectCreationExpression(
-                        SyntaxFactory.ParseTypeName("global::System.NotSupportedException")
-                    )
-                    .WithArgumentList(SyntaxFactory.ArgumentList())
+                SyntaxFactory.ObjectCreationExpression(SyntaxFactory.ParseTypeName("global::System.NotSupportedException")).WithArgumentList(SyntaxFactory.ArgumentList())
             )
         );
         foreach (ClassDeclarationSyntax type in scope.Members.OfType<ClassDeclarationSyntax>())
@@ -153,44 +105,21 @@ internal static class DocsSnippetCompiler
             List<MemberDeclarationSyntax> members = new();
             foreach (MemberDeclarationSyntax member in type.Members)
             {
-                if (
-                    type.Identifier.ValueText == "MessagingComponent"
-                    && (
-                        member is not MethodDeclarationSyntax factory
-                        || factory.Identifier.ValueText != "CreateLifecycleBound"
-                    )
-                )
+                if (type.Identifier.ValueText == "MessagingComponent" && (member is not MethodDeclarationSyntax factory || factory.Identifier.ValueText != "CreateLifecycleBound"))
                 {
                     continue;
                 }
-                if (
-                    member is MethodDeclarationSyntax method
-                    && method.Modifiers.Any(SyntaxKind.PublicKeyword)
-                )
+                if (member is MethodDeclarationSyntax method && method.Modifiers.Any(SyntaxKind.PublicKeyword))
                 {
-                    members.Add(
-                        method
-                            .WithBody(stubBody)
-                            .WithExpressionBody(null)
-                            .WithSemicolonToken(default)
-                    );
+                    members.Add(method.WithBody(stubBody).WithExpressionBody(null).WithSemicolonToken(default));
                 }
-                else if (
-                    member is PropertyDeclarationSyntax property
-                    && property.Modifiers.Any(SyntaxKind.PublicKeyword)
-                )
+                else if (member is PropertyDeclarationSyntax property && property.Modifiers.Any(SyntaxKind.PublicKeyword))
                 {
                     members.Add(
                         property
                             .WithAccessorList(null)
                             .WithInitializer(null)
-                            .WithExpressionBody(
-                                SyntaxFactory.ArrowExpressionClause(
-                                    SyntaxFactory.LiteralExpression(
-                                        SyntaxKind.DefaultLiteralExpression
-                                    )
-                                )
-                            )
+                            .WithExpressionBody(SyntaxFactory.ArrowExpressionClause(SyntaxFactory.LiteralExpression(SyntaxKind.DefaultLiteralExpression)))
                             .WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken))
                     );
                 }
@@ -200,9 +129,7 @@ internal static class DocsSnippetCompiler
                 members.Add(
                     SyntaxFactory
                         .ConstructorDeclaration(type.Identifier)
-                        .WithModifiers(
-                            SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.PrivateKeyword))
-                        )
+                        .WithModifiers(SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.PrivateKeyword)))
                         .WithBody(SyntaxFactory.Block())
                 );
             }
@@ -210,42 +137,19 @@ internal static class DocsSnippetCompiler
         }
         return SyntaxFactory
             .NamespaceDeclaration(scope.Name)
-            .WithUsings(
-                SyntaxFactory.List(
-                    scope.Usings.Where(directive =>
-                        directive.Name?.ToString() is not "UnityEngine.Serialization"
-                    )
-                )
-            )
+            .WithUsings(SyntaxFactory.List(scope.Usings.Where(directive => directive.Name?.ToString() is not "UnityEngine.Serialization")))
             .WithMembers(SyntaxFactory.List(types));
     }
 
     /// <summary>Imports bus API declarations while removing production implementation details from documentation stubs.</summary>
     private static SyntaxTree BuildBusFirstApi()
     {
-        string path = Path.Combine(
-            FindRepositoryRoot(),
-            "Runtime",
-            "Core",
-            "Extensions",
-            "MessageBusExtensions.cs"
-        );
-        CompilationUnitSyntax source = CSharpSyntaxTree
-            .ParseText(
-                File.ReadAllText(path),
-                ParseOptions.WithPreprocessorSymbols("UNITY_2021_3_OR_NEWER")
-            )
-            .GetCompilationUnitRoot();
-        ClassDeclarationSyntax extensions = source
-            .DescendantNodes()
-            .OfType<ClassDeclarationSyntax>()
-            .Single(type => type.Identifier.ValueText == "MessageBusExtensions");
+        string path = Path.Combine(FindRepositoryRoot(), "Runtime", "Core", "Extensions", "MessageBusExtensions.cs");
+        CompilationUnitSyntax source = CSharpSyntaxTree.ParseText(File.ReadAllText(path), ParseOptions.WithPreprocessorSymbols("UNITY_2021_3_OR_NEWER")).GetCompilationUnitRoot();
+        ClassDeclarationSyntax extensions = source.DescendantNodes().OfType<ClassDeclarationSyntax>().Single(type => type.Identifier.ValueText == "MessageBusExtensions");
         MethodDeclarationSyntax[] methods = extensions
             .Members.OfType<MethodDeclarationSyntax>()
-            .Where(method =>
-                method.Modifiers.Any(SyntaxKind.PublicKeyword)
-                && method.Modifiers.Any(SyntaxKind.StaticKeyword)
-            )
+            .Where(method => method.Modifiers.Any(SyntaxKind.PublicKeyword) && method.Modifiers.Any(SyntaxKind.StaticKeyword))
             .Select(method =>
                 method
                     .WithBody(SyntaxFactory.Block())
@@ -258,12 +162,7 @@ internal static class DocsSnippetCompiler
                                     SyntaxFactory.SeparatedList(
                                         clause.Constraints.Where(constraint =>
                                             constraint is not TypeConstraintSyntax type
-                                            || type.Type.ToString()
-                                                is not (
-                                                    "IUntargetedMessage"
-                                                    or "ITargetedMessage"
-                                                    or "IBroadcastMessage"
-                                                )
+                                            || type.Type.ToString() is not ("IUntargetedMessage" or "ITargetedMessage" or "IBroadcastMessage")
                                         )
                                     )
                                 )
@@ -282,23 +181,10 @@ internal static class DocsSnippetCompiler
          * As in MessageExtensions stubs, route-interface constraints are absent because this
          * fixture does not run DxMessageIdGenerator. Class/struct/ref contracts remain intact.
          */
-        ClassDeclarationSyntax api = extensions.WithMembers(
-            SyntaxFactory.List<MemberDeclarationSyntax>(methods)
-        );
-        NamespaceDeclarationSyntax scope = source
-            .DescendantNodes()
-            .OfType<NamespaceDeclarationSyntax>()
-            .Single();
-        CompilationUnitSyntax declarations = SyntaxFactory
-            .CompilationUnit()
-            .AddMembers(
-                scope.WithMembers(SyntaxFactory.SingletonList<MemberDeclarationSyntax>(api))
-            );
-        return CSharpSyntaxTree.ParseText(
-            declarations.NormalizeWhitespace().ToFullString(),
-            ParseOptions,
-            "ProductionBusFirstApi.cs"
-        );
+        ClassDeclarationSyntax api = extensions.WithMembers(SyntaxFactory.List<MemberDeclarationSyntax>(methods));
+        NamespaceDeclarationSyntax scope = source.DescendantNodes().OfType<NamespaceDeclarationSyntax>().Single();
+        CompilationUnitSyntax declarations = SyntaxFactory.CompilationUnit().AddMembers(scope.WithMembers(SyntaxFactory.SingletonList<MemberDeclarationSyntax>(api)));
+        return CSharpSyntaxTree.ParseText(declarations.NormalizeWhitespace().ToFullString(), ParseOptions, "ProductionBusFirstApi.cs");
     }
 
     private static Diagnostic PromoteToError(Diagnostic diagnostic)
@@ -313,11 +199,7 @@ internal static class DocsSnippetCompiler
             description: diagnostic.Descriptor.Description,
             helpLinkUri: diagnostic.Descriptor.HelpLinkUri
         );
-        return Diagnostic.Create(
-            descriptor,
-            diagnostic.Location,
-            diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture)
-        );
+        return Diagnostic.Create(descriptor, diagnostic.Location, diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture));
     }
 
     private static bool IsDocumentationCommentDiagnostic(Diagnostic diagnostic)
@@ -336,17 +218,11 @@ internal static class DocsSnippetCompiler
             .Any(comment => comment.FullSpan.Contains(diagnostic.Location.SourceSpan));
     }
 
-    private static bool HasAttribute(
-        SyntaxList<AttributeListSyntax> attributeLists,
-        string attributeName
-    )
+    private static bool HasAttribute(SyntaxList<AttributeListSyntax> attributeLists, string attributeName)
     {
         return attributeLists
             .SelectMany(list => list.Attributes)
-            .Any(attribute =>
-                attribute.Name.ToString() == attributeName
-                || attribute.Name.ToString() == attributeName + "Attribute"
-            );
+            .Any(attribute => attribute.Name.ToString() == attributeName || attribute.Name.ToString() == attributeName + "Attribute");
     }
 
     private static string NormalizeSnippet(string userSource)
@@ -358,9 +234,7 @@ internal static class DocsSnippetCompiler
         }
 
         SyntaxTree scriptTree = CSharpSyntaxTree.ParseText(userSource, ParseOptions);
-        CompilationUnitSyntax root = InitializeExternallyAssignedFields(
-            scriptTree.GetCompilationUnitRoot()
-        );
+        CompilationUnitSyntax root = InitializeExternallyAssignedFields(scriptTree.GetCompilationUnitRoot());
         string? constructorTypeName = TryGetConstructorFragmentTypeName(userSource);
         if (constructorTypeName != null)
         {
@@ -379,12 +253,7 @@ internal static class DocsSnippetCompiler
             return constructorWrapper.ToString();
         }
 
-        bool isCompleteCompilationUnit = root.Members.All(member =>
-            member
-                is BaseNamespaceDeclarationSyntax
-                    or BaseTypeDeclarationSyntax
-                    or DelegateDeclarationSyntax
-        );
+        bool isCompleteCompilationUnit = root.Members.All(member => member is BaseNamespaceDeclarationSyntax or BaseTypeDeclarationSyntax or DelegateDeclarationSyntax);
         if (isCompleteCompilationUnit)
         {
             return AddBodiesToDeclarationOnlyMembers(root).ToFullString();
@@ -405,16 +274,9 @@ internal static class DocsSnippetCompiler
         normalized.AppendLine("{");
         foreach (MemberDeclarationSyntax member in root.Members)
         {
-            if (
-                member is GlobalStatementSyntax
-                {
-                    Statement: LocalFunctionStatementSyntax localFunction
-                }
-            )
+            if (member is GlobalStatementSyntax { Statement: LocalFunctionStatementSyntax localFunction })
             {
-                normalized.AppendLine(
-                    AddBodyToDeclarationOnlyLocalFunction(localFunction).ToFullString()
-                );
+                normalized.AppendLine(AddBodyToDeclarationOnlyLocalFunction(localFunction).ToFullString());
             }
             else if (member is not GlobalStatementSyntax)
             {
@@ -423,19 +285,11 @@ internal static class DocsSnippetCompiler
         }
         normalized.AppendLine("private void __Run()");
         normalized.AppendLine("{");
-        foreach (
-            GlobalStatementSyntax statement in root
-                .Members.OfType<GlobalStatementSyntax>()
-                .Where(statement => statement.Statement is not LocalFunctionStatementSyntax)
-        )
+        foreach (GlobalStatementSyntax statement in root.Members.OfType<GlobalStatementSyntax>().Where(statement => statement.Statement is not LocalFunctionStatementSyntax))
         {
             normalized.AppendLine(statement.Statement.ToFullString());
         }
-        foreach (
-            VariableDeclaratorSyntax eventVariable in root
-                .Members.OfType<EventFieldDeclarationSyntax>()
-                .SelectMany(eventField => eventField.Declaration.Variables)
-        )
+        foreach (VariableDeclaratorSyntax eventVariable in root.Members.OfType<EventFieldDeclarationSyntax>().SelectMany(eventField => eventField.Declaration.Variables))
         {
             normalized.Append("_ = ").Append(eventVariable.Identifier.ValueText).AppendLine(";");
         }
@@ -483,11 +337,7 @@ internal static class DocsSnippetCompiler
         candidate.AppendLine("}");
 
         SyntaxTree candidateTree = CSharpSyntaxTree.ParseText(candidate.ToString(), ParseOptions);
-        if (
-            candidateTree
-                .GetDiagnostics()
-                .Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
-        )
+        if (candidateTree.GetDiagnostics().Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             return null;
         }
@@ -495,11 +345,7 @@ internal static class DocsSnippetCompiler
         bool hasLocalUsing = candidateTree
             .GetRoot()
             .DescendantNodes()
-            .Any(node =>
-                node is UsingStatementSyntax
-                || node is LocalDeclarationStatementSyntax localDeclaration
-                    && localDeclaration.UsingKeyword.RawKind != 0
-            );
+            .Any(node => node is UsingStatementSyntax || node is LocalDeclarationStatementSyntax localDeclaration && localDeclaration.UsingKeyword.RawKind != 0);
         return hasLocalUsing ? candidate.ToString() : null;
     }
 
@@ -507,32 +353,19 @@ internal static class DocsSnippetCompiler
     {
         SyntaxTree lineTree = CSharpSyntaxTree.ParseText(line + "\n", ParseOptions);
         CompilationUnitSyntax lineRoot = lineTree.GetCompilationUnitRoot();
-        return lineRoot.Usings.Count == 1
-            && lineRoot.Members.Count == 0
-            && !lineTree
-                .GetDiagnostics()
-                .Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        return lineRoot.Usings.Count == 1 && lineRoot.Members.Count == 0 && !lineTree.GetDiagnostics().Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
     }
 
-    private static CompilationUnitSyntax InitializeExternallyAssignedFields(
-        CompilationUnitSyntax root
-    )
+    private static CompilationUnitSyntax InitializeExternallyAssignedFields(CompilationUnitSyntax root)
     {
         VariableDeclaratorSyntax[] variables = root.DescendantNodes()
             .OfType<FieldDeclarationSyntax>()
-            .Where(field =>
-                HasAttribute(field.AttributeLists, "SerializeField")
-                || HasAttribute(field.AttributeLists, "Inject")
-            )
+            .Where(field => HasAttribute(field.AttributeLists, "SerializeField") || HasAttribute(field.AttributeLists, "Inject"))
             .SelectMany(field => field.Declaration.Variables)
             .Where(variable => variable.Initializer == null)
             .ToArray();
         return root.ReplaceNodes(variables, (original, _) =>
-            original.WithInitializer(
-                SyntaxFactory.EqualsValueClause(
-                    SyntaxFactory.LiteralExpression(SyntaxKind.DefaultLiteralExpression)
-                )
-            )
+            original.WithInitializer(SyntaxFactory.EqualsValueClause(SyntaxFactory.LiteralExpression(SyntaxKind.DefaultLiteralExpression)))
         );
     }
 
@@ -541,11 +374,7 @@ internal static class DocsSnippetCompiler
         foreach (string rawLine in userSource.Split('\n'))
         {
             string line = rawLine.Trim();
-            if (
-                line.Length == 0
-                || line.StartsWith("//", StringComparison.Ordinal)
-                || !line.StartsWith("public ", StringComparison.Ordinal)
-            )
+            if (line.Length == 0 || line.StartsWith("//", StringComparison.Ordinal) || !line.StartsWith("public ", StringComparison.Ordinal))
             {
                 continue;
             }
@@ -558,31 +387,20 @@ internal static class DocsSnippetCompiler
             }
 
             string candidate = declaration.Substring(0, openParenthesis).Trim();
-            return candidate.All(character => char.IsLetterOrDigit(character) || character == '_')
-                ? candidate
-                : null;
+            return candidate.All(character => char.IsLetterOrDigit(character) || character == '_') ? candidate : null;
         }
 
         return null;
     }
 
-    private static CompilationUnitSyntax AddBodiesToDeclarationOnlyMembers(
-        CompilationUnitSyntax root
-    )
+    private static CompilationUnitSyntax AddBodiesToDeclarationOnlyMembers(CompilationUnitSyntax root)
     {
         ConstructorDeclarationSyntax[] constructors = root.DescendantNodes()
             .OfType<ConstructorDeclarationSyntax>()
-            .Where(constructor =>
-                constructor.Body == null
-                && constructor.ExpressionBody == null
-                && !constructor.Modifiers.Any(SyntaxKind.ExternKeyword)
-            )
+            .Where(constructor => constructor.Body == null && constructor.ExpressionBody == null && !constructor.Modifiers.Any(SyntaxKind.ExternKeyword))
             .ToArray();
         CompilationUnitSyntax normalizedRoot = root.ReplaceNodes(constructors, (original, _) =>
-            original
-                .WithSemicolonToken(default)
-                .WithExpressionBody(CreateNotImplementedExpressionBody())
-                .WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken))
+            original.WithSemicolonToken(default).WithExpressionBody(CreateNotImplementedExpressionBody()).WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken))
         );
         MethodDeclarationSyntax[] methods = normalizedRoot
             .DescendantNodes()
@@ -596,16 +414,11 @@ internal static class DocsSnippetCompiler
             )
             .ToArray();
         return normalizedRoot.ReplaceNodes(methods, (original, _) =>
-            original
-                .WithSemicolonToken(default)
-                .WithExpressionBody(CreateNotImplementedExpressionBody())
-                .WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken))
+            original.WithSemicolonToken(default).WithExpressionBody(CreateNotImplementedExpressionBody()).WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken))
         );
     }
 
-    private static LocalFunctionStatementSyntax AddBodyToDeclarationOnlyLocalFunction(
-        LocalFunctionStatementSyntax localFunction
-    )
+    private static LocalFunctionStatementSyntax AddBodyToDeclarationOnlyLocalFunction(LocalFunctionStatementSyntax localFunction)
     {
         if (localFunction.Body != null || localFunction.ExpressionBody != null)
         {
@@ -622,11 +435,7 @@ internal static class DocsSnippetCompiler
     {
         return SyntaxFactory.ArrowExpressionClause(
             SyntaxFactory.ThrowExpression(
-                SyntaxFactory
-                    .ObjectCreationExpression(
-                        SyntaxFactory.ParseTypeName("System.NotImplementedException")
-                    )
-                    .WithArgumentList(SyntaxFactory.ArgumentList())
+                SyntaxFactory.ObjectCreationExpression(SyntaxFactory.ParseTypeName("System.NotImplementedException")).WithArgumentList(SyntaxFactory.ArgumentList())
             )
         );
     }

@@ -18,13 +18,7 @@
   "overrideReferences": true,
   "precompiledReferences": ["nunit.framework.dll"],
   "autoReferenced": true,
-  "defineConstraints": [
-    "UNITY_INCLUDE_TESTS",
-    "DXM_NATIVE_SDK_RESEARCH",
-    "DXM_505_COLLECTIONS_PRESENT",
-    "DXM_505_BURST_PRESENT",
-    "DXM_505_MATHEMATICS_PRESENT"
-  ],
+  "defineConstraints": ["UNITY_INCLUDE_TESTS", "DXM_NATIVE_SDK_RESEARCH", "DXM_505_COLLECTIONS_PRESENT", "DXM_505_BURST_PRESENT", "DXM_505_MATHEMATICS_PRESENT"],
   "versionDefines": [
     {
       "name": "com.unity.mathematics",

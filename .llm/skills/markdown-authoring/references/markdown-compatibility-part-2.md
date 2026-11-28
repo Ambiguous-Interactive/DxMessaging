@@ -126,6 +126,7 @@ Code example (describe with words).
 
 #### Forbidden: Annotations
 
+<!-- prettier-ignore -->
 ```markdown
 Some code (1)
 { .annotate }
@@ -141,6 +142,7 @@ Press ++ctrl+alt+del++ to restart.
 
 #### Forbidden: Critic Markup
 
+<!-- prettier-ignore -->
 ```markdown
 {--deleted text--}
 {++inserted text++}

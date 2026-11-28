@@ -184,14 +184,10 @@ namespace DxMessaging.Tests.Editor.Contract
         [Test]
         public void TypedSlotConstructorRespectsRequiresContextFlag()
         {
-            TypedSlot<ProbeMessage> contextless = new TypedSlot<ProbeMessage>(
-                requiresContext: false
-            );
+            TypedSlot<ProbeMessage> contextless = new TypedSlot<ProbeMessage>(requiresContext: false);
             Assert.IsFalse(contextless.requiresContext);
 
-            TypedSlot<ProbeMessage> withContext = new TypedSlot<ProbeMessage>(
-                requiresContext: true
-            );
+            TypedSlot<ProbeMessage> withContext = new TypedSlot<ProbeMessage>(requiresContext: true);
             Assert.IsTrue(withContext.requiresContext);
         }
 
@@ -217,11 +213,7 @@ namespace DxMessaging.Tests.Editor.Contract
             for (int i = 0; i < 8; ++i)
             {
                 slot.Reset();
-                Assert.Greater(
-                    slot.version,
-                    previous,
-                    "Reset() must bump version strictly monotonically."
-                );
+                Assert.Greater(slot.version, previous, "Reset() must bump version strictly monotonically.");
                 previous = slot.version;
             }
         }
@@ -302,11 +294,7 @@ namespace DxMessaging.Tests.Editor.Contract
 
             slot.Reset();
 
-            Assert.AreEqual(
-                1,
-                probe.ObservedOuterCountAtReset,
-                "Reset() must drain inner caches BEFORE clearing byPriority."
-            );
+            Assert.AreEqual(1, probe.ObservedOuterCountAtReset, "Reset() must drain inner caches BEFORE clearing byPriority.");
         }
 
         /// <summary>
@@ -333,11 +321,7 @@ namespace DxMessaging.Tests.Editor.Contract
 
             slot.Reset();
 
-            Assert.AreEqual(
-                1,
-                probe.ObservedOuterCountAtReset,
-                "Reset() must drain inner caches BEFORE clearing byContext."
-            );
+            Assert.AreEqual(1, probe.ObservedOuterCountAtReset, "Reset() must drain inner caches BEFORE clearing byContext.");
         }
 
         /// <summary>
@@ -362,15 +346,11 @@ namespace DxMessaging.Tests.Editor.Contract
             Assert.AreEqual(
                 -1,
                 cache.lastSeenEmissionId,
-                "Fresh HandlerActionCache<T> instances must start with an invalid "
-                    + "emission sentinel so emission id 0 materializes the first snapshot."
+                "Fresh HandlerActionCache<T> instances must start with an invalid " + "emission sentinel so emission id 0 materializes the first snapshot."
             );
             cache.lastSeenEmissionId = 13;
             Assert.AreEqual(13, cache.lastSeenEmissionId);
-            Assert.IsTrue(
-                view.IsEmpty,
-                "Freshly-constructed HandlerActionCache<T> must report IsEmpty == true."
-            );
+            Assert.IsTrue(view.IsEmpty, "Freshly-constructed HandlerActionCache<T> must report IsEmpty == true.");
 
             /*
                 Populate the cache through its behavior rather than pinning the
@@ -379,29 +359,20 @@ namespace DxMessaging.Tests.Editor.Contract
                 selected storage representation.
             */
             System.Action<int> handler = _ignored => { };
-            cache.entries[handler] =
-                new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handler, 1);
+            cache.entries[handler] = new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handler, 1);
             cache.cache.Add(handler);
             Assert.AreEqual(1, cache.entries.Count);
             Assert.AreEqual(1, cache.cache.Count);
-            Assert.IsFalse(
-                view.IsEmpty,
-                "After populating entries the cache must report IsEmpty == false."
-            );
+            Assert.IsFalse(view.IsEmpty, "After populating entries the cache must report IsEmpty == false.");
 
             long beforeReset = cache.version;
             view.Reset();
             Assert.Greater(cache.version, beforeReset, "Reset() must bump version monotonically.");
-            Assert.AreEqual(
-                -1,
-                cache.lastSeenVersion,
-                "Reset() must restore lastSeenVersion = -1."
-            );
+            Assert.AreEqual(-1, cache.lastSeenVersion, "Reset() must restore lastSeenVersion = -1.");
             Assert.AreEqual(
                 -1,
                 cache.lastSeenEmissionId,
-                "Reset() must restore lastSeenEmissionId to an invalid sentinel so "
-                    + "emission id 0 still materializes a fresh snapshot."
+                "Reset() must restore lastSeenEmissionId to an invalid sentinel so " + "emission id 0 still materializes a fresh snapshot."
             );
             Assert.AreEqual(0, cache.entries.Count, "Reset() must empty entries.");
             Assert.AreEqual(0, cache.cache.Count, "Reset() must empty cache.");
@@ -412,35 +383,25 @@ namespace DxMessaging.Tests.Editor.Contract
         public void HandlerActionCacheOrderedStoragePreservesBoundaryAndSpillReuseBehavior()
         {
             MessageHandler.HandlerActionCache<System.Action<int>> cache = new();
-            System.Action<int>[] handlers = Enumerable
-                .Range(0, 3)
-                .Select(index => new System.Action<int>(_ignored => GC.KeepAlive(index)))
-                .ToArray();
+            System.Action<int>[] handlers = Enumerable.Range(0, 3).Select(index => new System.Action<int>(_ignored => GC.KeepAlive(index))).ToArray();
 
             for (int index = 0; index < 2; ++index)
             {
-                cache.entries[handlers[index]] =
-                    new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(
-                        handlers[index],
-                        1
-                    );
+                cache.entries[handlers[index]] = new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handlers[index], 1);
             }
 
             Assert.IsFalse(EntryStorageInspection.UsesSpillStorage(cache.entries));
             Assert.AreEqual(2, EntryStorageInspection.InlineCapacity(cache.entries));
             AssertOrderedKeys(cache, handlers[0], handlers[1]);
 
-            cache.entries[handlers[0]] =
-                new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handlers[0], 2);
+            cache.entries[handlers[0]] = new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handlers[0], 2);
             AssertOrderedKeys(cache, handlers[0], handlers[1]);
 
             Assert.IsTrue(cache.entries.Remove(handlers[0]));
-            cache.entries[handlers[0]] =
-                new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handlers[0], 1);
+            cache.entries[handlers[0]] = new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handlers[0], 1);
             AssertOrderedKeys(cache, handlers[1], handlers[0]);
 
-            cache.entries[handlers[2]] =
-                new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handlers[2], 1);
+            cache.entries[handlers[2]] = new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handlers[2], 1);
             Assert.IsTrue(EntryStorageInspection.UsesSpillStorage(cache.entries));
             Assert.AreEqual(2, EntryStorageInspection.InlineCapacity(cache.entries));
             Assert.GreaterOrEqual(EntryStorageInspection.MapCapacity(cache.entries), 3);
@@ -455,8 +416,7 @@ namespace DxMessaging.Tests.Editor.Contract
             Assert.AreEqual(mapCapacity, EntryStorageInspection.MapCapacity(cache.entries));
             Assert.AreEqual(orderCapacity, EntryStorageInspection.OrderCapacity(cache.entries));
 
-            cache.entries[handlers[1]] =
-                new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handlers[1], 1);
+            cache.entries[handlers[1]] = new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handlers[1], 1);
             Assert.IsTrue(EntryStorageInspection.UsesSpillStorage(cache.entries));
             AssertOrderedKeys(cache, handlers[1]);
         }
@@ -465,64 +425,28 @@ namespace DxMessaging.Tests.Editor.Contract
         public void HandlerActionCacheSpillPrefixAndFallbackPreserveSurvivorOrder()
         {
             MessageHandler.HandlerActionCache<System.Action<int>> cache = new();
-            System.Action<int>[] handlers = Enumerable
-                .Range(0, 6)
-                .Select(index => new System.Action<int>(_ignored => GC.KeepAlive(index)))
-                .ToArray();
+            System.Action<int>[] handlers = Enumerable.Range(0, 6).Select(index => new System.Action<int>(_ignored => GC.KeepAlive(index))).ToArray();
             foreach (System.Action<int> handler in handlers.Take(5))
             {
-                cache.entries[handler] =
-                    new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handler, 1);
+                cache.entries[handler] = new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handler, 1);
             }
 
-            Assert.IsTrue(
-                EntryStorageInspection.UsesSpillStorage(cache.entries),
-                "Five handlers must use spill storage."
-            );
+            Assert.IsTrue(EntryStorageInspection.UsesSpillStorage(cache.entries), "Five handlers must use spill storage.");
             Assert.IsTrue(cache.entries.Remove(handlers[3]), "Fallback removal must find D.");
             Assert.IsTrue(cache.entries.Remove(handlers[0]), "Prefix removal must find A.");
             Assert.IsTrue(cache.entries.Remove(handlers[1]), "Prefix removal must find B.");
-            cache.entries[handlers[3]] =
-                new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handlers[3], 1);
-            cache.entries[handlers[1]] =
-                new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handlers[1], 1);
-            cache.entries[handlers[5]] =
-                new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handlers[5], 1);
+            cache.entries[handlers[3]] = new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handlers[3], 1);
+            cache.entries[handlers[1]] = new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handlers[1], 1);
+            cache.entries[handlers[5]] = new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handlers[5], 1);
 
-            Assert.AreEqual(
-                2,
-                EntryStorageInspection.SkippedPrefixCount(cache.entries),
-                "A and B form the skipped prefix."
-            );
-            Assert.AreEqual(
-                7,
-                EntryStorageInspection.OrderSlotCount(cache.entries),
-                "Re-registered keys append after C/E."
-            );
+            Assert.AreEqual(2, EntryStorageInspection.SkippedPrefixCount(cache.entries), "A and B form the skipped prefix.");
+            Assert.AreEqual(7, EntryStorageInspection.OrderSlotCount(cache.entries), "Re-registered keys append after C/E.");
             Assert.AreEqual(5, cache.entries.Count, "Exactly five delegates remain live.");
-            Assert.AreEqual(
-                2,
-                EntryStorageInspection.SkippedPrefixCount(cache.entries),
-                "Count must remain a pure O(1) read."
-            );
+            Assert.AreEqual(2, EntryStorageInspection.SkippedPrefixCount(cache.entries), "Count must remain a pure O(1) read.");
 
-            AssertOrderedKeys(
-                cache,
-                handlers[2],
-                handlers[4],
-                handlers[3],
-                handlers[1],
-                handlers[5]
-            );
-            Assert.Zero(
-                EntryStorageInspection.SkippedPrefixCount(cache.entries),
-                "Ordered preparation must compact."
-            );
-            Assert.AreEqual(
-                5,
-                EntryStorageInspection.OrderSlotCount(cache.entries),
-                "Compaction must leave five slots."
-            );
+            AssertOrderedKeys(cache, handlers[2], handlers[4], handlers[3], handlers[1], handlers[5]);
+            Assert.Zero(EntryStorageInspection.SkippedPrefixCount(cache.entries), "Ordered preparation must compact.");
+            Assert.AreEqual(5, EntryStorageInspection.OrderSlotCount(cache.entries), "Compaction must leave five slots.");
             Assert.IsFalse(cache.entries.Remove(handlers[0]), "Removed A must remain absent.");
         }
 
@@ -530,49 +454,22 @@ namespace DxMessaging.Tests.Editor.Contract
         public void HandlerActionCacheSpillChurnBoundsUnobservedSkippedPrefix()
         {
             MessageHandler.HandlerActionCache<System.Action<int>> cache = new();
-            int churnCount =
-                MessageHandler
-                    .HandlerActionCache<System.Action<int>>
-                    .OrderedEntries
-                    .CompactionPrefixThreshold + 1;
-            System.Action<int>[] handlers = Enumerable
-                .Range(0, churnCount + 3)
-                .Select(index => new System.Action<int>(_ignored => GC.KeepAlive(index)))
-                .ToArray();
+            int churnCount = MessageHandler.HandlerActionCache<System.Action<int>>.OrderedEntries.CompactionPrefixThreshold + 1;
+            System.Action<int>[] handlers = Enumerable.Range(0, churnCount + 3).Select(index => new System.Action<int>(_ignored => GC.KeepAlive(index))).ToArray();
             for (int index = 0; index < 3; ++index)
             {
-                cache.entries[handlers[index]] =
-                    new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(
-                        handlers[index],
-                        1
-                    );
+                cache.entries[handlers[index]] = new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handlers[index], 1);
             }
 
             int initialMapCapacity = EntryStorageInspection.MapCapacity(cache.entries);
             for (int index = 0; index < handlers.Length - 3; ++index)
             {
-                Assert.IsTrue(
-                    cache.entries.Remove(handlers[index]),
-                    "Churn removal {0} must find its current oldest delegate.",
-                    index
-                );
-                cache.entries[handlers[index + 3]] =
-                    new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(
-                        handlers[index + 3],
-                        1
-                    );
+                Assert.IsTrue(cache.entries.Remove(handlers[index]), "Churn removal {0} must find its current oldest delegate.", index);
+                cache.entries[handlers[index + 3]] = new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handlers[index + 3], 1);
             }
 
-            int maximumSkippedPrefix =
-                MessageHandler
-                    .HandlerActionCache<System.Action<int>>
-                    .OrderedEntries
-                    .CompactionPrefixThreshold - 1;
-            Assert.LessOrEqual(
-                EntryStorageInspection.SkippedPrefixCount(cache.entries),
-                maximumSkippedPrefix,
-                "Skipped prefix must compact at the absolute and ratio threshold."
-            );
+            int maximumSkippedPrefix = MessageHandler.HandlerActionCache<System.Action<int>>.OrderedEntries.CompactionPrefixThreshold - 1;
+            Assert.LessOrEqual(EntryStorageInspection.SkippedPrefixCount(cache.entries), maximumSkippedPrefix, "Skipped prefix must compact at the absolute and ratio threshold.");
             Assert.LessOrEqual(
                 EntryStorageInspection.OrderSlotCount(cache.entries),
                 cache.entries.Count + maximumSkippedPrefix,
@@ -580,80 +477,42 @@ namespace DxMessaging.Tests.Editor.Contract
             );
             Assert.LessOrEqual(
                 EntryStorageInspection.OrderCapacity(cache.entries),
-                MessageHandler
-                    .HandlerActionCache<System.Action<int>>
-                    .OrderedEntries
-                    .CompactionPrefixThreshold * 2,
+                MessageHandler.HandlerActionCache<System.Action<int>>.OrderedEntries.CompactionPrefixThreshold * 2,
                 "Tiny fixed-cardinality churn must retain at most the calibrated order array."
             );
-            Assert.AreEqual(
-                initialMapCapacity,
-                EntryStorageInspection.MapCapacity(cache.entries),
-                "Fixed live cardinality must not grow dictionary capacity."
-            );
-            AssertOrderedKeys(
-                cache,
-                handlers[churnCount],
-                handlers[churnCount + 1],
-                handlers[churnCount + 2]
-            );
+            Assert.AreEqual(initialMapCapacity, EntryStorageInspection.MapCapacity(cache.entries), "Fixed live cardinality must not grow dictionary capacity.");
+            AssertOrderedKeys(cache, handlers[churnCount], handlers[churnCount + 1], handlers[churnCount + 2]);
         }
 
         [Test]
         public void HandlerActionCacheRemovingEverySpillEntryResetsOrderBeforeReuse()
         {
             MessageHandler.HandlerActionCache<System.Action<int>> cache = new();
-            System.Action<int>[] handlers = Enumerable
-                .Range(0, 5)
-                .Select(index => new System.Action<int>(_ignored => GC.KeepAlive(index)))
-                .ToArray();
+            System.Action<int>[] handlers = Enumerable.Range(0, 5).Select(index => new System.Action<int>(_ignored => GC.KeepAlive(index))).ToArray();
             foreach (System.Action<int> handler in handlers)
             {
-                cache.entries[handler] =
-                    new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handler, 1);
+                cache.entries[handler] = new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handler, 1);
             }
             foreach (System.Action<int> handler in handlers)
             {
-                Assert.IsTrue(
-                    cache.entries.Remove(handler),
-                    "Every live handler must be removable."
-                );
+                Assert.IsTrue(cache.entries.Remove(handler), "Every live handler must be removable.");
             }
 
             Assert.Zero(cache.entries.Count, "Removing every handler must empty the map.");
-            Assert.Zero(
-                EntryStorageInspection.OrderSlotCount(cache.entries),
-                "Full teardown must clear order slots."
-            );
-            Assert.Zero(
-                EntryStorageInspection.SkippedPrefixCount(cache.entries),
-                "Full teardown must reset the cursor."
-            );
+            Assert.Zero(EntryStorageInspection.OrderSlotCount(cache.entries), "Full teardown must clear order slots.");
+            Assert.Zero(EntryStorageInspection.SkippedPrefixCount(cache.entries), "Full teardown must reset the cursor.");
 
-            cache.entries[handlers[4]] =
-                new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handlers[4], 1);
+            cache.entries[handlers[4]] = new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handlers[4], 1);
             AssertOrderedKeys(cache, handlers[4]);
         }
 
-        private static void AssertOrderedKeys(
-            MessageHandler.HandlerActionCache<System.Action<int>> cache,
-            params System.Action<int>[] expected
-        )
+        private static void AssertOrderedKeys(MessageHandler.HandlerActionCache<System.Action<int>> cache, params System.Action<int>[] expected)
         {
             cache.entries.PrepareForOrderedIteration();
-            Assert.AreEqual(
-                expected.Length,
-                cache.entries.Count,
-                "Ordered cache count must match the expected delegate sequence."
-            );
+            Assert.AreEqual(expected.Length, cache.entries.Count, "Ordered cache count must match the expected delegate sequence.");
             for (int index = 0; index < expected.Length; ++index)
             {
-                Assert.AreEqual(
-                    expected[index],
-                    EntryStorageInspection.KeyAt(cache.entries, index),
-                    "Ordered cache key at index {0} drifted.",
-                    index
-                );
+                Assert.AreEqual(expected[index], EntryStorageInspection.KeyAt(cache.entries, index), "Ordered cache key at index {0} drifted.", index);
             }
         }
 
@@ -679,10 +538,7 @@ namespace DxMessaging.Tests.Editor.Contract
         {
             System.Type closed = typeof(ProbeOuter<>).MakeGenericType(typeof(System.Action<int>));
 
-            System.Type openSlot = closed.GetNestedType(
-                nameof(ProbeOuter<int>.ProbeSlot),
-                BindingFlags.NonPublic
-            );
+            System.Type openSlot = closed.GetNestedType(nameof(ProbeOuter<int>.ProbeSlot), BindingFlags.NonPublic);
             Assert.IsNotNull(openSlot, "ProbeOuter<T>.ProbeSlot nested type must exist.");
             Assert.IsTrue(
                 openSlot.ContainsGenericParameters,
@@ -701,32 +557,14 @@ namespace DxMessaging.Tests.Editor.Contract
             */
             Assert.Throws<System.ArgumentException>(
                 () => System.Activator.CreateInstance(openSlot, (System.Action<int>)(x => { }), 1),
-                "Activator.CreateInstance must reject the OPEN nested type so the "
-                    + "open-vs-closed mistake fails loudly instead of silently constructing."
+                "Activator.CreateInstance must reject the OPEN nested type so the " + "open-vs-closed mistake fails loudly instead of silently constructing."
             );
 
-            System.Type closedSlot = ReflectionHelpers.CloseNestedGeneric(
-                closed,
-                nameof(ProbeOuter<int>.ProbeSlot),
-                BindingFlags.NonPublic
-            );
-            Assert.IsFalse(
-                closedSlot.ContainsGenericParameters,
-                "ReflectionHelpers.CloseNestedGeneric must produce a fully-closed nested type."
-            );
-            object slot = System.Activator.CreateInstance(
-                closedSlot,
-                (System.Action<int>)(x => { }),
-                3
-            );
-            Assert.IsNotNull(
-                slot,
-                "Activator.CreateInstance must succeed on the closed nested type."
-            );
-            FieldInfo countField = closedSlot.GetField(
-                CountFieldName,
-                BindingFlags.Public | BindingFlags.Instance
-            );
+            System.Type closedSlot = ReflectionHelpers.CloseNestedGeneric(closed, nameof(ProbeOuter<int>.ProbeSlot), BindingFlags.NonPublic);
+            Assert.IsFalse(closedSlot.ContainsGenericParameters, "ReflectionHelpers.CloseNestedGeneric must produce a fully-closed nested type.");
+            object slot = System.Activator.CreateInstance(closedSlot, (System.Action<int>)(x => { }), 3);
+            Assert.IsNotNull(slot, "Activator.CreateInstance must succeed on the closed nested type.");
+            FieldInfo countField = closedSlot.GetField(CountFieldName, BindingFlags.Public | BindingFlags.Instance);
             Assert.IsNotNull(countField, "ProbeSlot.count field must exist.");
             Assert.AreEqual(3, countField.GetValue(slot));
         }
@@ -760,9 +598,7 @@ namespace DxMessaging.Tests.Editor.Contract
         public void CloseNestedGenericRejectsNullName()
         {
             System.Type closed = typeof(ProbeOuter<>).MakeGenericType(typeof(System.Action<int>));
-            System.ArgumentNullException ex = Assert.Throws<System.ArgumentNullException>(() =>
-                ReflectionHelpers.CloseNestedGeneric(closed, null, BindingFlags.NonPublic)
-            );
+            System.ArgumentNullException ex = Assert.Throws<System.ArgumentNullException>(() => ReflectionHelpers.CloseNestedGeneric(closed, null, BindingFlags.NonPublic));
             Assert.That(ex.Message, Does.Contain("nestedName"));
         }
 
@@ -779,13 +615,8 @@ namespace DxMessaging.Tests.Editor.Contract
         public void CloseNestedGenericRejectsOpenOuter()
         {
             System.Type openOuter = typeof(ProbeOuter<>);
-            System.InvalidOperationException ex = Assert.Throws<System.InvalidOperationException>(
-                () =>
-                    ReflectionHelpers.CloseNestedGeneric(
-                        openOuter,
-                        nameof(ProbeOuter<int>.ProbeSlot),
-                        BindingFlags.NonPublic
-                    )
+            System.InvalidOperationException ex = Assert.Throws<System.InvalidOperationException>(() =>
+                ReflectionHelpers.CloseNestedGeneric(openOuter, nameof(ProbeOuter<int>.ProbeSlot), BindingFlags.NonPublic)
             );
             Assert.That(ex.Message, Does.Contain("fully-closed outer"));
         }
@@ -803,13 +634,8 @@ namespace DxMessaging.Tests.Editor.Contract
         public void CloseNestedGenericRejectsMissingNestedName()
         {
             System.Type closed = typeof(ProbeOuter<>).MakeGenericType(typeof(System.Action<int>));
-            System.InvalidOperationException ex = Assert.Throws<System.InvalidOperationException>(
-                () =>
-                    ReflectionHelpers.CloseNestedGeneric(
-                        closed,
-                        "DoesNotExist",
-                        BindingFlags.NonPublic
-                    )
+            System.InvalidOperationException ex = Assert.Throws<System.InvalidOperationException>(() =>
+                ReflectionHelpers.CloseNestedGeneric(closed, "DoesNotExist", BindingFlags.NonPublic)
             );
             Assert.That(ex.Message, Does.Contain("DoesNotExist"));
             Assert.That(ex.Message, Does.Contain("not found"));
@@ -827,13 +653,8 @@ namespace DxMessaging.Tests.Editor.Contract
         [Test]
         public void CloseNestedGenericRejectsGenericNestedOnNonGenericOuter()
         {
-            System.InvalidOperationException ex = Assert.Throws<System.InvalidOperationException>(
-                () =>
-                    ReflectionHelpers.CloseNestedGeneric(
-                        typeof(NonGenericProbeOuter),
-                        nameof(NonGenericProbeOuter.GenericProbeSlot<int>) + "`1",
-                        BindingFlags.NonPublic
-                    )
+            System.InvalidOperationException ex = Assert.Throws<System.InvalidOperationException>(() =>
+                ReflectionHelpers.CloseNestedGeneric(typeof(NonGenericProbeOuter), nameof(NonGenericProbeOuter.GenericProbeSlot<int>) + "`1", BindingFlags.NonPublic)
             );
             Assert.That(ex.Message, Does.Contain("non-generic"));
         }
@@ -855,16 +676,9 @@ namespace DxMessaging.Tests.Editor.Contract
         [Test]
         public void CloseNestedGenericRejectsNestedTypeWithOwnGenericParameters()
         {
-            System.Type closed = typeof(ProbeOuterWithOwnEntryArg<>).MakeGenericType(
-                typeof(System.Action<int>)
-            );
-            System.InvalidOperationException ex = Assert.Throws<System.InvalidOperationException>(
-                () =>
-                    ReflectionHelpers.CloseNestedGeneric(
-                        closed,
-                        nameof(ProbeOuterWithOwnEntryArg<int>.OwnEntry<int>) + "`1",
-                        BindingFlags.NonPublic
-                    )
+            System.Type closed = typeof(ProbeOuterWithOwnEntryArg<>).MakeGenericType(typeof(System.Action<int>));
+            System.InvalidOperationException ex = Assert.Throws<System.InvalidOperationException>(() =>
+                ReflectionHelpers.CloseNestedGeneric(closed, nameof(ProbeOuterWithOwnEntryArg<int>.OwnEntry<int>) + "`1", BindingFlags.NonPublic)
             );
             Assert.That(ex.Message, Does.Contain("of its own"));
             Assert.That(ex.Message, Does.Contain("overload"));
@@ -881,19 +695,14 @@ namespace DxMessaging.Tests.Editor.Contract
         [Test]
         public void CloseNestedGenericFourArgOverloadAcceptsNestedOwnArgs()
         {
-            System.Type closed = typeof(ProbeOuterWithOwnEntryArg<>).MakeGenericType(
-                typeof(System.Action<int>)
-            );
+            System.Type closed = typeof(ProbeOuterWithOwnEntryArg<>).MakeGenericType(typeof(System.Action<int>));
             System.Type closedNested = ReflectionHelpers.CloseNestedGeneric(
                 closed,
                 nameof(ProbeOuterWithOwnEntryArg<int>.OwnEntry<int>) + "`1",
                 BindingFlags.NonPublic,
                 new System.Type[] { typeof(string) }
             );
-            Assert.IsFalse(
-                closedNested.ContainsGenericParameters,
-                "Four-arg overload must produce a fully-closed nested type."
-            );
+            Assert.IsFalse(closedNested.ContainsGenericParameters, "Four-arg overload must produce a fully-closed nested type.");
             System.Type[] genericArgs = closedNested.GetGenericArguments();
             Assert.AreEqual(2, genericArgs.Length);
             Assert.AreEqual(typeof(System.Action<int>), genericArgs[0]);
@@ -908,21 +717,10 @@ namespace DxMessaging.Tests.Editor.Contract
         [Test]
         public void TypedSlotByContextShapeIsFlatThreeLevelDictionary()
         {
-            FieldInfo field = typeof(TypedSlot<ProbeMessage>).GetField(
-                "byContext",
-                BindingFlags.Public | BindingFlags.Instance
-            );
+            FieldInfo field = typeof(TypedSlot<ProbeMessage>).GetField("byContext", BindingFlags.Public | BindingFlags.Instance);
             Assert.IsNotNull(field, "TypedSlot<T>.byContext field must exist.");
-            System.Type expected = typeof(Dictionary<
-                InstanceId,
-                Dictionary<int, IHandlerActionCache>
-            >);
-            Assert.AreEqual(
-                expected,
-                field.FieldType,
-                "TypedSlot<T>.byContext must be the flat 3-level shape "
-                    + "Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>>."
-            );
+            System.Type expected = typeof(Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>>);
+            Assert.AreEqual(expected, field.FieldType, "TypedSlot<T>.byContext must be the flat 3-level shape " + "Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>>.");
         }
 
         [Test]
@@ -958,11 +756,7 @@ namespace DxMessaging.Tests.Editor.Contract
 
             slot.Reset();
 
-            Assert.IsNull(
-                slot.byContext,
-                "Reset() must null out byContext after returning typed-handler-side context "
-                    + "dictionaries to DxPools."
-            );
+            Assert.IsNull(slot.byContext, "Reset() must null out byContext after returning typed-handler-side context " + "dictionaries to DxPools.");
         }
 
         [Test]
@@ -973,11 +767,7 @@ namespace DxMessaging.Tests.Editor.Contract
             for (int i = 0; i < 8; ++i)
             {
                 slot.Reset();
-                Assert.Greater(
-                    slot.version,
-                    previous,
-                    "Reset() must bump version strictly monotonically."
-                );
+                Assert.Greater(slot.version, previous, "Reset() must bump version strictly monotonically.");
                 previous = slot.version;
             }
         }
@@ -1025,14 +815,7 @@ namespace DxMessaging.Tests.Editor.Contract
         [Test]
         public void IHandlerActionCacheInterfaceShape()
         {
-            string[] expected =
-            {
-                "IsEmpty",
-                "Reset",
-                "ContainsEntry",
-                "BumpVersion",
-                "DeregisterEntry",
-            };
+            string[] expected = { "IsEmpty", "Reset", "ContainsEntry", "BumpVersion", "DeregisterEntry" };
 
             /*
                 GetMembers on an interface reports declared members directly.
@@ -1041,10 +824,7 @@ namespace DxMessaging.Tests.Editor.Contract
             */
             string[] actual = typeof(IHandlerActionCache)
                 .GetMembers(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
-                .Where(m =>
-                    m.MemberType == MemberTypes.Property
-                    || (m.MemberType == MemberTypes.Method && !((MethodInfo)m).IsSpecialName)
-                )
+                .Where(m => m.MemberType == MemberTypes.Property || (m.MemberType == MemberTypes.Method && !((MethodInfo)m).IsSpecialName))
                 .Select(m => m.Name)
                 .OrderBy(n => n, StringComparer.Ordinal)
                 .ToArray();

@@ -28,16 +28,10 @@ internal sealed class DocsGameEventTests
     [OneTimeSetUp]
     public void CompileActualDocumentedClasses()
     {
-        string path = Path.Combine(
-            DocsSnippetCompilationTests.ResolveRepoRoot(),
-            "docs/guides/patterns.md"
-        );
+        string path = Path.Combine(DocsSnippetCompilationTests.ResolveRepoRoot(), "docs/guides/patterns.md");
         string[] samples = DocsSnippetCompilationTests
             .ExtractCodeBlocks(path, "csharp")
-            .Where(code =>
-                code.Contains("class GameEvent :", StringComparison.Ordinal)
-                && code.Contains("EventBridge : MonoBehaviour", StringComparison.Ordinal)
-            )
+            .Where(code => code.Contains("class GameEvent :", StringComparison.Ordinal) && code.Contains("EventBridge : MonoBehaviour", StringComparison.Ordinal))
             .ToArray();
         Assert.That(samples, Has.Length.EqualTo(1), "Bind the actual channel and bridge fence.");
         ClassDeclarationSyntax[] classes = CSharpSyntaxTree
@@ -45,26 +39,17 @@ internal sealed class DocsGameEventTests
             .GetRoot()
             .DescendantNodes()
             .OfType<ClassDeclarationSyntax>()
-            .Where(type =>
-                type.Identifier.ValueText == "GameEvent"
-                || type.Identifier.ValueText.EndsWith("EventBridge", StringComparison.Ordinal)
-            )
+            .Where(type => type.Identifier.ValueText == "GameEvent" || type.Identifier.ValueText.EndsWith("EventBridge", StringComparison.Ordinal))
             .ToArray();
         Assert.That(classes, Has.Length.EqualTo(2), "Execute the two actual documented classes.");
-        ClassDeclarationSyntax bridge = classes.Single(type =>
-            type.Identifier.ValueText != "GameEvent"
-        );
+        ClassDeclarationSyntax bridge = classes.Single(type => type.Identifier.ValueText != "GameEvent");
         Assert.That(
             bridge.Members.OfType<ConstructorDeclarationSyntax>(),
             Is.Empty,
             "Only the fixture constructor assigns the serialized field for strict standalone compilation."
         );
         classes[Array.IndexOf(classes, bridge)] = bridge.AddMembers(
-            SyntaxFactory.ParseMemberDeclaration(
-                "public "
-                    + bridge.Identifier.ValueText
-                    + "(GameEvent initialEvent) { onSceneTransitionSO = initialEvent; }"
-            )!
+            SyntaxFactory.ParseMemberDeclaration("public " + bridge.Identifier.ValueText + "(GameEvent initialEvent) { onSceneTransitionSO = initialEvent; }")!
         );
         string source =
             "using System.Collections.Generic; using UnityEngine; using UnityEngine.Events;\n"
@@ -86,20 +71,12 @@ internal sealed class DocsGameEventTests
                     public static void Emit(this ref SceneTransitionRequested message) { Count++; }
                 }
                 """;
-        string[] references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(
-            Path.PathSeparator
-        );
+        string[] references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator);
         CSharpCompilation compilation = CSharpCompilation.Create(
             "GameEvent_" + Guid.NewGuid().ToString("N"),
-            new[]
-            {
-                CSharpSyntaxTree.ParseText(source, new CSharpParseOptions(LanguageVersion.CSharp9)),
-            },
+            new[] { CSharpSyntaxTree.ParseText(source, new CSharpParseOptions(LanguageVersion.CSharp9)) },
             references.Select(reference => MetadataReference.CreateFromFile(reference)),
-            new CSharpCompilationOptions(
-                OutputKind.DynamicallyLinkedLibrary,
-                generalDiagnosticOption: ReportDiagnostic.Error
-            )
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, generalDiagnosticOption: ReportDiagnostic.Error)
         );
         using MemoryStream image = new();
         Microsoft.CodeAnalysis.Emit.EmitResult emitted = compilation.Emit(image);
@@ -113,8 +90,7 @@ internal sealed class DocsGameEventTests
         _register = _eventType.GetMethod("RegisterListener")!;
         _unregister = _eventType.GetMethod("UnregisterListener")!;
         _raise = _eventType.GetMethod("Raise")!;
-        const BindingFlags members =
-            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+        const BindingFlags members = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
         _enable = _bridgeType.GetMethod("OnEnable", members)!;
         _disable = _bridgeType.GetMethod("OnDisable", members)!;
         _asset = _bridgeType.GetField("onSceneTransitionSO", members)!;
@@ -130,19 +106,15 @@ internal sealed class DocsGameEventTests
 
     private object NewEvent() => Activator.CreateInstance(_eventType)!;
 
-    private Delegate Callback(Action action) =>
-        Delegate.CreateDelegate(_callbackType, action.Target, action.Method);
+    private Delegate Callback(Action action) => Delegate.CreateDelegate(_callbackType, action.Target, action.Method);
 
-    private void Register(object publisher, Delegate? callback) =>
-        _register.Invoke(publisher, new object?[] { callback });
+    private void Register(object publisher, Delegate? callback) => _register.Invoke(publisher, new object?[] { callback });
 
-    private void Remove(object publisher, Delegate? callback) =>
-        _unregister.Invoke(publisher, new object?[] { callback });
+    private void Remove(object publisher, Delegate? callback) => _unregister.Invoke(publisher, new object?[] { callback });
 
     private void Raise(object publisher) => _raise.Invoke(publisher, null);
 
-    private int Count(object publisher) =>
-        ((System.Collections.ICollection)_listeners.GetValue(publisher)!).Count;
+    private int Count(object publisher) => ((System.Collections.ICollection)_listeners.GetValue(publisher)!).Count;
 
     [TestCase("None")]
     [TestCase("Empty")]
@@ -266,16 +238,8 @@ internal sealed class DocsGameEventTests
         };
         Assert.Multiple(() =>
         {
-            Assert.That(
-                observed,
-                mutation == "Throw" ? Is.SameAs(failure) : Is.Null,
-                mutation + ": propagate the original callback exception only."
-            );
-            Assert.That(
-                first,
-                Is.EqualTo(expectedFirst),
-                mutation + ": exact first Raise snapshot."
-            );
+            Assert.That(observed, mutation == "Throw" ? Is.SameAs(failure) : Is.Null, mutation + ": propagate the original callback exception only.");
+            Assert.That(first, Is.EqualTo(expectedFirst), mutation + ": exact first Raise snapshot.");
             Assert.That(second, Is.EqualTo(expectedSecond), mutation + ": next Raise sees edits.");
             Assert.That(Count(publisher), Is.Zero, mutation + ": all listeners remain removable.");
         });
@@ -336,27 +300,11 @@ internal sealed class DocsGameEventTests
         {
             Assert.That(firstTriggers, Is.EqualTo(1), transition + ": one current trigger.");
             Assert.That(firstEmissions, Is.Zero, transition + ": old subscription cannot forward.");
-            Assert.That(
-                oldPublisherEmissions,
-                Is.EqualTo(transition is "Same" or "RepeatEnable" ? 1 : 0),
-                transition + ": only the current publisher owns later delivery."
-            );
-            Assert.That(
-                subsequentEmissions,
-                Is.EqualTo(transition == "Disable" ? 0 : 1),
-                transition + ": the new subscription remains usable."
-            );
+            Assert.That(oldPublisherEmissions, Is.EqualTo(transition is "Same" or "RepeatEnable" ? 1 : 0), transition + ": only the current publisher owns later delivery.");
+            Assert.That(subsequentEmissions, Is.EqualTo(transition == "Disable" ? 0 : 1), transition + ": the new subscription remains usable.");
             Assert.That(Count(original), Is.Zero, transition + ": original listener cleanup.");
-            Assert.That(
-                Count(replacement),
-                Is.Zero,
-                transition + ": replacement listener cleanup."
-            );
-            Assert.That(
-                _emissions.GetValue(null),
-                Is.EqualTo(beforeCleanupProbe),
-                transition + ": teardown prevents later forwarding."
-            );
+            Assert.That(Count(replacement), Is.Zero, transition + ": replacement listener cleanup.");
+            Assert.That(_emissions.GetValue(null), Is.EqualTo(beforeCleanupProbe), transition + ": teardown prevents later forwarding.");
         });
     }
 }

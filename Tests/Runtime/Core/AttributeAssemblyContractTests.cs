@@ -50,26 +50,10 @@ namespace DxMessaging.Tests.Runtime.Core
             foreach (AssemblyName dependency in attributes.GetReferencedAssemblies())
             {
                 string name = dependency.Name;
-                Assert.That(
-                    name,
-                    Does.Not.StartWith("UnityEngine"),
-                    $"Attribute dependency: {name}"
-                );
-                Assert.That(
-                    name,
-                    Does.Not.StartWith("UnityEditor"),
-                    $"Attribute dependency: {name}"
-                );
-                Assert.That(
-                    name,
-                    Is.Not.EqualTo("WallstopStudios.DxMessaging"),
-                    $"Attribute dependency: {name}"
-                );
-                Assert.That(
-                    name,
-                    Does.Not.StartWith("Microsoft.CodeAnalysis"),
-                    $"Attribute dependency: {name}"
-                );
+                Assert.That(name, Does.Not.StartWith("UnityEngine"), $"Attribute dependency: {name}");
+                Assert.That(name, Does.Not.StartWith("UnityEditor"), $"Attribute dependency: {name}");
+                Assert.That(name, Is.Not.EqualTo("WallstopStudios.DxMessaging"), $"Attribute dependency: {name}");
+                Assert.That(name, Does.Not.StartWith("Microsoft.CodeAnalysis"), $"Attribute dependency: {name}");
             }
         }
 
@@ -77,15 +61,8 @@ namespace DxMessaging.Tests.Runtime.Core
         public void NativeOptimizationAttributeStaysInsideTheMessagingRuntime()
         {
             Assembly runtime = typeof(MessageRegistrationToken).Assembly;
-            Type optimization = runtime.GetType(
-                "Unity.IL2CPP.CompilerServices.Il2CppSetOptionAttribute",
-                throwOnError: true
-            );
-            Assert.That(
-                optimization.Assembly,
-                Is.EqualTo(runtime),
-                "The internal IL2CPP marker is per runtime assembly."
-            );
+            Type optimization = runtime.GetType("Unity.IL2CPP.CompilerServices.Il2CppSetOptionAttribute", throwOnError: true);
+            Assert.That(optimization.Assembly, Is.EqualTo(runtime), "The internal IL2CPP marker is per runtime assembly.");
         }
     }
 }

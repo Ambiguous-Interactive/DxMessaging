@@ -123,10 +123,7 @@ namespace DxMessaging.Unity
             if (configuredProvider != null)
             {
                 MessageBusProviderHandle handle = _configuredMessageBusProviderHandle;
-                if (
-                    !handle.TryGetProvider(out IMessageBusProvider handleProvider)
-                    || !ReferenceEquals(handleProvider, configuredProvider)
-                )
+                if (!handle.TryGetProvider(out IMessageBusProvider handleProvider) || !ReferenceEquals(handleProvider, configuredProvider))
                 {
                     // A subclass can select a different provider through the protected field.
                     handle = MessageBusProviderHandle.FromProvider(configuredProvider);
@@ -135,10 +132,7 @@ namespace DxMessaging.Unity
             }
             else if (_configuredMessageBus != null)
             {
-                _messagingComponent.Configure(
-                    _configuredMessageBus,
-                    MessageBusRebindMode.PreserveRegistrations
-                );
+                _messagingComponent.Configure(_configuredMessageBus, MessageBusRebindMode.PreserveRegistrations);
             }
             _messageRegistrationToken = _messagingComponent.Create(this);
             RegisterMessageHandlers();
@@ -151,17 +145,9 @@ namespace DxMessaging.Unity
         {
             if (RegisterForStringMessages)
             {
-                _ = _messageRegistrationToken.RegisterGameObjectTargeted<StringMessage>(
-                    gameObject,
-                    HandleStringGameObjectMessage
-                );
-                _ = _messageRegistrationToken.RegisterComponentTargeted<StringMessage>(
-                    this,
-                    HandleStringComponentMessage
-                );
-                _ = _messageRegistrationToken.RegisterUntargeted<GlobalStringMessage>(
-                    HandleGlobalStringMessage
-                );
+                _ = _messageRegistrationToken.RegisterGameObjectTargeted<StringMessage>(gameObject, HandleStringGameObjectMessage);
+                _ = _messageRegistrationToken.RegisterComponentTargeted<StringMessage>(this, HandleStringComponentMessage);
+                _ = _messageRegistrationToken.RegisterUntargeted<GlobalStringMessage>(HandleGlobalStringMessage);
             }
         }
 
@@ -172,11 +158,7 @@ namespace DxMessaging.Unity
         /// </summary>
         protected virtual void OnEnable()
         {
-            if (
-                ReregisterOnEnableAfterRelease
-                && _messageRegistrationToken != null
-                && _messagingComponent != null
-            )
+            if (ReregisterOnEnableAfterRelease && _messageRegistrationToken != null && _messagingComponent != null)
             {
                 if (_messagingComponent.TryGetToken(this, out MessageRegistrationToken liveToken))
                 {
@@ -270,10 +252,7 @@ namespace DxMessaging.Unity
         /// Call this during dependency injection (before <see cref="Awake"/>) to ensure the token is created against
         /// the provided bus, or invoke it later to retarget existing registrations.
         /// </remarks>
-        public virtual void ConfigureMessageBus(
-            IMessageBus messageBus,
-            MessageBusRebindMode rebindMode
-        )
+        public virtual void ConfigureMessageBus(IMessageBus messageBus, MessageBusRebindMode rebindMode)
         {
             _configuredMessageBus = messageBus;
             _configuredMessageBusProvider = null;
@@ -290,22 +269,13 @@ namespace DxMessaging.Unity
         /// treated as unavailable.
         /// </param>
         /// <param name="rebindMode">Controls whether existing handlers should migrate to the provided bus immediately.</param>
-        public virtual void ConfigureMessageBus(
-            IMessageBusProvider messageBusProvider,
-            MessageBusRebindMode rebindMode
-        )
+        public virtual void ConfigureMessageBus(IMessageBusProvider messageBusProvider, MessageBusRebindMode rebindMode)
         {
-            _configuredMessageBusProvider = MessageBusProviderUtility.IsAvailable(
-                messageBusProvider
-            )
-                ? messageBusProvider
-                : null;
+            _configuredMessageBusProvider = MessageBusProviderUtility.IsAvailable(messageBusProvider) ? messageBusProvider : null;
             _configuredMessageBus = null;
             if (_configuredMessageBusProvider != null)
             {
-                _configuredMessageBusProviderHandle = MessageBusProviderHandle.FromProvider(
-                    _configuredMessageBusProvider
-                );
+                _configuredMessageBusProviderHandle = MessageBusProviderHandle.FromProvider(_configuredMessageBusProvider);
             }
             else
             {
@@ -323,10 +293,7 @@ namespace DxMessaging.Unity
         /// bus with the global fallback.
         /// </param>
         /// <param name="rebindMode">Controls whether existing handlers should migrate to the provided bus immediately.</param>
-        public virtual void ConfigureMessageBus(
-            MessageBusProviderHandle providerHandle,
-            MessageBusRebindMode rebindMode
-        )
+        public virtual void ConfigureMessageBus(MessageBusProviderHandle providerHandle, MessageBusRebindMode rebindMode)
         {
             _configuredMessageBusProviderHandle = providerHandle;
             _configuredMessageBus = null;
@@ -351,11 +318,7 @@ namespace DxMessaging.Unity
             }
 
             _configuredMessageBusProvider = null;
-            if (
-                _configuredMessageBusProviderHandle.TryGetProvider(
-                    out IMessageBusProvider handleProvider
-                )
-            )
+            if (_configuredMessageBusProviderHandle.TryGetProvider(out IMessageBusProvider handleProvider))
             {
                 _configuredMessageBusProvider = handleProvider;
             }

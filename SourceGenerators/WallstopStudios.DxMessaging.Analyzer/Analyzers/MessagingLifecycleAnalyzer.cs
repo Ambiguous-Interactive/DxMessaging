@@ -17,20 +17,8 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
     public sealed class MessagingLifecycleAnalyzer : DiagnosticAnalyzer
     {
         internal const string DiagnosticId = "DXMSG015";
-        private static readonly string[] LifecycleNames =
-        {
-            "Awake",
-            "OnEnable",
-            "OnDisable",
-            "OnDestroy",
-        };
-        private static readonly string[] ForwardNames =
-        {
-            "CreateLifecycleBound",
-            "Enable",
-            "Disable",
-            "Dispose",
-        };
+        private static readonly string[] LifecycleNames = { "Awake", "OnEnable", "OnDisable", "OnDestroy" };
+        private static readonly string[] ForwardNames = { "CreateLifecycleBound", "Enable", "Disable", "Dispose" };
         private static readonly DiagnosticDescriptor Rule = new(
             DiagnosticId,
             "Missing messaging lifecycle forwarding",
@@ -43,8 +31,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
         );
 
         /// <inheritdoc/>
-        public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
-            ImmutableArray.Create(Rule);
+        public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(Rule);
 
         /// <inheritdoc/>
         public override void Initialize(AnalysisContext context)
@@ -57,23 +44,15 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
             context.EnableConcurrentExecution();
             context.RegisterCompilationStartAction(start =>
             {
-                INamedTypeSymbol? binding = start.Compilation.GetTypeByMetadataName(
-                    "DxMessaging.Unity.MessagingLifecycle"
-                );
-                INamedTypeSymbol? component = start.Compilation.GetTypeByMetadataName(
-                    "DxMessaging.Unity.MessagingComponent"
-                );
-                INamedTypeSymbol? behaviour = start.Compilation.GetTypeByMetadataName(
-                    "UnityEngine.MonoBehaviour"
-                );
+                INamedTypeSymbol? binding = start.Compilation.GetTypeByMetadataName("DxMessaging.Unity.MessagingLifecycle");
+                INamedTypeSymbol? component = start.Compilation.GetTypeByMetadataName("DxMessaging.Unity.MessagingComponent");
+                INamedTypeSymbol? behaviour = start.Compilation.GetTypeByMetadataName("UnityEngine.MonoBehaviour");
                 if (binding == null || component == null || behaviour == null)
                 {
                     return;
                 }
                 ConcurrentDictionary<SyntaxTree, SemanticModel> models = new();
-                ConcurrentDictionary<INamedTypeSymbol, byte> types = new(
-                    SymbolEqualityComparer.Default
-                );
+                ConcurrentDictionary<INamedTypeSymbol, byte> types = new(SymbolEqualityComparer.Default);
                 start.RegisterSemanticModelAction(model =>
                 {
                     _ = models.TryAdd(model.SemanticModel.SyntaxTree, model.SemanticModel);
@@ -117,12 +96,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                 context.CancellationToken.ThrowIfCancellationRequested();
                 foreach (ISymbol member in current.GetMembers())
                 {
-                    if (
-                        member is not IFieldSymbol field
-                        || field.IsStatic
-                        || field.IsImplicitlyDeclared
-                        || !SymbolEqualityComparer.Default.Equals(field.Type, binding)
-                    )
+                    if (member is not IFieldSymbol field || field.IsStatic || field.IsImplicitlyDeclared || !SymbolEqualityComparer.Default.Equals(field.Type, binding))
                     {
                         continue;
                     }
@@ -130,39 +104,15 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                     {
                         IMethodSymbol? method = FindLifecycle(type, LifecycleNames[index]);
                         HashSet<ISymbol> visited = new(SymbolEqualityComparer.Default);
-                        if (
-                            method != null
-                            && Forwards(
-                                context,
-                                method,
-                                field,
-                                binding,
-                                component,
-                                index,
-                                visited,
-                                models
-                            )
-                        )
+                        if (method != null && Forwards(context, method, field, binding, component, index, visited, models))
                         {
                             continue;
                         }
                         Location? location =
-                            method?.Locations.Length != 0
-                            && method?.ContainingType.Equals(type, SymbolEqualityComparer.Default)
-                                == true
-                                ? method.Locations[0]
+                            method?.Locations.Length != 0 && method?.ContainingType.Equals(type, SymbolEqualityComparer.Default) == true ? method.Locations[0]
                             : type.Locations.Length == 0 ? null
                             : type.Locations[0];
-                        context.ReportDiagnostic(
-                            Diagnostic.Create(
-                                Rule,
-                                location,
-                                type.Name,
-                                LifecycleNames[index],
-                                field.Name,
-                                ForwardNames[index]
-                            )
-                        );
+                        context.ReportDiagnostic(Diagnostic.Create(Rule, location, type.Name, LifecycleNames[index], field.Name, ForwardNames[index]));
                     }
                 }
             }
@@ -171,11 +121,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
         /// <summary>Finds the Unity MonoBehaviour base without matching unrelated same-named types.</summary>
         private static bool DerivesFrom(INamedTypeSymbol type, INamedTypeSymbol parent)
         {
-            for (
-                INamedTypeSymbol? current = type.BaseType;
-                current != null;
-                current = current.BaseType
-            )
+            for (INamedTypeSymbol? current = type.BaseType; current != null; current = current.BaseType)
             {
                 if (SymbolEqualityComparer.Default.Equals(current.OriginalDefinition, parent))
                 {
@@ -192,13 +138,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
             {
                 foreach (ISymbol member in current.GetMembers(name))
                 {
-                    if (
-                        member is IMethodSymbol method
-                        && !method.IsStatic
-                        && !method.IsGenericMethod
-                        && method.Parameters.Length == 0
-                        && method.ReturnsVoid
-                    )
+                    if (member is IMethodSymbol method && !method.IsStatic && !method.IsGenericMethod && method.Parameters.Length == 0 && method.ReturnsVoid)
                     {
                         return method;
                     }
@@ -230,10 +170,8 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                 SyntaxNode syntax = reference.GetSyntax(context.CancellationToken);
                 SyntaxNode? body = syntax switch
                 {
-                    MethodDeclarationSyntax declaration => (SyntaxNode?)declaration.Body
-                        ?? declaration.ExpressionBody?.Expression,
-                    LocalFunctionStatementSyntax declaration => (SyntaxNode?)declaration.Body
-                        ?? declaration.ExpressionBody?.Expression,
+                    MethodDeclarationSyntax declaration => (SyntaxNode?)declaration.Body ?? declaration.ExpressionBody?.Expression,
+                    LocalFunctionStatementSyntax declaration => (SyntaxNode?)declaration.Body ?? declaration.ExpressionBody?.Expression,
                     _ => null,
                 };
                 if (body == null)
@@ -245,18 +183,12 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                     continue;
                 }
                 foreach (
-                    SyntaxNode node in body.DescendantNodesAndSelf(
-                        descendIntoChildren: static child =>
-                            child is not AnonymousFunctionExpressionSyntax
-                            && child is not LocalFunctionStatementSyntax
+                    SyntaxNode node in body.DescendantNodesAndSelf(descendIntoChildren: static child =>
+                        child is not AnonymousFunctionExpressionSyntax && child is not LocalFunctionStatementSyntax
                     )
                 )
                 {
-                    if (
-                        index == 0
-                        && node is AssignmentExpressionSyntax assignment
-                        && IsThisField(model, assignment.Left, field, context)
-                    )
+                    if (index == 0 && node is AssignmentExpressionSyntax assignment && IsThisField(model, assignment.Left, field, context))
                     {
                         ExpressionSyntax value = assignment.Right;
                         while (value is ParenthesizedExpressionSyntax parentheses)
@@ -265,25 +197,17 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                         }
                         if (
                             value is InvocationExpressionSyntax creation
-                            && model.GetSymbolInfo(creation, context.CancellationToken).Symbol
-                                is IMethodSymbol factory
+                            && model.GetSymbolInfo(creation, context.CancellationToken).Symbol is IMethodSymbol factory
                             && factory.Name == ForwardNames[0]
                             && creation.ArgumentList.Arguments.Count == 1
                             && IsThis(creation.ArgumentList.Arguments[0].Expression)
-                            && SymbolEqualityComparer.Default.Equals(
-                                factory.ContainingType,
-                                component
-                            )
+                            && SymbolEqualityComparer.Default.Equals(factory.ContainingType, component)
                         )
                         {
                             return true;
                         }
                     }
-                    if (
-                        node is not InvocationExpressionSyntax invocation
-                        || model.GetSymbolInfo(invocation, context.CancellationToken).Symbol
-                            is not IMethodSymbol target
-                    )
+                    if (node is not InvocationExpressionSyntax invocation || model.GetSymbolInfo(invocation, context.CancellationToken).Symbol is not IMethodSymbol target)
                     {
                         continue;
                     }
@@ -296,19 +220,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                     {
                         return true;
                     }
-                    if (
-                        IsThisCall(invocation)
-                        && Forwards(
-                            context,
-                            target,
-                            field,
-                            binding,
-                            component,
-                            index,
-                            visited,
-                            models
-                        )
-                    )
+                    if (IsThisCall(invocation) && Forwards(context, target, field, binding, component, index, visited, models))
                     {
                         return true;
                     }
@@ -318,42 +230,24 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
         }
 
         /// <summary>Checks direct and conditional calls against this listener's captured field.</summary>
-        private static bool IsReceiver(
-            SemanticModel model,
-            InvocationExpressionSyntax invocation,
-            IFieldSymbol field,
-            CompilationAnalysisContext context
-        )
+        private static bool IsReceiver(SemanticModel model, InvocationExpressionSyntax invocation, IFieldSymbol field, CompilationAnalysisContext context)
         {
             ExpressionSyntax? receiver =
                 invocation.Expression is MemberAccessExpressionSyntax member ? member.Expression
-                : invocation.Parent is ConditionalAccessExpressionSyntax conditional
-                    ? conditional.Expression
+                : invocation.Parent is ConditionalAccessExpressionSyntax conditional ? conditional.Expression
                 : null;
             return receiver != null && IsThisField(model, receiver, field, context);
         }
 
         /// <summary>Rejects equal field symbols read through another listener instance.</summary>
-        private static bool IsThisField(
-            SemanticModel model,
-            ExpressionSyntax expression,
-            IFieldSymbol field,
-            CompilationAnalysisContext context
-        )
+        private static bool IsThisField(SemanticModel model, ExpressionSyntax expression, IFieldSymbol field, CompilationAnalysisContext context)
         {
             expression = Unwrap(expression);
-            if (
-                expression is MemberAccessExpressionSyntax member
-                && !IsThis(member.Expression)
-                && Unwrap(member.Expression) is not BaseExpressionSyntax
-            )
+            if (expression is MemberAccessExpressionSyntax member && !IsThis(member.Expression) && Unwrap(member.Expression) is not BaseExpressionSyntax)
             {
                 return false;
             }
-            return SameField(
-                model.GetSymbolInfo(expression, context.CancellationToken).Symbol,
-                field
-            );
+            return SameField(model.GetSymbolInfo(expression, context.CancellationToken).Symbol, field);
         }
 
         /// <summary>Follows explicit calls only when they execute on this listener instance.</summary>
@@ -362,11 +256,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
             ExpressionSyntax expression = invocation.Expression;
             return expression is IdentifierNameSyntax
                 || expression is GenericNameSyntax
-                || expression is MemberAccessExpressionSyntax member
-                    && (
-                        IsThis(member.Expression)
-                        || Unwrap(member.Expression) is BaseExpressionSyntax
-                    );
+                || expression is MemberAccessExpressionSyntax member && (IsThis(member.Expression) || Unwrap(member.Expression) is BaseExpressionSyntax);
         }
 
         /// <summary>Recognizes the current Unity owner without accepting another variable.</summary>
@@ -388,11 +278,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
         /// <summary>Compares original field definitions across constructed containing types.</summary>
         private static bool SameField(ISymbol? symbol, IFieldSymbol field)
         {
-            return symbol is IFieldSymbol receiver
-                && SymbolEqualityComparer.Default.Equals(
-                    receiver.OriginalDefinition,
-                    field.OriginalDefinition
-                );
+            return symbol is IFieldSymbol receiver && SymbolEqualityComparer.Default.Equals(receiver.OriginalDefinition, field.OriginalDefinition);
         }
     }
 }

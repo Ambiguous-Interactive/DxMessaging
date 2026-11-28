@@ -33,17 +33,7 @@ namespace DxMessaging.Tests.Runtime.Core
             foreach (bool outer in new[] { false, true })
             foreach (bool diagnostics in new[] { false, true })
             foreach (bool throwing in new[] { false, true })
-                yield return new TestCaseData(
-                    scenario,
-                    shape,
-                    count,
-                    after,
-                    reject,
-                    nested,
-                    outer,
-                    diagnostics,
-                    throwing
-                ).SetName(
+                yield return new TestCaseData(scenario, shape, count, after, reject, nested, outer, diagnostics, throwing).SetName(
                     $"ReentrantRetarget_{scenario}_shape{shape}_count{count}_after{after}_reject{reject}_nested{nested}_outer{outer}_diagnostics{diagnostics}_throw{throwing}"
                 );
         }
@@ -61,17 +51,7 @@ namespace DxMessaging.Tests.Runtime.Core
             bool throwing
         )
         {
-            Scope state = new Scope(
-                scenario,
-                shape,
-                count,
-                after,
-                reject,
-                nested,
-                outer,
-                diagnostics,
-                throwing
-            );
+            Scope state = new Scope(scenario, shape, count, after, reject, nested, outer, diagnostics, throwing);
             try
             {
                 state.Run();
@@ -96,60 +76,29 @@ namespace DxMessaging.Tests.Runtime.Core
                 int[] expectedDiagnosticCounts = new int[count];
                 for (int index = 0; index < count; ++index)
                 {
-                    expectedDiagnosticCounts[index] = recordsDiagnostics
-                        ? Enumerable.Range(0, 3).Sum(bus => state.ExpectedDelivery(bus)[index])
-                        : 0;
-                    Assert.That(
-                        state.DiagnosticRecords.Count(record =>
-                            record.registrationHandle == state.Handles[index]
-                        ),
-                        Is.EqualTo(expectedDiagnosticCounts[index]),
-                        report
-                    );
+                    expectedDiagnosticCounts[index] = recordsDiagnostics ? Enumerable.Range(0, 3).Sum(bus => state.ExpectedDelivery(bus)[index]) : 0;
+                    Assert.That(state.DiagnosticRecords.Count(record => record.registrationHandle == state.Handles[index]), Is.EqualTo(expectedDiagnosticCounts[index]), report);
                 }
                 Assert.That(state.DiagnosticCounts, Is.EqualTo(expectedDiagnosticCounts), report);
-                Assert.That(
-                    state.DiagnosticRecords.Length,
-                    Is.EqualTo(expectedDiagnosticCounts.Sum()),
-                    report
-                );
+                Assert.That(state.DiagnosticRecords.Length, Is.EqualTo(expectedDiagnosticCounts.Sum()), report);
                 foreach (MessageEmissionData record in state.DiagnosticRecords)
                 {
                     Assert.That(record.traceId, Is.Zero, report);
-                    Assert.That(
-                        record.message.MessageType,
-                        Is.EqualTo(typeof(ProbeMessage)),
-                        report
-                    );
-                    InstanceId? expectedContext =
-                        scenario.Kind == MessageKind.Untargeted
-                            ? (InstanceId?)null
-                            : new InstanceId(120007);
+                    Assert.That(record.message.MessageType, Is.EqualTo(typeof(ProbeMessage)), report);
+                    InstanceId? expectedContext = scenario.Kind == MessageKind.Untargeted ? (InstanceId?)null : new InstanceId(120007);
                     Assert.That(record.context, Is.EqualTo(expectedContext), report);
                 }
 
                 for (int bus = 0; bus < 3; ++bus)
                 {
-                    Assert.That(
-                        state.FirstDelivery[bus],
-                        Is.EqualTo(state.ExpectedDelivery(bus)),
-                        report
-                    );
-                    Assert.That(
-                        state.LiveAfter[bus],
-                        Is.EqualTo(state.ExpectedDelivery(bus).Sum()),
-                        report
-                    );
+                    Assert.That(state.FirstDelivery[bus], Is.EqualTo(state.ExpectedDelivery(bus)), report);
+                    Assert.That(state.LiveAfter[bus], Is.EqualTo(state.ExpectedDelivery(bus).Sum()), report);
                     Assert.That(state.DisabledDelivery[bus], Is.All.EqualTo(0), report);
                     int recoveryBus =
                         throwing && outer ? 0
                         : nested ? 2
                         : state.Source;
-                    Assert.That(
-                        state.RecoveryDelivery[bus],
-                        Is.All.EqualTo(bus == recoveryBus ? 1 : 0),
-                        report
-                    );
+                    Assert.That(state.RecoveryDelivery[bus], Is.All.EqualTo(bus == recoveryBus ? 1 : 0), report);
                 }
                 Assert.That(state.RecoveryFailure, Is.Null, report);
                 Assert.That(state.CleanupFailure, Is.Null, report);
@@ -170,42 +119,15 @@ namespace DxMessaging.Tests.Runtime.Core
             foreach (bool outer in new[] { false, true })
             foreach (bool diagnostics in new[] { false, true })
             foreach (bool rejectedAfter in new[] { false, true })
-                yield return new TestCaseData(
-                    scenario,
-                    shape,
-                    count,
-                    after,
-                    outer,
-                    diagnostics,
-                    rejectedAfter
-                ).SetName(
+                yield return new TestCaseData(scenario, shape, count, after, outer, diagnostics, rejectedAfter).SetName(
                     $"ReentrantRetargetRecovery_{scenario}_shape{shape}_count{count}_after{after}_outer{outer}_diagnostics{diagnostics}_rejectAfter{rejectedAfter}"
                 );
         }
 
         [TestCaseSource(nameof(RecoveryCases))]
-        public void FailedNestedRetargetRestoresOnlyOwnedActiveHandles(
-            MessageScenario scenario,
-            int shape,
-            int count,
-            bool after,
-            bool outer,
-            bool diagnostics,
-            bool rejectedAfter
-        )
+        public void FailedNestedRetargetRestoresOnlyOwnedActiveHandles(MessageScenario scenario, int shape, int count, bool after, bool outer, bool diagnostics, bool rejectedAfter)
         {
-            Scope state = new Scope(
-                scenario,
-                shape,
-                count,
-                after,
-                true,
-                true,
-                outer,
-                diagnostics,
-                false,
-                rejectedAfter
-            );
+            Scope state = new Scope(scenario, shape, count, after, true, true, outer, diagnostics, false, rejectedAfter);
             try
             {
                 state.Run();
@@ -229,30 +151,14 @@ namespace DxMessaging.Tests.Runtime.Core
                 Assert.That(state.MetadataAfter, Is.EqualTo(count), report);
                 for (int bus = 0; bus < 3; ++bus)
                 {
-                    Assert.That(
-                        state.FirstDelivery[bus],
-                        Is.All.EqualTo(bus == state.Source ? 1 : 0),
-                        report
-                    );
-                    Assert.That(
-                        state.LiveAfter[bus],
-                        Is.EqualTo(bus == state.Source ? count : 0),
-                        report
-                    );
+                    Assert.That(state.FirstDelivery[bus], Is.All.EqualTo(bus == state.Source ? 1 : 0), report);
+                    Assert.That(state.LiveAfter[bus], Is.EqualTo(bus == state.Source ? count : 0), report);
                     Assert.That(state.DisabledDelivery[bus], Is.All.EqualTo(0), report);
-                    Assert.That(
-                        state.RecoveryDelivery[bus],
-                        Is.All.EqualTo(bus == state.Source ? 1 : 0),
-                        report
-                    );
+                    Assert.That(state.RecoveryDelivery[bus], Is.All.EqualTo(bus == state.Source ? 1 : 0), report);
                 }
                 bool records = diagnostics && shape != 2;
                 Assert.That(state.DiagnosticCounts, Is.All.EqualTo(records ? 1 : 0), report);
-                Assert.That(
-                    state.DiagnosticRecords.Length,
-                    Is.EqualTo(records ? count : 0),
-                    report
-                );
+                Assert.That(state.DiagnosticRecords.Length, Is.EqualTo(records ? count : 0), report);
                 foreach (MessageEmissionData record in state.DiagnosticRecords)
                 {
                     Assert.That(state.Handles, Does.Contain(record.registrationHandle), report);
@@ -287,9 +193,7 @@ namespace DxMessaging.Tests.Runtime.Core
             private readonly MessageRegistrationToken _token;
             private readonly int[] _calls;
             private readonly List<string> _trace = new List<string>();
-            internal readonly Exception Marker = new InvalidOperationException(
-                "nested-retarget-callback-marker"
-            );
+            internal readonly Exception Marker = new InvalidOperationException("nested-retarget-callback-marker");
             internal readonly int Source;
             internal Exception NestedRetargetFailure;
             internal Exception NestedMarker => _buses[2].RegistrationMarker;
@@ -348,10 +252,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 _calls = new int[count];
                 Handles = new MessageRegistrationHandle[count];
                 _buses = new[] { new ProbeBus(after), new ProbeBus(after), new ProbeBus(after) };
-                MessageHandler handler = new MessageHandler(new InstanceId(120008), _buses[0])
-                {
-                    active = true,
-                };
+                MessageHandler handler = new MessageHandler(new InstanceId(120008), _buses[0]) { active = true };
                 _token = MessageRegistrationToken.Create(handler, _buses[0]);
                 _token.DiagnosticMode = diagnostics;
             }
@@ -396,10 +297,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         }
                         catch (Exception exception)
                         {
-                            if (
-                                !_nestedRejectedAfter.HasValue
-                                || !ReferenceEquals(exception, NestedMarker)
-                            )
+                            if (!_nestedRejectedAfter.HasValue || !ReferenceEquals(exception, NestedMarker))
                                 throw;
                             NestedRetargetFailure = exception;
                         }
@@ -423,11 +321,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 EnabledAfter = _token.Enabled;
                 MetadataAfter = _token._metadata.Count;
                 FirstDelivery = Deliver();
-                DiagnosticCounts = Handles
-                    .Select(handle =>
-                        _token._callCounts.TryGetValue(handle, out int value) ? value : 0
-                    )
-                    .ToArray();
+                DiagnosticCounts = Handles.Select(handle => _token._callCounts.TryGetValue(handle, out int value) ? value : 0).ToArray();
                 DiagnosticRecords = _token._emissionBuffer.ToArray();
                 LiveAfter = _buses.Select(bus => bus.LiveCount).ToArray();
                 _trace.Add("live-after=" + string.Join(",", LiveAfter));
@@ -453,8 +347,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         expected[index] = _outer && bus == 0 ? 1 : 0;
                     else
                     {
-                        int owner =
-                            _nested && !_nestedRejectedAfter.HasValue && index != 1 ? 2 : Source;
+                        int owner = _nested && !_nestedRejectedAfter.HasValue && index != 1 ? 2 : Source;
                         expected[index] = (index != 0 || _reject) && bus == owner ? 1 : 0;
                     }
                 }
@@ -483,9 +376,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         default:
                             throw new ArgumentOutOfRangeException(nameof(_scenario));
                     }
-                    result[index] = _calls
-                        .Select((value, callback) => value - before[callback])
-                        .ToArray();
+                    result[index] = _calls.Select((value, callback) => value - before[callback]).ToArray();
                 }
                 return result;
             }
@@ -493,8 +384,7 @@ namespace DxMessaging.Tests.Runtime.Core
             private void Stage(int index)
             {
                 Action<ProbeMessage> normal = _ => ++_calls[index];
-                MessageHandler.FastHandler<ProbeMessage> fast = (in ProbeMessage _) =>
-                    ++_calls[index];
+                MessageHandler.FastHandler<ProbeMessage> fast = (in ProbeMessage _) => ++_calls[index];
                 if (_shape <= 1)
                 {
                     switch (_scenario.Kind)
@@ -536,19 +426,13 @@ namespace DxMessaging.Tests.Runtime.Core
                     switch (_scenario.Kind)
                     {
                         case MessageKind.Untargeted:
-                            Handles[index] = _token.RegisterUntargetedInterceptor<ProbeMessage>(
-                                Scalar
-                            );
+                            Handles[index] = _token.RegisterUntargetedInterceptor<ProbeMessage>(Scalar);
                             break;
                         case MessageKind.Targeted:
-                            Handles[index] = _token.RegisterTargetedInterceptor<ProbeMessage>(
-                                Contextual
-                            );
+                            Handles[index] = _token.RegisterTargetedInterceptor<ProbeMessage>(Contextual);
                             break;
                         case MessageKind.Broadcast:
-                            Handles[index] = _token.RegisterBroadcastInterceptor<ProbeMessage>(
-                                Contextual
-                            );
+                            Handles[index] = _token.RegisterBroadcastInterceptor<ProbeMessage>(Contextual);
                             break;
                         default:
                             throw new ArgumentOutOfRangeException(nameof(_scenario));
@@ -559,11 +443,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     Action<IUntargetedMessage> untargeted = _ => ++_calls[index];
                     Action<InstanceId, ITargetedMessage> targeted = (_, __) => ++_calls[index];
                     Action<InstanceId, IBroadcastMessage> broadcast = (_, __) => ++_calls[index];
-                    Handles[index] = _token.RegisterGlobalAcceptAll(
-                        untargeted,
-                        targeted,
-                        broadcast
-                    );
+                    Handles[index] = _token.RegisterGlobalAcceptAll(untargeted, targeted, broadcast);
                 }
                 else
                 {
@@ -579,11 +459,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     {
                         ++_calls[index];
                     }
-                    Handles[index] = _token.RegisterGlobalAcceptAll(
-                        Untargeted,
-                        Targeted,
-                        Broadcast
-                    );
+                    Handles[index] = _token.RegisterGlobalAcceptAll(Untargeted, Targeted, Broadcast);
                 }
             }
 
@@ -659,18 +535,14 @@ namespace DxMessaging.Tests.Runtime.Core
         private sealed class ProbeBus : DelegatingMessageBus
         {
             internal readonly Bus Actual;
-            internal readonly Exception Marker = new InvalidOperationException(
-                "nested-retarget-cleanup-marker"
-            );
+            internal readonly Exception Marker = new InvalidOperationException("nested-retarget-cleanup-marker");
             internal Action Callback;
             internal bool RejectNextCleanup;
             internal int Accepted,
                 InvalidHandles,
                 DuplicateRetirements;
             internal bool? RejectRegistrationAfter;
-            internal readonly Exception RegistrationMarker = new InvalidOperationException(
-                "nested-destination-registration-marker"
-            );
+            internal readonly Exception RegistrationMarker = new InvalidOperationException("nested-destination-registration-marker");
             private readonly bool _after;
             private readonly List<Acquisition> _acquisitions = new List<Acquisition>();
             private int _attempts;
@@ -748,11 +620,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     throw Marker;
                 }
                 Acquisition value = registration.ExternalState as Acquisition;
-                if (
-                    value == null
-                    || !ReferenceEquals(value.Owner, this)
-                    || value.Id != registration.ExternalId
-                )
+                if (value == null || !ReferenceEquals(value.Owner, this) || value.Id != registration.ExternalId)
                 {
                     ++InvalidHandles;
                     throw new InvalidOperationException("Incorrect external cleanup identity.");
@@ -772,60 +640,37 @@ namespace DxMessaging.Tests.Runtime.Core
                         acquisition.Drop();
             }
 
-            public override MessageBusRegistration RegisterUntargeted<T>(
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterUntargeted<T>(MessageHandler handler, int priority = 0)
             {
                 bool selected = Before();
                 return Keep<T>(base.RegisterUntargeted<T>(handler, priority), selected);
             }
 
-            public override MessageBusRegistration RegisterTargeted<T>(
-                InstanceId context,
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterTargeted<T>(InstanceId context, MessageHandler handler, int priority = 0)
             {
                 bool selected = Before();
                 return Keep<T>(base.RegisterTargeted<T>(context, handler, priority), selected);
             }
 
-            public override MessageBusRegistration RegisterSourcedBroadcast<T>(
-                InstanceId context,
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterSourcedBroadcast<T>(InstanceId context, MessageHandler handler, int priority = 0)
             {
                 bool selected = Before();
-                return Keep<T>(
-                    base.RegisterSourcedBroadcast<T>(context, handler, priority),
-                    selected
-                );
+                return Keep<T>(base.RegisterSourcedBroadcast<T>(context, handler, priority), selected);
             }
 
-            public override MessageBusRegistration RegisterUntargetedInterceptor<T>(
-                IMessageBus.UntargetedInterceptor<T> interceptor,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterUntargetedInterceptor<T>(IMessageBus.UntargetedInterceptor<T> interceptor, int priority = 0)
             {
                 bool selected = Before();
                 return Keep<T>(base.RegisterUntargetedInterceptor(interceptor, priority), selected);
             }
 
-            public override MessageBusRegistration RegisterTargetedInterceptor<T>(
-                IMessageBus.TargetedInterceptor<T> interceptor,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterTargetedInterceptor<T>(IMessageBus.TargetedInterceptor<T> interceptor, int priority = 0)
             {
                 bool selected = Before();
                 return Keep<T>(base.RegisterTargetedInterceptor(interceptor, priority), selected);
             }
 
-            public override MessageBusRegistration RegisterBroadcastInterceptor<T>(
-                IMessageBus.BroadcastInterceptor<T> interceptor,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterBroadcastInterceptor<T>(IMessageBus.BroadcastInterceptor<T> interceptor, int priority = 0)
             {
                 bool selected = Before();
                 return Keep<T>(base.RegisterBroadcastInterceptor(interceptor, priority), selected);
@@ -847,10 +692,7 @@ namespace DxMessaging.Tests.Runtime.Core
 #endif
         }
 
-        private readonly struct ProbeMessage
-            : IUntargetedMessage,
-                ITargetedMessage,
-                IBroadcastMessage
+        private readonly struct ProbeMessage : IUntargetedMessage, ITargetedMessage, IBroadcastMessage
         {
             public Type MessageType => typeof(ProbeMessage);
         }

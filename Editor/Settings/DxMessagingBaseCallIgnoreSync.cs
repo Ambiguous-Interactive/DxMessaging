@@ -28,10 +28,8 @@ namespace DxMessaging.Editor.Settings
 
         internal static bool SidecarImportPending;
 
-        private const string HeaderComment =
-            "# Auto-generated from Assets/Editor/DxMessagingSettings.asset; edit there instead.";
-        private const string FormatComment =
-            "# One fully-qualified type name per line. Lines starting with # are comments.";
+        private const string HeaderComment = "# Auto-generated from Assets/Editor/DxMessagingSettings.asset; edit there instead.";
+        private const string FormatComment = "# One fully-qualified type name per line. Lines starting with # are comments.";
 
         /// <summary>
         /// Regenerates the sidecar text file from the supplied settings asset. Writes only when
@@ -124,10 +122,7 @@ namespace DxMessaging.Editor.Settings
             }
             catch (Exception ex)
             {
-                DxMessaging.Editor.DxMessagingEditorLog.LogWarning(
-                    "Failed to schedule csc.rsp base-call ignore additionalfile sync.",
-                    ex
-                );
+                DxMessaging.Editor.DxMessagingEditorLog.LogWarning("Failed to schedule csc.rsp base-call ignore additionalfile sync.", ex);
             }
         }
 
@@ -148,10 +143,7 @@ namespace DxMessaging.Editor.Settings
             }
             catch (Exception ex)
             {
-                DxMessaging.Editor.DxMessagingEditorLog.LogWarning(
-                    $"Failed to write base-call ignore sidecar at '{SidecarAssetPath}'.",
-                    ex
-                );
+                DxMessaging.Editor.DxMessagingEditorLog.LogWarning($"Failed to write base-call ignore sidecar at '{SidecarAssetPath}'.", ex);
             }
         }
 
@@ -161,37 +153,16 @@ namespace DxMessaging.Editor.Settings
             {
                 throw new ArgumentNullException(nameof(settings));
             }
-            WriteSidecarOrThrow(
-                GetAbsolutePath(),
-                settings._baseCallIgnoredTypes,
-                path => AssetDatabase.ImportAsset(path),
-                ref SidecarImportPending
-            );
+            WriteSidecarOrThrow(GetAbsolutePath(), settings._baseCallIgnoredTypes, path => AssetDatabase.ImportAsset(path), ref SidecarImportPending);
         }
 
-        internal static void WriteSidecarOrThrow(
-            string absolutePath,
-            IList<string> ignoredTypes,
-            Action<string> importAsset,
-            ref bool importPending
-        )
+        internal static void WriteSidecarOrThrow(string absolutePath, IList<string> ignoredTypes, Action<string> importAsset, ref bool importPending)
         {
             string newContent = BuildContent(ignoredTypes);
             EnsureParentDirectoryExists(absolutePath);
-            if (
-                !File.Exists(absolutePath)
-                || !string.Equals(
-                    File.ReadAllText(absolutePath),
-                    newContent,
-                    StringComparison.Ordinal
-                )
-            )
+            if (!File.Exists(absolutePath) || !string.Equals(File.ReadAllText(absolutePath), newContent, StringComparison.Ordinal))
             {
-                DxMessaging.Editor.SetupCscRsp.WriteTextFileAtomically(
-                    absolutePath,
-                    newContent,
-                    new UTF8Encoding(false)
-                );
+                DxMessaging.Editor.SetupCscRsp.WriteTextFileAtomically(absolutePath, newContent, new UTF8Encoding(false));
                 importPending = true;
             }
             if (importPending)
@@ -233,10 +204,7 @@ namespace DxMessaging.Editor.Settings
             }
             catch (Exception ex)
             {
-                DxMessaging.Editor.DxMessagingEditorLog.LogWarning(
-                    $"Failed to read base-call ignore sidecar at '{SidecarAssetPath}'.",
-                    ex
-                );
+                DxMessaging.Editor.DxMessagingEditorLog.LogWarning($"Failed to read base-call ignore sidecar at '{SidecarAssetPath}'.", ex);
                 return Array.Empty<string>();
             }
         }
@@ -282,8 +250,7 @@ namespace DxMessaging.Editor.Settings
         private static string GetAbsolutePath()
         {
             // Application.dataPath ends in "/Assets"; SidecarAssetPath begins with "Assets/".
-            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."))
-                .Replace("\\", "/");
+            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, "..")).Replace("\\", "/");
             return Path.Combine(projectRoot, SidecarAssetPath).Replace("\\", "/");
         }
 

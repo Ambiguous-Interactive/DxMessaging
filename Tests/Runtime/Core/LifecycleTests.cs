@@ -15,13 +15,9 @@ namespace DxMessaging.Tests.Runtime.Core
         [UnityTest]
         public IEnumerator MessageAwareComponentStopsReceivingAfterDestroy()
         {
-            GameObject host = new(
-                nameof(MessageAwareComponentStopsReceivingAfterDestroy),
-                typeof(SimpleMessageAwareComponent)
-            );
+            GameObject host = new(nameof(MessageAwareComponentStopsReceivingAfterDestroy), typeof(SimpleMessageAwareComponent));
             _spawned.Add(host);
-            SimpleMessageAwareComponent component =
-                host.GetComponent<SimpleMessageAwareComponent>();
+            SimpleMessageAwareComponent component = host.GetComponent<SimpleMessageAwareComponent>();
 
             int count = 0;
             component.untargetedHandler = () => ++count;
@@ -40,13 +36,9 @@ namespace DxMessaging.Tests.Runtime.Core
         [UnityTest]
         public IEnumerator MessageAwareComponentRespectsApplicationQuit()
         {
-            GameObject host = new(
-                nameof(MessageAwareComponentRespectsApplicationQuit),
-                typeof(SimpleMessageAwareComponent)
-            );
+            GameObject host = new(nameof(MessageAwareComponentRespectsApplicationQuit), typeof(SimpleMessageAwareComponent));
             _spawned.Add(host);
-            SimpleMessageAwareComponent component =
-                host.GetComponent<SimpleMessageAwareComponent>();
+            SimpleMessageAwareComponent component = host.GetComponent<SimpleMessageAwareComponent>();
 
             MessageRegistrationToken token = GetToken(component);
             Assert.IsTrue(token.Enabled);
@@ -63,11 +55,7 @@ namespace DxMessaging.Tests.Runtime.Core
             component.untargetedHandler = () => ++count;
             SimpleUntargetedMessage message = new();
             message.EmitUntargeted();
-            Assert.AreEqual(
-                1,
-                count,
-                "Token should remain enabled even when the component cycles after application quit."
-            );
+            Assert.AreEqual(1, count, "Token should remain enabled even when the component cycles after application quit.");
         }
     }
 }

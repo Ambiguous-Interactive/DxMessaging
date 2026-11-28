@@ -8,9 +8,8 @@ Continuation material extracted from `workflow-consistency.md` to keep .llm file
 
 ### Self-Referential Workflows
 
-Workflows that check formatting or linting of specific file types MUST include
-`.github/workflows/**` in their path filters. This ensures the workflow runs when
-its own definition changes.
+Workflows that check formatting or linting of specific file types MUST include `.github/workflows/**` in their path filters. This ensures the workflow runs when its own definition
+changes.
 
 ```yaml
 on:
@@ -45,10 +44,8 @@ on:
 
 ### Required Gate Path Detection
 
-Required jobs that depend on a `changes` job MUST fail closed. If a job is
-required directly, it may skip only when `changes` succeeds and explicitly emits
-`relevant=false`; failed, skipped, or malformed change detection must run the
-required job and fail in an early guard step:
+Required jobs that depend on a `changes` job MUST fail closed. If a job is required directly, it may skip only when `changes` succeeds and explicitly emits `relevant=false`;
+failed, skipped, or malformed change detection must run the required job and fail in an early guard step:
 
 ```yaml
 gate:
@@ -66,12 +63,9 @@ gate:
     - run: ./check.sh
 ```
 
-This matters because GitHub treats a job skipped by a conditional as successful,
-including for required checks. A failed `changes` job would otherwise skip the
-real required job and could let a pull request merge without running the gate.
-For jobs covered by the static `CI Success` aggregate, keep job-level
-`if: ${{ always() }}` and skip expensive steps internally so `CI Success` can
-keep `allowed-skips` empty.
+This matters because GitHub treats a job skipped by a conditional as successful, including for required checks. A failed `changes` job would otherwise skip the real required job
+and could let a pull request merge without running the gate. For jobs covered by the static `CI Success` aggregate, keep job-level `if: ${{ always() }}` and skip expensive steps
+internally so `CI Success` can keep `allowed-skips` empty.
 
 ### Trigger Best Practices
 
@@ -91,10 +85,8 @@ on:
   workflow_dispatch: # Allow manual triggering
 ```
 
-Keep branch allow-lists consistent between `push` and `pull_request` for the
-same validation workflow. If a workflow validates pushes to `develop`, it should
-also validate pull requests targeting `develop` unless the push-only behavior is
-intentional and documented in the workflow.
+Keep branch allow-lists consistent between `push` and `pull_request` for the same validation workflow. If a workflow validates pushes to `develop`, it should also validate pull
+requests targeting `develop` unless the push-only behavior is intentional and documented in the workflow.
 
 ## Formatting Requirements
 
@@ -203,22 +195,17 @@ Before committing a workflow, verify:
 - [ ] Concurrency group defined with `cancel-in-progress: true`
 - [ ] Explicit `permissions` block with minimal required permissions
 - [ ] Every job has `timeout-minutes`
-- [ ] Checkout steps declare `persist-credentials`; use `false`; auto-commit
-      handoffs clean up tokenized remotes immediately
+- [ ] Checkout steps declare `persist-credentials`; use `false`; auto-commit handoffs clean up tokenized remotes immediately
 - [ ] Path filters include `.github/workflows/**` for self-referential checks
-- [ ] Required gates that use `changes` fail closed unless `relevant=false` was
-      emitted by a successful detector
+- [ ] Required gates that use `changes` fail closed unless `relevant=false` was emitted by a successful detector
 - [ ] Double quotes used for strings
 - [ ] 2-space indentation throughout
 
 ## See Also
 
-- [Git Renormalize Pattern Validation](./git-renormalize-patterns.md) -- ensuring pathspec patterns
-  match actual repository files to prevent CI failures
-- [Cross-Platform Compatibility](../../shell-and-powershell/references/cross-platform-compatibility.md) -- handling platform
-  differences in CI scripts
-- [Shell Best Practices](../../shell-and-powershell/references/shell-best-practices.md) -- patterns for shell commands in
-  workflow steps
+- [Git Renormalize Pattern Validation](./git-renormalize-patterns.md) -- ensuring pathspec patterns match actual repository files to prevent CI failures
+- [Cross-Platform Compatibility](../../shell-and-powershell/references/cross-platform-compatibility.md) -- handling platform differences in CI scripts
+- [Shell Best Practices](../../shell-and-powershell/references/shell-best-practices.md) -- patterns for shell commands in workflow steps
 
 ## Related Links
 

@@ -23,35 +23,26 @@ namespace DxMessaging.Editor.Settings
         internal const string FieldClassName = "dxmessaging-settings-field";
 
         private const string DiagnosticsSectionTitle = "Diagnostics";
-        private const string DiagnosticsSectionDescription =
-            "Controls what the editor records when diagnostics are enabled, and how much message history it keeps.";
+        private const string DiagnosticsSectionDescription = "Controls what the editor records when diagnostics are enabled, and how much message history it keeps.";
         private const string DiagnosticsTargetsLabel = "Diagnostics Targets";
-        private const string DiagnosticsTargetsTooltip =
-            "Select where global diagnostics should be enabled by default.";
+        private const string DiagnosticsTargetsTooltip = "Select where global diagnostics should be enabled by default.";
         private const string DiagnosticsStackTracesLabel = "Capture Emission Stack Traces";
         private const string DiagnosticsStackTracesTooltip =
             "Record the call site of every emission. Costs hundreds of microseconds and tens of allocations per diagnostic record; leave off unless you are tracing where a message came from.";
         private const string MessageBufferSizeLabel = "Message Buffer Size";
-        private const string MessageBufferSizeTooltip =
-            "Number of emissions kept per bus/token when diagnostics mode is active.";
+        private const string MessageBufferSizeTooltip = "Number of emissions kept per bus/token when diagnostics mode is active.";
         private const string EditorSafetySectionTitle = "Editor Safety";
-        private const string EditorSafetySectionDescription =
-            "Keeps Unity editor warnings intentional while preserving DxMessaging reset behavior.";
+        private const string EditorSafetySectionDescription = "Keeps Unity editor warnings intentional while preserving DxMessaging reset behavior.";
         private const string SuppressDomainReloadWarningLabel = "Suppress Domain Reload Warning";
-        private const string SuppressDomainReloadWarningTooltip =
-            "Disable the warning shown when Enter Play Mode Options skips domain reload.";
+        private const string SuppressDomainReloadWarningTooltip = "Disable the warning shown when Enter Play Mode Options skips domain reload.";
         private const string InspectorChecksSectionTitle = "Inspector Checks";
-        private const string InspectorChecksSectionDescription =
-            "Controls Inspector warnings and the optional compiler feed for base-call diagnostics.";
+        private const string InspectorChecksSectionDescription = "Controls Inspector warnings and the optional compiler feed for base-call diagnostics.";
         private const string BaseCallCheckEnabledLabel = "Base-Call Check Enabled";
-        private const string BaseCallCheckEnabledTooltip =
-            "Show Inspector warnings when MessageAwareComponent overrides omit base.RegisterMessageHandlers().";
+        private const string BaseCallCheckEnabledTooltip = "Show Inspector warnings when MessageAwareComponent overrides omit base.RegisterMessageHandlers().";
         private const string UseConsoleBridgeLabel = "Include Compiler Warnings";
-        private const string UseConsoleBridgeTooltip =
-            "Add base-call warnings from compilations observed in this Editor session.";
+        private const string UseConsoleBridgeTooltip = "Add base-call warnings from compilations observed in this Editor session.";
         private const string BaseCallIgnoredTypesLabel = "Ignored Base-Call Types";
-        private const string BaseCallIgnoredTypesTooltip =
-            "Fully-qualified MessageAwareComponent type names excluded from the Inspector overlay and base-call analyzer.";
+        private const string BaseCallIgnoredTypesTooltip = "Fully-qualified MessageAwareComponent type names excluded from the Inspector overlay and base-call analyzer.";
 
         private static readonly Color AccentColor = DxMessagingEditorPalette.Amber;
         private static readonly Color SectionBorderColor = DxMessagingEditorPalette.BorderPanel;
@@ -59,10 +50,7 @@ namespace DxMessaging.Editor.Settings
         private SerializedObject _messagingSettings;
         private bool _uiToolkitActivated;
 
-        private DxMessagingSettingsProvider(
-            string path,
-            SettingsScope scope = SettingsScope.Project
-        )
+        private DxMessagingSettingsProvider(string path, SettingsScope scope = SettingsScope.Project)
             : base(path, scope) { }
 
         /// <summary>
@@ -96,18 +84,8 @@ namespace DxMessaging.Editor.Settings
             {
                 DrawSectionHeader(DiagnosticsSectionTitle, DiagnosticsSectionDescription);
                 DrawDiagnosticsTargetsField(_messagingSettings);
-                DrawPropertyField(
-                    _messagingSettings,
-                    nameof(DxMessagingSettings._diagnosticsStackTraces),
-                    DiagnosticsStackTracesLabel,
-                    DiagnosticsStackTracesTooltip
-                );
-                DrawPropertyField(
-                    _messagingSettings,
-                    nameof(DxMessagingSettings._messageBufferSize),
-                    MessageBufferSizeLabel,
-                    MessageBufferSizeTooltip
-                );
+                DrawPropertyField(_messagingSettings, nameof(DxMessagingSettings._diagnosticsStackTraces), DiagnosticsStackTracesLabel, DiagnosticsStackTracesTooltip);
+                DrawPropertyField(_messagingSettings, nameof(DxMessagingSettings._messageBufferSize), MessageBufferSizeLabel, MessageBufferSizeTooltip);
 
                 DrawSectionHeader(EditorSafetySectionTitle, EditorSafetySectionDescription);
                 DrawPropertyField(
@@ -132,12 +110,7 @@ namespace DxMessaging.Editor.Settings
                     settings => settings.UseConsoleBridge,
                     (settings, value) => settings.UseConsoleBridge = value
                 );
-                DrawPropertyField(
-                    _messagingSettings,
-                    nameof(DxMessagingSettings._baseCallIgnoredTypes),
-                    BaseCallIgnoredTypesLabel,
-                    BaseCallIgnoredTypesTooltip
-                );
+                DrawPropertyField(_messagingSettings, nameof(DxMessagingSettings._baseCallIgnoredTypes), BaseCallIgnoredTypesLabel, BaseCallIgnoredTypesTooltip);
 
                 _messagingSettings.ApplyModifiedProperties();
             }
@@ -147,10 +120,7 @@ namespace DxMessaging.Editor.Settings
             }
         }
 
-        internal static void BuildSettingsUi(
-            VisualElement rootElement,
-            SerializedObject serializedSettings
-        )
+        internal static void BuildSettingsUi(VisualElement rootElement, SerializedObject serializedSettings)
         {
             if (rootElement == null)
             {
@@ -176,9 +146,7 @@ namespace DxMessaging.Editor.Settings
             title.style.marginBottom = 3;
             rootElement.Add(title);
 
-            Label subtitle = new(
-                "Project-wide defaults for diagnostics capture and editor safety checks."
-            );
+            Label subtitle = new("Project-wide defaults for diagnostics capture and editor safety checks.");
             subtitle.style.marginBottom = 12;
             rootElement.Add(subtitle);
 
@@ -186,24 +154,9 @@ namespace DxMessaging.Editor.Settings
                 CreateSection(
                     DiagnosticsSectionTitle,
                     DiagnosticsSectionDescription,
-                    CreatePropertyField(
-                        serializedSettings,
-                        nameof(DxMessagingSettings._diagnosticsTargets),
-                        DiagnosticsTargetsLabel,
-                        DiagnosticsTargetsTooltip
-                    ),
-                    CreatePropertyField(
-                        serializedSettings,
-                        nameof(DxMessagingSettings._diagnosticsStackTraces),
-                        DiagnosticsStackTracesLabel,
-                        DiagnosticsStackTracesTooltip
-                    ),
-                    CreatePropertyField(
-                        serializedSettings,
-                        nameof(DxMessagingSettings._messageBufferSize),
-                        MessageBufferSizeLabel,
-                        MessageBufferSizeTooltip
-                    )
+                    CreatePropertyField(serializedSettings, nameof(DxMessagingSettings._diagnosticsTargets), DiagnosticsTargetsLabel, DiagnosticsTargetsTooltip),
+                    CreatePropertyField(serializedSettings, nameof(DxMessagingSettings._diagnosticsStackTraces), DiagnosticsStackTracesLabel, DiagnosticsStackTracesTooltip),
+                    CreatePropertyField(serializedSettings, nameof(DxMessagingSettings._messageBufferSize), MessageBufferSizeLabel, MessageBufferSizeTooltip)
                 )
             );
 
@@ -240,23 +193,14 @@ namespace DxMessaging.Editor.Settings
                         settings => settings.UseConsoleBridge,
                         (settings, value) => settings.UseConsoleBridge = value
                     ),
-                    CreatePropertyField(
-                        serializedSettings,
-                        nameof(DxMessagingSettings._baseCallIgnoredTypes),
-                        BaseCallIgnoredTypesLabel,
-                        BaseCallIgnoredTypesTooltip
-                    )
+                    CreatePropertyField(serializedSettings, nameof(DxMessagingSettings._baseCallIgnoredTypes), BaseCallIgnoredTypesLabel, BaseCallIgnoredTypesTooltip)
                 )
             );
 
             rootElement.Bind(serializedSettings);
         }
 
-        private static VisualElement CreateSection(
-            string title,
-            string description,
-            params VisualElement[] fields
-        )
+        private static VisualElement CreateSection(string title, string description, params VisualElement[] fields)
         {
             VisualElement section = new();
             section.AddToClassList(SectionClassName);
@@ -285,12 +229,7 @@ namespace DxMessaging.Editor.Settings
             return section;
         }
 
-        private static PropertyField CreatePropertyField(
-            SerializedObject serializedSettings,
-            string propertyName,
-            string label,
-            string tooltip
-        )
+        private static PropertyField CreatePropertyField(SerializedObject serializedSettings, string propertyName, string label, string tooltip)
         {
             SerializedProperty property = serializedSettings.FindProperty(propertyName);
             if (property == null)
@@ -320,19 +259,14 @@ namespace DxMessaging.Editor.Settings
         {
             if (serializedSettings.targetObject is not DxMessagingSettings settings)
             {
-                throw new ArgumentException(
-                    $"Expected {nameof(DxMessagingSettings)} target.",
-                    nameof(serializedSettings)
-                );
+                throw new ArgumentException($"Expected {nameof(DxMessagingSettings)} target.", nameof(serializedSettings));
             }
 
             Toggle toggle = new(label) { name = fieldName, tooltip = tooltip };
             toggle.AddToClassList(FieldClassName);
             toggle.style.marginTop = 4;
             toggle.SetValueWithoutNotify(getValue(settings));
-            toggle.RegisterValueChangedCallback(evt =>
-                ApplySettingsToggleValue(serializedSettings, setValue, evt.newValue)
-            );
+            toggle.RegisterValueChangedCallback(evt => ApplySettingsToggleValue(serializedSettings, setValue, evt.newValue));
             return toggle;
         }
 
@@ -345,32 +279,19 @@ namespace DxMessaging.Editor.Settings
 
         private static void DrawDiagnosticsTargetsField(SerializedObject serializedSettings)
         {
-            SerializedProperty targetsProp = serializedSettings.FindProperty(
-                nameof(DxMessagingSettings._diagnosticsTargets)
-            );
+            SerializedProperty targetsProp = serializedSettings.FindProperty(nameof(DxMessagingSettings._diagnosticsTargets));
             DiagnosticsTarget currentTargets = (DiagnosticsTarget)targetsProp.enumValueFlag;
             DiagnosticsTarget updatedTargets = (DiagnosticsTarget)
-                EditorGUILayout.EnumFlagsField(
-                    new GUIContent(DiagnosticsTargetsLabel, DiagnosticsTargetsTooltip),
-                    currentTargets
-                );
+                EditorGUILayout.EnumFlagsField(new GUIContent(DiagnosticsTargetsLabel, DiagnosticsTargetsTooltip), currentTargets);
             if (updatedTargets != currentTargets)
             {
                 targetsProp.enumValueFlag = (int)updatedTargets;
             }
         }
 
-        private static void DrawPropertyField(
-            SerializedObject serializedSettings,
-            string propertyName,
-            string label,
-            string tooltip
-        )
+        private static void DrawPropertyField(SerializedObject serializedSettings, string propertyName, string label, string tooltip)
         {
-            EditorGUILayout.PropertyField(
-                serializedSettings.FindProperty(propertyName),
-                new GUIContent(label, tooltip)
-            );
+            EditorGUILayout.PropertyField(serializedSettings.FindProperty(propertyName), new GUIContent(label, tooltip));
         }
 
         private static void DrawSettingsToggle(
@@ -383,17 +304,11 @@ namespace DxMessaging.Editor.Settings
         {
             if (serializedSettings.targetObject is not DxMessagingSettings settings)
             {
-                throw new ArgumentException(
-                    $"Expected {nameof(DxMessagingSettings)} target.",
-                    nameof(serializedSettings)
-                );
+                throw new ArgumentException($"Expected {nameof(DxMessagingSettings)} target.", nameof(serializedSettings));
             }
 
             bool currentValue = getValue(settings);
-            bool updatedValue = EditorGUILayout.Toggle(
-                new GUIContent(label, tooltip),
-                currentValue
-            );
+            bool updatedValue = EditorGUILayout.Toggle(new GUIContent(label, tooltip), currentValue);
             if (updatedValue != currentValue)
             {
                 serializedSettings.ApplyModifiedProperties();
@@ -407,18 +322,11 @@ namespace DxMessaging.Editor.Settings
         /// The caller supplies the setter, so a new toggle cannot be added without one; an earlier
         /// field-name switch here silently went stale and threw for any field it did not list.
         /// </summary>
-        internal static void ApplySettingsToggleValue(
-            SerializedObject serializedSettings,
-            Action<DxMessagingSettings, bool> setValue,
-            bool value
-        )
+        internal static void ApplySettingsToggleValue(SerializedObject serializedSettings, Action<DxMessagingSettings, bool> setValue, bool value)
         {
             if (serializedSettings.targetObject is not DxMessagingSettings settings)
             {
-                throw new ArgumentException(
-                    $"Expected {nameof(DxMessagingSettings)} target.",
-                    nameof(serializedSettings)
-                );
+                throw new ArgumentException($"Expected {nameof(DxMessagingSettings)} target.", nameof(serializedSettings));
             }
 
             if (setValue == null)

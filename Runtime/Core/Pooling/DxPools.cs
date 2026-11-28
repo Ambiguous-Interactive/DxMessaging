@@ -25,13 +25,12 @@ namespace DxMessaging.Core.Pooling
         */
         internal const int DefaultMaxRetained = 512;
 
-        internal static readonly CollectionPool<Dictionary<InstanceId, object>> InstanceIdDicts =
-            new(
-                maxRetained: DefaultMaxRetained,
-                useLru: true,
-                factory: () => new Dictionary<InstanceId, object>(),
-                onRecycled: dict => dict.Clear()
-            );
+        internal static readonly CollectionPool<Dictionary<InstanceId, object>> InstanceIdDicts = new(
+            maxRetained: DefaultMaxRetained,
+            useLru: true,
+            factory: () => new Dictionary<InstanceId, object>(),
+            onRecycled: dict => dict.Clear()
+        );
 
         internal static readonly CollectionPool<List<InstanceId>> InstanceIdLists = new(
             maxRetained: DefaultMaxRetained,
@@ -68,18 +67,14 @@ namespace DxMessaging.Core.Pooling
             onRecycled: set => set.Clear()
         );
 
-        internal static readonly CollectionPool<
-            Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>>
-        > TypedHandlerContextDicts = new(
+        internal static readonly CollectionPool<Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>>> TypedHandlerContextDicts = new(
             maxRetained: DefaultMaxRetained,
             useLru: true,
             factory: () => new Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>>(),
             onRecycled: dict => dict.Clear()
         );
 
-        internal static readonly CollectionPool<
-            Dictionary<int, IHandlerActionCache>
-        > TypedHandlerPriorityDicts = new(
+        internal static readonly CollectionPool<Dictionary<int, IHandlerActionCache>> TypedHandlerPriorityDicts = new(
             maxRetained: DefaultMaxRetained,
             useLru: true,
             factory: () => new Dictionary<int, IHandlerActionCache>(),
@@ -100,12 +95,8 @@ namespace DxMessaging.Core.Pooling
             evicted += ObjectLists.Trim(force ? 0 : ObjectLists.MaxRetained);
             evicted += ObjectStacks.Trim(force ? 0 : ObjectStacks.MaxRetained);
             evicted += IntSets.Trim(force ? 0 : IntSets.MaxRetained);
-            evicted += TypedHandlerContextDicts.Trim(
-                force ? 0 : TypedHandlerContextDicts.MaxRetained
-            );
-            evicted += TypedHandlerPriorityDicts.Trim(
-                force ? 0 : TypedHandlerPriorityDicts.MaxRetained
-            );
+            evicted += TypedHandlerContextDicts.Trim(force ? 0 : TypedHandlerContextDicts.MaxRetained);
+            evicted += TypedHandlerPriorityDicts.Trim(force ? 0 : TypedHandlerPriorityDicts.MaxRetained);
             return evicted;
         }
 

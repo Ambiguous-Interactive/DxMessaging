@@ -19,26 +19,14 @@ internal sealed class GeneratedExcludedStorageShapeTests
     {
         string context = $"target={target}, shape={shape}, language=CSharp9";
         (string first, string? second) = CreateSources(target, shape, manual: true);
-        AssertCallerExecutes(
-            CreateCompilation(first, second),
-            shape,
-            "Handwritten oracle: " + context
-        );
+        AssertCallerExecutes(CreateCompilation(first, second), shape, "Handwritten oracle: " + context);
         (first, second) = CreateSources(target, shape, manual: false);
         GeneratorDriver driver = CSharpGeneratorDriver.Create(
             new ISourceGenerator[] { new DxAutoConstructorGenerator() },
             parseOptions: new CSharpParseOptions(LanguageVersion.CSharp9)
         );
-        driver = driver.RunGeneratorsAndUpdateCompilation(
-            CreateCompilation(first, second),
-            out Compilation generated,
-            out ImmutableArray<Diagnostic> diagnostics
-        );
-        Assert.That(
-            driver.GetRunResult().Results.Select(result => result.Exception),
-            Has.All.Null,
-            context
-        );
+        driver = driver.RunGeneratorsAndUpdateCompilation(CreateCompilation(first, second), out Compilation generated, out ImmutableArray<Diagnostic> diagnostics);
+        Assert.That(driver.GetRunResult().Results.Select(result => result.Exception), Has.All.Null, context);
         Assert.That(driver.GetRunResult().GeneratedTrees, Has.Length.EqualTo(1), context);
         Assert.That(diagnostics, Is.Empty, context + "\n" + string.Join("\n", diagnostics));
         AssertCallerExecutes(generated, shape, "Generated caller: " + context);
@@ -49,23 +37,10 @@ internal sealed class GeneratedExcludedStorageShapeTests
         foreach (string target in new[] { "struct", "readonly struct", "class" })
         {
             foreach (
-                string shape in new[]
-                {
-                    "Reference",
-                    "NullableValue",
-                    "GenericValue",
-                    "GenericReference",
-                    "Nested",
-                    "Split",
-                    "EscapedField",
-                    "EscapedProperty",
-                    "ExplicitProperty",
-                }
+                string shape in new[] { "Reference", "NullableValue", "GenericValue", "GenericReference", "Nested", "Split", "EscapedField", "EscapedProperty", "ExplicitProperty" }
             )
             {
-                yield return new TestCaseData(target, shape).SetName(
-                    $"GeneratedConstructorsPreserveExcludedStorageShapes({target},{shape})"
-                );
+                yield return new TestCaseData(target, shape).SetName($"GeneratedConstructorsPreserveExcludedStorageShapes({target},{shape})");
             }
         }
     }
@@ -88,28 +63,8 @@ internal sealed class GeneratedExcludedStorageShapeTests
     private static SourceShape GetSourceShape(string shape) =>
         shape switch
         {
-            "Reference" => new(
-                "Packet",
-                "",
-                "Packet",
-                "private readonly string? _state;",
-                "_state is null",
-                "_state = default;",
-                "_state = \"seeded\";",
-                "",
-                ""
-            ),
-            "NullableValue" => new(
-                "Packet",
-                "",
-                "Packet",
-                "private readonly int? _state;",
-                "_state is null",
-                "_state = default;",
-                "_state = 73;",
-                "",
-                ""
-            ),
+            "Reference" => new("Packet", "", "Packet", "private readonly string? _state;", "_state is null", "_state = default;", "_state = \"seeded\";", "", ""),
+            "NullableValue" => new("Packet", "", "Packet", "private readonly int? _state;", "_state is null", "_state = default;", "_state = 73;", "", ""),
             "GenericValue" => new(
                 "Packet<T>",
                 " where T : struct",
@@ -145,68 +100,18 @@ internal sealed class GeneratedExcludedStorageShapeTests
                 "public partial interface Container<T> where T : struct {",
                 "}"
             ),
-            "Split" => new(
-                "Packet",
-                "",
-                "Packet",
-                "private readonly int _state;",
-                "_state == 0",
-                "_state = default;",
-                "_state = 73;",
-                "",
-                ""
-            ),
-            "EscapedField" => new(
-                "Packet",
-                "",
-                "Packet",
-                "private readonly int @event;",
-                "@event == 0",
-                "@event = default;",
-                "@event = 73;",
-                "",
-                ""
-            ),
-            "EscapedProperty" => new(
-                "Packet",
-                "",
-                "Packet",
-                "public int @event { get; }",
-                "@event == 0",
-                "@event = default;",
-                "@event = 73;",
-                "",
-                ""
-            ),
-            "ExplicitProperty" => new(
-                "Packet",
-                "",
-                "Packet",
-                "int IState.State { get; }",
-                "((IState)this).State == 0",
-                "",
-                "",
-                "",
-                "",
-                ExplicitProperty: true
-            ),
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(shape),
-                shape,
-                "Unknown storage shape"
-            ),
+            "Split" => new("Packet", "", "Packet", "private readonly int _state;", "_state == 0", "_state = default;", "_state = 73;", "", ""),
+            "EscapedField" => new("Packet", "", "Packet", "private readonly int @event;", "@event == 0", "@event = default;", "@event = 73;", "", ""),
+            "EscapedProperty" => new("Packet", "", "Packet", "public int @event { get; }", "@event == 0", "@event = default;", "@event = 73;", "", ""),
+            "ExplicitProperty" => new("Packet", "", "Packet", "int IState.State { get; }", "((IState)this).State == 0", "", "", "", "", ExplicitProperty: true),
+            _ => throw new ArgumentOutOfRangeException(nameof(shape), shape, "Unknown storage shape"),
         };
 
-    private static (string First, string? Second) CreateSources(
-        string target,
-        string shape,
-        bool manual
-    )
+    private static (string First, string? Second) CreateSources(string target, string shape, bool manual)
     {
         SourceShape data = GetSourceShape(shape);
         bool explicitProperty = data.ExplicitProperty;
-        string declaration =
-            target == "readonly struct" ? "readonly partial struct" : "partial " + target;
+        string declaration = target == "readonly struct" ? "readonly partial struct" : "partial " + target;
         string typeName = data.TypeName;
         string constraint = data.Constraint;
         string closedType = data.ClosedType;
@@ -215,9 +120,7 @@ internal sealed class GeneratedExcludedStorageShapeTests
         string seeded = data.Seeded;
         string seedParameter = data.SeedParameter;
         string seedArguments = data.SeedArguments;
-        string constructor = manual
-            ? $"public Packet(int Value) {{ {reset} this.Value = Value; {initial} }}"
-            : "";
+        string constructor = manual ? $"public Packet(int Value) {{ {reset} this.Value = Value; {initial} }}" : "";
         string members = $"{data.Storage} public bool IsDefault => {data.IsDefault};";
         string containerOpen = data.ContainerOpen;
         string containerClose = data.ContainerClose;
@@ -261,28 +164,15 @@ internal sealed class GeneratedExcludedStorageShapeTests
 
     private static CSharpCompilation CreateCompilation(string first, string? second)
     {
-        CSharpCompilation compilation =
-            GeneratorTestUtilities.CreateAutoConstructorCompilationFromShippedAttributes(first);
-        return second == null
-            ? compilation
-            : compilation.AddSyntaxTrees(
-                CSharpSyntaxTree.ParseText(
-                    second,
-                    new CSharpParseOptions(LanguageVersion.CSharp9),
-                    "OtherPart.cs"
-                )
-            );
+        CSharpCompilation compilation = GeneratorTestUtilities.CreateAutoConstructorCompilationFromShippedAttributes(first);
+        return second == null ? compilation : compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(second, new CSharpParseOptions(LanguageVersion.CSharp9), "OtherPart.cs"));
     }
 
     private static void AssertCallerExecutes(Compilation compilation, string shape, string context)
     {
         using MemoryStream image = new();
         Microsoft.CodeAnalysis.Emit.EmitResult emitted = compilation.Emit(image);
-        Assert.That(
-            emitted.Success,
-            Is.True,
-            context + "\n" + string.Join("\n", emitted.Diagnostics)
-        );
+        Assert.That(emitted.Success, Is.True, context + "\n" + string.Join("\n", emitted.Diagnostics));
         image.Position = 0;
         AssemblyLoadContext load = new("ExcludedStorageConsumer", isCollectible: true);
         try
@@ -293,8 +183,7 @@ internal sealed class GeneratedExcludedStorageShapeTests
             Assert.That(
                 read!.Invoke(null, null),
                 Is.EqualTo(new[] { 42, 1, -1, shape == "ExplicitProperty" ? 1 : 0, 91 }),
-                context
-                    + ": retain public payload, excluded defaults, seeded state and static state"
+                context + ": retain public payload, excluded defaults, seeded state and static state"
             );
         }
         finally

@@ -17,8 +17,7 @@ namespace DxMessaging.Editor.CustomEditors
         internal const string StaleCacheNoteName = "dxmessaging-inspector-warning-stale-note";
         internal const string OpenScriptButtonName = "dxmessaging-inspector-warning-open-script";
         internal const string IgnoreTypeButtonName = "dxmessaging-inspector-warning-ignore-type";
-        internal const string StopIgnoringButtonName =
-            "dxmessaging-inspector-warning-stop-ignoring";
+        internal const string StopIgnoringButtonName = "dxmessaging-inspector-warning-stop-ignoring";
 
         internal const string RootClassName = "dxmessaging-inspector-warning";
         internal const string StateNoneClassName = "dxmessaging-inspector-warning--none";
@@ -35,10 +34,7 @@ namespace DxMessaging.Editor.CustomEditors
         private static readonly Color InfoColor = DxMessagingEditorPalette.Untargeted;
         private static readonly Color WarningColor = DxMessagingEditorPalette.Amber;
 
-        internal static VisualElement Create(
-            MessageAwareComponentInspectorState state,
-            MessageAwareComponentInspectorViewActions actions
-        )
+        internal static VisualElement Create(MessageAwareComponentInspectorState state, MessageAwareComponentInspectorViewActions actions)
         {
             VisualElement root = CreateRoot(state);
             switch (state.Kind)
@@ -54,21 +50,8 @@ namespace DxMessaging.Editor.CustomEditors
                     );
                     return root;
                 case MessageAwareComponentInspectorStateKind.IgnoredType:
-                    PopulateInfo(
-                        root,
-                        "DXMSG008: Base-call check ignored",
-                        $"{state.FullName} is excluded from the DxMessaging base-call check.",
-                        InfoColor
-                    );
-                    AddActionRow(
-                        root,
-                        CreateActionButton(
-                            StopIgnoringButtonName,
-                            "Stop ignoring",
-                            actions.OnStopIgnoring,
-                            state
-                        )
-                    );
+                    PopulateInfo(root, "DXMSG008: Base-call check ignored", $"{state.FullName} is excluded from the DxMessaging base-call check.", InfoColor);
+                    AddActionRow(root, CreateActionButton(StopIgnoringButtonName, "Stop ignoring", actions.OnStopIgnoring, state));
                     return root;
                 case MessageAwareComponentInspectorStateKind.MissingBaseCallWarning:
                     PopulateWarning(root, state, actions);
@@ -102,12 +85,7 @@ namespace DxMessaging.Editor.CustomEditors
             return root;
         }
 
-        private static void PopulateInfo(
-            VisualElement root,
-            string titleText,
-            string bodyText,
-            Color borderColor
-        )
+        private static void PopulateInfo(VisualElement root, string titleText, string bodyText, Color borderColor)
         {
             ConfigurePanel(root, borderColor);
             root.AddToClassList(DxMessagingEditorTheme.AdmonitionClassName);
@@ -116,23 +94,12 @@ namespace DxMessaging.Editor.CustomEditors
             root.Add(CreateLabel(BodyLabelName, BodyClassName, bodyText, bold: false));
         }
 
-        private static void PopulateWarning(
-            VisualElement root,
-            MessageAwareComponentInspectorState state,
-            MessageAwareComponentInspectorViewActions actions
-        )
+        private static void PopulateWarning(VisualElement root, MessageAwareComponentInspectorState state, MessageAwareComponentInspectorViewActions actions)
         {
             ConfigurePanel(root, WarningColor);
             root.AddToClassList(DxMessagingEditorTheme.AdmonitionClassName);
             root.AddToClassList(DxMessagingEditorTheme.WarningClassName);
-            root.Add(
-                CreateLabel(
-                    TitleLabelName,
-                    TitleClassName,
-                    CreateWarningTitle(state.Entry),
-                    bold: true
-                )
-            );
+            root.Add(CreateLabel(TitleLabelName, TitleClassName, CreateWarningTitle(state.Entry), bold: true));
             root.Add(
                 CreateLabel(
                     BodyLabelName,
@@ -145,30 +112,13 @@ namespace DxMessaging.Editor.CustomEditors
 
             if (!state.IsFreshThisSession)
             {
-                root.Add(
-                    CreateLabel(
-                        StaleCacheNoteName,
-                        StaleCacheNoteClassName,
-                        "Report is cached from previous session; refreshing...",
-                        bold: false
-                    )
-                );
+                root.Add(CreateLabel(StaleCacheNoteName, StaleCacheNoteClassName, "Report is cached from previous session; refreshing...", bold: false));
             }
 
             AddActionRow(
                 root,
-                CreateActionButton(
-                    OpenScriptButtonName,
-                    "Open Script",
-                    actions.OnOpenScript,
-                    state
-                ),
-                CreateActionButton(
-                    IgnoreTypeButtonName,
-                    "Ignore this type",
-                    actions.OnIgnoreType,
-                    state
-                )
+                CreateActionButton(OpenScriptButtonName, "Open Script", actions.OnOpenScript, state),
+                CreateActionButton(IgnoreTypeButtonName, "Ignore this type", actions.OnIgnoreType, state)
             );
         }
 
@@ -189,9 +139,7 @@ namespace DxMessaging.Editor.CustomEditors
                 }
             }
 
-            return diagnosticIds.Count == 0
-                ? title
-                : string.Join(" / ", diagnosticIds) + ": " + title;
+            return diagnosticIds.Count == 0 ? title : string.Join(" / ", diagnosticIds) + ": " + title;
         }
 
         private static void ConfigurePanel(VisualElement root, Color borderColor)
@@ -241,12 +189,7 @@ namespace DxMessaging.Editor.CustomEditors
             return methodList;
         }
 
-        private static Button CreateActionButton(
-            string name,
-            string text,
-            Action<MessageAwareComponentInspectorState> action,
-            MessageAwareComponentInspectorState state
-        )
+        private static Button CreateActionButton(string name, string text, Action<MessageAwareComponentInspectorState> action, MessageAwareComponentInspectorState state)
         {
             Button button = new() { name = name, text = text };
             button.AddToClassList(ActionButtonClassName);
@@ -289,8 +232,7 @@ namespace DxMessaging.Editor.CustomEditors
             OnStopIgnoring = onStopIgnoring;
         }
 
-        internal static MessageAwareComponentInspectorViewActions None { get; } =
-            new(onOpenScript: null, onIgnoreType: null, onStopIgnoring: null);
+        internal static MessageAwareComponentInspectorViewActions None { get; } = new(onOpenScript: null, onIgnoreType: null, onStopIgnoring: null);
 
         internal Action<MessageAwareComponentInspectorState> OnOpenScript { get; }
 

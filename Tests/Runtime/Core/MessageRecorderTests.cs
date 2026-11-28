@@ -16,8 +16,7 @@ namespace DxMessaging.Tests.Runtime.Core
         /// <summary>Checks ordered value and reference captures plus disposal for each message route.</summary>
         [Test]
         public void RecorderCapturesMessagesAndReleasesItsSubscription(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
             [Values(false, true)] bool referencePayload
         )
         {
@@ -33,10 +32,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
         /// <summary>Checks that clearing updates the existing read-only view without removing the subscription.</summary>
         [Test]
-        public void ClearPreservesTheReadOnlyViewAndSubscription(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void ClearPreservesTheReadOnlyViewAndSubscription([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             BusType bus = new();
             using LeakWatcher leaks = new(bus: bus, label: scenario.Kind.ToString());
@@ -45,10 +41,7 @@ namespace DxMessaging.Tests.Runtime.Core
             ValueMessage message = new(10);
             Emit(scenario, bus, ref message);
             Assert.That(view.Count, Is.EqualTo(1), "The view must show live captures.");
-            Assert.Throws<NotSupportedException>(
-                () => ((IList<ValueMessage>)view).Add(message),
-                "Callers must not mutate the recorder's collection through its view."
-            );
+            Assert.Throws<NotSupportedException>(() => ((IList<ValueMessage>)view).Add(message), "Callers must not mutate the recorder's collection through its view.");
             recorder.Clear();
             Assert.That(view.Count, Is.Zero, "Clear must update the same view.");
             message = new ValueMessage(20);
@@ -58,10 +51,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
         /// <summary>Checks that disposing one recorder leaves another recorder active on the same bus.</summary>
         [Test]
-        public void RecordersOwnIndependentSubscriptions(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void RecordersOwnIndependentSubscriptions([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             BusType bus = new();
             using LeakWatcher leaks = new(bus: bus, label: scenario.Kind.ToString());
@@ -69,36 +59,17 @@ namespace DxMessaging.Tests.Runtime.Core
             using MessageRecorder<ValueMessage> second = Create<ValueMessage>(scenario, bus);
             ValueMessage message = new(1);
             Emit(scenario, bus, ref message);
-            Assert.That(
-                first.Received.Count,
-                Is.EqualTo(1),
-                "The first recorder must receive its own callback."
-            );
-            Assert.That(
-                second.Received.Count,
-                Is.EqualTo(1),
-                "The second recorder must not share the first token."
-            );
+            Assert.That(first.Received.Count, Is.EqualTo(1), "The first recorder must receive its own callback.");
+            Assert.That(second.Received.Count, Is.EqualTo(1), "The second recorder must not share the first token.");
             first.Dispose();
             Emit(scenario, bus, ref message);
-            Assert.That(
-                first.Received,
-                Is.Empty,
-                "Disposed recorders must release captures and stop recording."
-            );
-            Assert.That(
-                second.Received.Count,
-                Is.EqualTo(2),
-                "Disposing the first recorder must preserve the second."
-            );
+            Assert.That(first.Received, Is.Empty, "Disposed recorders must release captures and stop recording.");
+            Assert.That(second.Received.Count, Is.EqualTo(2), "Disposing the first recorder must preserve the second.");
         }
 
         /// <summary>Checks bus isolation and contextual filtering without observing unrelated messages.</summary>
         [Test]
-        public void RecorderUsesOnlyItsExplicitBusAndContext(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void RecorderUsesOnlyItsExplicitBusAndContext([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             BusType selected = new();
             BusType other = new();
@@ -107,47 +78,26 @@ namespace DxMessaging.Tests.Runtime.Core
             using MessageRecorder<ValueMessage> recorder = Create<ValueMessage>(scenario, selected);
             ValueMessage message = new(1);
             Emit(scenario, other, ref message);
-            Assert.That(
-                recorder.Received,
-                Is.Empty,
-                "Messages on another bus must not be captured."
-            );
+            Assert.That(recorder.Received, Is.Empty, "Messages on another bus must not be captured.");
             if (scenario.Kind != MessageKind.Untargeted)
             {
                 Emit(scenario, selected, ref message, new InstanceId(124));
-                Assert.That(
-                    recorder.Received,
-                    Is.Empty,
-                    "Messages for another context must not be captured."
-                );
+                Assert.That(recorder.Received, Is.Empty, "Messages for another context must not be captured.");
             }
             Emit(scenario, selected, ref message);
-            Assert.That(
-                recorder.Received.Count,
-                Is.EqualTo(1),
-                "The matching bus/context must be captured."
-            );
+            Assert.That(recorder.Received.Count, Is.EqualTo(1), "The matching bus/context must be captured.");
         }
 
         /// <summary>Checks the required explicit bus argument for each recorder factory.</summary>
         [Test]
-        public void NullBusIsRejected(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void NullBusIsRejected([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            Assert.Throws<ArgumentNullException>(
-                () => Create<ValueMessage>(scenario, null),
-                "A test recorder must require an explicit non-null bus."
-            );
+            Assert.Throws<ArgumentNullException>(() => Create<ValueMessage>(scenario, null), "A test recorder must require an explicit non-null bus.");
         }
 
         /// <summary>Checks that failed cleanup preserves captures and can be completed by the same recorder.</summary>
         [Test]
-        public void DisposalFailureRetainsCleanupOnTheRecorderForRetry(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void DisposalFailureRetainsCleanupOnTheRecorderForRetry([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             BusType inner = new();
             FailingCleanupBus bus = new(inner);
@@ -157,33 +107,14 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 ValueMessage message = new(7);
                 Emit(scenario, bus, ref message);
-                InvalidOperationException failure = Assert.Throws<InvalidOperationException>(
-                    recorder.Dispose,
-                    "The failed deregistration must reach the caller."
-                );
-                Assert.That(
-                    failure.Message,
-                    Does.Contain("Intentional recorder cleanup failure"),
-                    "The bus failure must propagate unchanged."
-                );
-                Assert.That(
-                    recorder.Received.Count,
-                    Is.EqualTo(1),
-                    "Failed cleanup must not discard the recorder's state."
-                );
+                InvalidOperationException failure = Assert.Throws<InvalidOperationException>(recorder.Dispose, "The failed deregistration must reach the caller.");
+                Assert.That(failure.Message, Does.Contain("Intentional recorder cleanup failure"), "The bus failure must propagate unchanged.");
+                Assert.That(recorder.Received.Count, Is.EqualTo(1), "Failed cleanup must not discard the recorder's state.");
                 bus.AllowCleanup = true;
                 recorder.Dispose();
-                Assert.That(
-                    recorder.Received,
-                    Is.Empty,
-                    "Successful retry must release captured payloads."
-                );
+                Assert.That(recorder.Received, Is.Empty, "Successful retry must release captured payloads.");
                 Emit(scenario, bus, ref message);
-                Assert.That(
-                    recorder.Received,
-                    Is.Empty,
-                    "The owning recorder must finish removing its callback."
-                );
+                Assert.That(recorder.Received, Is.Empty, "The owning recorder must finish removing its callback.");
             }
             finally
             {
@@ -197,80 +128,47 @@ namespace DxMessaging.Tests.Runtime.Core
         public void TestSupportIsSeparateFromTheRuntimeAndHasNoFrameworkApiDependency()
         {
             System.Reflection.Assembly support = typeof(MessageRecorder).Assembly;
-            Assert.That(
-                support,
-                Is.Not.SameAs(typeof(BusType).Assembly),
-                "Test support must have its own assembly."
-            );
-            Assert.That(
-                typeof(BusType).Assembly.GetType("DxMessaging.Testing.MessageRecorder"),
-                Is.Null,
-                "The runtime core must not contain the test helper."
-            );
+            Assert.That(support, Is.Not.SameAs(typeof(BusType).Assembly), "Test support must have its own assembly.");
+            Assert.That(typeof(BusType).Assembly.GetType("DxMessaging.Testing.MessageRecorder"), Is.Null, "The runtime core must not contain the test helper.");
             foreach (System.Reflection.AssemblyName dependency in support.GetReferencedAssemblies())
             {
-                Assert.That(
-                    dependency.Name,
-                    Does.Not.StartWith("Unity"),
-                    "The support API must not reference Unity assemblies."
-                );
-                Assert.That(
-                    dependency.Name,
-                    Does.Not.StartWith("nunit"),
-                    "The support API must not reference NUnit."
-                );
+                Assert.That(dependency.Name, Does.Not.StartWith("Unity"), "The support API must not reference Unity assemblies.");
+                Assert.That(dependency.Name, Does.Not.StartWith("nunit"), "The support API must not reference NUnit.");
             }
         }
 
         /// <summary>Checks zero and extreme numeric contexts through the ordinary routing APIs.</summary>
         [Test]
         public void NumericContextBoundariesRemainValid(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
             [Values(0, int.MinValue, int.MaxValue)] int contextValue
         )
         {
             BusType bus = new();
             using LeakWatcher leaks = new(bus: bus, label: $"{scenario.Kind}/{contextValue}");
             InstanceId context = new(contextValue);
-            using MessageRecorder<ValueMessage> recorder = Create<ValueMessage>(
-                scenario,
-                bus,
-                context
-            );
+            using MessageRecorder<ValueMessage> recorder = Create<ValueMessage>(scenario, bus, context);
             ValueMessage message = new(10);
             Emit(scenario, bus, ref message, context);
-            Assert.That(
-                recorder.Received,
-                Is.EqualTo(new[] { message }),
-                "The full numeric context range must route correctly."
-            );
+            Assert.That(recorder.Received, Is.EqualTo(new[] { message }), "The full numeric context range must route correctly.");
         }
 
         /// <summary>Checks that recording starts at subscription time and does not replay earlier emissions.</summary>
         [Test]
-        public void RecorderDoesNotReplayEarlierMessages(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void RecorderDoesNotReplayEarlierMessages([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             BusType bus = new();
             using LeakWatcher leaks = new(bus: bus, label: scenario.Kind.ToString());
             ValueMessage message = new(10);
             Emit(scenario, bus, ref message);
             using MessageRecorder<ValueMessage> recorder = Create<ValueMessage>(scenario, bus);
-            Assert.That(
-                recorder.Received,
-                Is.Empty,
-                "A recorder must only capture messages delivered after registration."
-            );
+            Assert.That(recorder.Received, Is.Empty, "A recorder must only capture messages delivered after registration.");
         }
 
         /// <summary>Checks nested disposal during both successful and failed outer cleanup.</summary>
         [Test]
         public void ReentrantDisposalDoesNotLoseRetryableCleanup(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
             [Values(false, true)] bool failCleanup
         )
         {
@@ -285,36 +183,18 @@ namespace DxMessaging.Tests.Runtime.Core
                 bus.OnCleanup = recorder.Dispose;
                 if (failCleanup)
                 {
-                    Assert.Throws<InvalidOperationException>(
-                        recorder.Dispose,
-                        "The outer cleanup failure must remain retryable."
-                    );
-                    Assert.That(
-                        recorder.Received.Count,
-                        Is.EqualTo(1),
-                        "A nested Dispose must not clear state before failed outer cleanup finishes."
-                    );
+                    Assert.Throws<InvalidOperationException>(recorder.Dispose, "The outer cleanup failure must remain retryable.");
+                    Assert.That(recorder.Received.Count, Is.EqualTo(1), "A nested Dispose must not clear state before failed outer cleanup finishes.");
                     bus.AllowCleanup = true;
                     recorder.Dispose();
                 }
                 else
                 {
-                    Assert.DoesNotThrow(
-                        recorder.Dispose,
-                        "Reentrant successful cleanup must finish once."
-                    );
+                    Assert.DoesNotThrow(recorder.Dispose, "Reentrant successful cleanup must finish once.");
                 }
-                Assert.That(
-                    recorder.Received,
-                    Is.Empty,
-                    "Successful final cleanup must release captures."
-                );
+                Assert.That(recorder.Received, Is.Empty, "Successful final cleanup must release captures.");
                 Emit(scenario, bus, ref message);
-                Assert.That(
-                    recorder.Received,
-                    Is.Empty,
-                    "No subscription may survive successful cleanup."
-                );
+                Assert.That(recorder.Received, Is.Empty, "No subscription may survive successful cleanup.");
             }
             finally
             {
@@ -325,10 +205,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
         /// <summary>Checks that captures follow ordinary interceptor acceptance and payload mutation.</summary>
         [Test]
-        public void RecorderRespectsInterceptorVetoAndMutation(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void RecorderRespectsInterceptorVetoAndMutation([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             BusType bus = new();
             using LeakWatcher leaks = new(bus: bus, label: scenario.Kind.ToString());
@@ -373,16 +250,8 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.That(recorder.Received, Is.Empty, "Vetoed delivery must not be captured.");
             accept = true;
             Emit(scenario, bus, ref message);
-            Assert.That(
-                recorder.Received.Count,
-                Is.EqualTo(1),
-                "Accepted delivery must be captured once."
-            );
-            Assert.That(
-                recorder.Received[0].Value,
-                Is.EqualTo(99),
-                "The recorder must observe interceptor mutations."
-            );
+            Assert.That(recorder.Received.Count, Is.EqualTo(1), "Accepted delivery must be captured once.");
+            Assert.That(recorder.Received[0].Value, Is.EqualTo(99), "The recorder must observe interceptor mutations.");
         }
 
         /// <summary>Checks capture order, reference identity and final subscription cleanup for one payload shape.</summary>
@@ -397,34 +266,18 @@ namespace DxMessaging.Tests.Runtime.Core
             Emit(scenario, bus, ref second);
             if (!typeof(T).IsValueType)
             {
-                Assert.That(
-                    recorder.Received[0],
-                    Is.SameAs((object)first),
-                    "Class captures must retain the original object reference."
-                );
+                Assert.That(recorder.Received[0], Is.SameAs((object)first), "Class captures must retain the original object reference.");
             }
-            Assert.That(
-                recorder.Received,
-                Is.EqualTo(new[] { first, second }),
-                "Captures must retain the delivery order and message values."
-            );
+            Assert.That(recorder.Received, Is.EqualTo(new[] { first, second }), "Captures must retain the delivery order and message values.");
             recorder.Dispose();
             recorder.Dispose();
-            Assert.That(
-                recorder.Received,
-                Is.Empty,
-                "Repeated successful disposal must remain empty."
-            );
+            Assert.That(recorder.Received, Is.Empty, "Repeated successful disposal must remain empty.");
             Emit(scenario, bus, ref first);
             Assert.That(recorder.Received, Is.Empty, "Disposal must remove the receiver.");
         }
 
         /// <summary>Selects the recorder factory matching the shared message scenario.</summary>
-        private static MessageRecorder<T> Create<T>(
-            MessageScenario scenario,
-            IMessageBus bus,
-            InstanceId? selectedContext = null
-        )
+        private static MessageRecorder<T> Create<T>(MessageScenario scenario, IMessageBus bus, InstanceId? selectedContext = null)
             where T : IUntargetedMessage, ITargetedMessage, IBroadcastMessage
         {
             InstanceId context = selectedContext ?? new InstanceId(123);
@@ -438,12 +291,7 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         /// <summary>Emits a shared test payload through the scenario route and selected context.</summary>
-        private static void Emit<T>(
-            MessageScenario scenario,
-            IMessageBus bus,
-            ref T message,
-            InstanceId? context = null
-        )
+        private static void Emit<T>(MessageScenario scenario, IMessageBus bus, ref T message, InstanceId? context = null)
             where T : IUntargetedMessage, ITargetedMessage, IBroadcastMessage
         {
             InstanceId selectedContext = context ?? new InstanceId(123);
@@ -485,10 +333,7 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private readonly struct ValueMessage
-            : IUntargetedMessage<ValueMessage>,
-                ITargetedMessage<ValueMessage>,
-                IBroadcastMessage<ValueMessage>
+        private readonly struct ValueMessage : IUntargetedMessage<ValueMessage>, ITargetedMessage<ValueMessage>, IBroadcastMessage<ValueMessage>
         {
             public ValueMessage(int value)
             {
@@ -499,10 +344,7 @@ namespace DxMessaging.Tests.Runtime.Core
             public Type MessageType => typeof(ValueMessage);
         }
 
-        private sealed class ReferenceMessage
-            : IUntargetedMessage<ReferenceMessage>,
-                ITargetedMessage<ReferenceMessage>,
-                IBroadcastMessage<ReferenceMessage>
+        private sealed class ReferenceMessage : IUntargetedMessage<ReferenceMessage>, ITargetedMessage<ReferenceMessage>, IBroadcastMessage<ReferenceMessage>
         {
             public ReferenceMessage(int value)
             {

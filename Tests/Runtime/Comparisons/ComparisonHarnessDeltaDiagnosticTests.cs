@@ -17,10 +17,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         [Test]
         public void ExactMultipleReadsAsWholeOps()
         {
-            Assert.AreEqual(
-                "40000 invocations = 10000 ops",
-                ComparisonHarness.DescribeFanOutDelta(40000, 4)
-            );
+            Assert.AreEqual("40000 invocations = 10000 ops", ComparisonHarness.DescribeFanOutDelta(40000, 4));
         }
 
         [Test]
@@ -48,10 +45,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             long remainder = delta % ipo;
             Assert.AreEqual(delta, (ops * ipo) + remainder, "Sanity: the division identity holds.");
             string message = ComparisonHarness.DescribeFanOutDelta(delta, ipo);
-            StringAssert.Contains(
-                $"{delta} invocations = {ops} ops + {remainder} leftover",
-                message
-            );
+            StringAssert.Contains($"{delta} invocations = {ops} ops + {remainder} leftover", message);
         }
 
         [Test]
@@ -69,10 +63,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         [Test]
         public void NonPositivePerOperationReportsRawDelta()
         {
-            Assert.AreEqual(
-                "7 invocations (invocationsPerOperation=0)",
-                ComparisonHarness.DescribeFanOutDelta(7, 0)
-            );
+            Assert.AreEqual("7 invocations (invocationsPerOperation=0)", ComparisonHarness.DescribeFanOutDelta(7, 0));
         }
     }
 }

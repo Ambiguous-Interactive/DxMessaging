@@ -30,24 +30,12 @@ internal sealed class GeneratedSerializedFieldTests
         foreach (string kind in new[] { "class", "struct" })
         {
             string[] accessibilities =
-                kind == "class"
-                    ? new[]
-                    {
-                        "public",
-                        "private",
-                        "internal",
-                        "protected",
-                        "protected internal",
-                        "private protected",
-                    }
-                    : new[] { "public", "private", "internal" };
+                kind == "class" ? new[] { "public", "private", "internal", "protected", "protected internal", "private protected" } : new[] { "public", "private", "internal" };
             foreach (string accessibility in accessibilities)
             {
                 foreach (bool properties in new[] { false, true })
                 {
-                    yield return new TestCaseData(kind, accessibility, properties).SetName(
-                        $"SerializedFieldsPreserveStorageAndDefaults({kind},{accessibility},{properties})"
-                    );
+                    yield return new TestCaseData(kind, accessibility, properties).SetName($"SerializedFieldsPreserveStorageAndDefaults({kind},{accessibility},{properties})");
                 }
             }
         }
@@ -55,11 +43,7 @@ internal sealed class GeneratedSerializedFieldTests
 
     /// <summary>Replaces the repeated field, constructor, and getter lists without replacing storage.</summary>
     [TestCaseSource(nameof(SerializedFieldCases))]
-    public void SerializedFieldsPreserveStorageAndDefaults(
-        string kind,
-        string accessibility,
-        bool properties
-    )
+    public void SerializedFieldsPreserveStorageAndDefaults(string kind, string accessibility, bool properties)
     {
         string source = $$"""
             using DxMessaging.Core.Attributes;
@@ -111,9 +95,7 @@ internal sealed class GeneratedSerializedFieldTests
     [TestCase(true)]
     public void DefaultOptionsRetainPublicFieldNamesAndPrivateStorage(bool explicitDefaults)
     {
-        string arguments = explicitDefaults
-            ? "(IncludeSerializedFields = false, GenerateSerializedProperties = false)"
-            : "";
+        string arguments = explicitDefaults ? "(IncludeSerializedFields = false, GenerateSerializedProperties = false)" : "";
         string source = $$"""
             using DxMessaging.Core.Attributes;
             using UnityEngine;
@@ -136,18 +118,11 @@ internal sealed class GeneratedSerializedFieldTests
             }
             """;
         string context = $"explicitDefaults={explicitDefaults}";
-        (
-            GeneratorDriverRunResult result,
-            Compilation output,
-            ImmutableArray<Diagnostic> diagnostics
-        ) = Generate(source);
+        (GeneratorDriverRunResult result, Compilation output, ImmutableArray<Diagnostic> diagnostics) = Generate(source);
         Assert.That(diagnostics, Is.Empty, context);
         Assert.That(result.GeneratedTrees, Has.Length.EqualTo(1), context);
         string generated = result.GeneratedTrees.Single().GetText().ToString();
-        TestContext.Out.WriteLine(
-            "DEFAULT_GENERATED_SHA256="
-                + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(generated)))
-        );
+        TestContext.Out.WriteLine("DEFAULT_GENERATED_SHA256=" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(generated))));
         AssertCompilationExecutes(output, context);
     }
 
@@ -157,11 +132,7 @@ internal sealed class GeneratedSerializedFieldTests
     [TestCase("_record", "@record", "Record")]
     [TestCase("_id", "id", "Id")]
     [SetCulture("tr-TR")]
-    public void SerializedNamesPreserveLegalIdentifiers(
-        string field,
-        string parameter,
-        string property
-    )
+    public void SerializedNamesPreserveLegalIdentifiers(string field, string parameter, string property)
     {
         string source = $$"""
             using DxMessaging.Core.Attributes;
@@ -176,8 +147,7 @@ internal sealed class GeneratedSerializedFieldTests
                 public static bool Verify() => new Packet({{parameter}}: 42).{{property}} == 42;
             }
             """;
-        string context =
-            $"field={field}, parameter={parameter}, property={property}, culture=tr-TR";
+        string context = $"field={field}, parameter={parameter}, property={property}, culture=tr-TR";
         (_, Compilation output, ImmutableArray<Diagnostic> diagnostics) = Generate(source);
         Assert.That(diagnostics, Is.Empty, context);
         AssertCompilationExecutes(output, context);
@@ -217,17 +187,12 @@ internal sealed class GeneratedSerializedFieldTests
         INamedTypeSymbol type = output.GetTypeByMetadataName("Packet")!;
         IPropertySymbol label = type.GetMembers("Label").OfType<IPropertySymbol>().Single();
         Assert.That(label.NullableAnnotation, Is.EqualTo(NullableAnnotation.Annotated));
-        IParameterSymbol parameter = type
-            .InstanceConstructors.Single(c => c.Parameters.Length == 2)
-            .Parameters[1];
+        IParameterSymbol parameter = type.InstanceConstructors.Single(c => c.Parameters.Length == 2).Parameters[1];
         Assert.That(parameter.Name, Is.EqualTo("label"));
         Assert.That(parameter.NullableAnnotation, Is.EqualTo(NullableAnnotation.Annotated));
         Assert.That(parameter.HasExplicitDefaultValue, Is.True);
         Assert.That(parameter.ExplicitDefaultValue, Is.Null);
-        AssertCompilationExecutes(
-            output,
-            "Partial files preserve alias, declaration order, and nullable storage."
-        );
+        AssertCompilationExecutes(output, "Partial files preserve alias, declaration order, and nullable storage.");
     }
 
     /// <summary>Retains outer generic type parameters in both generated constructor and getter types.</summary>
@@ -293,56 +258,19 @@ internal sealed class GeneratedSerializedFieldTests
             }
             """;
         (_, Compilation output, ImmutableArray<Diagnostic> diagnostics) = Generate(source);
-        Assert.That(
-            diagnostics,
-            Is.Empty,
-            "Exclude static, const, compiler backing fields and unrelated attributes."
-        );
-        AssertCompilationExecutes(
-            output,
-            "Exclude static, const, compiler backing fields and unrelated attributes."
-        );
+        Assert.That(diagnostics, Is.Empty, "Exclude static, const, compiler backing fields and unrelated attributes.");
+        AssertCompilationExecutes(output, "Exclude static, const, compiler backing fields and unrelated attributes.");
     }
 
     private static IEnumerable<TestCaseData> InvalidNameCases()
     {
         TestCaseData[] cases = new[]
         {
-            new TestCaseData(
-                "EmptyParameter",
-                "[SerializeField] private int _ = 1; public int Read() => _;",
-                false,
-                "_",
-                ""
-            ),
-            new TestCaseData(
-                "UnderscoreParameter",
-                "[SerializeField] private int __ = 1; public int Read() => __;",
-                false,
-                "__",
-                ""
-            ),
-            new TestCaseData(
-                "NumericParameter",
-                "[SerializeField] private int _1 = 1; public int Read() => _1;",
-                false,
-                "_1",
-                "1"
-            ),
-            new TestCaseData(
-                "ParameterCollision",
-                "[SerializeField] private int _count = 1; public int count; public int Read() => _count + count;",
-                false,
-                "count",
-                "count"
-            ),
-            new TestCaseData(
-                "ExistingGetter",
-                "[SerializeField] private int _count = 1; public int Count => _count;",
-                true,
-                "_count",
-                "Count"
-            ),
+            new TestCaseData("EmptyParameter", "[SerializeField] private int _ = 1; public int Read() => _;", false, "_", ""),
+            new TestCaseData("UnderscoreParameter", "[SerializeField] private int __ = 1; public int Read() => __;", false, "__", ""),
+            new TestCaseData("NumericParameter", "[SerializeField] private int _1 = 1; public int Read() => _1;", false, "_1", "1"),
+            new TestCaseData("ParameterCollision", "[SerializeField] private int _count = 1; public int count; public int Read() => _count + count;", false, "count", "count"),
+            new TestCaseData("ExistingGetter", "[SerializeField] private int _count = 1; public int Count => _count;", true, "_count", "Count"),
             new TestCaseData(
                 "PropertyCollision",
                 "[SerializeField] private int _foo = 1; [SerializeField] private int _Foo = 2; public int Read() => _foo + _Foo;",
@@ -350,45 +278,19 @@ internal sealed class GeneratedSerializedFieldTests
                 "_Foo",
                 "Foo"
             ),
-            new TestCaseData(
-                "TypeName",
-                "[SerializeField] private int _packet = 1; public int Read() => _packet;",
-                true,
-                "_packet",
-                "Packet"
-            ),
-            new TestCaseData(
-                "InheritedMember",
-                "[SerializeField] private int _count = 1; public int Read() => _count;",
-                true,
-                "_count",
-                "Count"
-            ),
-            new TestCaseData(
-                "TypeParameter",
-                "[SerializeField] private int _count = 1; public int Read() => _count;",
-                true,
-                "_count",
-                "Count"
-            ),
+            new TestCaseData("TypeName", "[SerializeField] private int _packet = 1; public int Read() => _packet;", true, "_packet", "Packet"),
+            new TestCaseData("InheritedMember", "[SerializeField] private int _count = 1; public int Read() => _count;", true, "_count", "Count"),
+            new TestCaseData("TypeParameter", "[SerializeField] private int _count = 1; public int Read() => _count;", true, "_count", "Count"),
         };
         foreach (TestCaseData testCase in cases)
         {
-            yield return testCase.SetName(
-                $"SerializedNameConflictsReportOneDiagnostic({testCase.Arguments[0]})"
-            );
+            yield return testCase.SetName($"SerializedNameConflictsReportOneDiagnostic({testCase.Arguments[0]})");
         }
     }
 
     /// <summary>Reports an actionable generator diagnostic instead of producing ambiguous or illegal C#.</summary>
     [TestCaseSource(nameof(InvalidNameCases))]
-    public void SerializedNameConflictsReportOneDiagnostic(
-        string scenario,
-        string fields,
-        bool properties,
-        string field,
-        string generatedName
-    )
+    public void SerializedNameConflictsReportOneDiagnostic(string scenario, string fields, bool properties, string field, string generatedName)
     {
         string inheritance = scenario == "InheritedMember" ? ": Parent" : "";
         string typeParameters = scenario == "TypeParameter" ? "<Count>" : "";
@@ -401,13 +303,8 @@ internal sealed class GeneratedSerializedFieldTests
             public partial class Packet{{typeParameters}} {{inheritance}} { {{fields}} }
             public class Parent { public int Count => 9; }
             """;
-        string context =
-            $"scenario={scenario}, fields={fields}, properties={properties}, field={field}, generatedName={generatedName}";
-        (
-            GeneratorDriverRunResult result,
-            Compilation output,
-            ImmutableArray<Diagnostic> diagnostics
-        ) = Generate(source);
+        string context = $"scenario={scenario}, fields={fields}, properties={properties}, field={field}, generatedName={generatedName}";
+        (GeneratorDriverRunResult result, Compilation output, ImmutableArray<Diagnostic> diagnostics) = Generate(source);
         context += "\n" + string.Join("\n", output.GetDiagnostics());
         Assert.That(diagnostics, Has.Length.EqualTo(1), context);
         Diagnostic diagnostic = diagnostics.Single();
@@ -415,20 +312,11 @@ internal sealed class GeneratedSerializedFieldTests
         Assert.That(diagnostic.Severity, Is.EqualTo(DiagnosticSeverity.Error), context);
         Assert.That(
             diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture),
-            Does.Contain($"Field '{field}'")
-                .And.Contain($"'{generatedName}'")
-                .And.Contain("Rename the field"),
+            Does.Contain($"Field '{field}'").And.Contain($"'{generatedName}'").And.Contain("Rename the field"),
             context
         );
         Assert.That(diagnostic.Location.SourceTree!.FilePath, Is.EqualTo("UserSource.cs"), context);
-        Assert.That(
-            source.Substring(
-                diagnostic.Location.SourceSpan.Start,
-                diagnostic.Location.SourceSpan.Length
-            ),
-            Is.EqualTo(field),
-            context
-        );
+        Assert.That(source.Substring(diagnostic.Location.SourceSpan.Start, diagnostic.Location.SourceSpan.Length), Is.EqualTo(field), context);
         Assert.That(result.GeneratedTrees, Is.Empty, context);
         Assert.That(output.GetDiagnostics(), Is.Empty, context);
     }
@@ -439,9 +327,7 @@ internal sealed class GeneratedSerializedFieldTests
         {
             foreach (bool collision in new[] { false, true })
             {
-                yield return new TestCaseData(route, collision).SetName(
-                    $"SerializedPropertiesRespectGeneratedMessageMembers({route},{collision})"
-                );
+                yield return new TestCaseData(route, collision).SetName($"SerializedPropertiesRespectGeneratedMessageMembers({route},{collision})");
             }
         }
     }
@@ -469,14 +355,8 @@ internal sealed class GeneratedSerializedFieldTests
         CSharpCompilation input = GeneratorTestUtilities
             .CreateAutoConstructorCompilationFromShippedAttributes(source)
             .AddSyntaxTrees(CSharpSyntaxTree.ParseText(SerializeFieldDeclaration, options));
-        string attributePath = input
-            .SyntaxTrees.First(t =>
-                t.FilePath.EndsWith("DxAutoConstructorAttribute.cs", StringComparison.Ordinal)
-            )
-            .FilePath;
-        string root = Path.GetFullPath(
-            Path.Combine(Path.GetDirectoryName(attributePath)!, "..", "..")
-        );
+        string attributePath = input.SyntaxTrees.First(t => t.FilePath.EndsWith("DxAutoConstructorAttribute.cs", StringComparison.Ordinal)).FilePath;
+        string root = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(attributePath)!, "..", ".."));
         foreach (
             string relative in new[]
             {
@@ -491,43 +371,19 @@ internal sealed class GeneratedSerializedFieldTests
         )
         {
             string path = Path.Combine(root, relative);
-            input = input.AddSyntaxTrees(
-                CSharpSyntaxTree.ParseText(File.ReadAllText(path), options, path)
-            );
+            input = input.AddSyntaxTrees(CSharpSyntaxTree.ParseText(File.ReadAllText(path), options, path));
         }
         GeneratorDriver driver = CSharpGeneratorDriver
-            .Create(
-                generators: new ISourceGenerator[]
-                {
-                    new DxAutoConstructorGenerator(),
-                    new DxMessageIdGenerator(),
-                },
-                parseOptions: options
-            )
-            .RunGeneratorsAndUpdateCompilation(
-                input,
-                out Compilation output,
-                out ImmutableArray<Diagnostic> diagnostics
-            );
+            .Create(generators: new ISourceGenerator[] { new DxAutoConstructorGenerator(), new DxMessageIdGenerator() }, parseOptions: options)
+            .RunGeneratorsAndUpdateCompilation(input, out Compilation output, out ImmutableArray<Diagnostic> diagnostics);
         string context = $"route={route}, collision={collision}, field={field}, verify={verify}";
-        Assert.That(
-            driver.GetRunResult().Results.Select(result => result.Exception),
-            Has.All.Null,
-            context
-        );
+        Assert.That(driver.GetRunResult().Results.Select(result => result.Exception), Has.All.Null, context);
         if (collision)
         {
             context += "\n" + string.Join("\n", output.GetDiagnostics());
             Assert.That(diagnostics, Has.Length.EqualTo(1), context);
             Assert.That(diagnostics.Single().Id, Is.EqualTo("DXMSG016"), context);
-            Assert.That(
-                driver
-                    .GetRunResult()
-                    .Results.Single(result => result.Generator is DxAutoConstructorGenerator)
-                    .GeneratedSources,
-                Is.Empty,
-                context
-            );
+            Assert.That(driver.GetRunResult().Results.Single(result => result.Generator is DxAutoConstructorGenerator).GeneratedSources, Is.Empty, context);
             Assert.That(output.GetDiagnostics(), Is.Empty, context);
         }
         else
@@ -541,29 +397,12 @@ internal sealed class GeneratedSerializedFieldTests
     {
         foreach (string target in new[] { "public", "internal" })
         {
-            foreach (
-                string visibility in new[]
-                {
-                    "public",
-                    "private",
-                    "internal",
-                    "protected",
-                    "protected internal",
-                    "private protected",
-                }
-            )
+            foreach (string visibility in new[] { "public", "private", "internal", "protected", "protected internal", "private protected" })
             {
                 foreach (bool properties in new[] { false, true })
                 {
-                    bool allowed =
-                        visibility == "public"
-                        || (
-                            target == "internal"
-                            && (visibility == "internal" || visibility == "protected internal")
-                        );
-                    yield return new TestCaseData(target, visibility, properties, allowed).SetName(
-                        $"SerializedFieldAccessibility({target},{visibility},{properties})"
-                    );
+                    bool allowed = visibility == "public" || (target == "internal" && (visibility == "internal" || visibility == "protected internal"));
+                    yield return new TestCaseData(target, visibility, properties, allowed).SetName($"SerializedFieldAccessibility({target},{visibility},{properties})");
                 }
             }
         }
@@ -572,16 +411,9 @@ internal sealed class GeneratedSerializedFieldTests
     /// <summary>Reports an actionable diagnostic instead of emitting illegal public signatures.</summary>
     /// <remarks>2026-11-12: Legal private serialized storage may have a type that public generated members cannot expose.</remarks>
     [TestCaseSource(nameof(AccessibilityCases))]
-    public void SerializedFieldAccessibility(
-        string target,
-        string visibility,
-        bool properties,
-        bool allowed
-    )
+    public void SerializedFieldAccessibility(string target, string visibility, bool properties, bool allowed)
     {
-        string verify = allowed
-            ? $"new Packet(mode: (Packet.Choice)1).Read() == 1{(properties ? " && (int)new Packet(mode: (Packet.Choice)1).Mode == 1" : "")}"
-            : "true";
+        string verify = allowed ? $"new Packet(mode: (Packet.Choice)1).Read() == 1{(properties ? " && (int)new Packet(mode: (Packet.Choice)1).Mode == 1" : "")}" : "true";
         string source = $$"""
             using DxMessaging.Core.Attributes;
             using UnityEngine;
@@ -658,17 +490,8 @@ internal sealed class GeneratedSerializedFieldTests
 
     private static void AssertAccessibility(string source, bool allowed)
     {
-        (
-            GeneratorDriverRunResult result,
-            Compilation output,
-            ImmutableArray<Diagnostic> diagnostics
-        ) = Generate(source);
-        string context =
-            source
-            + "\n"
-            + string.Join("\n", diagnostics)
-            + "\n"
-            + string.Join("\n", output.GetDiagnostics());
+        (GeneratorDriverRunResult result, Compilation output, ImmutableArray<Diagnostic> diagnostics) = Generate(source);
+        string context = source + "\n" + string.Join("\n", diagnostics) + "\n" + string.Join("\n", output.GetDiagnostics());
         if (allowed)
         {
             Assert.That(diagnostics, Is.Empty, context);
@@ -677,50 +500,24 @@ internal sealed class GeneratedSerializedFieldTests
         {
             Assert.That(diagnostics, Has.Length.EqualTo(1), context);
             Assert.That(diagnostics.Single().Id, Is.EqualTo("DXMSG017"), context);
-            Assert.That(
-                diagnostics.Single().GetMessage(System.Globalization.CultureInfo.InvariantCulture),
-                Does.Contain("accessible"),
-                context
-            );
+            Assert.That(diagnostics.Single().GetMessage(System.Globalization.CultureInfo.InvariantCulture), Does.Contain("accessible"), context);
             Assert.That(result.Results.Single().GeneratedSources, Is.Empty, context);
         }
         AssertCompilationExecutes(output, context);
     }
 
-    private static (
-        GeneratorDriverRunResult Result,
-        Compilation Output,
-        ImmutableArray<Diagnostic> Diagnostics
-    ) Generate(string source, string? additionalSource = null)
+    private static (GeneratorDriverRunResult Result, Compilation Output, ImmutableArray<Diagnostic> Diagnostics) Generate(string source, string? additionalSource = null)
     {
         CSharpCompilation input = GeneratorTestUtilities
             .CreateAutoConstructorCompilationFromShippedAttributes(source)
-            .AddSyntaxTrees(
-                CSharpSyntaxTree.ParseText(
-                    SerializeFieldDeclaration,
-                    new CSharpParseOptions(LanguageVersion.CSharp9)
-                )
-            );
+            .AddSyntaxTrees(CSharpSyntaxTree.ParseText(SerializeFieldDeclaration, new CSharpParseOptions(LanguageVersion.CSharp9)));
         if (additionalSource != null)
         {
-            input = input.AddSyntaxTrees(
-                CSharpSyntaxTree.ParseText(
-                    additionalSource,
-                    new CSharpParseOptions(LanguageVersion.CSharp9),
-                    "SecondPartial.cs"
-                )
-            );
+            input = input.AddSyntaxTrees(CSharpSyntaxTree.ParseText(additionalSource, new CSharpParseOptions(LanguageVersion.CSharp9), "SecondPartial.cs"));
         }
         GeneratorDriver driver = CSharpGeneratorDriver
-            .Create(
-                generators: new ISourceGenerator[] { new DxAutoConstructorGenerator() },
-                parseOptions: new CSharpParseOptions(LanguageVersion.CSharp9)
-            )
-            .RunGeneratorsAndUpdateCompilation(
-                input,
-                out Compilation output,
-                out ImmutableArray<Diagnostic> diagnostics
-            );
+            .Create(generators: new ISourceGenerator[] { new DxAutoConstructorGenerator() }, parseOptions: new CSharpParseOptions(LanguageVersion.CSharp9))
+            .RunGeneratorsAndUpdateCompilation(input, out Compilation output, out ImmutableArray<Diagnostic> diagnostics);
         GeneratorDriverRunResult result = driver.GetRunResult();
         Assert.That(result.Results.Select(run => run.Exception), Has.All.Null, source);
         return (result, output, diagnostics);
@@ -729,18 +526,10 @@ internal sealed class GeneratedSerializedFieldTests
     private static void AssertCompilationExecutes(Compilation compilation, string context)
     {
         Diagnostic[] diagnostics = compilation.GetDiagnostics().ToArray();
-        Assert.That(
-            diagnostics,
-            Is.Empty,
-            context + "\n" + string.Join("\n", diagnostics.AsEnumerable())
-        );
+        Assert.That(diagnostics, Is.Empty, context + "\n" + string.Join("\n", diagnostics.AsEnumerable()));
         using MemoryStream image = new();
         EmitResult emitted = compilation.Emit(image);
-        Assert.That(
-            emitted.Success,
-            Is.True,
-            context + "\n" + string.Join("\n", emitted.Diagnostics)
-        );
+        Assert.That(emitted.Success, Is.True, context + "\n" + string.Join("\n", emitted.Diagnostics));
         image.Position = 0;
         AssemblyLoadContext load = new("SerializedFieldConsumer", isCollectible: true);
         try

@@ -37,39 +37,14 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     foreach (bool oldTeardown in new[] { false, true })
                     {
-                        foreach (
-                            CleanupAction cleanup in new[]
-                            {
-                                CleanupAction.None,
-                                CleanupAction.Disable,
-                                CleanupAction.Clear,
-                            }
-                        )
+                        foreach (CleanupAction cleanup in new[] { CleanupAction.None, CleanupAction.Disable, CleanupAction.Clear })
                         {
                             foreach (bool formatter in new[] { false, true })
                             {
                                 foreach (bool throws in new[] { false, true })
                                 {
-                                    yield return new TestCaseData(
-                                        scenario,
-                                        family,
-                                        oldTeardown,
-                                        cleanup,
-                                        formatter,
-                                        throws
-                                    ).SetName(
-                                        "RetargetLogging_"
-                                            + scenario
-                                            + "_family"
-                                            + family
-                                            + "_old"
-                                            + oldTeardown
-                                            + "_"
-                                            + cleanup
-                                            + "_format"
-                                            + formatter
-                                            + "_throw"
-                                            + throws
+                                    yield return new TestCaseData(scenario, family, oldTeardown, cleanup, formatter, throws).SetName(
+                                        "RetargetLogging_" + scenario + "_family" + family + "_old" + oldTeardown + "_" + cleanup + "_format" + formatter + "_throw" + throws
                                     );
                                 }
                             }
@@ -87,111 +62,39 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     foreach (bool debug in new[] { false, true })
                     {
-                        yield return new TestCaseData(scenario, family, debug).SetName(
-                            "RetargetNaturalRollback_"
-                                + scenario
-                                + "_family"
-                                + family
-                                + "_debug"
-                                + debug
-                        );
+                        yield return new TestCaseData(scenario, family, debug).SetName("RetargetNaturalRollback_" + scenario + "_family" + family + "_debug" + debug);
                     }
                 }
             }
         }
 
         [TestCaseSource(nameof(CleanupCases))]
-        public void RetargetRecoveryPreservesDiagnosticCleanup(
-            MessageScenario scenario,
-            int family,
-            bool oldTeardown,
-            CleanupAction cleanup,
-            bool formatter,
-            bool throws
-        )
+        public void RetargetRecoveryPreservesDiagnosticCleanup(MessageScenario scenario, int family, bool oldTeardown, CleanupAction cleanup, bool formatter, bool throws)
         {
-            using CaseState state = new CaseState(
-                scenario,
-                family,
-                oldTeardown,
-                cleanup,
-                formatter,
-                throws
-            );
+            using CaseState state = new CaseState(scenario, family, oldTeardown, cleanup, formatter, throws);
             state.Prepare(failedRollback: true, debug: true);
-            Exception failure = Assert.Catch<Exception>(
-                state.Retarget,
-                state.Label + ": retarget must fail."
-            );
+            Exception failure = Assert.Catch<Exception>(state.Retarget, state.Label + ": retarget must fail.");
             state.StopLogging();
             int[] oldDelivery = state.Deliver(state.OldInner);
             int[] newDelivery = state.Deliver(state.NewInner);
             bool pending = cleanup == CleanupAction.None;
-            Assert.That(
-                failure,
-                Is.SameAs(state.ExpectedFailure),
-                state.Label + ": exception identity."
-            );
-            Assert.That(
-                state.FormattingCalls,
-                Is.EqualTo(1),
-                state.Label + ": one formatting call."
-            );
-            Assert.That(
-                state.ReceiverCalls,
-                Is.EqualTo(formatter && throws ? 0 : 1),
-                state.Label + ": receiver gate."
-            );
-            Assert.That(
-                state.BoundaryCalls,
-                Is.EqualTo(1),
-                state.Label + ": one selected callback boundary."
-            );
-            Assert.That(
-                state.EnabledBeforeCleanup,
-                Is.True,
-                state.Label + ": callback sees pending cleanup."
-            );
-            Assert.That(
-                state.EnabledAfterCleanup,
-                Is.EqualTo(pending),
-                state.Label + ": requested cleanup completes."
-            );
-            Assert.That(
-                state.Token.Enabled,
-                Is.EqualTo(pending),
-                state.Label + ": outer recovery preserves cleanup."
-            );
-            Assert.That(
-                state.Token._metadata.Count,
-                Is.EqualTo(cleanup == CleanupAction.Clear ? 0 : 2),
-                state.Label + ": staging choice."
-            );
-            Assert.That(
-                oldDelivery,
-                Is.EqualTo(pending ? new[] { 0, 1 } : new[] { 0, 0 }),
-                state.Label + ": old-bus callback ownership."
-            );
-            Assert.That(
-                newDelivery,
-                Is.EqualTo(pending && !oldTeardown ? new[] { 1, 0 } : new[] { 0, 0 }),
-                state.Label + ": new-bus callback ownership."
-            );
+            Assert.That(failure, Is.SameAs(state.ExpectedFailure), state.Label + ": exception identity.");
+            Assert.That(state.FormattingCalls, Is.EqualTo(1), state.Label + ": one formatting call.");
+            Assert.That(state.ReceiverCalls, Is.EqualTo(formatter && throws ? 0 : 1), state.Label + ": receiver gate.");
+            Assert.That(state.BoundaryCalls, Is.EqualTo(1), state.Label + ": one selected callback boundary.");
+            Assert.That(state.EnabledBeforeCleanup, Is.True, state.Label + ": callback sees pending cleanup.");
+            Assert.That(state.EnabledAfterCleanup, Is.EqualTo(pending), state.Label + ": requested cleanup completes.");
+            Assert.That(state.Token.Enabled, Is.EqualTo(pending), state.Label + ": outer recovery preserves cleanup.");
+            Assert.That(state.Token._metadata.Count, Is.EqualTo(cleanup == CleanupAction.Clear ? 0 : 2), state.Label + ": staging choice.");
+            Assert.That(oldDelivery, Is.EqualTo(pending ? new[] { 0, 1 } : new[] { 0, 0 }), state.Label + ": old-bus callback ownership.");
+            Assert.That(newDelivery, Is.EqualTo(pending && !oldTeardown ? new[] { 1, 0 } : new[] { 0, 0 }), state.Label + ": new-bus callback ownership.");
             if (pending)
             {
                 int oldAttempts = state.OldBus.RegistrationAttempts;
                 int newAttempts = state.NewBus.RegistrationAttempts;
                 state.Token.Enable();
-                Assert.That(
-                    state.OldBus.RegistrationAttempts,
-                    Is.EqualTo(oldAttempts),
-                    state.Label + ": pending Enable does not replay old staging."
-                );
-                Assert.That(
-                    state.NewBus.RegistrationAttempts,
-                    Is.EqualTo(newAttempts),
-                    state.Label + ": pending Enable does not replay new staging."
-                );
+                Assert.That(state.OldBus.RegistrationAttempts, Is.EqualTo(oldAttempts), state.Label + ": pending Enable does not replay old staging.");
+                Assert.That(state.NewBus.RegistrationAttempts, Is.EqualTo(newAttempts), state.Label + ": pending Enable does not replay new staging.");
             }
             state.VerifyLaterRecovery();
         }
@@ -200,24 +103,15 @@ namespace DxMessaging.Tests.Runtime.Core
         /// <remarks>2026-11-15: Registration callbacks and rollback cleanup own different cancellation windows.</remarks>
         [Test]
         public void RetargetRecoveryPreservesRollbackCleanupCancellation(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario,
             [Values(0, 1, 2)] int family,
             [Values(false, true)] bool debug,
             [Values(false, true)] bool after,
             [Values(false, true)] bool rejected,
-            [Values(CleanupAction.None, CleanupAction.Disable, CleanupAction.Clear)]
-                CleanupAction cleanup
+            [Values(CleanupAction.None, CleanupAction.Disable, CleanupAction.Clear)] CleanupAction cleanup
         )
         {
-            using CaseState state = new CaseState(
-                scenario,
-                family,
-                false,
-                CleanupAction.None,
-                false,
-                false
-            );
+            using CaseState state = new CaseState(scenario, family, false, CleanupAction.None, false, false);
             state.Prepare(failedRollback: rejected, debug);
             int callbacks = 0;
             state.NewBus.AfterDeregistration = after;
@@ -238,16 +132,8 @@ namespace DxMessaging.Tests.Runtime.Core
             string label = state.Label + $", after={after},rejected={rejected},cleanup={cleanup}";
             Assert.That(failure, Is.SameAs(state.NewBus.RegistrationFailure), label);
             Assert.That(callbacks, Is.EqualTo(1), label);
-            Assert.That(
-                state.Token.Enabled,
-                Is.EqualTo(rejected || cleanup == CleanupAction.None),
-                label
-            );
-            Assert.That(
-                state.Token._metadata.Count,
-                Is.EqualTo(cleanup == CleanupAction.Clear ? 0 : 2),
-                label
-            );
+            Assert.That(state.Token.Enabled, Is.EqualTo(rejected || cleanup == CleanupAction.None), label);
+            Assert.That(state.Token._metadata.Count, Is.EqualTo(cleanup == CleanupAction.Clear ? 0 : 2), label);
             Assert.That(
                 state.Deliver(state.OldInner),
                 Is.EqualTo(
@@ -259,11 +145,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 ),
                 label
             );
-            Assert.That(
-                state.Deliver(state.NewInner),
-                Is.EqualTo(rejected ? new[] { 1, 0 } : new[] { 0, 0 }),
-                label
-            );
+            Assert.That(state.Deliver(state.NewInner), Is.EqualTo(rejected ? new[] { 1, 0 } : new[] { 0, 0 }), label);
             state.OldBus.AllowDeregistrations = true;
             state.NewBus.AllowDeregistrations = true;
             state.Token.Disable();
@@ -282,56 +164,18 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [TestCaseSource(nameof(NaturalRollbackCases))]
-        public void NaturalRollbackCompletionStillRestoresOldBus(
-            MessageScenario scenario,
-            int family,
-            bool debug
-        )
+        public void NaturalRollbackCompletionStillRestoresOldBus(MessageScenario scenario, int family, bool debug)
         {
-            using CaseState state = new CaseState(
-                scenario,
-                family,
-                false,
-                CleanupAction.None,
-                false,
-                false
-            );
+            using CaseState state = new CaseState(scenario, family, false, CleanupAction.None, false, false);
             state.Prepare(failedRollback: false, debug);
-            Exception failure = Assert.Catch<Exception>(
-                state.Retarget,
-                state.Label + ": replay must fail."
-            );
+            Exception failure = Assert.Catch<Exception>(state.Retarget, state.Label + ": replay must fail.");
             state.StopLogging();
-            Assert.That(
-                failure,
-                Is.SameAs(state.NewBus.RegistrationFailure),
-                state.Label + ": preserve replay exception."
-            );
-            Assert.That(
-                state.FormattingCalls,
-                Is.Zero,
-                state.Label + ": successful rollback does not log."
-            );
-            Assert.That(
-                state.ReceiverCalls,
-                Is.Zero,
-                state.Label + ": successful rollback has no receiver."
-            );
-            Assert.That(
-                state.Token.Enabled,
-                Is.True,
-                state.Label + ": automatic recovery remains active."
-            );
-            Assert.That(
-                state.Deliver(state.OldInner),
-                Is.EqualTo(new[] { 1, 1 }),
-                state.Label + ": both old callbacks restored."
-            );
-            Assert.That(
-                state.Deliver(state.NewInner),
-                Is.EqualTo(new[] { 0, 0 }),
-                state.Label + ": new bus fully rolled back."
-            );
+            Assert.That(failure, Is.SameAs(state.NewBus.RegistrationFailure), state.Label + ": preserve replay exception.");
+            Assert.That(state.FormattingCalls, Is.Zero, state.Label + ": successful rollback does not log.");
+            Assert.That(state.ReceiverCalls, Is.Zero, state.Label + ": successful rollback has no receiver.");
+            Assert.That(state.Token.Enabled, Is.True, state.Label + ": automatic recovery remains active.");
+            Assert.That(state.Deliver(state.OldInner), Is.EqualTo(new[] { 1, 1 }), state.Label + ": both old callbacks restored.");
+            Assert.That(state.Deliver(state.NewInner), Is.EqualTo(new[] { 0, 0 }), state.Label + ": new bus fully rolled back.");
             state.VerifyLaterRecovery();
         }
 
@@ -347,9 +191,7 @@ namespace DxMessaging.Tests.Runtime.Core
             private readonly MessageHandler _handler;
             private readonly LeakWatcher _oldLeaks;
             private readonly LeakWatcher _newLeaks;
-            private readonly Exception _logFailure = new InvalidOperationException(
-                "Diagnostic marker."
-            );
+            private readonly Exception _logFailure = new InvalidOperationException("Diagnostic marker.");
             private int _firstCalls;
             private int _secondCalls;
             internal readonly BusType OldInner = new BusType { DiagnosticsMode = false };
@@ -364,34 +206,14 @@ namespace DxMessaging.Tests.Runtime.Core
             internal bool EnabledBeforeCleanup;
             internal bool EnabledAfterCleanup;
 
-            internal CaseState(
-                MessageScenario scenario,
-                int family,
-                bool oldTeardown,
-                CleanupAction cleanup,
-                bool formatter,
-                bool throws
-            )
+            internal CaseState(MessageScenario scenario, int family, bool oldTeardown, CleanupAction cleanup, bool formatter, bool throws)
             {
                 _scenario = scenario;
                 _oldTeardown = oldTeardown;
                 _cleanup = cleanup;
                 _formatter = formatter;
                 _throws = throws;
-                Label =
-                    "["
-                    + scenario
-                    + ", family="
-                    + family
-                    + ", old="
-                    + oldTeardown
-                    + ", cleanup="
-                    + cleanup
-                    + ", formatter="
-                    + formatter
-                    + ", throws="
-                    + throws
-                    + "]";
+                Label = "[" + scenario + ", family=" + family + ", old=" + oldTeardown + ", cleanup=" + cleanup + ", formatter=" + formatter + ", throws=" + throws + "]";
                 MessagingDebug.enabled = false;
                 MessagingDebug.LogFunction = null;
                 OldBus = new FaultBus(OldInner);
@@ -399,22 +221,12 @@ namespace DxMessaging.Tests.Runtime.Core
                 _handler = new MessageHandler(new InstanceId(982), OldBus) { active = true };
                 Token = MessageRegistrationToken.Create(_handler, OldBus);
                 Token.DiagnosticMode = false;
-                _oldLeaks = LeakWatcher.WatchWithSlots(
-                    OldInner,
-                    label: Label + " old",
-                    handler: _handler
-                );
-                _newLeaks = LeakWatcher.WatchWithSlots(
-                    NewInner,
-                    label: Label + " new",
-                    handler: _handler
-                );
+                _oldLeaks = LeakWatcher.WatchWithSlots(OldInner, label: Label + " old", handler: _handler);
+                _newLeaks = LeakWatcher.WatchWithSlots(NewInner, label: Label + " new", handler: _handler);
                 Register(Token, scenario, family, () => ++_firstCalls);
                 Register(Token, scenario, family, () => ++_secondCalls);
                 OldBus.RegistrationFailure = new FormattingException(FormatLog);
-                OldBus.DeregistrationFailure = new InvalidOperationException(
-                    "Old teardown marker."
-                );
+                OldBus.DeregistrationFailure = new InvalidOperationException("Old teardown marker.");
                 NewBus.RegistrationFailure = new InvalidOperationException("New replay marker.");
                 NewBus.DeregistrationFailure = new FormattingException(FormatLog);
             }
@@ -427,21 +239,9 @@ namespace DxMessaging.Tests.Runtime.Core
             internal void Prepare(bool failedRollback, bool debug)
             {
                 Token.Enable();
-                Assert.That(
-                    Deliver(OldInner),
-                    Is.EqualTo(new[] { 1, 1 }),
-                    Label + ": initial old-bus setup."
-                );
-                Assert.That(
-                    Deliver(NewInner),
-                    Is.EqualTo(new[] { 0, 0 }),
-                    Label + ": initial new-bus setup."
-                );
-                Assert.That(
-                    OldBus.RegistrationAttempts,
-                    Is.EqualTo(2),
-                    Label + ": two initial registrations."
-                );
+                Assert.That(Deliver(OldInner), Is.EqualTo(new[] { 1, 1 }), Label + ": initial old-bus setup.");
+                Assert.That(Deliver(NewInner), Is.EqualTo(new[] { 0, 0 }), Label + ": initial new-bus setup.");
+                Assert.That(OldBus.RegistrationAttempts, Is.EqualTo(2), Label + ": two initial registrations.");
                 if (_oldTeardown)
                 {
                     OldBus.AllowDeregistrations = false;
@@ -460,8 +260,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 MessagingDebug.LogFunction = ReceiveLog;
             }
 
-            internal void Retarget() =>
-                Token.RetargetMessageBus(NewBus, MessageBusRebindMode.RebindActive);
+            internal void Retarget() => Token.RetargetMessageBus(NewBus, MessageBusRebindMode.RebindActive);
 
             private string FormatLog()
             {
@@ -548,33 +347,13 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 StopFaults();
                 Token.Disable();
-                Assert.That(
-                    Token.Enabled,
-                    Is.False,
-                    Label + ": later Disable drains pending cleanup."
-                );
-                Assert.That(
-                    _oldLeaks.LeakedRegistrations,
-                    Is.Zero,
-                    Label + ": old registrations drained."
-                );
-                Assert.That(
-                    _newLeaks.LeakedRegistrations,
-                    Is.Zero,
-                    Label + ": new registrations drained."
-                );
+                Assert.That(Token.Enabled, Is.False, Label + ": later Disable drains pending cleanup.");
+                Assert.That(_oldLeaks.LeakedRegistrations, Is.Zero, Label + ": old registrations drained.");
+                Assert.That(_newLeaks.LeakedRegistrations, Is.Zero, Label + ": new registrations drained.");
                 Token.Enable();
                 int expected = _cleanup == CleanupAction.Clear ? 0 : 1;
-                Assert.That(
-                    Deliver(OldInner),
-                    Is.EqualTo(new[] { expected, expected }),
-                    Label + ": later Enable follows staging choice."
-                );
-                Assert.That(
-                    Deliver(NewInner),
-                    Is.EqualTo(new[] { 0, 0 }),
-                    Label + ": later Enable retains previous bus ownership."
-                );
+                Assert.That(Deliver(OldInner), Is.EqualTo(new[] { expected, expected }), Label + ": later Enable follows staging choice.");
+                Assert.That(Deliver(NewInner), Is.EqualTo(new[] { 0, 0 }), Label + ": later Enable retains previous bus ownership.");
             }
 
             public void Dispose()
@@ -586,11 +365,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     _handler.active = false;
                     _ = OldInner.Trim(force: true);
                     _ = NewInner.Trim(force: true);
-                    Assert.That(
-                        Token._metadata.Count,
-                        Is.Zero,
-                        Label + ": final metadata cleared."
-                    );
+                    Assert.That(Token._metadata.Count, Is.Zero, Label + ": final metadata cleared.");
                     try
                     {
                         _oldLeaks.Dispose();
@@ -608,12 +383,7 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private static void Register(
-            MessageRegistrationToken token,
-            MessageScenario scenario,
-            int family,
-            Action record
-        )
+        private static void Register(MessageRegistrationToken token, MessageScenario scenario, int family, Action record)
         {
             if (family == 2)
             {
@@ -663,19 +433,13 @@ namespace DxMessaging.Tests.Runtime.Core
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
-                    _ = token.RegisterUntargeted<ProbeMessage>(
-                        (in ProbeMessage message) => record()
-                    );
+                    _ = token.RegisterUntargeted<ProbeMessage>((in ProbeMessage message) => record());
                     break;
                 case MessageKind.Targeted:
-                    _ = token.RegisterTargeted<ProbeMessage>(Context, (in ProbeMessage message) =>
-                        record()
-                    );
+                    _ = token.RegisterTargeted<ProbeMessage>(Context, (in ProbeMessage message) => record());
                     break;
                 case MessageKind.Broadcast:
-                    _ = token.RegisterBroadcast<ProbeMessage>(Context, (in ProbeMessage message) =>
-                        record()
-                    );
+                    _ = token.RegisterBroadcast<ProbeMessage>(Context, (in ProbeMessage message) => record());
                     break;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(scenario));
@@ -684,9 +448,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
         private sealed class FaultBus : DelegatingMessageBus
         {
-            internal Exception RegistrationFailure = new InvalidOperationException(
-                "Replay marker."
-            );
+            internal Exception RegistrationFailure = new InvalidOperationException("Replay marker.");
             internal Exception DeregistrationFailure;
             internal int RegistrationAttempts;
             internal bool AllowRegistrations = true;
@@ -709,30 +471,19 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
             }
 
-            public override MessageBusRegistration RegisterUntargeted<T>(
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterUntargeted<T>(MessageHandler handler, int priority = 0)
             {
                 BeforeRegistration();
                 return base.RegisterUntargeted<T>(handler, priority);
             }
 
-            public override MessageBusRegistration RegisterTargeted<T>(
-                InstanceId target,
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterTargeted<T>(InstanceId target, MessageHandler handler, int priority = 0)
             {
                 BeforeRegistration();
                 return base.RegisterTargeted<T>(target, handler, priority);
             }
 
-            public override MessageBusRegistration RegisterSourcedBroadcast<T>(
-                InstanceId source,
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterSourcedBroadcast<T>(InstanceId source, MessageHandler handler, int priority = 0)
             {
                 BeforeRegistration();
                 return base.RegisterSourcedBroadcast<T>(source, handler, priority);
@@ -744,28 +495,19 @@ namespace DxMessaging.Tests.Runtime.Core
                 return base.RegisterGlobalAcceptAll(handler);
             }
 
-            public override MessageBusRegistration RegisterUntargetedInterceptor<T>(
-                IMessageBus.UntargetedInterceptor<T> interceptor,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterUntargetedInterceptor<T>(IMessageBus.UntargetedInterceptor<T> interceptor, int priority = 0)
             {
                 BeforeRegistration();
                 return base.RegisterUntargetedInterceptor(interceptor, priority);
             }
 
-            public override MessageBusRegistration RegisterTargetedInterceptor<T>(
-                IMessageBus.TargetedInterceptor<T> interceptor,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterTargetedInterceptor<T>(IMessageBus.TargetedInterceptor<T> interceptor, int priority = 0)
             {
                 BeforeRegistration();
                 return base.RegisterTargetedInterceptor(interceptor, priority);
             }
 
-            public override MessageBusRegistration RegisterBroadcastInterceptor<T>(
-                IMessageBus.BroadcastInterceptor<T> interceptor,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterBroadcastInterceptor<T>(IMessageBus.BroadcastInterceptor<T> interceptor, int priority = 0)
             {
                 BeforeRegistration();
                 return base.RegisterBroadcastInterceptor(interceptor, priority);
@@ -818,10 +560,7 @@ namespace DxMessaging.Tests.Runtime.Core
             public override string ToString() => _format == null ? base.ToString() : _format();
         }
 
-        private readonly struct ProbeMessage
-            : IUntargetedMessage,
-                ITargetedMessage,
-                IBroadcastMessage
+        private readonly struct ProbeMessage : IUntargetedMessage, ITargetedMessage, IBroadcastMessage
         {
             public Type MessageType => typeof(ProbeMessage);
         }

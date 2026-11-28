@@ -17,11 +17,9 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             DxMessagingStaticState.Reset();
             IMessageBus baselineBus = MessageHandler.MessageBus;
-            MessageRegistrationHandle baselineHandle =
-                MessageRegistrationHandle.CreateMessageRegistrationHandle();
+            MessageRegistrationHandle baselineHandle = MessageRegistrationHandle.CreateMessageRegistrationHandle();
 
-            MessageRegistrationHandle lastPreResetHandle =
-                MessageRegistrationHandle.CreateMessageRegistrationHandle();
+            MessageRegistrationHandle lastPreResetHandle = MessageRegistrationHandle.CreateMessageRegistrationHandle();
             MessagingDebug.enabled = true;
             MessagingDebug.LogFunction = (logLevel, message) => { };
 
@@ -31,9 +29,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             MessageBus customBus = new MessageBus();
             MessageRegistrationBuilder builder = new MessageRegistrationBuilder();
-            using MessageRegistrationLease previousLease = builder.Build(
-                new MessageRegistrationBuildOptions { PreferredMessageBus = customBus }
-            );
+            using MessageRegistrationLease previousLease = builder.Build(new MessageRegistrationBuildOptions { PreferredMessageBus = customBus });
             MessageHandler.SetGlobalMessageBus(customBus);
 
             DxMessagingStaticState.Reset();
@@ -50,8 +46,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 "Reset must preserve issued bus indices so retained custom buses cannot share handler caches."
             );
 
-            MessageRegistrationHandle resetHandle =
-                MessageRegistrationHandle.CreateMessageRegistrationHandle();
+            MessageRegistrationHandle resetHandle = MessageRegistrationHandle.CreateMessageRegistrationHandle();
             Assert.Greater(
                 resetHandle,
                 lastPreResetHandle,
@@ -61,14 +56,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 resetHandle
             );
 
-            using MessageRegistrationLease postResetLease = builder.Build(
-                new MessageRegistrationBuildOptions { PreferredMessageBus = customBus }
-            );
-            Assert.AreNotEqual(
-                previousLease.Owner,
-                postResetLease.Owner,
-                "Reset must not reuse automatically generated owners belonging to retained leases."
-            );
+            using MessageRegistrationLease postResetLease = builder.Build(new MessageRegistrationBuildOptions { PreferredMessageBus = customBus });
+            Assert.AreNotEqual(previousLease.Owner, postResetLease.Owner, "Reset must not reuse automatically generated owners belonging to retained leases.");
 
             Assert.AreSame(MessageHandler.InitialGlobalMessageBus, MessageHandler.MessageBus);
             Assert.AreSame(baselineBus, MessageHandler.MessageBus);
@@ -83,20 +72,12 @@ namespace DxMessaging.Tests.Runtime.Core
             cache.GetOrAdd<StabilityTestMessage>();
 
             int idBeforeReset = MessageHelperIndexer<StabilityTestMessage>.SequentialId;
-            Assert.GreaterOrEqual(
-                idBeforeReset,
-                0,
-                "Message type should have a valid sequential ID after registration"
-            );
+            Assert.GreaterOrEqual(idBeforeReset, 0, "Message type should have a valid sequential ID after registration");
 
             DxMessagingStaticState.Reset();
 
             int idAfterReset = MessageHelperIndexer<StabilityTestMessage>.SequentialId;
-            Assert.AreEqual(
-                idBeforeReset,
-                idAfterReset,
-                "Message type ID should be preserved after Reset()"
-            );
+            Assert.AreEqual(idBeforeReset, idAfterReset, "Message type ID should be preserved after Reset()");
         }
 
         [Test]
@@ -106,20 +87,12 @@ namespace DxMessaging.Tests.Runtime.Core
             cache.GetOrAdd<TotalMessagesTestMessage>();
 
             int totalBeforeReset = MessageHelperIndexer.TotalMessages;
-            Assert.Greater(
-                totalBeforeReset,
-                0,
-                "TotalMessages should be greater than zero after registering a message type"
-            );
+            Assert.Greater(totalBeforeReset, 0, "TotalMessages should be greater than zero after registering a message type");
 
             DxMessagingStaticState.Reset();
 
             int totalAfterReset = MessageHelperIndexer.TotalMessages;
-            Assert.AreEqual(
-                totalBeforeReset,
-                totalAfterReset,
-                "TotalMessages should be preserved after Reset()"
-            );
+            Assert.AreEqual(totalBeforeReset, totalAfterReset, "TotalMessages should be preserved after Reset()");
         }
 
         private struct StabilityTestMessage : IUntargetedMessage { }

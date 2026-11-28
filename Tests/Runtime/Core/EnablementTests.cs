@@ -16,14 +16,12 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             GameObject prefab = new("Prefab", typeof(SimpleMessageAwareComponent));
             _spawned.Add(prefab);
-            SimpleMessageAwareComponent prefabMessaging =
-                prefab.GetComponent<SimpleMessageAwareComponent>();
+            SimpleMessageAwareComponent prefabMessaging = prefab.GetComponent<SimpleMessageAwareComponent>();
             prefabMessaging.enabled = false;
 
             GameObject copy = Object.Instantiate(prefab);
             _spawned.Add(copy);
-            SimpleMessageAwareComponent spawnedMessaging =
-                copy.GetComponent<SimpleMessageAwareComponent>();
+            SimpleMessageAwareComponent spawnedMessaging = copy.GetComponent<SimpleMessageAwareComponent>();
             Assert.IsFalse(spawnedMessaging.enabled);
             int copyCount = 0;
             spawnedMessaging.untargetedHandler += () => copyCount++;
@@ -42,8 +40,7 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             GameObject prefab = new("Prefab", typeof(SimpleMessageAwareComponent));
             _spawned.Add(prefab);
-            SimpleMessageAwareComponent prefabMessaging =
-                prefab.GetComponent<SimpleMessageAwareComponent>();
+            SimpleMessageAwareComponent prefabMessaging = prefab.GetComponent<SimpleMessageAwareComponent>();
 
             int count = 0;
             prefabMessaging.untargetedHandler += () => count++;

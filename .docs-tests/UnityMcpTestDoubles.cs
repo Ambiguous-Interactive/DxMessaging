@@ -16,8 +16,7 @@ namespace UnityEngine
     {
         private static readonly JsonSerializerOptions Options = new() { IncludeFields = true };
 
-        public static string ToJson(object value, bool prettyPrint = false) =>
-            JsonSerializer.Serialize(value, Options);
+        public static string ToJson(object value, bool prettyPrint = false) => JsonSerializer.Serialize(value, Options);
 
         public static T FromJson<T>(string value) => JsonSerializer.Deserialize<T>(value, Options)!;
     }
@@ -32,8 +31,7 @@ namespace UnityEditor
     {
         internal static readonly Dictionary<string, string> Values = new();
 
-        public static string GetString(string key, string fallback) =>
-            Values.GetValueOrDefault(key, fallback);
+        public static string GetString(string key, string fallback) => Values.GetValueOrDefault(key, fallback);
 
         public static void SetString(string key, string value) => Values[key] = value;
 
@@ -162,8 +160,7 @@ namespace UnityEditor.TestTools.TestRunner.Api
         internal static string RunGuid = "owned-guid";
         internal static ExecutionSettings? LastSettings;
 
-        public void RegisterCallbacks(ICallbacks callbacks) =>
-            Callbacks = (IErrorCallbacks)callbacks;
+        public void RegisterCallbacks(ICallbacks callbacks) => Callbacks = (IErrorCallbacks)callbacks;
 
         public string Execute(ExecutionSettings settings)
         {
@@ -178,7 +175,6 @@ namespace UnityEditor.TestTools.TestRunner.Api
             return RunGuid;
         }
 
-        internal static bool IsRunActive() =>
-            QueryThrows ? throw new InvalidOperationException("query failed") : Active;
+        internal static bool IsRunActive() => QueryThrows ? throw new InvalidOperationException("query failed") : Active;
     }
 }

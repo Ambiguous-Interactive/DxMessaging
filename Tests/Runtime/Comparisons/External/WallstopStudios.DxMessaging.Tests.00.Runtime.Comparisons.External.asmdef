@@ -19,13 +19,7 @@
   "overrideReferences": true,
   "precompiledReferences": ["nunit.framework.dll"],
   "autoReferenced": true,
-  "defineConstraints": [
-    "UNITY_INCLUDE_TESTS",
-    "MESSAGEPIPE_PRESENT",
-    "UNIRX_PRESENT",
-    "ZENJECT_PRESENT",
-    "UNITASK_PRESENT"
-  ],
+  "defineConstraints": ["UNITY_INCLUDE_TESTS", "MESSAGEPIPE_PRESENT", "UNIRX_PRESENT", "ZENJECT_PRESENT", "UNITASK_PRESENT"],
   "versionDefines": [
     {
       "name": "com.cysharp.messagepipe",

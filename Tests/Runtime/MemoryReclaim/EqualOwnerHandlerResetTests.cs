@@ -66,9 +66,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
 
         private static IEnumerable<TestCaseData> Cases()
         {
-            foreach (
-                MessageScenario basis in MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext
-            )
+            foreach (MessageScenario basis in MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext)
             foreach (bool fast in new[] { false, true })
             {
                 if (basis.Kind == MessageKind.Untargeted && basis.UsePostProcessor && !fast)
@@ -84,18 +82,8 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 foreach (bool custom in new[] { false, true })
                 {
                     MessageScenario scenario = basis.WithDiagnostics(diagnostics);
-                    yield return new TestCaseData(
-                        scenario,
-                        fast,
-                        identity,
-                        freshFirst,
-                        removal,
-                        reset,
-                        reverse,
-                        custom
-                    ).SetName(
-                        $"EqualOwnerReset_{scenario}_fast{fast}_identity{identity}_freshFirst{freshFirst}"
-                            + $"_removal{removal}_reset{reset}_reverse{reverse}_custom{custom}"
+                    yield return new TestCaseData(scenario, fast, identity, freshFirst, removal, reset, reverse, custom).SetName(
+                        $"EqualOwnerReset_{scenario}_fast{fast}_identity{identity}_freshFirst{freshFirst}" + $"_removal{removal}_reset{reset}_reverse{reverse}_custom{custom}"
                     );
                 }
             }
@@ -120,15 +108,8 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 MessageHandler.SetGlobalMessageBus(bus);
             }
             MessageHandler first = new MessageHandler(new InstanceId(902), bus) { active = true };
-            MessageHandler second =
-                identity == 0
-                    ? first
-                    : new MessageHandler(new InstanceId(identity == 1 ? 902 : 903), bus)
-                    {
-                        active = true,
-                    };
-            string label =
-                $"[{scenario}] fast={fast},identity={identity},freshFirst={freshFirst},removal={removal},reset={reset},reverse={reverse},custom={custom}";
+            MessageHandler second = identity == 0 ? first : new MessageHandler(new InstanceId(identity == 1 ? 902 : 903), bus) { active = true };
+            string label = $"[{scenario}] fast={fast},identity={identity},freshFirst={freshFirst},removal={removal},reset={reset},reverse={reverse},custom={custom}";
             List<string> trace = new List<string>();
             int firstCalls = 0;
             int secondCalls = 0;
@@ -146,14 +127,8 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             MessageRegistrationToken a = MessageRegistrationToken.Create(first, bus);
             MessageRegistrationToken b = MessageRegistrationToken.Create(second, bus);
             MessageRegistrationToken fresh = null;
-            using (
-                LeakWatcher watch = LeakWatcher.WatchWithSlots(bus, handler: first, label: label)
-            )
-            using (
-                LeakWatcher other = ReferenceEquals(first, second)
-                    ? null
-                    : LeakWatcher.WatchWithSlots(bus, handler: second, label: label + ":second")
-            )
+            using (LeakWatcher watch = LeakWatcher.WatchWithSlots(bus, handler: first, label: label))
+            using (LeakWatcher other = ReferenceEquals(first, second) ? null : LeakWatcher.WatchWithSlots(bus, handler: second, label: label + ":second"))
             {
                 try
                 {
@@ -191,11 +166,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     }
                     Emit(bus, scenario.Kind);
                     warmTrace = trace.ToArray();
-                    Assert.That(
-                        warmTrace,
-                        Is.EqualTo(new[] { "A", "B" }),
-                        label + ": independent initial deliveries"
-                    );
+                    Assert.That(warmTrace, Is.EqualTo(new[] { "A", "B" }), label + ": independent initial deliveries");
                     if (1 <= removal)
                     {
                         b.Disable();
@@ -210,11 +181,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                         MessagingDebug.enabled = false;
                         bus.DiagnosticsMode = scenario.DiagnosticsEnabled;
                     }
-                    beforeFreshRegistered =
-                        bus.RegisteredUntargeted
-                        + bus.RegisteredTargeted
-                        + bus.RegisteredBroadcast
-                        + bus.RegisteredPostProcessors;
+                    beforeFreshRegistered = bus.RegisteredUntargeted + bus.RegisteredTargeted + bus.RegisteredBroadcast + bus.RegisteredPostProcessors;
                     firstDepth = StorageDepth(first);
                     secondDepth = StorageDepth(second);
                     fresh = MessageRegistrationToken.Create(freshFirst ? first : second, bus);
@@ -271,37 +238,17 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             {
                 if (reset && !custom)
                 {
-                    Assert.That(
-                        firstDepth,
-                        Is.Zero,
-                        report + ": default reset releases first handler storage"
-                    );
-                    Assert.That(
-                        secondDepth,
-                        Is.Zero,
-                        report + ": default reset releases second handler storage"
-                    );
+                    Assert.That(firstDepth, Is.Zero, report + ": default reset releases first handler storage");
+                    Assert.That(secondDepth, Is.Zero, report + ": default reset releases second handler storage");
                 }
                 Assert.That(ReferenceEquals(first, second), Is.EqualTo(identity == 0), report);
                 Assert.That(first.Equals(second), Is.EqualTo(identity != 2), report);
                 Assert.That(beforeFreshRegistered, Is.EqualTo(preserve ? 2 - removal : 0), report);
-                Assert.That(
-                    firstAfterFresh,
-                    Is.EqualTo(1 + (preserve && removal != 2 ? 1 : 0)),
-                    report
-                );
-                Assert.That(
-                    secondAfterFresh,
-                    Is.EqualTo(1 + (preserve && removal == 0 ? 1 : 0)),
-                    report
-                );
+                Assert.That(firstAfterFresh, Is.EqualTo(1 + (preserve && removal != 2 ? 1 : 0)), report);
+                Assert.That(secondAfterFresh, Is.EqualTo(1 + (preserve && removal == 0 ? 1 : 0)), report);
                 Assert.That(freshAfterFirst, Is.EqualTo(1), report);
                 Assert.That(freshAfterStale, Is.EqualTo(2), report);
-                Assert.That(
-                    freshTrace,
-                    Is.EqualTo(ExpectedTrace(preserve, freshFirst, removal)),
-                    report
-                );
+                Assert.That(freshTrace, Is.EqualTo(ExpectedTrace(preserve, freshFirst, removal)), report);
                 if (!(custom && reset))
                 {
                     Assert.That(staleTrace, Is.EqualTo(new[] { "C" }), report);
@@ -331,108 +278,38 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             return expected.ToArray();
         }
 
-        private static MessageRegistrationHandle Register(
-            MessageRegistrationToken token,
-            MessageScenario scenario,
-            bool useFast,
-            Action record,
-            int priority
-        )
+        private static MessageRegistrationHandle Register(MessageRegistrationToken token, MessageScenario scenario, bool useFast, Action record, int priority)
         {
             Action<ProbeMessage> scalar = _ => record();
             Action<InstanceId, ProbeMessage> context = (_, __) => record();
             MessageHandler.FastHandler<ProbeMessage> fast = (in ProbeMessage _) => record();
-            MessageHandler.FastHandlerWithContext<ProbeMessage> fastContext = (
-                in InstanceId _,
-                in ProbeMessage __
-            ) => record();
+            MessageHandler.FastHandlerWithContext<ProbeMessage> fastContext = (in InstanceId _, in ProbeMessage __) => record();
             return (scenario.Kind, scenario.UsePostProcessor, !useFast) switch
             {
-                (MessageKind.Untargeted, false, true) => token.RegisterUntargeted(
-                    scalar,
-                    priority: priority
-                ),
-                (MessageKind.Untargeted, false, false) => token.RegisterUntargeted(
-                    fast,
-                    priority: priority
-                ),
-                (MessageKind.Untargeted, true, _) => token.RegisterUntargetedPostProcessor(
-                    fast,
-                    priority: priority
-                ),
-                (MessageKind.Targeted, false, true) => token.RegisterTargeted(
-                    Context,
-                    scalar,
-                    priority: priority
-                ),
-                (MessageKind.Targeted, false, false) => token.RegisterTargeted(
-                    Context,
-                    fast,
-                    priority: priority
-                ),
-                (MessageKind.Targeted, true, true) => token.RegisterTargetedPostProcessor(
-                    Context,
-                    scalar,
-                    priority: priority
-                ),
-                (MessageKind.Targeted, true, false) => token.RegisterTargetedPostProcessor(
-                    Context,
-                    fast,
-                    priority: priority
-                ),
-                (MessageKind.Broadcast, false, true) => token.RegisterBroadcast(
-                    Context,
-                    scalar,
-                    priority: priority
-                ),
-                (MessageKind.Broadcast, false, false) => token.RegisterBroadcast(
-                    Context,
-                    fast,
-                    priority: priority
-                ),
-                (MessageKind.Broadcast, true, true) => token.RegisterBroadcastPostProcessor(
-                    Context,
-                    scalar,
-                    priority: priority
-                ),
-                (MessageKind.Broadcast, true, false) => token.RegisterBroadcastPostProcessor(
-                    Context,
-                    fast,
-                    priority: priority
-                ),
-                (MessageKind.TargetedWithoutTargeting, false, true) =>
-                    token.RegisterTargetedWithoutTargeting(context, priority: priority),
-                (MessageKind.TargetedWithoutTargeting, false, false) =>
-                    token.RegisterTargetedWithoutTargeting(fastContext, priority: priority),
-                (MessageKind.TargetedWithoutTargeting, true, true) =>
-                    token.RegisterTargetedWithoutTargetingPostProcessor(
-                        context,
-                        priority: priority
-                    ),
-                (MessageKind.TargetedWithoutTargeting, true, false) =>
-                    token.RegisterTargetedWithoutTargetingPostProcessor(
-                        fastContext,
-                        priority: priority
-                    ),
-                (MessageKind.BroadcastWithoutSource, false, true) =>
-                    token.RegisterBroadcastWithoutSource(context, priority: priority),
-                (MessageKind.BroadcastWithoutSource, false, false) =>
-                    token.RegisterBroadcastWithoutSource(fastContext, priority: priority),
-                (MessageKind.BroadcastWithoutSource, true, true) =>
-                    token.RegisterBroadcastWithoutSourcePostProcessor(context, priority: priority),
-                (MessageKind.BroadcastWithoutSource, true, false) =>
-                    token.RegisterBroadcastWithoutSourcePostProcessor(
-                        fastContext,
-                        priority: priority
-                    ),
+                (MessageKind.Untargeted, false, true) => token.RegisterUntargeted(scalar, priority: priority),
+                (MessageKind.Untargeted, false, false) => token.RegisterUntargeted(fast, priority: priority),
+                (MessageKind.Untargeted, true, _) => token.RegisterUntargetedPostProcessor(fast, priority: priority),
+                (MessageKind.Targeted, false, true) => token.RegisterTargeted(Context, scalar, priority: priority),
+                (MessageKind.Targeted, false, false) => token.RegisterTargeted(Context, fast, priority: priority),
+                (MessageKind.Targeted, true, true) => token.RegisterTargetedPostProcessor(Context, scalar, priority: priority),
+                (MessageKind.Targeted, true, false) => token.RegisterTargetedPostProcessor(Context, fast, priority: priority),
+                (MessageKind.Broadcast, false, true) => token.RegisterBroadcast(Context, scalar, priority: priority),
+                (MessageKind.Broadcast, false, false) => token.RegisterBroadcast(Context, fast, priority: priority),
+                (MessageKind.Broadcast, true, true) => token.RegisterBroadcastPostProcessor(Context, scalar, priority: priority),
+                (MessageKind.Broadcast, true, false) => token.RegisterBroadcastPostProcessor(Context, fast, priority: priority),
+                (MessageKind.TargetedWithoutTargeting, false, true) => token.RegisterTargetedWithoutTargeting(context, priority: priority),
+                (MessageKind.TargetedWithoutTargeting, false, false) => token.RegisterTargetedWithoutTargeting(fastContext, priority: priority),
+                (MessageKind.TargetedWithoutTargeting, true, true) => token.RegisterTargetedWithoutTargetingPostProcessor(context, priority: priority),
+                (MessageKind.TargetedWithoutTargeting, true, false) => token.RegisterTargetedWithoutTargetingPostProcessor(fastContext, priority: priority),
+                (MessageKind.BroadcastWithoutSource, false, true) => token.RegisterBroadcastWithoutSource(context, priority: priority),
+                (MessageKind.BroadcastWithoutSource, false, false) => token.RegisterBroadcastWithoutSource(fastContext, priority: priority),
+                (MessageKind.BroadcastWithoutSource, true, true) => token.RegisterBroadcastWithoutSourcePostProcessor(context, priority: priority),
+                (MessageKind.BroadcastWithoutSource, true, false) => token.RegisterBroadcastWithoutSourcePostProcessor(fastContext, priority: priority),
                 _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
             };
         }
 
-        private static int StorageDepth(MessageHandler handler) =>
-            (
-                (IDictionary)MessageBusInspection.ReadField(handler, "_handlersByTypeByMessageBus")
-            ).Count;
+        private static int StorageDepth(MessageHandler handler) => ((IDictionary)MessageBusInspection.ReadField(handler, "_handlersByTypeByMessageBus")).Count;
 
         private static void AssertState(Action assertions)
         {
@@ -465,10 +342,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             }
         }
 
-        private readonly struct ProbeMessage
-            : IUntargetedMessage,
-                ITargetedMessage,
-                IBroadcastMessage
+        private readonly struct ProbeMessage : IUntargetedMessage, ITargetedMessage, IBroadcastMessage
         {
             public Type MessageType => typeof(ProbeMessage);
         }

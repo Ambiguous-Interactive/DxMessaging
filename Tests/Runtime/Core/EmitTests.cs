@@ -23,15 +23,9 @@ namespace DxMessaging.Tests.Runtime.Core
     public sealed class EmitTests : MessagingTestBase
     {
         [Test]
-        public void HandlerReceivesEmittedMessage(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void HandlerReceivesEmittedMessage([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
-            GameObject host = new(
-                nameof(HandlerReceivesEmittedMessage) + "_" + scenario,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject host = new(nameof(HandlerReceivesEmittedMessage) + "_" + scenario, typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
             EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -43,11 +37,7 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 case MessageKind.Untargeted:
                 {
-                    _ = ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
-                        scenario,
-                        token,
-                        (in SimpleUntargetedMessage _) => ++count
-                    );
+                    _ = ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(scenario, token, (in SimpleUntargetedMessage _) => ++count);
                     SimpleUntargetedMessage message = new();
                     for (int i = 0; i < numEmissions; ++i)
                     {
@@ -59,12 +49,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 case MessageKind.Targeted:
                 {
-                    _ = ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        component,
-                        (in SimpleTargetedMessage _) => ++count
-                    );
+                    _ = ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(scenario, token, component, (in SimpleTargetedMessage _) => ++count);
                     SimpleTargetedMessage message = new();
                     for (int i = 0; i < numEmissions; ++i)
                     {
@@ -76,12 +61,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 case MessageKind.Broadcast:
                 {
-                    _ = ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        component,
-                        (in SimpleBroadcastMessage _) => ++count
-                    );
+                    _ = ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(scenario, token, component, (in SimpleBroadcastMessage _) => ++count);
                     SimpleBroadcastMessage message = new();
                     for (int i = 0; i < numEmissions; ++i)
                     {

@@ -2,7 +2,8 @@
 
 ## Overview
 
-This skill covers best practices for writing accurate test documentation, proper linter directive placement, and ensuring consistency between user-facing messages and actual UI/output.
+This skill covers best practices for writing accurate test documentation, proper linter directive placement, and ensuring consistency between user-facing messages and actual
+UI/output.
 
 ## Solution
 

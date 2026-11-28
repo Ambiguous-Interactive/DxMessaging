@@ -64,13 +64,7 @@ namespace DxMessaging.Tests.Editor
             {
                 return false;
             }
-            if (
-                !string.Equals(
-                    AssetDatabase.GetAssetPath(opened),
-                    _scriptPath,
-                    StringComparison.Ordinal
-                )
-            )
+            if (!string.Equals(AssetDatabase.GetAssetPath(opened), _scriptPath, StringComparison.Ordinal))
             {
                 return false;
             }

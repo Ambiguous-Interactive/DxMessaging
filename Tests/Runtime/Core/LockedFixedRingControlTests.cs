@@ -21,26 +21,14 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 Assert.That(ring.TryEnqueue(value), Is.True, $"Enqueue {value} must fit.");
             }
-            Assert.That(
-                ring.TryEnqueue(999),
-                Is.False,
-                "Full must return failure without overwrite."
-            );
+            Assert.That(ring.TryEnqueue(999), Is.False, "Full must return failure without overwrite.");
             Assert.That(ring.Count, Is.EqualTo(capacity), "Overflow must not change the count.");
             Assert.That(ring.TryDequeue(out int first), Is.True, "The oldest item must dequeue.");
             Assert.That(first, Is.EqualTo(1), "Full must preserve the oldest item.");
-            Assert.That(
-                ring.TryEnqueue(capacity + 1),
-                Is.True,
-                "A free slot must wrap and accept."
-            );
+            Assert.That(ring.TryEnqueue(capacity + 1), Is.True, "A free slot must wrap and accept.");
             for (int value = 2; value <= capacity + 1; ++value)
             {
-                Assert.That(
-                    ring.TryDequeue(out int actual),
-                    Is.True,
-                    $"Dequeue {value} must exist."
-                );
+                Assert.That(ring.TryDequeue(out int actual), Is.True, $"Dequeue {value} must exist.");
                 Assert.That(actual, Is.EqualTo(value), "Wrap must preserve FIFO order.");
             }
             Assert.That(ring.Count, Is.Zero, "The ring must be empty after draining.");
@@ -51,41 +39,22 @@ namespace DxMessaging.Tests.Runtime.Core
         public void ResetAndDisposeClearOwnedReferences()
         {
             LockedFixedRingControl<object> ring = new(2);
-            FieldInfo field = typeof(LockedFixedRingControl<object>).GetField(
-                "_items",
-                BindingFlags.NonPublic | BindingFlags.Instance
-            );
+            FieldInfo field = typeof(LockedFixedRingControl<object>).GetField("_items", BindingFlags.NonPublic | BindingFlags.Instance);
             Assert.That(field, Is.Not.Null, "The test must inspect the actual payload slots.");
             object[] slots = (object[])field.GetValue(ring);
             object first = new();
             object second = new();
             Assert.That(ring.TryEnqueue(first), Is.True, "First reference must enqueue.");
             Assert.That(ring.TryEnqueue(second), Is.True, "Second reference must enqueue.");
-            Assert.That(
-                ring.TryDequeue(out object removed),
-                Is.True,
-                "First reference must dequeue."
-            );
+            Assert.That(ring.TryDequeue(out object removed), Is.True, "First reference must dequeue.");
             Assert.That(removed, Is.SameAs(first), "FIFO must return the original reference.");
-            Assert.That(
-                slots.Any(item => ReferenceEquals(item, first)),
-                Is.False,
-                "Dequeue must clear the consumed slot."
-            );
+            Assert.That(slots.Any(item => ReferenceEquals(item, first)), Is.False, "Dequeue must clear the consumed slot.");
             Assert.That(ring.Reset(), Is.EqualTo(1), "Reset must report the one dropped item.");
-            Assert.That(
-                slots.All(item => item == null),
-                Is.True,
-                "Reset must clear every retained reference."
-            );
+            Assert.That(slots.All(item => item == null), Is.True, "Reset must clear every retained reference.");
             Assert.That(ring.TryEnqueue(first), Is.True, "Reset must allow a new enqueue.");
             ring.Dispose();
             ring.Dispose();
-            Assert.That(
-                slots.All(item => item == null),
-                Is.True,
-                "Disposal must clear every retained reference."
-            );
+            Assert.That(slots.All(item => item == null), Is.True, "Disposal must clear every retained reference.");
             Assert.Throws<ObjectDisposedException>(() => ring.TryEnqueue(second));
             Assert.Throws<ObjectDisposedException>(() => ring.TryDequeue(out _));
             Assert.Throws<ObjectDisposedException>(() => ring.Reset());
@@ -113,9 +82,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         {
                             if (!ring.TryEnqueue(new Item(owner, index)))
                             {
-                                throw new InvalidOperationException(
-                                    "Capacity was lost before all producers finished."
-                                );
+                                throw new InvalidOperationException("Capacity was lost before all producers finished.");
                             }
                         }
                     }
@@ -132,48 +99,20 @@ namespace DxMessaging.Tests.Runtime.Core
             start.Set();
             foreach (Thread thread in threads)
             {
-                Assert.That(
-                    thread.Join(TimeSpan.FromSeconds(10)),
-                    Is.True,
-                    "Every producer must finish."
-                );
+                Assert.That(thread.Join(TimeSpan.FromSeconds(10)), Is.True, "Every producer must finish.");
             }
             Assert.That(failures.All(error => error == null), Is.True, "No producer may fail.");
-            Assert.That(
-                ring.Count,
-                Is.EqualTo(producers * itemsPerProducer),
-                "All values must be published."
-            );
+            Assert.That(ring.Count, Is.EqualTo(producers * itemsPerProducer), "All values must be published.");
             int[] next = new int[producers];
             HashSet<int> seen = new();
             for (int drained = 0; drained < producers * itemsPerProducer; ++drained)
             {
-                Assert.That(
-                    ring.TryDequeue(out Item item),
-                    Is.True,
-                    "Every accepted item must drain."
-                );
-                Assert.That(
-                    item.Index,
-                    Is.EqualTo(next[item.Producer]++),
-                    "Each producer's FIFO order must survive interleaving."
-                );
-                Assert.That(
-                    seen.Add(item.Producer * itemsPerProducer + item.Index),
-                    Is.True,
-                    "An item must appear once."
-                );
+                Assert.That(ring.TryDequeue(out Item item), Is.True, "Every accepted item must drain.");
+                Assert.That(item.Index, Is.EqualTo(next[item.Producer]++), "Each producer's FIFO order must survive interleaving.");
+                Assert.That(seen.Add(item.Producer * itemsPerProducer + item.Index), Is.True, "An item must appear once.");
             }
-            Assert.That(
-                seen.Count,
-                Is.EqualTo(producers * itemsPerProducer),
-                "No item may disappear."
-            );
-            Assert.That(
-                ring.TryDequeue(out _),
-                Is.False,
-                "The final drain must leave the ring empty."
-            );
+            Assert.That(seen.Count, Is.EqualTo(producers * itemsPerProducer), "No item may disappear.");
+            Assert.That(ring.TryDequeue(out _), Is.False, "The final drain must leave the ring empty.");
         }
 
         [Test]

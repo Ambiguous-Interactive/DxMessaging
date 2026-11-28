@@ -1,45 +1,9 @@
 {
-  "environmentFields": [
-    "schemaVersion",
-    "sourceCommit",
-    "sourceTree",
-    "unityVersion",
-    "testMode",
-    "scriptingBackend",
-    "testAssembly",
-    "testName"
-  ],
-  "profileFields": [
-    "schemaVersion",
-    "observationSchemaVersion",
-    "generatorVersion",
-    "seed",
-    "requestedLength",
-    "messageKinds",
-    "fault",
-    "classification"
-  ],
-  "caseFields": [
-    "schemaVersion",
-    "observationSchemaVersion",
-    "generatorVersion",
-    "seed",
-    "messageKind",
-    "fault",
-    "original",
-    "minimized"
-  ],
+  "environmentFields": ["schemaVersion", "sourceCommit", "sourceTree", "unityVersion", "testMode", "scriptingBackend", "testAssembly", "testName"],
+  "profileFields": ["schemaVersion", "observationSchemaVersion", "generatorVersion", "seed", "requestedLength", "messageKinds", "fault", "classification"],
+  "caseFields": ["schemaVersion", "observationSchemaVersion", "generatorVersion", "seed", "messageKind", "fault", "original", "minimized"],
   "replayFields": ["operations", "controlTrace", "candidateTrace", "mismatchIndex", "category"],
-  "observationFields": [
-    "callbacks",
-    "state",
-    "exception",
-    "trimResult",
-    "occupiedTypeSlots",
-    "occupiedTargetSlots",
-    "finalEmissions",
-    "unmatchedDiagnostics"
-  ],
+  "observationFields": ["callbacks", "state", "exception", "trimResult", "occupiedTypeSlots", "occupiedTargetSlots", "finalEmissions", "unmatchedDiagnostics"],
   "operationIntegerFields": [
     "token",
     "context",

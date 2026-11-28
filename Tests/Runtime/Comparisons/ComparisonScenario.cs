@@ -34,8 +34,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         public const int FanOutSubscribers = 16; // S2
         public const int KeyedListenerCount = 16; // S3 (dispatch to 1 of K)
 
-        public static readonly ComparisonScenario[] All = (ComparisonScenario[])
-            Enum.GetValues(typeof(ComparisonScenario));
+        public static readonly ComparisonScenario[] All = (ComparisonScenario[])Enum.GetValues(typeof(ComparisonScenario));
 
         /// <summary>
         /// Per-scenario warm-up emit count. Every comparison scenario is a steady-state
@@ -63,11 +62,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         /// execution scenario-major inside every roster assembly instead of silently reverting
         /// to technology-major order.
         /// </summary>
-        public static string PerformanceCaseName(
-            int scenarioIndex,
-            string techKey,
-            ComparisonScenario scenario
-        ) => $"Comparison_{scenarioIndex:D2}_{Key(scenario)}_{techKey}";
+        public static string PerformanceCaseName(int scenarioIndex, string techKey, ComparisonScenario scenario) => $"Comparison_{scenarioIndex:D2}_{Key(scenario)}_{techKey}";
 
         // Stable MACHINE key used inside the row scenario id. Never change.
         public static string Key(ComparisonScenario s)
@@ -98,8 +93,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 ComparisonScenario.PriorityOrderedDispatch => "Priority-ordered dispatch",
                 ComparisonScenario.FilteredDispatch => "Filtered/intercepted dispatch",
                 ComparisonScenario.PostProcessingDispatch => "Post-processing dispatch",
-                ComparisonScenario.InterceptedPostProcessingDispatch =>
-                    "Intercepted + post-processed dispatch",
+                ComparisonScenario.InterceptedPostProcessingDispatch => "Intercepted + post-processed dispatch",
                 ComparisonScenario.SubscribeUnsubscribeChurn => "Subscribe/unsubscribe churn",
                 ComparisonScenario.StructMessageNoBoxing => "Struct message (no boxing)",
                 _ => throw new ArgumentOutOfRangeException(nameof(s), s, null),

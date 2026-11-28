@@ -13,51 +13,18 @@ namespace DxMessaging.Tests.Runtime.Core
     {
         /// <summary>Preserves present enum endpoints and distinguishes explicit null from zero.</summary>
         [TestCaseSource(nameof(Boundaries))]
-        public void OmittedNullableEnumDefaultsPreservePresenceAndEndpointValues(
-            int index,
-            string expected,
-            string metadataType,
-            Type enumType,
-            string boundary
-        )
+        public void OmittedNullableEnumDefaultsPreservePresenceAndEndpointValues(int index, string expected, string metadataType, Type enumType, string boundary)
         {
-            string context =
-                $"index={index}, expected={expected}, metadataType={metadataType}, enumType={enumType.FullName}, boundary={boundary}";
+            string context = $"index={index}, expected={expected}, metadataType={metadataType}, enumType={enumType.FullName}, boundary={boundary}";
             HandwrittenDefaults manual = new(1);
             Assert.That(manual.Required, Is.EqualTo(1), "Manual constructor ran: " + context);
-            AssertValue(
-                manual.Values()[index],
-                expected,
-                metadataType,
-                enumType,
-                "Manual: " + context
-            );
+            AssertValue(manual.Values()[index], expected, metadataType, enumType, "Manual: " + context);
             ClassDefaults reference = new(1);
             StructDefaults value = new(1);
-            Assert.That(
-                reference.Required,
-                Is.EqualTo(1),
-                "Generated class constructor ran: " + context
-            );
-            Assert.That(
-                value.Required,
-                Is.EqualTo(1),
-                "Generated struct constructor ran: " + context
-            );
-            AssertValue(
-                reference.Values()[index],
-                expected,
-                metadataType,
-                enumType,
-                "Class: " + context
-            );
-            AssertValue(
-                value.Values()[index],
-                expected,
-                metadataType,
-                enumType,
-                "Readonly struct: " + context
-            );
+            Assert.That(reference.Required, Is.EqualTo(1), "Generated class constructor ran: " + context);
+            Assert.That(value.Required, Is.EqualTo(1), "Generated struct constructor ran: " + context);
+            AssertValue(reference.Values()[index], expected, metadataType, enumType, "Class: " + context);
+            AssertValue(value.Values()[index], expected, metadataType, enumType, "Readonly struct: " + context);
             ClassDefaults explicitReference = new(
                 2,
                 default(SByteValue),
@@ -96,234 +63,48 @@ namespace DxMessaging.Tests.Runtime.Core
                 default(UInt64Value),
                 default(UInt64Value)
             );
-            ClassDefaults nullReference = new(
-                3,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null
-            );
-            StructDefaults nullValue = new(
-                3,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null
-            );
-            Assert.That(
-                nullReference.Required,
-                Is.EqualTo(3),
-                "Null class constructor ran: " + context
-            );
-            Assert.That(
-                nullValue.Required,
-                Is.EqualTo(3),
-                "Null struct constructor ran: " + context
-            );
-            Assert.That(
-                nullReference.Values()[index],
-                Is.Null,
-                "Explicit class null stays absent: " + context
-            );
-            Assert.That(
-                nullValue.Values()[index],
-                Is.Null,
-                "Explicit struct null stays absent: " + context
-            );
-            Assert.That(
-                explicitReference.Required,
-                Is.EqualTo(2),
-                "Explicit class constructor ran: " + context
-            );
-            Assert.That(
-                explicitValue.Required,
-                Is.EqualTo(2),
-                "Explicit struct constructor ran: " + context
-            );
-            AssertValue(
-                explicitReference.Values()[index],
-                "0",
-                metadataType,
-                enumType,
-                "Explicit class: " + context
-            );
-            AssertValue(
-                explicitValue.Values()[index],
-                "0",
-                metadataType,
-                enumType,
-                "Explicit readonly struct: " + context
-            );
+            ClassDefaults nullReference = new(3, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+            StructDefaults nullValue = new(3, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+            Assert.That(nullReference.Required, Is.EqualTo(3), "Null class constructor ran: " + context);
+            Assert.That(nullValue.Required, Is.EqualTo(3), "Null struct constructor ran: " + context);
+            Assert.That(nullReference.Values()[index], Is.Null, "Explicit class null stays absent: " + context);
+            Assert.That(nullValue.Values()[index], Is.Null, "Explicit struct null stays absent: " + context);
+            Assert.That(explicitReference.Required, Is.EqualTo(2), "Explicit class constructor ran: " + context);
+            Assert.That(explicitValue.Required, Is.EqualTo(2), "Explicit struct constructor ran: " + context);
+            AssertValue(explicitReference.Values()[index], "0", metadataType, enumType, "Explicit class: " + context);
+            AssertValue(explicitValue.Values()[index], "0", metadataType, enumType, "Explicit readonly struct: " + context);
         }
 
-        private static void AssertValue(
-            object value,
-            string expected,
-            string metadataType,
-            Type enumType,
-            string context
-        )
+        private static void AssertValue(object value, string expected, string metadataType, Type enumType, string context)
         {
             Assert.That(value, Is.Not.Null, "Present nullable enum: " + context);
             Assert.That(value.GetType(), Is.EqualTo(enumType), "Exact boxed enum type: " + context);
             Type underlying = Enum.GetUnderlyingType(enumType);
-            Assert.That(
-                underlying.FullName,
-                Is.EqualTo(metadataType),
-                "Exact enum width: " + context
-            );
+            Assert.That(underlying.FullName, Is.EqualTo(metadataType), "Exact enum width: " + context);
             object number = Convert.ChangeType(value, underlying, CultureInfo.InvariantCulture);
-            Assert.That(
-                number.GetType().FullName,
-                Is.EqualTo(metadataType),
-                "Exact boxed underlying type: " + context
-            );
-            Assert.That(
-                Convert.ToString(number, CultureInfo.InvariantCulture),
-                Is.EqualTo(expected),
-                "Exact enum value: " + context
-            );
+            Assert.That(number.GetType().FullName, Is.EqualTo(metadataType), "Exact boxed underlying type: " + context);
+            Assert.That(Convert.ToString(number, CultureInfo.InvariantCulture), Is.EqualTo(expected), "Exact enum value: " + context);
         }
 
         // SYNC: NullableEnumDefaultBoundaryTests.Cases uses this fixed endpoint roster.
         private static IEnumerable<TestCaseData> Boundaries()
         {
-            yield return new TestCaseData(
-                0,
-                "-128",
-                "System.SByte",
-                typeof(SByteValue),
-                "SByteMin"
-            ).SetName("GeneratedNullableEnumDefault(SByteMin)");
-            yield return new TestCaseData(
-                1,
-                "127",
-                "System.SByte",
-                typeof(SByteValue),
-                "SByteMax"
-            ).SetName("GeneratedNullableEnumDefault(SByteMax)");
-            yield return new TestCaseData(
-                2,
-                "0",
-                "System.Byte",
-                typeof(ByteValue),
-                "ByteMin"
-            ).SetName("GeneratedNullableEnumDefault(ByteMin)");
-            yield return new TestCaseData(
-                3,
-                "255",
-                "System.Byte",
-                typeof(ByteValue),
-                "ByteMax"
-            ).SetName("GeneratedNullableEnumDefault(ByteMax)");
-            yield return new TestCaseData(
-                4,
-                "-32768",
-                "System.Int16",
-                typeof(Int16Value),
-                "Int16Min"
-            ).SetName("GeneratedNullableEnumDefault(Int16Min)");
-            yield return new TestCaseData(
-                5,
-                "32767",
-                "System.Int16",
-                typeof(Int16Value),
-                "Int16Max"
-            ).SetName("GeneratedNullableEnumDefault(Int16Max)");
-            yield return new TestCaseData(
-                6,
-                "0",
-                "System.UInt16",
-                typeof(UInt16Value),
-                "UInt16Min"
-            ).SetName("GeneratedNullableEnumDefault(UInt16Min)");
-            yield return new TestCaseData(
-                7,
-                "65535",
-                "System.UInt16",
-                typeof(UInt16Value),
-                "UInt16Max"
-            ).SetName("GeneratedNullableEnumDefault(UInt16Max)");
-            yield return new TestCaseData(
-                8,
-                "-2147483648",
-                "System.Int32",
-                typeof(Int32Value),
-                "Int32Min"
-            ).SetName("GeneratedNullableEnumDefault(Int32Min)");
-            yield return new TestCaseData(
-                9,
-                "2147483647",
-                "System.Int32",
-                typeof(Int32Value),
-                "Int32Max"
-            ).SetName("GeneratedNullableEnumDefault(Int32Max)");
-            yield return new TestCaseData(
-                10,
-                "0",
-                "System.UInt32",
-                typeof(UInt32Value),
-                "UInt32Min"
-            ).SetName("GeneratedNullableEnumDefault(UInt32Min)");
-            yield return new TestCaseData(
-                11,
-                "4294967295",
-                "System.UInt32",
-                typeof(UInt32Value),
-                "UInt32Max"
-            ).SetName("GeneratedNullableEnumDefault(UInt32Max)");
-            yield return new TestCaseData(
-                12,
-                "-9223372036854775808",
-                "System.Int64",
-                typeof(Int64Value),
-                "Int64Min"
-            ).SetName("GeneratedNullableEnumDefault(Int64Min)");
-            yield return new TestCaseData(
-                13,
-                "9223372036854775807",
-                "System.Int64",
-                typeof(Int64Value),
-                "Int64Max"
-            ).SetName("GeneratedNullableEnumDefault(Int64Max)");
-            yield return new TestCaseData(
-                14,
-                "0",
-                "System.UInt64",
-                typeof(UInt64Value),
-                "UInt64Min"
-            ).SetName("GeneratedNullableEnumDefault(UInt64Min)");
-            yield return new TestCaseData(
-                15,
-                "18446744073709551615",
-                "System.UInt64",
-                typeof(UInt64Value),
-                "UInt64Max"
-            ).SetName("GeneratedNullableEnumDefault(UInt64Max)");
+            yield return new TestCaseData(0, "-128", "System.SByte", typeof(SByteValue), "SByteMin").SetName("GeneratedNullableEnumDefault(SByteMin)");
+            yield return new TestCaseData(1, "127", "System.SByte", typeof(SByteValue), "SByteMax").SetName("GeneratedNullableEnumDefault(SByteMax)");
+            yield return new TestCaseData(2, "0", "System.Byte", typeof(ByteValue), "ByteMin").SetName("GeneratedNullableEnumDefault(ByteMin)");
+            yield return new TestCaseData(3, "255", "System.Byte", typeof(ByteValue), "ByteMax").SetName("GeneratedNullableEnumDefault(ByteMax)");
+            yield return new TestCaseData(4, "-32768", "System.Int16", typeof(Int16Value), "Int16Min").SetName("GeneratedNullableEnumDefault(Int16Min)");
+            yield return new TestCaseData(5, "32767", "System.Int16", typeof(Int16Value), "Int16Max").SetName("GeneratedNullableEnumDefault(Int16Max)");
+            yield return new TestCaseData(6, "0", "System.UInt16", typeof(UInt16Value), "UInt16Min").SetName("GeneratedNullableEnumDefault(UInt16Min)");
+            yield return new TestCaseData(7, "65535", "System.UInt16", typeof(UInt16Value), "UInt16Max").SetName("GeneratedNullableEnumDefault(UInt16Max)");
+            yield return new TestCaseData(8, "-2147483648", "System.Int32", typeof(Int32Value), "Int32Min").SetName("GeneratedNullableEnumDefault(Int32Min)");
+            yield return new TestCaseData(9, "2147483647", "System.Int32", typeof(Int32Value), "Int32Max").SetName("GeneratedNullableEnumDefault(Int32Max)");
+            yield return new TestCaseData(10, "0", "System.UInt32", typeof(UInt32Value), "UInt32Min").SetName("GeneratedNullableEnumDefault(UInt32Min)");
+            yield return new TestCaseData(11, "4294967295", "System.UInt32", typeof(UInt32Value), "UInt32Max").SetName("GeneratedNullableEnumDefault(UInt32Max)");
+            yield return new TestCaseData(12, "-9223372036854775808", "System.Int64", typeof(Int64Value), "Int64Min").SetName("GeneratedNullableEnumDefault(Int64Min)");
+            yield return new TestCaseData(13, "9223372036854775807", "System.Int64", typeof(Int64Value), "Int64Max").SetName("GeneratedNullableEnumDefault(Int64Max)");
+            yield return new TestCaseData(14, "0", "System.UInt64", typeof(UInt64Value), "UInt64Min").SetName("GeneratedNullableEnumDefault(UInt64Min)");
+            yield return new TestCaseData(15, "18446744073709551615", "System.UInt64", typeof(UInt64Value), "UInt64Max").SetName("GeneratedNullableEnumDefault(UInt64Max)");
         }
 
         private enum SByteValue : sbyte

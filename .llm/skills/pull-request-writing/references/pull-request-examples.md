@@ -1,7 +1,6 @@
 # Pull Request Examples
 
-Worked examples for [pull-request-writing](../SKILL.md). Each one shows a real failure mode and
-the shorter version that replaces it.
+Worked examples for [pull-request-writing](../SKILL.md). Each one shows a real failure mode and the shorter version that replaces it.
 
 ## A rewrite
 
@@ -9,39 +8,31 @@ the shorter version that replaces it.
 
 > ## Summary
 >
-> This PR provides a comprehensive fix for the long-standing layout issue in the Flow Graph
-> details pane, which has been observed to manifest on Unity 2021.3 LTS but not on newer
-> editors. As requested in the previous session, I first investigated whether the root cause
-> was related to `align-content` resolution semantics, then determined through experimentation
-> that the actual issue is that Yoga does not derive the cross-axis extent of a multi-line flex
-> container from its flex lines on that version. Note that this was not caught earlier because
-> the local MCP verification loop only runs against a single host editor (6000.4.6f1). Ten
-> separate container declarations were audited and it was determined that all of them are
-> potentially affected, and so a shared helper was leveraged to seamlessly address the entire
-> class of problem in one place, rather than redesigning each container individually.
+> This PR provides a comprehensive fix for the long-standing layout issue in the Flow Graph details pane, which has been observed to manifest on Unity 2021.3 LTS but not on newer
+> editors. As requested in the previous session, I first investigated whether the root cause was related to `align-content` resolution semantics, then determined through
+> experimentation that the actual issue is that Yoga does not derive the cross-axis extent of a multi-line flex container from its flex lines on that version. Note that this was
+> not caught earlier because the local MCP verification loop only runs against a single host editor (6000.4.6f1). Ten separate container declarations were audited and it was
+> determined that all of them are potentially affected, and so a shared helper was leveraged to seamlessly address the entire class of problem in one place, rather than redesigning
+> each container individually.
 
-Everything wrong with it: 130 words with no verdict, three abandoned investigation steps, a
-banned word in almost every sentence, and no evidence.
+Everything wrong with it: 130 words with no verdict, three abandoned investigation steps, a banned word in almost every sentence, and no evidence.
 
 ### After
 
 > ## Why
 >
-> On Unity 2021.3, a wrapping row keeps the height of one line. The extra lines draw outside
-> the row, on top of the block beneath it. The Flow Graph details pane has ten such rows, so a
-> long type name or a deep hierarchy path can hide the next block.
+> On Unity 2021.3, a wrapping row keeps the height of one line. The extra lines draw outside the row, on top of the block beneath it. The Flow Graph details pane has ten such rows,
+> so a long type name or a deep hierarchy path can hide the next block.
 >
 > ## What changed
 >
-> All twelve wrapping containers in the editor now go through
-> `DxMessagingEditorTheme.ApplyContentSizedWrap`. It measures the children and gives the
-> container that height. An editor that already sizes the container correctly is left alone.
+> All twelve wrapping containers in the editor now go through `DxMessagingEditorTheme.ApplyContentSizedWrap`. It measures the children and gives the container that height. An
+> editor that already sizes the container correctly is left alone.
 >
 > ## How we know
 >
-> A probe pins a wrapping row to one line's height, which is what 2021.3 does on its own. The
-> unfixed probe leaves its children outside the row. The fixed probe does not. A source scan
-> fails if any editor file turns wrapping on by hand again.
+> A probe pins a wrapping row to one line's height, which is what 2021.3 does on its own. The unfixed probe leaves its children outside the row. The fixed probe does not. A source
+> scan fails if any editor file turns wrapping on by hand again.
 
 95 words. Same change, and now a reviewer can check it.
 
@@ -63,8 +54,7 @@ One `Why / What changed / How we know` block per issue. No shared preamble.
 >
 > **Why.** ...
 
-Use `###`-free bold labels when the blocks are short. The reader scans for the issue heading,
-then reads three sentences.
+Use `###`-free bold labels when the blocks are short. The reader scans for the issue heading, then reads three sentences.
 
 ## When a fourth section is right
 
@@ -88,8 +78,7 @@ Keep the verdict. Move the working.
 | "Reproduced on run 31764457664"            | Body, with the link             |
 | Console output, stack traces, raw logs     | The issue, in a collapsed block |
 
-The rule behind the table: a number a reviewer would check belongs in the body. The data you
-derived it from belongs where it can be re-derived.
+The rule behind the table: a number a reviewer would check belongs in the body. The data you derived it from belongs where it can be re-derived.
 
 ## Titles
 
@@ -100,5 +89,4 @@ derived it from belongs where it can be re-derived.
 | `Fix #440`                                                                               | The reader cannot see the issue from the list | `Keep wrapped editor rows inside their box` |
 | `Fix the wrap bug, add MSVC launch probe, close 5 measurement issues, update agent docs` | Four clauses                                  | `Keep wrapped editor rows inside their box` |
 
-The last one is the common case for a session that closes several issues. Lead with the change
-a user would notice. The body lists the rest.
+The last one is the common case for a session that closes several issues. Lead with the change a user would notice. The body lists the rest.

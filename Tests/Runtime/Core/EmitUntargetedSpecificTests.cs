@@ -29,10 +29,8 @@ namespace DxMessaging.Tests.Runtime.Core
             GameObject test2 = new(nameof(SimpleNormal) + "2", typeof(EmptyMessageAwareComponent));
             _spawned.Add(test2);
 
-            EmptyMessageAwareComponent component1 =
-                test1.GetComponent<EmptyMessageAwareComponent>();
-            EmptyMessageAwareComponent component2 =
-                test2.GetComponent<EmptyMessageAwareComponent>();
+            EmptyMessageAwareComponent component1 = test1.GetComponent<EmptyMessageAwareComponent>();
+            EmptyMessageAwareComponent component2 = test2.GetComponent<EmptyMessageAwareComponent>();
 
             int count1 = 0;
             MessageRegistrationToken token1 = GetToken(component1);
@@ -57,10 +55,8 @@ namespace DxMessaging.Tests.Runtime.Core
             GameObject test2 = new(nameof(SimpleNormal) + "2", typeof(EmptyMessageAwareComponent));
             _spawned.Add(test2);
 
-            EmptyMessageAwareComponent component1 =
-                test1.GetComponent<EmptyMessageAwareComponent>();
-            EmptyMessageAwareComponent component2 =
-                test2.GetComponent<EmptyMessageAwareComponent>();
+            EmptyMessageAwareComponent component1 = test1.GetComponent<EmptyMessageAwareComponent>();
+            EmptyMessageAwareComponent component2 = test2.GetComponent<EmptyMessageAwareComponent>();
 
             int count1 = 0;
             MessageRegistrationToken token1 = GetToken(component1);
@@ -99,10 +95,8 @@ namespace DxMessaging.Tests.Runtime.Core
             GameObject test2 = new(nameof(SimpleNormal) + "2", typeof(EmptyMessageAwareComponent));
             _spawned.Add(test2);
 
-            EmptyMessageAwareComponent component1 =
-                test1.GetComponent<EmptyMessageAwareComponent>();
-            EmptyMessageAwareComponent component2 =
-                test2.GetComponent<EmptyMessageAwareComponent>();
+            EmptyMessageAwareComponent component1 = test1.GetComponent<EmptyMessageAwareComponent>();
+            EmptyMessageAwareComponent component2 = test2.GetComponent<EmptyMessageAwareComponent>();
 
             int count1 = 0;
             MessageRegistrationToken token1 = GetToken(component1);
@@ -137,10 +131,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void UntargetedUntyped()
         {
-            GameObject test = new(
-                nameof(UntargetedUntyped) + "1",
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject test = new(nameof(UntargetedUntyped) + "1", typeof(EmptyMessageAwareComponent));
             _spawned.Add(test);
 
             int count = 0;
@@ -233,12 +224,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 message.EmitUntargeted();
             }
 
-            Assert.AreEqual(
-                1,
-                received.Distinct().Count(),
-                "Expected received to be uniform, found: [{0}].",
-                string.Join(",", received.Distinct().OrderBy(x => x))
-            );
+            Assert.AreEqual(1, received.Distinct().Count(), "Expected received to be uniform, found: [{0}].", string.Join(",", received.Distinct().OrderBy(x => x)));
 
             Assert.AreEqual(numRuns * 2, received.Distinct().Single());
         }
@@ -287,12 +273,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 message.EmitUntargeted();
             }
 
-            Assert.AreEqual(
-                1,
-                received.Distinct().Count(),
-                "Expected received to be uniform, found: [{0}].",
-                string.Join(",", received.Distinct().OrderBy(x => x))
-            );
+            Assert.AreEqual(1, received.Distinct().Count(), "Expected received to be uniform, found: [{0}].", string.Join(",", received.Distinct().OrderBy(x => x)));
 
             Assert.AreEqual(numRuns, received.Distinct().Single());
         }

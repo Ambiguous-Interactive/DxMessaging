@@ -74,11 +74,7 @@ namespace DxMessaging.Tests.Editor.Contract
         /// to close it with, or when the nested type declares its own
         /// generic parameters not inherited from the outer.
         /// </exception>
-        public static Type CloseNestedGeneric(
-            Type closedOuter,
-            string nestedName,
-            BindingFlags flags
-        )
+        public static Type CloseNestedGeneric(Type closedOuter, string nestedName, BindingFlags flags)
         {
             return CloseNestedGeneric(closedOuter, nestedName, flags, Type.EmptyTypes);
         }
@@ -129,12 +125,7 @@ namespace DxMessaging.Tests.Editor.Contract
         /// not match the count of generic parameters the nested type
         /// declares itself.
         /// </exception>
-        public static Type CloseNestedGeneric(
-            Type closedOuter,
-            string nestedName,
-            BindingFlags flags,
-            Type[] nestedOwnArgs
-        )
+        public static Type CloseNestedGeneric(Type closedOuter, string nestedName, BindingFlags flags, Type[] nestedOwnArgs)
         {
             if (closedOuter == null)
             {
@@ -151,24 +142,14 @@ namespace DxMessaging.Tests.Editor.Contract
             if (closedOuter.ContainsGenericParameters)
             {
                 throw new InvalidOperationException(
-                    "CloseNestedGeneric requires a fully-closed outer Type; received "
-                        + closedOuter.FullName
-                        + " which still contains unbound generic parameters."
+                    "CloseNestedGeneric requires a fully-closed outer Type; received " + closedOuter.FullName + " which still contains unbound generic parameters."
                 );
             }
 
             Type nested = closedOuter.GetNestedType(nestedName, flags);
             if (nested == null)
             {
-                throw new InvalidOperationException(
-                    "Nested type '"
-                        + nestedName
-                        + "' was not found on "
-                        + closedOuter.FullName
-                        + " with binding flags "
-                        + flags
-                        + "."
-                );
+                throw new InvalidOperationException("Nested type '" + nestedName + "' was not found on " + closedOuter.FullName + " with binding flags " + flags + ".");
             }
 
             return Close(closedOuter, nested, nestedOwnArgs);
@@ -272,9 +253,7 @@ namespace DxMessaging.Tests.Editor.Contract
             if (closedOuter.ContainsGenericParameters)
             {
                 throw new InvalidOperationException(
-                    "Close requires a fully-closed outer Type; received "
-                        + closedOuter.FullName
-                        + " which still contains unbound generic parameters."
+                    "Close requires a fully-closed outer Type; received " + closedOuter.FullName + " which still contains unbound generic parameters."
                 );
             }
 
@@ -287,11 +266,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 if (nestedOwnArgs.Length != 0)
                 {
                     throw new InvalidOperationException(
-                        "Nested type '"
-                            + openNested.FullName
-                            + "' is non-generic but "
-                            + nestedOwnArgs.Length
-                            + " nested own type argument(s) were supplied."
+                        "Nested type '" + openNested.FullName + "' is non-generic but " + nestedOwnArgs.Length + " nested own type argument(s) were supplied."
                     );
                 }
                 return openNested;
@@ -368,9 +343,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 composed[outerArity + i] = nestedOwnArgs[i];
             }
 
-            Type definition = openNested.IsGenericTypeDefinition
-                ? openNested
-                : openNested.GetGenericTypeDefinition();
+            Type definition = openNested.IsGenericTypeDefinition ? openNested : openNested.GetGenericTypeDefinition();
             return definition.MakeGenericType(composed);
         }
     }

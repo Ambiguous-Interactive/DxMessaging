@@ -13,10 +13,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void MultipleGenericTypesWork()
         {
-            GameObject go = new(
-                nameof(MultipleGenericTypesWork),
-                typeof(SimpleMessageAwareComponent)
-            );
+            GameObject go = new(nameof(MultipleGenericTypesWork), typeof(SimpleMessageAwareComponent));
             _spawned.Add(go);
 
             SimpleMessageAwareComponent messaging = go.GetComponent<SimpleMessageAwareComponent>();

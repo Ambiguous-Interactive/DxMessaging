@@ -72,13 +72,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 arrivals[id] = checked(firstOffer + id * spacingTicks);
             }
-            string schedule = OpenLoopBurstTraceTests.BuildSchedule(
-                "editor-load-" + control,
-                frequency,
-                firstOffer,
-                horizonEnd,
-                arrivals
-            );
+            string schedule = OpenLoopBurstTraceTests.BuildSchedule("editor-load-" + control, frequency, firstOffer, horizonEnd, arrivals);
             string digest = OpenLoopBurstTraceTests.Digest(schedule);
             TestContext.Out.WriteLine("DXM_OPEN_LOOP_SCHEDULE_V1 " + schedule);
             Assert.That(Stopwatch.GetTimestamp(), Is.LessThan(firstOffer), "schedule missed offer");
@@ -100,22 +94,13 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 Assert.That(callbackOrder[id], Is.EqualTo(id), $"callback order {id}");
                 Assert.That(starts[id], Is.GreaterThanOrEqualTo(arrivals[id]), $"start {id}");
-                Assert.That(
-                    completions[id],
-                    Is.GreaterThanOrEqualTo(starts[id]),
-                    $"completion {id}"
-                );
+                Assert.That(completions[id], Is.GreaterThanOrEqualTo(starts[id]), $"completion {id}");
                 if (completions[id] < horizonEnd)
                 {
                     ++completedWithin;
                 }
             }
-            string observations = OpenLoopBurstTraceTests.BuildObservations(
-                OfferCount,
-                digest,
-                starts,
-                completions
-            );
+            string observations = OpenLoopBurstTraceTests.BuildObservations(OfferCount, digest, starts, completions);
             TestContext.Out.WriteLine("DXM_OPEN_LOOP_OBSERVATIONS_V1 " + observations);
             TestContext.Out.WriteLine(
                 "DXM_OPEN_LOOP_LOAD_V1 control="

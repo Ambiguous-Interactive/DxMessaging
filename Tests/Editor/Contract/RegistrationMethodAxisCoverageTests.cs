@@ -37,36 +37,19 @@ namespace DxMessaging.Tests.Editor.Contract
         [Test]
         public void EveryRegistrationMethodHasExplicitMapping()
         {
-            HashSet<RegistrationMethod> sentinels = new()
-            {
-                RegistrationMethod.GlobalAcceptAll,
-                RegistrationMethod.Interceptor,
-            };
+            HashSet<RegistrationMethod> sentinels = new() { RegistrationMethod.GlobalAcceptAll, RegistrationMethod.Interceptor };
 
             foreach (RegistrationMethod method in EnumerateRegistrationMethods())
             {
                 SlotKey key = default;
-                Assert.DoesNotThrow(
-                    () => key = RegistrationMethodAxes.GetSlotKey(method),
-                    "GetSlotKey threw for {0}",
-                    method
-                );
+                Assert.DoesNotThrow(() => key = RegistrationMethodAxes.GetSlotKey(method), "GetSlotKey threw for {0}", method);
                 if (key == SlotKey.None)
                 {
-                    Assert.IsTrue(
-                        sentinels.Contains(method),
-                        "Method {0} mapped to SlotKey.None but is not in the documented sentinel set.",
-                        method
-                    );
+                    Assert.IsTrue(sentinels.Contains(method), "Method {0} mapped to SlotKey.None but is not in the documented sentinel set.", method);
                 }
                 else
                 {
-                    Assert.IsFalse(
-                        sentinels.Contains(method),
-                        "Method {0} is in the sentinel set but mapped to a real SlotKey {1}.",
-                        method,
-                        key
-                    );
+                    Assert.IsFalse(sentinels.Contains(method), "Method {0} is in the sentinel set but mapped to a real SlotKey {1}.", method, key);
                 }
             }
         }
@@ -79,9 +62,7 @@ namespace DxMessaging.Tests.Editor.Contract
         [Test]
         public void RegistrationMethodAxesTypeInitDoesNotThrow()
         {
-            Assert.DoesNotThrow(() =>
-                RuntimeHelpers.RunClassConstructor(typeof(RegistrationMethodAxes).TypeHandle)
-            );
+            Assert.DoesNotThrow(() => RuntimeHelpers.RunClassConstructor(typeof(RegistrationMethodAxes).TypeHandle));
         }
 
         /// <summary>
@@ -93,14 +74,8 @@ namespace DxMessaging.Tests.Editor.Contract
         [Test]
         public void GetSlotKeyForOutOfRangeMethodReturnsNone()
         {
-            Assert.AreEqual(
-                SlotKey.None,
-                RegistrationMethodAxes.GetSlotKey((RegistrationMethod)int.MaxValue)
-            );
-            Assert.AreEqual(
-                SlotKey.None,
-                RegistrationMethodAxes.GetSlotKey((RegistrationMethod)(-1))
-            );
+            Assert.AreEqual(SlotKey.None, RegistrationMethodAxes.GetSlotKey((RegistrationMethod)int.MaxValue));
+            Assert.AreEqual(SlotKey.None, RegistrationMethodAxes.GetSlotKey((RegistrationMethod)(-1)));
         }
 
         /// <summary>
@@ -111,14 +86,7 @@ namespace DxMessaging.Tests.Editor.Contract
         public void SlotKeyToStringFormat()
         {
             Assert.AreEqual("None", SlotKey.None.ToString());
-            Assert.AreEqual(
-                "Targeted/PostProcess/WithoutContext",
-                new SlotKey(
-                    DispatchKind.Targeted,
-                    DispatchPhase.PostProcess,
-                    DispatchVariant.WithoutContext
-                ).ToString()
-            );
+            Assert.AreEqual("Targeted/PostProcess/WithoutContext", new SlotKey(DispatchKind.Targeted, DispatchPhase.PostProcess, DispatchVariant.WithoutContext).ToString());
         }
 
         /// <summary>
@@ -149,11 +117,7 @@ namespace DxMessaging.Tests.Editor.Contract
         [Test]
         public void DefaultSlotKeyAliasesUntargetedHandleDefault()
         {
-            SlotKey untargeted = new SlotKey(
-                DispatchKind.Untargeted,
-                DispatchPhase.Handle,
-                DispatchVariant.Default
-            );
+            SlotKey untargeted = new SlotKey(DispatchKind.Untargeted, DispatchPhase.Handle, DispatchVariant.Default);
             Assert.AreEqual(default(SlotKey), untargeted);
             Assert.AreEqual(0, default(SlotKey).Packed);
             Assert.AreNotEqual(SlotKey.None, default(SlotKey));
@@ -184,13 +148,7 @@ namespace DxMessaging.Tests.Editor.Contract
 
             foreach (KeyValuePair<SlotKey, List<RegistrationMethod>> entry in groups)
             {
-                Assert.AreEqual(
-                    1,
-                    entry.Value.Count,
-                    "SlotKey {0} is shared by multiple methods: {1}",
-                    entry.Key,
-                    string.Join(", ", entry.Value)
-                );
+                Assert.AreEqual(1, entry.Value.Count, "SlotKey {0} is shared by multiple methods: {1}", entry.Key, string.Join(", ", entry.Value));
             }
         }
 
@@ -203,25 +161,14 @@ namespace DxMessaging.Tests.Editor.Contract
         [Test]
         public void OnlySentinelMethodsMapToNone()
         {
-            HashSet<RegistrationMethod> expectedSentinels = new()
-            {
-                RegistrationMethod.GlobalAcceptAll,
-                RegistrationMethod.Interceptor,
-            };
+            HashSet<RegistrationMethod> expectedSentinels = new() { RegistrationMethod.GlobalAcceptAll, RegistrationMethod.Interceptor };
 
             foreach (RegistrationMethod method in EnumerateRegistrationMethods())
             {
                 SlotKey key = RegistrationMethodAxes.GetSlotKey(method);
                 bool mapsToNone = key == SlotKey.None;
                 bool isSentinel = expectedSentinels.Contains(method);
-                Assert.AreEqual(
-                    isSentinel,
-                    mapsToNone,
-                    "Method {0} -> SlotKey.None mismatch (expected sentinel: {1}, actual mapsToNone: {2}).",
-                    method,
-                    isSentinel,
-                    mapsToNone
-                );
+                Assert.AreEqual(isSentinel, mapsToNone, "Method {0} -> SlotKey.None mismatch (expected sentinel: {1}, actual mapsToNone: {2}).", method, isSentinel, mapsToNone);
             }
         }
 
@@ -233,15 +180,8 @@ namespace DxMessaging.Tests.Editor.Contract
         [Test]
         public void SlotKeyPackedEncodingIsCorrect()
         {
-            SlotKey key = new SlotKey(
-                DispatchKind.Broadcast,
-                DispatchPhase.PostProcess,
-                DispatchVariant.WithoutContext
-            );
-            int expectedPacked =
-                ((int)DispatchKind.Broadcast << 4)
-                | ((int)DispatchPhase.PostProcess << 3)
-                | (int)DispatchVariant.WithoutContext;
+            SlotKey key = new SlotKey(DispatchKind.Broadcast, DispatchPhase.PostProcess, DispatchVariant.WithoutContext);
+            int expectedPacked = ((int)DispatchKind.Broadcast << 4) | ((int)DispatchPhase.PostProcess << 3) | (int)DispatchVariant.WithoutContext;
             Assert.AreEqual((byte)expectedPacked, key.Packed);
             Assert.AreEqual(DispatchKind.Broadcast, key.Kind);
             Assert.AreEqual(DispatchPhase.PostProcess, key.Phase);
@@ -271,15 +211,9 @@ namespace DxMessaging.Tests.Editor.Contract
         [Test]
         public void SlotKeyOutOfRangeArgumentsThrow()
         {
-            Assert.Throws<ArgumentOutOfRangeException>(() =>
-                _ = new SlotKey((DispatchKind)16, DispatchPhase.Handle, DispatchVariant.Default)
-            );
-            Assert.Throws<ArgumentOutOfRangeException>(() =>
-                _ = new SlotKey(DispatchKind.Untargeted, (DispatchPhase)2, DispatchVariant.Default)
-            );
-            Assert.Throws<ArgumentOutOfRangeException>(() =>
-                _ = new SlotKey(DispatchKind.Untargeted, DispatchPhase.Handle, (DispatchVariant)8)
-            );
+            Assert.Throws<ArgumentOutOfRangeException>(() => _ = new SlotKey((DispatchKind)16, DispatchPhase.Handle, DispatchVariant.Default));
+            Assert.Throws<ArgumentOutOfRangeException>(() => _ = new SlotKey(DispatchKind.Untargeted, (DispatchPhase)2, DispatchVariant.Default));
+            Assert.Throws<ArgumentOutOfRangeException>(() => _ = new SlotKey(DispatchKind.Untargeted, DispatchPhase.Handle, (DispatchVariant)8));
         }
 
         /// <summary>
@@ -291,9 +225,7 @@ namespace DxMessaging.Tests.Editor.Contract
         [Test]
         public void SlotKeyConstructorRejectsNoneAlias()
         {
-            Assert.Throws<ArgumentException>(() =>
-                new SlotKey((DispatchKind)15, (DispatchPhase)1, (DispatchVariant)7)
-            );
+            Assert.Throws<ArgumentException>(() => new SlotKey((DispatchKind)15, (DispatchPhase)1, (DispatchVariant)7));
         }
 
         private static IEnumerable<RegistrationMethod> EnumerateRegistrationMethods()

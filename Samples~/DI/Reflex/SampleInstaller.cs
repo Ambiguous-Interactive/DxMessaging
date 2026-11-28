@@ -46,9 +46,7 @@ namespace DxMessaging.Samples.DI.Reflex
 
             if (_service == null)
             {
-                throw new System.InvalidOperationException(
-                    "Reflex has not built the sample container yet."
-                );
+                throw new System.InvalidOperationException("Reflex has not built the sample container yet.");
             }
 
             _service.EmitAlertFor(gameObject);

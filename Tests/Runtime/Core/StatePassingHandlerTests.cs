@@ -17,11 +17,7 @@ namespace DxMessaging.Tests.Runtime.Core
         /// <summary>Checks copied value state and shared reference state survive replay and bus retargeting.</summary>
         [Test]
         public void StateBindingsPreserveValuesAcrossReplayAndBusRetarget(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext)
-            )]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext))] MessageScenario scenario,
             [Values(false, true)] bool valueState
         )
         {
@@ -29,10 +25,7 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageBus second = new MessageBus();
             using LeakWatcher firstLeaks = new LeakWatcher(first);
             using LeakWatcher secondLeaks = new LeakWatcher(second);
-            MessageHandler handler = new MessageHandler(new InstanceId(961), first)
-            {
-                active = true,
-            };
+            MessageHandler handler = new MessageHandler(new InstanceId(961), first) { active = true };
             using MessageRegistrationToken token = MessageRegistrationToken.Create(handler, first);
             Counter counter = new Counter { Seed = 7 };
             MessageRegistrationHandle handle;
@@ -44,21 +37,11 @@ namespace DxMessaging.Tests.Runtime.Core
             }
             else
             {
-                handle = Register(
-                    token,
-                    scenario,
-                    counter,
-                    RecordReference,
-                    RecordReferenceWithContext
-                );
+                handle = Register(token, scenario, counter, RecordReference, RecordReferenceWithContext);
                 counter.Seed = 9;
             }
             Emit(first, scenario);
-            Assert.That(
-                counter.Values,
-                Is.Empty,
-                $"[{scenario}, {valueState}] Disabled staging must not invoke the binding."
-            );
+            Assert.That(counter.Values, Is.Empty, $"[{scenario}, {valueState}] Disabled staging must not invoke the binding.");
             token.Enable();
             Emit(first, scenario);
             token.Disable();
@@ -74,34 +57,22 @@ namespace DxMessaging.Tests.Runtime.Core
                 Is.EqualTo(new[] { expected, expected, expected }),
                 $"[{scenario}, {valueState}] Value state is copied; reference state stays shared across replays."
             );
-            bool contextAware =
-                scenario.Kind == MessageKind.TargetedWithoutTargeting
-                || scenario.Kind == MessageKind.BroadcastWithoutSource;
+            bool contextAware = scenario.Kind == MessageKind.TargetedWithoutTargeting || scenario.Kind == MessageKind.BroadcastWithoutSource;
             Assert.That(
                 counter.Contexts,
-                Is.EqualTo(
-                    contextAware ? new[] { Context, Context, Context } : Array.Empty<InstanceId>()
-                ),
+                Is.EqualTo(contextAware ? new[] { Context, Context, Context } : Array.Empty<InstanceId>()),
                 $"[{scenario}, {valueState}] Context-free registrations receive the actual context."
             );
             token.RemoveRegistration(handle);
             token.Disable();
             token.Enable();
             Emit(second, scenario);
-            Assert.That(
-                counter.Values.Count,
-                Is.EqualTo(3),
-                $"[{scenario}, {valueState}] Removing the returned handle cancels the state binding permanently."
-            );
+            Assert.That(counter.Values.Count, Is.EqualTo(3), $"[{scenario}, {valueState}] Removing the returned handle cancels the state binding permanently.");
         }
 
         [Test]
         public void SeparateBindingsToTheSameStaticHandlerKeepTheirOwnState(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext)
-            )]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext))] MessageScenario scenario
         )
         {
             MessageBus bus = new MessageBus();
@@ -110,48 +81,22 @@ namespace DxMessaging.Tests.Runtime.Core
             using MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
             Counter first = new Counter { Seed = 1 };
             Counter second = new Counter { Seed = 2 };
-            MessageRegistrationHandle firstHandle = Register(
-                token,
-                scenario,
-                first,
-                RecordReference,
-                RecordReferenceWithContext
-            );
+            MessageRegistrationHandle firstHandle = Register(token, scenario, first, RecordReference, RecordReferenceWithContext);
             Register(token, scenario, second, RecordReference, RecordReferenceWithContext);
             token.Enable();
             Emit(bus, scenario);
-            Assert.That(
-                first.Values,
-                Is.EqualTo(new[] { 4 }),
-                $"[{scenario}] First state must remain independent."
-            );
-            Assert.That(
-                second.Values,
-                Is.EqualTo(new[] { 5 }),
-                $"[{scenario}] Second state must not be deduplicated with another state."
-            );
+            Assert.That(first.Values, Is.EqualTo(new[] { 4 }), $"[{scenario}] First state must remain independent.");
+            Assert.That(second.Values, Is.EqualTo(new[] { 5 }), $"[{scenario}] Second state must not be deduplicated with another state.");
             token.RemoveRegistration(firstHandle);
             Emit(bus, scenario);
-            Assert.That(
-                first.Values.Count,
-                Is.EqualTo(1),
-                $"[{scenario}] Removing one state must retire only that binding."
-            );
-            Assert.That(
-                second.Values,
-                Is.EqualTo(new[] { 5, 5 }),
-                $"[{scenario}] Other state must continue receiving messages."
-            );
+            Assert.That(first.Values.Count, Is.EqualTo(1), $"[{scenario}] Removing one state must retire only that binding.");
+            Assert.That(second.Values, Is.EqualTo(new[] { 5, 5 }), $"[{scenario}] Other state must continue receiving messages.");
         }
 
         /// <summary>Checks null callbacks are rejected before any registration is staged.</summary>
         [Test]
         public void NullHandlerIsRejectedWithoutStaging(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext)
-            )]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext))] MessageScenario scenario,
             [Values(false, true)] bool enabled
         )
         {
@@ -167,16 +112,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 () => Register<Counter>(token, scenario, null, null, null),
                 $"[{scenario}, {enabled}] Null callback must fail at the registration call."
             );
-            Assert.That(
-                error.ParamName,
-                Is.EqualTo("handler"),
-                $"[{scenario}, {enabled}] The error identifies the missing callback."
-            );
-            Assert.That(
-                token._metadata.Count,
-                Is.Zero,
-                $"[{scenario}, {enabled}] Rejected registration cannot leave inaccessible state behind."
-            );
+            Assert.That(error.ParamName, Is.EqualTo("handler"), $"[{scenario}, {enabled}] The error identifies the missing callback.");
+            Assert.That(token._metadata.Count, Is.Zero, $"[{scenario}, {enabled}] Rejected registration cannot leave inaccessible state behind.");
         }
 
         [Test]
@@ -186,19 +123,11 @@ namespace DxMessaging.Tests.Runtime.Core
             using LeakWatcher leaks = new LeakWatcher(bus);
             MessageHandler handler = new MessageHandler(new InstanceId(961), bus) { active = true };
             using MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
-            token.RegisterUntargeted<ReferenceMessage, object>(
-                null,
-                static (object state, in ReferenceMessage message) =>
-                    message.SeenNull = state == null
-            );
+            token.RegisterUntargeted<ReferenceMessage, object>(null, static (object state, in ReferenceMessage message) => message.SeenNull = state == null);
             token.Enable();
             ReferenceMessage message = new ReferenceMessage();
             bus.UntargetedBroadcast(ref message);
-            Assert.That(
-                message.SeenNull,
-                Is.True,
-                "Null state is a valid value and must reach the user callback."
-            );
+            Assert.That(message.SeenNull, Is.True, "Null state is a valid value and must reach the user callback.");
         }
 
         /// <summary>Registers one probe callback on the selected message route and processing phase.</summary>
@@ -213,17 +142,11 @@ namespace DxMessaging.Tests.Runtime.Core
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
-                    return scenario.UsePostProcessor
-                        ? token.RegisterUntargetedPostProcessor(state, scalar)
-                        : token.RegisterUntargeted(state, scalar);
+                    return scenario.UsePostProcessor ? token.RegisterUntargetedPostProcessor(state, scalar) : token.RegisterUntargeted(state, scalar);
                 case MessageKind.Targeted:
-                    return scenario.UsePostProcessor
-                        ? token.RegisterTargetedPostProcessor(Context, state, scalar)
-                        : token.RegisterTargeted(Context, state, scalar);
+                    return scenario.UsePostProcessor ? token.RegisterTargetedPostProcessor(Context, state, scalar) : token.RegisterTargeted(Context, state, scalar);
                 case MessageKind.Broadcast:
-                    return scenario.UsePostProcessor
-                        ? token.RegisterBroadcastPostProcessor(Context, state, scalar)
-                        : token.RegisterBroadcast(Context, state, scalar);
+                    return scenario.UsePostProcessor ? token.RegisterBroadcastPostProcessor(Context, state, scalar) : token.RegisterBroadcast(Context, state, scalar);
                 case MessageKind.TargetedWithoutTargeting:
                     return scenario.UsePostProcessor
                         ? token.RegisterTargetedWithoutTargetingPostProcessor(state, contextual)
@@ -260,27 +183,17 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private static void RecordReference(Counter state, in ProbeMessage message) =>
-            state.Values.Add(state.Seed + message.Value);
+        private static void RecordReference(Counter state, in ProbeMessage message) => state.Values.Add(state.Seed + message.Value);
 
-        private static void RecordReferenceWithContext(
-            Counter state,
-            in InstanceId context,
-            in ProbeMessage message
-        )
+        private static void RecordReferenceWithContext(Counter state, in InstanceId context, in ProbeMessage message)
         {
             RecordReference(state, in message);
             state.Contexts.Add(context);
         }
 
-        private static void RecordValue(ValueState state, in ProbeMessage message) =>
-            state.Counter.Values.Add(state.Seed + message.Value);
+        private static void RecordValue(ValueState state, in ProbeMessage message) => state.Counter.Values.Add(state.Seed + message.Value);
 
-        private static void RecordValueWithContext(
-            ValueState state,
-            in InstanceId context,
-            in ProbeMessage message
-        )
+        private static void RecordValueWithContext(ValueState state, in InstanceId context, in ProbeMessage message)
         {
             RecordValue(state, in message);
             state.Counter.Contexts.Add(context);
@@ -299,10 +212,7 @@ namespace DxMessaging.Tests.Runtime.Core
             internal int Seed;
         }
 
-        private readonly struct ProbeMessage
-            : IUntargetedMessage,
-                ITargetedMessage,
-                IBroadcastMessage
+        private readonly struct ProbeMessage : IUntargetedMessage, ITargetedMessage, IBroadcastMessage
         {
             internal readonly int Value;
             public Type MessageType => typeof(ProbeMessage);

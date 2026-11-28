@@ -21,17 +21,11 @@ namespace DxMessaging.Tests.Runtime.Core
 
         private static IEnumerable<TestCaseData> Cases()
         {
-            foreach (
-                MessageScenario scenario in MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext
-            )
+            foreach (MessageScenario scenario in MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext)
             {
                 foreach (bool action in new[] { false, true })
                 {
-                    if (
-                        scenario.Kind == MessageKind.Untargeted
-                        && scenario.UsePostProcessor
-                        && action
-                    )
+                    if (scenario.Kind == MessageKind.Untargeted && scenario.UsePostProcessor && action)
                     {
                         continue;
                     }
@@ -53,11 +47,7 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private static IEnumerable<TestCaseData> StorageCases(
-            MessageScenario scenario,
-            bool action,
-            bool global
-        )
+        private static IEnumerable<TestCaseData> StorageCases(MessageScenario scenario, bool action, bool global)
         {
             foreach (int count in new[] { 2, 70 })
             {
@@ -65,14 +55,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     foreach (bool duplicate in new[] { false, true })
                     {
-                        yield return new TestCaseData(
-                            scenario,
-                            action,
-                            global,
-                            count,
-                            reverse,
-                            duplicate
-                        ).SetName(
+                        yield return new TestCaseData(scenario, action, global, count, reverse, duplicate).SetName(
                             $"OrderedHandlerEntries_{scenario.Kind}_Post{scenario.UsePostProcessor}_Action{action}_Global{global}_Count{count}_Reverse{reverse}_Duplicate{duplicate}"
                         );
                     }
@@ -81,17 +64,9 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [TestCaseSource(nameof(Cases))]
-        public void DelegateIdentityAndRegistrationOrderSurviveRemovalAndSlotReuse(
-            MessageScenario scenario,
-            bool action,
-            bool global,
-            int count,
-            bool reverse,
-            bool duplicate
-        )
+        public void DelegateIdentityAndRegistrationOrderSurviveRemovalAndSlotReuse(MessageScenario scenario, bool action, bool global, int count, bool reverse, bool duplicate)
         {
-            string label =
-                $"{scenario},action={action},global={global},count={count},reverse={reverse},duplicate={duplicate}";
+            string label = $"{scenario},action={action},global={global},count={count},reverse={reverse},duplicate={duplicate}";
             bool previousDebug = MessagingDebug.enabled;
             MessagingDebug.enabled = false;
             MessageBus bus = new MessageBus { DiagnosticsMode = false };
@@ -103,9 +78,7 @@ namespace DxMessaging.Tests.Runtime.Core
             List<int> expected = new List<int>();
             Receiver[] receivers = new Receiver[count];
             MessageRegistrationHandle[] first = new MessageRegistrationHandle[count];
-            MessageRegistrationHandle[] second = duplicate
-                ? new MessageRegistrationHandle[count]
-                : first;
+            MessageRegistrationHandle[] second = duplicate ? new MessageRegistrationHandle[count] : first;
             List<MessageRegistrationHandle> oldHandles = new List<MessageRegistrationHandle>();
             HashSet<int> oldSlots = new HashSet<int>();
             HashSet<long> oldIdentities = new HashSet<long>();
@@ -131,137 +104,53 @@ namespace DxMessaging.Tests.Runtime.Core
                         oldIdentities.Add(second[i].Id);
                     }
                 }
-                Assert.That(
-                    token._metadata.Count,
-                    Is.EqualTo(count * (duplicate ? 2 : 1)),
-                    label + ": all staged identities retained"
-                );
-                Assert.That(
-                    MessageBusInspection.CountLiveRegistrations(bus),
-                    Is.EqualTo(count * (duplicate ? 2 : 1)),
-                    label + ": actual reference-counted registrations"
-                );
+                Assert.That(token._metadata.Count, Is.EqualTo(count * (duplicate ? 2 : 1)), label + ": all staged identities retained");
+                Assert.That(MessageBusInspection.CountLiveRegistrations(bus), Is.EqualTo(count * (duplicate ? 2 : 1)), label + ": actual reference-counted registrations");
                 Emit(bus, scenario);
-                Assert.That(
-                    observed,
-                    Is.EqualTo(expected),
-                    label + ": first registration order and one callback per distinct delegate"
-                );
+                Assert.That(observed, Is.EqualTo(expected), label + ": first registration order and one callback per distinct delegate");
                 observed.Clear();
                 if (duplicate)
                 {
                     Remove(token, first, reverse);
-                    Assert.That(
-                        token._metadata.Count,
-                        Is.EqualTo(count),
-                        label + ": duplicate owners remain staged"
-                    );
-                    Assert.That(
-                        MessageBusInspection.CountLiveRegistrations(bus),
-                        Is.EqualTo(count),
-                        label + ": one reference per distinct callback remains"
-                    );
+                    Assert.That(token._metadata.Count, Is.EqualTo(count), label + ": duplicate owners remain staged");
+                    Assert.That(MessageBusInspection.CountLiveRegistrations(bus), Is.EqualTo(count), label + ": one reference per distinct callback remains");
                     Emit(bus, scenario);
-                    Assert.That(
-                        observed,
-                        Is.EqualTo(expected),
-                        label + ": duplicate removal preserves original callback order"
-                    );
+                    Assert.That(observed, Is.EqualTo(expected), label + ": duplicate removal preserves original callback order");
                     observed.Clear();
                 }
                 Remove(token, second, reverse);
-                Assert.That(
-                    token._metadata.Count,
-                    Is.Zero,
-                    label + ": bulk removal clears staging"
-                );
-                Assert.That(
-                    MessageBusInspection.CountLiveRegistrations(bus),
-                    Is.Zero,
-                    label + ": bulk removal clears actual registrations"
-                );
+                Assert.That(token._metadata.Count, Is.Zero, label + ": bulk removal clears staging");
+                Assert.That(MessageBusInspection.CountLiveRegistrations(bus), Is.Zero, label + ": bulk removal clears actual registrations");
                 Emit(bus, scenario);
                 Assert.That(observed, Is.Empty, label + ": empty storage stays silent");
                 for (int i = 0; i < count; i++)
                 {
-                    MessageRegistrationHandle fresh = Register(
-                        token,
-                        scenario,
-                        action,
-                        global,
-                        receivers[i]
-                    );
-                    Assert.That(
-                        oldSlots.Contains(fresh.Slot),
-                        Is.True,
-                        label + $": actual old arena slot reused for receiver{i}"
-                    );
-                    Assert.That(
-                        oldIdentities.Contains(fresh.Id),
-                        Is.False,
-                        label + $": reused arena slot has fresh identity for receiver{i}"
-                    );
+                    MessageRegistrationHandle fresh = Register(token, scenario, action, global, receivers[i]);
+                    Assert.That(oldSlots.Contains(fresh.Slot), Is.True, label + $": actual old arena slot reused for receiver{i}");
+                    Assert.That(oldIdentities.Contains(fresh.Id), Is.False, label + $": reused arena slot has fresh identity for receiver{i}");
                 }
                 foreach (MessageRegistrationHandle stale in oldHandles)
                 {
                     token.RemoveRegistration(stale);
                 }
-                Assert.That(
-                    token._metadata.Count,
-                    Is.EqualTo(count),
-                    label + ": stale handles cannot remove reused slots"
-                );
-                Assert.That(
-                    MessageBusInspection.CountLiveRegistrations(bus),
-                    Is.EqualTo(count),
-                    label + ": stale handles preserve actual fresh registrations"
-                );
+                Assert.That(token._metadata.Count, Is.EqualTo(count), label + ": stale handles cannot remove reused slots");
+                Assert.That(MessageBusInspection.CountLiveRegistrations(bus), Is.EqualTo(count), label + ": stale handles preserve actual fresh registrations");
                 Emit(bus, scenario);
-                Assert.That(
-                    observed,
-                    Is.EqualTo(expected),
-                    label + ": fresh insertion order survives stale cleanup"
-                );
+                Assert.That(observed, Is.EqualTo(expected), label + ": fresh insertion order survives stale cleanup");
                 int expectedCalls = duplicate ? 3 : 2;
                 foreach (Receiver receiver in receivers)
                 {
-                    Assert.That(
-                        receiver.Calls,
-                        Is.EqualTo(expectedCalls),
-                        label + $": exact callback count for receiver{receiver.Id}"
-                    );
+                    Assert.That(receiver.Calls, Is.EqualTo(expectedCalls), label + $": exact callback count for receiver{receiver.Id}");
                 }
                 token.Dispose();
-                Assert.That(
-                    token._metadata.Count,
-                    Is.Zero,
-                    label + ": disposal clears fresh staging"
-                );
+                Assert.That(token._metadata.Count, Is.Zero, label + ": disposal clears fresh staging");
                 Assert.That(token._callCounts.Count, Is.Zero, label + ": diagnostics remain empty");
-                Assert.That(
-                    token._emissionBuffer.Count,
-                    Is.Zero,
-                    label + ": no diagnostic history retained"
-                );
-                Assert.That(
-                    MessageBusInspection.CountLiveRegistrations(bus),
-                    Is.Zero,
-                    label + ": disposal clears fresh registrations"
-                );
+                Assert.That(token._emissionBuffer.Count, Is.Zero, label + ": no diagnostic history retained");
+                Assert.That(MessageBusInspection.CountLiveRegistrations(bus), Is.Zero, label + ": disposal clears fresh registrations");
                 foreach (Receiver receiver in receivers)
                 {
-                    Assert.That(
-                        receiver.EqualsCalls,
-                        Is.Zero,
-                        label
-                            + $": delegate identity must not invoke receiver equality for receiver{receiver.Id}"
-                    );
-                    Assert.That(
-                        receiver.HashCalls,
-                        Is.Zero,
-                        label
-                            + $": delegate identity must not invoke receiver hashing for receiver{receiver.Id}"
-                    );
+                    Assert.That(receiver.EqualsCalls, Is.Zero, label + $": delegate identity must not invoke receiver equality for receiver{receiver.Id}");
+                    Assert.That(receiver.HashCalls, Is.Zero, label + $": delegate identity must not invoke receiver hashing for receiver{receiver.Id}");
                 }
             }
             finally
@@ -274,21 +163,12 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void EqualPriorityCallbackGroupingUsesHandlerInsertionOrder(
-            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
-        )
+        public void EqualPriorityCallbackGroupingUsesHandlerInsertionOrder([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] MessageScenario scenario)
         {
             MessageBus bus = new MessageBus { DiagnosticsMode = false };
             using LeakWatcher leaks = new LeakWatcher(bus, label: scenario.ToString());
-            MessageHandler handlerA = new MessageHandler(new InstanceId(987), bus)
-            {
-                active = true,
-            };
-            MessageHandler handlerB = new MessageHandler(new InstanceId(988), bus)
-            {
-                active = true,
-            };
+            MessageHandler handlerA = new MessageHandler(new InstanceId(987), bus) { active = true };
+            MessageHandler handlerB = new MessageHandler(new InstanceId(988), bus) { active = true };
             using MessageRegistrationToken tokenA = MessageRegistrationToken.Create(handlerA, bus);
             using MessageRegistrationToken tokenB = MessageRegistrationToken.Create(handlerB, bus);
             tokenA.Enable();
@@ -298,29 +178,14 @@ namespace DxMessaging.Tests.Runtime.Core
             _ = Register(tokenA, scenario, action: true, global: false, new Receiver(1, order));
             _ = Register(tokenB, scenario, action: false, global: false, new Receiver(2, order));
             _ = Register(tokenA, scenario, action: false, global: false, new Receiver(3, order));
-            _ = Register(
-                tokenB,
-                scenario,
-                action: true,
-                global: false,
-                new Receiver(4, order),
-                priority: -1
-            );
+            _ = Register(tokenB, scenario, action: true, global: false, new Receiver(4, order), priority: -1);
 
             Emit(bus, scenario);
 
-            Assert.That(
-                order,
-                Is.EqualTo(new[] { 4, 3, 1, 2 }),
-                $"{scenario}: lower priority first, then each owner's fast and Action callbacks"
-            );
+            Assert.That(order, Is.EqualTo(new[] { 4, 3, 1, 2 }), $"{scenario}: lower priority first, then each owner's fast and Action callbacks");
         }
 
-        private static void Remove(
-            MessageRegistrationToken token,
-            MessageRegistrationHandle[] handles,
-            bool reverse
-        )
+        private static void Remove(MessageRegistrationToken token, MessageRegistrationHandle[] handles, bool reverse)
         {
             for (int i = 0; i < handles.Length; i++)
             {
@@ -328,128 +193,35 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private static MessageRegistrationHandle Register(
-            MessageRegistrationToken token,
-            MessageScenario scenario,
-            bool action,
-            bool global,
-            Receiver receiver,
-            int priority = 0
-        )
+        private static MessageRegistrationHandle Register(MessageRegistrationToken token, MessageScenario scenario, bool action, bool global, Receiver receiver, int priority = 0)
         {
             if (global)
             {
                 return action
-                    ? token.RegisterGlobalAcceptAll(
-                        receiver.ReceiveUntargeted,
-                        receiver.ReceiveTargeted,
-                        receiver.ReceiveBroadcast
-                    )
-                    : token.RegisterGlobalAcceptAll(
-                        receiver.ReceiveUntargetedFast,
-                        receiver.ReceiveTargetedFast,
-                        receiver.ReceiveBroadcastFast
-                    );
+                    ? token.RegisterGlobalAcceptAll(receiver.ReceiveUntargeted, receiver.ReceiveTargeted, receiver.ReceiveBroadcast)
+                    : token.RegisterGlobalAcceptAll(receiver.ReceiveUntargetedFast, receiver.ReceiveTargetedFast, receiver.ReceiveBroadcastFast);
             }
             return (scenario.Kind, scenario.UsePostProcessor, action) switch
             {
-                (MessageKind.Untargeted, false, true) => token.RegisterUntargeted<ProbeMessage>(
-                    receiver.Receive,
-                    priority
-                ),
-                (MessageKind.Untargeted, false, false) => token.RegisterUntargeted<ProbeMessage>(
-                    receiver.ReceiveFast,
-                    priority
-                ),
-                (MessageKind.Untargeted, true, _) =>
-                    token.RegisterUntargetedPostProcessor<ProbeMessage>(
-                        receiver.ReceiveFast,
-                        priority
-                    ),
-                (MessageKind.Targeted, false, true) => token.RegisterTargeted<ProbeMessage>(
-                    Context,
-                    receiver.Receive,
-                    priority
-                ),
-                (MessageKind.Targeted, false, false) => token.RegisterTargeted<ProbeMessage>(
-                    Context,
-                    receiver.ReceiveFast,
-                    priority
-                ),
-                (MessageKind.Targeted, true, true) =>
-                    token.RegisterTargetedPostProcessor<ProbeMessage>(
-                        Context,
-                        receiver.Receive,
-                        priority
-                    ),
-                (MessageKind.Targeted, true, false) =>
-                    token.RegisterTargetedPostProcessor<ProbeMessage>(
-                        Context,
-                        receiver.ReceiveFast,
-                        priority
-                    ),
-                (MessageKind.Broadcast, false, true) => token.RegisterBroadcast<ProbeMessage>(
-                    Context,
-                    receiver.Receive,
-                    priority
-                ),
-                (MessageKind.Broadcast, false, false) => token.RegisterBroadcast<ProbeMessage>(
-                    Context,
-                    receiver.ReceiveFast,
-                    priority
-                ),
-                (MessageKind.Broadcast, true, true) =>
-                    token.RegisterBroadcastPostProcessor<ProbeMessage>(
-                        Context,
-                        receiver.Receive,
-                        priority
-                    ),
-                (MessageKind.Broadcast, true, false) =>
-                    token.RegisterBroadcastPostProcessor<ProbeMessage>(
-                        Context,
-                        receiver.ReceiveFast,
-                        priority
-                    ),
-                (MessageKind.TargetedWithoutTargeting, false, true) =>
-                    token.RegisterTargetedWithoutTargeting<ProbeMessage>(
-                        receiver.ReceiveContext,
-                        priority
-                    ),
-                (MessageKind.TargetedWithoutTargeting, false, false) =>
-                    token.RegisterTargetedWithoutTargeting<ProbeMessage>(
-                        receiver.ReceiveContextFast,
-                        priority
-                    ),
-                (MessageKind.TargetedWithoutTargeting, true, true) =>
-                    token.RegisterTargetedWithoutTargetingPostProcessor<ProbeMessage>(
-                        receiver.ReceiveContext,
-                        priority
-                    ),
-                (MessageKind.TargetedWithoutTargeting, true, false) =>
-                    token.RegisterTargetedWithoutTargetingPostProcessor<ProbeMessage>(
-                        receiver.ReceiveContextFast,
-                        priority
-                    ),
-                (MessageKind.BroadcastWithoutSource, false, true) =>
-                    token.RegisterBroadcastWithoutSource<ProbeMessage>(
-                        receiver.ReceiveContext,
-                        priority
-                    ),
-                (MessageKind.BroadcastWithoutSource, false, false) =>
-                    token.RegisterBroadcastWithoutSource<ProbeMessage>(
-                        receiver.ReceiveContextFast,
-                        priority
-                    ),
-                (MessageKind.BroadcastWithoutSource, true, true) =>
-                    token.RegisterBroadcastWithoutSourcePostProcessor<ProbeMessage>(
-                        receiver.ReceiveContext,
-                        priority
-                    ),
-                (MessageKind.BroadcastWithoutSource, true, false) =>
-                    token.RegisterBroadcastWithoutSourcePostProcessor<ProbeMessage>(
-                        receiver.ReceiveContextFast,
-                        priority
-                    ),
+                (MessageKind.Untargeted, false, true) => token.RegisterUntargeted<ProbeMessage>(receiver.Receive, priority),
+                (MessageKind.Untargeted, false, false) => token.RegisterUntargeted<ProbeMessage>(receiver.ReceiveFast, priority),
+                (MessageKind.Untargeted, true, _) => token.RegisterUntargetedPostProcessor<ProbeMessage>(receiver.ReceiveFast, priority),
+                (MessageKind.Targeted, false, true) => token.RegisterTargeted<ProbeMessage>(Context, receiver.Receive, priority),
+                (MessageKind.Targeted, false, false) => token.RegisterTargeted<ProbeMessage>(Context, receiver.ReceiveFast, priority),
+                (MessageKind.Targeted, true, true) => token.RegisterTargetedPostProcessor<ProbeMessage>(Context, receiver.Receive, priority),
+                (MessageKind.Targeted, true, false) => token.RegisterTargetedPostProcessor<ProbeMessage>(Context, receiver.ReceiveFast, priority),
+                (MessageKind.Broadcast, false, true) => token.RegisterBroadcast<ProbeMessage>(Context, receiver.Receive, priority),
+                (MessageKind.Broadcast, false, false) => token.RegisterBroadcast<ProbeMessage>(Context, receiver.ReceiveFast, priority),
+                (MessageKind.Broadcast, true, true) => token.RegisterBroadcastPostProcessor<ProbeMessage>(Context, receiver.Receive, priority),
+                (MessageKind.Broadcast, true, false) => token.RegisterBroadcastPostProcessor<ProbeMessage>(Context, receiver.ReceiveFast, priority),
+                (MessageKind.TargetedWithoutTargeting, false, true) => token.RegisterTargetedWithoutTargeting<ProbeMessage>(receiver.ReceiveContext, priority),
+                (MessageKind.TargetedWithoutTargeting, false, false) => token.RegisterTargetedWithoutTargeting<ProbeMessage>(receiver.ReceiveContextFast, priority),
+                (MessageKind.TargetedWithoutTargeting, true, true) => token.RegisterTargetedWithoutTargetingPostProcessor<ProbeMessage>(receiver.ReceiveContext, priority),
+                (MessageKind.TargetedWithoutTargeting, true, false) => token.RegisterTargetedWithoutTargetingPostProcessor<ProbeMessage>(receiver.ReceiveContextFast, priority),
+                (MessageKind.BroadcastWithoutSource, false, true) => token.RegisterBroadcastWithoutSource<ProbeMessage>(receiver.ReceiveContext, priority),
+                (MessageKind.BroadcastWithoutSource, false, false) => token.RegisterBroadcastWithoutSource<ProbeMessage>(receiver.ReceiveContextFast, priority),
+                (MessageKind.BroadcastWithoutSource, true, true) => token.RegisterBroadcastWithoutSourcePostProcessor<ProbeMessage>(receiver.ReceiveContext, priority),
+                (MessageKind.BroadcastWithoutSource, true, false) => token.RegisterBroadcastWithoutSourcePostProcessor<ProbeMessage>(receiver.ReceiveContextFast, priority),
                 _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
             };
         }
@@ -517,8 +289,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             public void ReceiveContext(InstanceId context, ProbeMessage message) => Record();
 
-            public void ReceiveContextFast(in InstanceId context, in ProbeMessage message) =>
-                Record();
+            public void ReceiveContextFast(in InstanceId context, in ProbeMessage message) => Record();
 
             public void ReceiveUntargeted(IUntargetedMessage message) => Record();
 
@@ -526,19 +297,14 @@ namespace DxMessaging.Tests.Runtime.Core
 
             public void ReceiveTargeted(InstanceId context, ITargetedMessage message) => Record();
 
-            public void ReceiveTargetedFast(in InstanceId context, in ITargetedMessage message) =>
-                Record();
+            public void ReceiveTargetedFast(in InstanceId context, in ITargetedMessage message) => Record();
 
             public void ReceiveBroadcast(InstanceId context, IBroadcastMessage message) => Record();
 
-            public void ReceiveBroadcastFast(in InstanceId context, in IBroadcastMessage message) =>
-                Record();
+            public void ReceiveBroadcastFast(in InstanceId context, in IBroadcastMessage message) => Record();
         }
 
-        private readonly struct ProbeMessage
-            : IUntargetedMessage,
-                ITargetedMessage,
-                IBroadcastMessage
+        private readonly struct ProbeMessage : IUntargetedMessage, ITargetedMessage, IBroadcastMessage
         {
             public Type MessageType => typeof(ProbeMessage);
         }

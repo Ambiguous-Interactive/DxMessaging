@@ -19,17 +19,11 @@ namespace DxMessaging.Tests.Runtime.Core
 
         private static IEnumerable<TestCaseData> Cases()
         {
-            foreach (
-                MessageScenario scenario in MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext
-            )
+            foreach (MessageScenario scenario in MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext)
             {
                 foreach (bool action in new[] { false, true })
                 {
-                    if (
-                        scenario.Kind == MessageKind.Untargeted
-                        && scenario.UsePostProcessor
-                        && action
-                    )
+                    if (scenario.Kind == MessageKind.Untargeted && scenario.UsePostProcessor && action)
                     {
                         continue;
                     }
@@ -55,11 +49,7 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private static IEnumerable<TestCaseData> BoundaryCases(
-            MessageScenario scenario,
-            bool action,
-            int family
-        )
+        private static IEnumerable<TestCaseData> BoundaryCases(MessageScenario scenario, bool action, int family)
         {
             foreach (string phase in new[] { "Immediate", "Replay", "Retarget" })
             foreach (bool diagnostics in new[] { false, true })
@@ -74,15 +64,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     continue;
                 }
-                yield return new TestCaseData(
-                    scenario,
-                    action,
-                    family,
-                    phase,
-                    diagnostics,
-                    boundary,
-                    effect
-                ).SetName(
+                yield return new TestCaseData(scenario, action, family, phase, diagnostics, boundary, effect).SetName(
                     $"ForeignIndex_{scenario.Kind}_Post{scenario.UsePostProcessor}_Action{action}_Family{family}_{phase}_Diagnostics{diagnostics}_{boundary}_{effect}"
                 );
             }
@@ -99,18 +81,14 @@ namespace DxMessaging.Tests.Runtime.Core
             string effect
         )
         {
-            string label =
-                $"[{scenario}, action={action}, family={family}, phase={phase}, diagnostics={diagnostics}, boundary={boundary}, effect={effect}]";
+            string label = $"[{scenario}, action={action}, family={family}, phase={phase}, diagnostics={diagnostics}, boundary={boundary}, effect={effect}]";
             bool savedDebug = MessagingDebug.enabled;
             MessagingDebug.enabled = false;
             MessageBus oldInner = new MessageBus { DiagnosticsMode = diagnostics };
             MessageBus newInner = new MessageBus { DiagnosticsMode = diagnostics };
             FaultBus oldBus = new FaultBus(oldInner, diagnostics);
             FaultBus newBus = new FaultBus(newInner, diagnostics);
-            MessageHandler handler = new MessageHandler(new InstanceId(979), oldBus)
-            {
-                active = true,
-            };
+            MessageHandler handler = new MessageHandler(new InstanceId(979), oldBus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, oldBus);
             token.DiagnosticMode = diagnostics;
             using LeakWatcher oldLeaks = new LeakWatcher(oldInner);
@@ -131,11 +109,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     {
                         token.Enable();
                         Emit(oldInner, scenario);
-                        Assert.That(
-                            receiver.Calls,
-                            Is.EqualTo(1),
-                            label + ": initial old callback."
-                        );
+                        Assert.That(receiver.Calls, Is.EqualTo(1), label + ": initial old callback.");
                         receiver.Calls = 0;
                     }
                 }
@@ -168,53 +142,24 @@ namespace DxMessaging.Tests.Runtime.Core
                     newBus.Armed = false;
                 }
 
-                Assert.That(
-                    observed,
-                    fails ? Is.SameAs(target.Marker) : Is.Null,
-                    label + ": original fault identity."
-                );
-                Assert.That(
-                    target.BoundaryCalls,
-                    Is.EqualTo(boundary == "Getter" && family == 1 ? 0 : 1),
-                    label + ": boundary multiplicity."
-                );
-                Assert.That(
-                    target.CompletedRegistrations,
-                    Is.EqualTo(fails ? 0 : 1),
-                    label + ": acquisition follows required throwing boundaries."
-                );
-                Assert.That(
-                    token._metadata.Count,
-                    Is.EqualTo(fails && phase == "Immediate" ? 0 : 1),
-                    label + ": staged ownership."
-                );
-                Assert.That(
-                    token.Enabled,
-                    Is.EqualTo(!fails || phase != "Replay"),
-                    label + ": lifecycle enabled state."
-                );
+                Assert.That(observed, fails ? Is.SameAs(target.Marker) : Is.Null, label + ": original fault identity.");
+                Assert.That(target.BoundaryCalls, Is.EqualTo(boundary == "Getter" && family == 1 ? 0 : 1), label + ": boundary multiplicity.");
+                Assert.That(target.CompletedRegistrations, Is.EqualTo(fails ? 0 : 1), label + ": acquisition follows required throwing boundaries.");
+                Assert.That(token._metadata.Count, Is.EqualTo(fails && phase == "Immediate" ? 0 : 1), label + ": staged ownership.");
+                Assert.That(token.Enabled, Is.EqualTo(!fails || phase != "Replay"), label + ": lifecycle enabled state.");
                 MessageBus liveBus = phase == "Retarget" && !fails ? newInner : oldInner;
                 bool cancelled = boundary == "RegistrarAfter" && effect == "Reset";
                 int expectedLive = fails && phase != "Retarget" || cancelled ? 0 : 1;
-                Assert.That(
-                    MessageBusInspection.CountLiveRegistrations(liveBus),
-                    Is.EqualTo(expectedLive),
-                    label + ": live membership."
-                );
+                Assert.That(MessageBusInspection.CountLiveRegistrations(liveBus), Is.EqualTo(expectedLive), label + ": live membership.");
                 MessageBus otherBus = ReferenceEquals(liveBus, oldInner) ? newInner : oldInner;
-                Assert.That(
-                    MessageBusInspection.CountLiveRegistrations(otherBus),
-                    Is.Zero,
-                    label + ": no stranded peer membership."
-                );
+                Assert.That(MessageBusInspection.CountLiveRegistrations(otherBus), Is.Zero, label + ": no stranded peer membership.");
                 Emit(oldInner, scenario);
                 Emit(newInner, scenario);
                 Assert.That(receiver.Calls, Is.EqualTo(expectedLive), label + ": actual delivery.");
                 token.Disable();
                 Assert.That(token.Enabled, Is.False, label + ": disabled.");
                 Assert.That(
-                    MessageBusInspection.CountLiveRegistrations(oldInner)
-                        + MessageBusInspection.CountLiveRegistrations(newInner),
+                    MessageBusInspection.CountLiveRegistrations(oldInner) + MessageBusInspection.CountLiveRegistrations(newInner),
                     Is.Zero,
                     label + ": disabled bus ownership."
                 );
@@ -233,8 +178,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Assert.That(token._callCounts.Count, Is.Zero, label + ": disposed call counts.");
                 Assert.That(token._emissionBuffer.Count, Is.Zero, label + ": disposed history.");
                 Assert.That(
-                    MessageBusInspection.CountLiveRegistrations(oldInner)
-                        + MessageBusInspection.CountLiveRegistrations(newInner),
+                    MessageBusInspection.CountLiveRegistrations(oldInner) + MessageBusInspection.CountLiveRegistrations(newInner),
                     Is.Zero,
                     label + ": disposed bus ownership."
                 );
@@ -275,13 +219,7 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private static MessageRegistrationHandle Stage(
-            MessageRegistrationToken token,
-            MessageScenario scenario,
-            bool action,
-            int family,
-            Receiver receiver
-        )
+        private static MessageRegistrationHandle Stage(MessageRegistrationToken token, MessageScenario scenario, bool action, int family, Receiver receiver)
         {
             if (family != 1)
             {
@@ -322,9 +260,7 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             private readonly MessageBus _actual;
             private readonly bool _diagnostics;
-            public readonly Exception Marker = new InvalidOperationException(
-                "Required index boundary marker."
-            );
+            public readonly Exception Marker = new InvalidOperationException("Required index boundary marker.");
             public string Boundary,
                 Effect;
             public bool Armed;
@@ -379,102 +315,64 @@ namespace DxMessaging.Tests.Runtime.Core
                 return registration;
             }
 
-            public override MessageBusRegistration RegisterUntargeted<T>(
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterUntargeted<T>(MessageHandler handler, int priority = 0)
             {
                 Fire("RegistrarBefore");
                 return After(base.RegisterUntargeted<T>(handler, priority));
             }
 
-            public override MessageBusRegistration RegisterUntargetedPostProcessor<T>(
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterUntargetedPostProcessor<T>(MessageHandler handler, int priority = 0)
             {
                 Fire("RegistrarBefore");
                 return After(base.RegisterUntargetedPostProcessor<T>(handler, priority));
             }
 
-            public override MessageBusRegistration RegisterTargeted<T>(
-                InstanceId context,
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterTargeted<T>(InstanceId context, MessageHandler handler, int priority = 0)
             {
                 Fire("RegistrarBefore");
                 return After(base.RegisterTargeted<T>(context, handler, priority));
             }
 
-            public override MessageBusRegistration RegisterTargetedPostProcessor<T>(
-                InstanceId context,
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterTargetedPostProcessor<T>(InstanceId context, MessageHandler handler, int priority = 0)
             {
                 Fire("RegistrarBefore");
                 return After(base.RegisterTargetedPostProcessor<T>(context, handler, priority));
             }
 
-            public override MessageBusRegistration RegisterTargetedWithoutTargeting<T>(
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterTargetedWithoutTargeting<T>(MessageHandler handler, int priority = 0)
             {
                 Fire("RegistrarBefore");
                 return After(base.RegisterTargetedWithoutTargeting<T>(handler, priority));
             }
 
-            public override MessageBusRegistration RegisterTargetedWithoutTargetingPostProcessor<T>(
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterTargetedWithoutTargetingPostProcessor<T>(MessageHandler handler, int priority = 0)
             {
                 Fire("RegistrarBefore");
-                return After(
-                    base.RegisterTargetedWithoutTargetingPostProcessor<T>(handler, priority)
-                );
+                return After(base.RegisterTargetedWithoutTargetingPostProcessor<T>(handler, priority));
             }
 
-            public override MessageBusRegistration RegisterSourcedBroadcast<T>(
-                InstanceId context,
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterSourcedBroadcast<T>(InstanceId context, MessageHandler handler, int priority = 0)
             {
                 Fire("RegistrarBefore");
                 return After(base.RegisterSourcedBroadcast<T>(context, handler, priority));
             }
 
-            public override MessageBusRegistration RegisterBroadcastPostProcessor<T>(
-                InstanceId context,
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterBroadcastPostProcessor<T>(InstanceId context, MessageHandler handler, int priority = 0)
             {
                 Fire("RegistrarBefore");
                 return After(base.RegisterBroadcastPostProcessor<T>(context, handler, priority));
             }
 
-            public override MessageBusRegistration RegisterSourcedBroadcastWithoutSource<T>(
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterSourcedBroadcastWithoutSource<T>(MessageHandler handler, int priority = 0)
             {
                 Fire("RegistrarBefore");
                 return After(base.RegisterSourcedBroadcastWithoutSource<T>(handler, priority));
             }
 
-            public override MessageBusRegistration RegisterBroadcastWithoutSourcePostProcessor<T>(
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterBroadcastWithoutSourcePostProcessor<T>(MessageHandler handler, int priority = 0)
             {
                 Fire("RegistrarBefore");
-                return After(
-                    base.RegisterBroadcastWithoutSourcePostProcessor<T>(handler, priority)
-                );
+                return After(base.RegisterBroadcastWithoutSourcePostProcessor<T>(handler, priority));
             }
 
             public override MessageBusRegistration RegisterGlobalAcceptAll(MessageHandler handler)
@@ -483,122 +381,54 @@ namespace DxMessaging.Tests.Runtime.Core
                 return After(base.RegisterGlobalAcceptAll(handler));
             }
 
-            public override MessageBusRegistration RegisterUntargetedInterceptor<T>(
-                IMessageBus.UntargetedInterceptor<T> interceptor,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterUntargetedInterceptor<T>(IMessageBus.UntargetedInterceptor<T> interceptor, int priority = 0)
             {
                 Fire("RegistrarBefore");
                 return After(base.RegisterUntargetedInterceptor(interceptor, priority));
             }
 
-            public override MessageBusRegistration RegisterTargetedInterceptor<T>(
-                IMessageBus.TargetedInterceptor<T> interceptor,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterTargetedInterceptor<T>(IMessageBus.TargetedInterceptor<T> interceptor, int priority = 0)
             {
                 Fire("RegistrarBefore");
                 return After(base.RegisterTargetedInterceptor(interceptor, priority));
             }
 
-            public override MessageBusRegistration RegisterBroadcastInterceptor<T>(
-                IMessageBus.BroadcastInterceptor<T> interceptor,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterBroadcastInterceptor<T>(IMessageBus.BroadcastInterceptor<T> interceptor, int priority = 0)
             {
                 Fire("RegistrarBefore");
                 return After(base.RegisterBroadcastInterceptor(interceptor, priority));
             }
         }
 
-        private static MessageRegistrationHandle Register(
-            MessageRegistrationToken token,
-            MessageScenario scenario,
-            bool action,
-            bool global,
-            Receiver receiver
-        )
+        private static MessageRegistrationHandle Register(MessageRegistrationToken token, MessageScenario scenario, bool action, bool global, Receiver receiver)
         {
             if (global)
             {
                 return action
-                    ? token.RegisterGlobalAcceptAll(
-                        receiver.ReceiveUntargeted,
-                        receiver.ReceiveTargeted,
-                        receiver.ReceiveBroadcast
-                    )
-                    : token.RegisterGlobalAcceptAll(
-                        receiver.ReceiveUntargetedFast,
-                        receiver.ReceiveTargetedFast,
-                        receiver.ReceiveBroadcastFast
-                    );
+                    ? token.RegisterGlobalAcceptAll(receiver.ReceiveUntargeted, receiver.ReceiveTargeted, receiver.ReceiveBroadcast)
+                    : token.RegisterGlobalAcceptAll(receiver.ReceiveUntargetedFast, receiver.ReceiveTargetedFast, receiver.ReceiveBroadcastFast);
             }
             return (scenario.Kind, scenario.UsePostProcessor, action) switch
             {
-                (MessageKind.Untargeted, false, true) => token.RegisterUntargeted<ProbeMessage>(
-                    receiver.Receive
-                ),
-                (MessageKind.Untargeted, false, false) => token.RegisterUntargeted<ProbeMessage>(
-                    receiver.ReceiveFast
-                ),
-                (MessageKind.Untargeted, true, _) =>
-                    token.RegisterUntargetedPostProcessor<ProbeMessage>(receiver.ReceiveFast),
-                (MessageKind.Targeted, false, true) => token.RegisterTargeted<ProbeMessage>(
-                    Context,
-                    receiver.Receive
-                ),
-                (MessageKind.Targeted, false, false) => token.RegisterTargeted<ProbeMessage>(
-                    Context,
-                    receiver.ReceiveFast
-                ),
-                (MessageKind.Targeted, true, true) =>
-                    token.RegisterTargetedPostProcessor<ProbeMessage>(Context, receiver.Receive),
-                (MessageKind.Targeted, true, false) =>
-                    token.RegisterTargetedPostProcessor<ProbeMessage>(
-                        Context,
-                        receiver.ReceiveFast
-                    ),
-                (MessageKind.Broadcast, false, true) => token.RegisterBroadcast<ProbeMessage>(
-                    Context,
-                    receiver.Receive
-                ),
-                (MessageKind.Broadcast, false, false) => token.RegisterBroadcast<ProbeMessage>(
-                    Context,
-                    receiver.ReceiveFast
-                ),
-                (MessageKind.Broadcast, true, true) =>
-                    token.RegisterBroadcastPostProcessor<ProbeMessage>(Context, receiver.Receive),
-                (MessageKind.Broadcast, true, false) =>
-                    token.RegisterBroadcastPostProcessor<ProbeMessage>(
-                        Context,
-                        receiver.ReceiveFast
-                    ),
-                (MessageKind.TargetedWithoutTargeting, false, true) =>
-                    token.RegisterTargetedWithoutTargeting<ProbeMessage>(receiver.ReceiveContext),
-                (MessageKind.TargetedWithoutTargeting, false, false) =>
-                    token.RegisterTargetedWithoutTargeting<ProbeMessage>(
-                        receiver.ReceiveContextFast
-                    ),
-                (MessageKind.TargetedWithoutTargeting, true, true) =>
-                    token.RegisterTargetedWithoutTargetingPostProcessor<ProbeMessage>(
-                        receiver.ReceiveContext
-                    ),
-                (MessageKind.TargetedWithoutTargeting, true, false) =>
-                    token.RegisterTargetedWithoutTargetingPostProcessor<ProbeMessage>(
-                        receiver.ReceiveContextFast
-                    ),
-                (MessageKind.BroadcastWithoutSource, false, true) =>
-                    token.RegisterBroadcastWithoutSource<ProbeMessage>(receiver.ReceiveContext),
-                (MessageKind.BroadcastWithoutSource, false, false) =>
-                    token.RegisterBroadcastWithoutSource<ProbeMessage>(receiver.ReceiveContextFast),
-                (MessageKind.BroadcastWithoutSource, true, true) =>
-                    token.RegisterBroadcastWithoutSourcePostProcessor<ProbeMessage>(
-                        receiver.ReceiveContext
-                    ),
-                (MessageKind.BroadcastWithoutSource, true, false) =>
-                    token.RegisterBroadcastWithoutSourcePostProcessor<ProbeMessage>(
-                        receiver.ReceiveContextFast
-                    ),
+                (MessageKind.Untargeted, false, true) => token.RegisterUntargeted<ProbeMessage>(receiver.Receive),
+                (MessageKind.Untargeted, false, false) => token.RegisterUntargeted<ProbeMessage>(receiver.ReceiveFast),
+                (MessageKind.Untargeted, true, _) => token.RegisterUntargetedPostProcessor<ProbeMessage>(receiver.ReceiveFast),
+                (MessageKind.Targeted, false, true) => token.RegisterTargeted<ProbeMessage>(Context, receiver.Receive),
+                (MessageKind.Targeted, false, false) => token.RegisterTargeted<ProbeMessage>(Context, receiver.ReceiveFast),
+                (MessageKind.Targeted, true, true) => token.RegisterTargetedPostProcessor<ProbeMessage>(Context, receiver.Receive),
+                (MessageKind.Targeted, true, false) => token.RegisterTargetedPostProcessor<ProbeMessage>(Context, receiver.ReceiveFast),
+                (MessageKind.Broadcast, false, true) => token.RegisterBroadcast<ProbeMessage>(Context, receiver.Receive),
+                (MessageKind.Broadcast, false, false) => token.RegisterBroadcast<ProbeMessage>(Context, receiver.ReceiveFast),
+                (MessageKind.Broadcast, true, true) => token.RegisterBroadcastPostProcessor<ProbeMessage>(Context, receiver.Receive),
+                (MessageKind.Broadcast, true, false) => token.RegisterBroadcastPostProcessor<ProbeMessage>(Context, receiver.ReceiveFast),
+                (MessageKind.TargetedWithoutTargeting, false, true) => token.RegisterTargetedWithoutTargeting<ProbeMessage>(receiver.ReceiveContext),
+                (MessageKind.TargetedWithoutTargeting, false, false) => token.RegisterTargetedWithoutTargeting<ProbeMessage>(receiver.ReceiveContextFast),
+                (MessageKind.TargetedWithoutTargeting, true, true) => token.RegisterTargetedWithoutTargetingPostProcessor<ProbeMessage>(receiver.ReceiveContext),
+                (MessageKind.TargetedWithoutTargeting, true, false) => token.RegisterTargetedWithoutTargetingPostProcessor<ProbeMessage>(receiver.ReceiveContextFast),
+                (MessageKind.BroadcastWithoutSource, false, true) => token.RegisterBroadcastWithoutSource<ProbeMessage>(receiver.ReceiveContext),
+                (MessageKind.BroadcastWithoutSource, false, false) => token.RegisterBroadcastWithoutSource<ProbeMessage>(receiver.ReceiveContextFast),
+                (MessageKind.BroadcastWithoutSource, true, true) => token.RegisterBroadcastWithoutSourcePostProcessor<ProbeMessage>(receiver.ReceiveContext),
+                (MessageKind.BroadcastWithoutSource, true, false) => token.RegisterBroadcastWithoutSourcePostProcessor<ProbeMessage>(receiver.ReceiveContextFast),
                 _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
             };
         }
@@ -640,8 +470,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             public void ReceiveContext(InstanceId context, ProbeMessage message) => Record();
 
-            public void ReceiveContextFast(in InstanceId context, in ProbeMessage message) =>
-                Record();
+            public void ReceiveContextFast(in InstanceId context, in ProbeMessage message) => Record();
 
             public void ReceiveUntargeted(IUntargetedMessage message) => Record();
 
@@ -649,19 +478,14 @@ namespace DxMessaging.Tests.Runtime.Core
 
             public void ReceiveTargeted(InstanceId context, ITargetedMessage message) => Record();
 
-            public void ReceiveTargetedFast(in InstanceId context, in ITargetedMessage message) =>
-                Record();
+            public void ReceiveTargetedFast(in InstanceId context, in ITargetedMessage message) => Record();
 
             public void ReceiveBroadcast(InstanceId context, IBroadcastMessage message) => Record();
 
-            public void ReceiveBroadcastFast(in InstanceId context, in IBroadcastMessage message) =>
-                Record();
+            public void ReceiveBroadcastFast(in InstanceId context, in IBroadcastMessage message) => Record();
         }
 
-        private readonly struct ProbeMessage
-            : IUntargetedMessage,
-                ITargetedMessage,
-                IBroadcastMessage
+        private readonly struct ProbeMessage : IUntargetedMessage, ITargetedMessage, IBroadcastMessage
         {
             public Type MessageType => typeof(ProbeMessage);
         }

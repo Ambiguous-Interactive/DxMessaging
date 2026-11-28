@@ -16,10 +16,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void StructEmitEqualsEmitUntargeted()
         {
-            GameObject go = new(
-                nameof(StructEmitEqualsEmitUntargeted),
-                typeof(UntargetedReceiverComponent)
-            );
+            GameObject go = new(nameof(StructEmitEqualsEmitUntargeted), typeof(UntargetedReceiverComponent));
             _spawned.Add(go);
             UntargetedReceiverComponent comp = go.GetComponent<UntargetedReceiverComponent>();
 
@@ -34,18 +31,13 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void StructEmitAndEmitUntargetedRespectInterceptors()
         {
-            GameObject go = new(
-                nameof(StructEmitAndEmitUntargetedRespectInterceptors),
-                typeof(UntargetedReceiverComponent)
-            );
+            GameObject go = new(nameof(StructEmitAndEmitUntargetedRespectInterceptors), typeof(UntargetedReceiverComponent));
             _spawned.Add(go);
             UntargetedReceiverComponent comp = go.GetComponent<UntargetedReceiverComponent>();
 
             IMessageBus bus = MessageHandler.MessageBus;
             bool cancel = true;
-            MessageBusRegistration dereg = bus.RegisterUntargetedInterceptor(
-                (ref SimpleUntargetedMessage _) => !cancel
-            );
+            MessageBusRegistration dereg = bus.RegisterUntargetedInterceptor((ref SimpleUntargetedMessage _) => !cancel);
             try
             {
                 SimpleUntargetedMessage m = new();
@@ -67,29 +59,19 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void StructExplicitBusParameterRoutesCorrectly()
         {
-            GameObject globalGo = new(
-                nameof(StructExplicitBusParameterRoutesCorrectly) + "_Global",
-                typeof(UntargetedReceiverComponent)
-            );
+            GameObject globalGo = new(nameof(StructExplicitBusParameterRoutesCorrectly) + "_Global", typeof(UntargetedReceiverComponent));
             _spawned.Add(globalGo);
-            UntargetedReceiverComponent globalComp =
-                globalGo.GetComponent<UntargetedReceiverComponent>();
+            UntargetedReceiverComponent globalComp = globalGo.GetComponent<UntargetedReceiverComponent>();
 
-            GameObject customGo = new(
-                nameof(StructExplicitBusParameterRoutesCorrectly) + "_Custom"
-            );
+            GameObject customGo = new(nameof(StructExplicitBusParameterRoutesCorrectly) + "_Custom");
             _spawned.Add(customGo);
             MessageHandler customHandler = new(customGo) { active = true };
             MessageBus customBus = new();
-            MessageRegistrationToken customToken = MessageRegistrationToken.Create(
-                customHandler,
-                customBus
-            );
+            MessageRegistrationToken customToken = MessageRegistrationToken.Create(customHandler, customBus);
             customToken.Enable();
 
             int customCount = 0;
-            MessageRegistrationHandle customHandle =
-                customToken.RegisterUntargeted<SimpleUntargetedMessage>(_ => customCount++);
+            MessageRegistrationHandle customHandle = customToken.RegisterUntargeted<SimpleUntargetedMessage>(_ => customCount++);
 
             SimpleUntargetedMessage m = new();
             m.Emit(customBus);
@@ -108,13 +90,9 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void ClassEmitEqualsEmitUntargeted()
         {
-            GameObject go = new(
-                nameof(ClassEmitEqualsEmitUntargeted),
-                typeof(UntargetedClassReceiverComponent)
-            );
+            GameObject go = new(nameof(ClassEmitEqualsEmitUntargeted), typeof(UntargetedClassReceiverComponent));
             _spawned.Add(go);
-            UntargetedClassReceiverComponent comp =
-                go.GetComponent<UntargetedClassReceiverComponent>();
+            UntargetedClassReceiverComponent comp = go.GetComponent<UntargetedClassReceiverComponent>();
 
             ClassUntargetedMessage m = new("hello");
             m.Emit();
@@ -126,27 +104,19 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void ClassExplicitBusParameterRoutesCorrectly()
         {
-            GameObject globalGo = new(
-                nameof(ClassExplicitBusParameterRoutesCorrectly) + "_Global",
-                typeof(UntargetedClassReceiverComponent)
-            );
+            GameObject globalGo = new(nameof(ClassExplicitBusParameterRoutesCorrectly) + "_Global", typeof(UntargetedClassReceiverComponent));
             _spawned.Add(globalGo);
-            UntargetedClassReceiverComponent globalComp =
-                globalGo.GetComponent<UntargetedClassReceiverComponent>();
+            UntargetedClassReceiverComponent globalComp = globalGo.GetComponent<UntargetedClassReceiverComponent>();
 
             GameObject customGo = new(nameof(ClassExplicitBusParameterRoutesCorrectly) + "_Custom");
             _spawned.Add(customGo);
             MessageHandler customHandler = new(customGo) { active = true };
             MessageBus customBus = new();
-            MessageRegistrationToken customToken = MessageRegistrationToken.Create(
-                customHandler,
-                customBus
-            );
+            MessageRegistrationToken customToken = MessageRegistrationToken.Create(customHandler, customBus);
             customToken.Enable();
 
             int customCount = 0;
-            MessageRegistrationHandle customHandle =
-                customToken.RegisterUntargeted<ClassUntargetedMessage>(_ => customCount++);
+            MessageRegistrationHandle customHandle = customToken.RegisterUntargeted<ClassUntargetedMessage>(_ => customCount++);
 
             ClassUntargetedMessage m = new("x");
             m.Emit(customBus);

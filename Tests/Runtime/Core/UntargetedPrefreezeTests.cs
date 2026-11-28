@@ -47,16 +47,10 @@ namespace DxMessaging.Tests.Runtime.Core
                     }
 
                     registeredLate = true;
-                    _ = token.RegisterUntargetedPostProcessor(
-                        (in SimpleUntargetedMessage _) => latePostProcessCount++,
-                        priority: 0
-                    );
+                    _ = token.RegisterUntargetedPostProcessor((in SimpleUntargetedMessage _) => latePostProcessCount++, priority: 0);
                 }
             );
-            _ = token.RegisterUntargetedPostProcessor(
-                (in SimpleUntargetedMessage _) => existingPostProcessCount++,
-                priority: 0
-            );
+            _ = token.RegisterUntargetedPostProcessor((in SimpleUntargetedMessage _) => existingPostProcessCount++, priority: 0);
 
             token.Enable();
 
@@ -73,12 +67,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             messageBus.UntargetedBroadcast(ref message);
             Assert.AreEqual(2, existingPostProcessCount);
-            Assert.AreEqual(
-                1,
-                latePostProcessCount,
-                "A post-processor registered during a previous emission must fire on "
-                    + "the next emission."
-            );
+            Assert.AreEqual(1, latePostProcessCount, "A post-processor registered during a previous emission must fire on " + "the next emission.");
 
             token.Disable();
         }
@@ -105,10 +94,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         if (!registeredLate)
                         {
                             registeredLate = true;
-                            _ = token.RegisterUntargetedPostProcessor(
-                                (in SimpleUntargetedMessage _) => latePostProcessCount++,
-                                priority: 0
-                            );
+                            _ = token.RegisterUntargetedPostProcessor((in SimpleUntargetedMessage _) => latePostProcessCount++, priority: 0);
                         }
 
                         return true;
@@ -118,10 +104,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 )
             ).AsAction();
             _ = token.RegisterUntargeted((in SimpleUntargetedMessage _) => { });
-            _ = token.RegisterUntargetedPostProcessor(
-                (in SimpleUntargetedMessage _) => existingPostProcessCount++,
-                priority: 0
-            );
+            _ = token.RegisterUntargetedPostProcessor((in SimpleUntargetedMessage _) => existingPostProcessCount++, priority: 0);
 
             token.Enable();
 
@@ -131,19 +114,12 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(
                 0,
                 latePostProcessCount,
-                "The post-process snapshot is captured BEFORE interceptors run; a "
-                    + "post-processor registered from an interceptor must not fire within "
-                    + "the same emission."
+                "The post-process snapshot is captured BEFORE interceptors run; a " + "post-processor registered from an interceptor must not fire within " + "the same emission."
             );
 
             messageBus.UntargetedBroadcast(ref message);
             Assert.AreEqual(2, existingPostProcessCount);
-            Assert.AreEqual(
-                1,
-                latePostProcessCount,
-                "A post-processor registered from an interceptor during a previous "
-                    + "emission must fire on the next emission."
-            );
+            Assert.AreEqual(1, latePostProcessCount, "A post-processor registered from an interceptor during a previous " + "emission must fire on the next emission.");
 
             interceptorDeregistration();
             token.Disable();
@@ -158,14 +134,8 @@ namespace DxMessaging.Tests.Runtime.Core
 
             int removedPostProcessCount = 0;
             int peerPostProcessCount = 0;
-            MessageRegistrationHandle postHandle = token.RegisterUntargetedPostProcessor(
-                (in SimpleUntargetedMessage _) => removedPostProcessCount++,
-                priority: 0
-            );
-            _ = token.RegisterUntargetedPostProcessor(
-                (in SimpleUntargetedMessage _) => peerPostProcessCount++,
-                priority: 0
-            );
+            MessageRegistrationHandle postHandle = token.RegisterUntargetedPostProcessor((in SimpleUntargetedMessage _) => removedPostProcessCount++, priority: 0);
+            _ = token.RegisterUntargetedPostProcessor((in SimpleUntargetedMessage _) => peerPostProcessCount++, priority: 0);
 
             bool removed = false;
             _ = token.RegisterUntargeted(
@@ -186,18 +156,12 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(
                 1,
                 removedPostProcessCount,
-                "A post-processor deregistered during handler execution still fires "
-                    + "within that emission; the frozen snapshot is immutable mid-emission."
+                "A post-processor deregistered during handler execution still fires " + "within that emission; the frozen snapshot is immutable mid-emission."
             );
             Assert.AreEqual(1, peerPostProcessCount);
 
             messageBus.UntargetedBroadcast(ref message);
-            Assert.AreEqual(
-                1,
-                removedPostProcessCount,
-                "A post-processor deregistered during a previous emission must not "
-                    + "fire on subsequent emissions."
-            );
+            Assert.AreEqual(1, removedPostProcessCount, "A post-processor deregistered during a previous emission must not " + "fire on subsequent emissions.");
             Assert.AreEqual(2, peerPostProcessCount);
 
             token.Disable();
@@ -218,17 +182,9 @@ namespace DxMessaging.Tests.Runtime.Core
             int postProcessCount = 0;
             int firstEmissionCount;
             int secondEmissionCount;
-            using (
-                LeakWatcher watcher = new LeakWatcher(
-                    messageBus,
-                    label: nameof(SimpleUntargetedMessage)
-                )
-            )
+            using (LeakWatcher watcher = new LeakWatcher(messageBus, label: nameof(SimpleUntargetedMessage)))
             {
-                MessageRegistrationHandle postHandle = token.RegisterUntargetedPostProcessor(
-                    (in SimpleUntargetedMessage _) => postProcessCount++,
-                    priority: 0
-                );
+                MessageRegistrationHandle postHandle = token.RegisterUntargetedPostProcessor((in SimpleUntargetedMessage _) => postProcessCount++, priority: 0);
 
                 bool removed = false;
                 _ = token.RegisterUntargeted(
@@ -264,8 +220,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(
                 1,
                 secondEmissionCount,
-                "The final post-processor removed during the previous emission must not run "
-                    + "again. firstEmissionCount={0}, secondEmissionCount={1}.",
+                "The final post-processor removed during the previous emission must not run " + "again. firstEmissionCount={0}, secondEmissionCount={1}.",
                 firstEmissionCount,
                 secondEmissionCount
             );
@@ -290,10 +245,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     }
 
                     registeredLate = true;
-                    _ = token.RegisterUntargeted(
-                        (in SimpleUntargetedMessage _) => lateHandlerCount++,
-                        priority: 100
-                    );
+                    _ = token.RegisterUntargeted((in SimpleUntargetedMessage _) => lateHandlerCount++, priority: 100);
                 }
             );
 
@@ -301,12 +253,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             SimpleUntargetedMessage message = new();
             messageBus.UntargetedBroadcast(ref message);
-            Assert.AreEqual(
-                0,
-                lateHandlerCount,
-                "A handler registered during an emission (even at a not-yet-dispatched "
-                    + "higher priority) must not fire within that emission."
-            );
+            Assert.AreEqual(0, lateHandlerCount, "A handler registered during an emission (even at a not-yet-dispatched " + "higher priority) must not fire within that emission.");
 
             messageBus.UntargetedBroadcast(ref message);
             Assert.AreEqual(1, lateHandlerCount);

@@ -35,12 +35,7 @@ namespace DxMessaging.Core.MessageBus
         public MessageRegistrationBuildException(string message, Exception innerException)
             : base(message, innerException) { }
 
-        internal MessageRegistrationBuildException(
-            string message,
-            MessageRegistrationLease lease,
-            Exception activationException,
-            Exception cleanupException
-        )
+        internal MessageRegistrationBuildException(string message, MessageRegistrationLease lease, Exception activationException, Exception cleanupException)
             : base(message, activationException)
         {
             Lease = lease ?? throw new ArgumentNullException(nameof(lease));
@@ -217,16 +212,10 @@ namespace DxMessaging.Core.MessageBus
         private bool _disposeInProgress;
         private bool _disposeRequestedDuringActivation;
 
-        internal MessageRegistrationLease(
-            MessageRegistrationToken token,
-            MessageHandler messageHandler,
-            IMessageBus messageBus,
-            MessageRegistrationLifecycle lifecycle
-        )
+        internal MessageRegistrationLease(MessageRegistrationToken token, MessageHandler messageHandler, IMessageBus messageBus, MessageRegistrationLifecycle lifecycle)
         {
             _token = token ?? throw new ArgumentNullException(nameof(token));
-            _messageHandler = messageHandler
-                ?? throw new ArgumentNullException(nameof(messageHandler));
+            _messageHandler = messageHandler ?? throw new ArgumentNullException(nameof(messageHandler));
             _messageBus = messageBus;
             _lifecycle = lifecycle;
             _isActive = false;
@@ -544,14 +533,8 @@ namespace DxMessaging.Core.MessageBus
 
             IMessageBus messageBus = ResolveMessageBus(options);
             InstanceId owner = ResolveOwner(options);
-            MessageHandler messageHandler = new MessageHandler(owner, messageBus)
-            {
-                active = options.HandlerStartsActive,
-            };
-            MessageRegistrationToken token = MessageRegistrationToken.Create(
-                messageHandler,
-                messageBus
-            );
+            MessageHandler messageHandler = new MessageHandler(owner, messageBus) { active = options.HandlerStartsActive };
+            MessageRegistrationToken token = MessageRegistrationToken.Create(messageHandler, messageBus);
             token.DiagnosticMode = options.EnableDiagnostics;
             MessageRegistrationLease lease = null;
             try
@@ -561,12 +544,7 @@ namespace DxMessaging.Core.MessageBus
                     options.Configure(token);
                 }
 
-                lease = new MessageRegistrationLease(
-                    token,
-                    messageHandler,
-                    messageBus,
-                    options.Lifecycle
-                );
+                lease = new MessageRegistrationLease(token, messageHandler, messageBus, options.Lifecycle);
                 lease.InvokeBuildHook();
 
                 if (options.ActivateOnBuild)
@@ -576,22 +554,14 @@ namespace DxMessaging.Core.MessageBus
             }
             catch (Exception exception)
             {
-                lease ??= new MessageRegistrationLease(
-                    token,
-                    messageHandler,
-                    messageBus,
-                    options.Lifecycle
-                );
+                lease ??= new MessageRegistrationLease(token, messageHandler, messageBus, options.Lifecycle);
                 HandleBuildFailure(lease, exception);
             }
 
             return lease;
         }
 
-        private static void HandleBuildFailure(
-            MessageRegistrationLease lease,
-            Exception activationException
-        )
+        private static void HandleBuildFailure(MessageRegistrationLease lease, Exception activationException)
         {
             Exception cleanupException = null;
             try
@@ -608,11 +578,7 @@ namespace DxMessaging.Core.MessageBus
             {
                 try
                 {
-                    MessagingDebug.Log(
-                        LogLevel.Error,
-                        "Registration build cleanup failed after setup or activation failure: {0}",
-                        cleanupException
-                    );
+                    MessagingDebug.Log(LogLevel.Error, "Registration build cleanup failed after setup or activation failure: {0}", cleanupException);
                 }
                 catch (Exception exception)
                 {
@@ -677,15 +643,10 @@ namespace DxMessaging.Core.MessageBus
                 int current = Volatile.Read(ref _syntheticOwnerCounter);
                 if (current == int.MinValue)
                 {
-                    throw new InvalidOperationException(
-                        "The synthetic owner identifier space is exhausted."
-                    );
+                    throw new InvalidOperationException("The synthetic owner identifier space is exhausted.");
                 }
                 int next = current - 1;
-                if (
-                    Interlocked.CompareExchange(ref _syntheticOwnerCounter, next, current)
-                    == current
-                )
+                if (Interlocked.CompareExchange(ref _syntheticOwnerCounter, next, current) == current)
                 {
                     return new InstanceId(next);
                 }

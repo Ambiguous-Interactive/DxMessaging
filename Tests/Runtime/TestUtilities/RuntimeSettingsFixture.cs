@@ -9,15 +9,8 @@ namespace DxMessaging.Tests
     /// <summary>Owns fixture settings through the real provider cache and production change notification.</summary>
     internal static class RuntimeSettingsFixture
     {
-        private static readonly FieldInfo CachedField =
-            typeof(DxMessagingRuntimeSettingsProvider).GetField(
-                "_cached",
-                BindingFlags.Static | BindingFlags.NonPublic
-            );
-        private static readonly object _gate = MessageBusInspection.ReadField(
-            typeof(DxMessagingRuntimeSettingsProvider),
-            "_gate"
-        );
+        private static readonly FieldInfo CachedField = typeof(DxMessagingRuntimeSettingsProvider).GetField("_cached", BindingFlags.Static | BindingFlags.NonPublic);
+        private static readonly object _gate = MessageBusInspection.ReadField(typeof(DxMessagingRuntimeSettingsProvider), "_gate");
         private static OverrideToken _activeOverride;
         private static DxMessagingRuntimeSettings _cached
         {
@@ -70,12 +63,7 @@ namespace DxMessaging.Tests
             lock (_gate)
             {
                 InvalidateDetachedScopes();
-                token = new OverrideToken(
-                    settings,
-                    _cached,
-                    IMessageBus.GlobalMessageBufferSize,
-                    _activeOverride
-                );
+                token = new OverrideToken(settings, _cached, IMessageBus.GlobalMessageBufferSize, _activeOverride);
                 if (_activeOverride != null)
                 {
                     _activeOverride._newer = token;
@@ -96,12 +84,7 @@ namespace DxMessaging.Tests
             internal OverrideToken _newer;
             private bool _disposed;
 
-            public OverrideToken(
-                DxMessagingRuntimeSettings installed,
-                DxMessagingRuntimeSettings previous,
-                int previousGlobalMessageBufferSize,
-                OverrideToken older
-            )
+            public OverrideToken(DxMessagingRuntimeSettings installed, DxMessagingRuntimeSettings previous, int previousGlobalMessageBufferSize, OverrideToken older)
             {
                 _installed = installed;
                 _previous = previous;

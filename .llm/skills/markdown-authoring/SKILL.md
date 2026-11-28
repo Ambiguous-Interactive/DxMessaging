@@ -1,6 +1,9 @@
 ---
 name: markdown-authoring
-description: "Markdown that renders the same in GitHub, VS Code, and MkDocs Material: no admonitions (!!!), collapsibles (???), tabs (===), md-button attributes, emoji shortcodes, keys, or critic markup; no per-diagram Mermaid %%{init theme}%% directives; nested fences sized by backtick count; mkdocs.yml nav kept in sync with docs/; descriptive link text; and the lychee link gates. Use when adding or editing a Markdown page, a Mermaid diagram, a docs/ nav entry, or any internal or external link, or when a lychee link check fails."
+description:
+  "Markdown that renders the same in GitHub, VS Code, and MkDocs Material: no admonitions (!!!), collapsibles (???), tabs (===), md-button attributes, emoji shortcodes, keys, or
+  critic markup; no per-diagram Mermaid %%{init theme}%% directives; nested fences sized by backtick count; mkdocs.yml nav kept in sync with docs/; descriptive link text; and the
+  lychee link gates. Use when adding or editing a Markdown page, a Mermaid diagram, a docs/ nav entry, or any internal or external link, or when a lychee link check fails."
 metadata:
   category: "documentation"
   tags: "documentation, markdown, compatibility, mkdocs, portability"
@@ -8,9 +11,8 @@ metadata:
 
 # Markdown Authoring
 
-DxMessaging documentation is read on GitHub, in VS Code preview, and on the MkDocs Material
-site. Use only syntax that renders in all three, keep `mkdocs.yml` navigation synchronized with
-`docs/`, and keep links descriptive and resolvable.
+DxMessaging documentation is read on GitHub, in VS Code preview, and on the MkDocs Material site. Use only syntax that renders in all three, keep `mkdocs.yml` navigation
+synchronized with `docs/`, and keep links descriptive and resolvable.
 
 ## When to use
 
@@ -26,17 +28,13 @@ site. Use only syntax that renders in all three, keep `mkdocs.yml` navigation sy
 
 These render as literal broken text outside MkDocs. None may appear in any `.md` file:
 
-- Admonitions `!!! note` / `!!! warning` / `!!! danger` / `!!! tip`. Use a blockquote callout
-  instead: `> **Note**: ...`, `> **Warning**: ...`.
-- Collapsibles `??? note` / `???+ warning`. Use `<details><summary>...</summary>` with a blank
-  line after `<summary>`, or a plain heading.
+- Admonitions `!!! note` / `!!! warning` / `!!! danger` / `!!! tip`. Use a blockquote callout instead: `> **Note**: ...`, `> **Warning**: ...`.
+- Collapsibles `??? note` / `???+ warning`. Use `<details><summary>...</summary>` with a blank line after `<summary>`, or a plain heading.
 - Content tabs `=== "Python"`. Use `###` headings per language.
 - Button attributes `[text](url){ .md-button }`. Use a plain link, optionally bolded.
-- Emoji shortcodes `:warning:`, `:rocket:`, and the icon families `:material-*:`,
-  `:octicons-*:`, `:fontawesome-*:`, `:simple-*:`. Use a Unicode emoji directly, and only in a
+- Emoji shortcodes `:warning:`, `:rocket:`, and the icon families `:material-*:`, `:octicons-*:`, `:fontawesome-*:`, `:simple-*:`. Use a Unicode emoji directly, and only in a
   blockquote callout position (see the ASCII policy in the `documentation-style` skill).
-- Annotations `{ .annotate }`, the keys extension `++ctrl+alt+del++`, and critic markup
-  `{--del--}` / `{++ins++}` / `{~~old~>new~~}`.
+- Annotations `{ .annotate }`, the keys extension `++ctrl+alt+del++`, and critic markup `{--del--}` / `{++ins++}` / `{~~old~>new~~}`.
 
 Grep for regressions:
 
@@ -48,48 +46,35 @@ grep -rn --include='*.md' ':[a-z_]+:' docs/ | grep -v 'https://'
 
 ### Nested fenced code blocks
 
-- The outer fence must have MORE backticks than any inner fence. Three inside means four
-  outside; four inside means five outside. Opening and closing sequences must match exactly.
-- Never place a real document heading (for example `## See Also`) inside a fenced example. If
-  removing the fence would change the document structure, the heading belongs outside.
+- The outer fence must have MORE backticks than any inner fence. Three inside means four outside; four inside means five outside. Opening and closing sequences must match exactly.
+- Never place a real document heading (for example `## See Also`) inside a fenced example. If removing the fence would change the document structure, the heading belongs outside.
 
 ### Mermaid
 
-- Never use `%%{init: {'theme': '...'}}%%` in ANY markdown file, including `README.md`. GitHub
-  and VS Code follow `prefers-color-scheme`; on the site, Material's own mermaid integration
-  renders `pre.mermaid` and themes it from the `--md-mermaid-*` custom properties, which already
-  resolve to this theme's palette in both schemes. There is no custom mermaid script to configure,
-  and no `extra_javascript` mermaid entry: that shape shipped a 3.5 MB bundle to every page and
-  double-rendered every diagram (issue #299).
-- Avoid inline `style ... fill:#hex` node directives. They cannot be stripped automatically and
-  break contrast in the opposite theme. If unavoidable, verify contrast in both themes.
+- Never use `%%{init: {'theme': '...'}}%%` in ANY markdown file, including `README.md`. GitHub and VS Code follow `prefers-color-scheme`; on the site, Material's own mermaid
+  integration renders `pre.mermaid` and themes it from the `--md-mermaid-*` custom properties, which already resolve to this theme's palette in both schemes. There is no custom
+  mermaid script to configure, and no `extra_javascript` mermaid entry: that shape shipped a 3.5 MB bundle to every page and double-rendered every diagram (issue #299).
+- Avoid inline `style ... fill:#hex` node directives. They cannot be stripped automatically and break contrast in the opposite theme. If unavoidable, verify contrast in both
+  themes.
 - Verify with `grep -rn --include='*.md' "%%{init.*theme" .` (no output means clean).
 
 ### MkDocs navigation
 
-- Every `.md` file under `docs/` must have an entry in the `nav` section of `mkdocs.yml`.
-  Adding, renaming, or removing a page is a two-file change.
-- A section's `index.md` is listed WITHOUT a title so the section header itself is clickable;
-  giving it a title turns it into a separate item.
-- Order pages by learning progression: index, core concepts, practical guides, advanced
-  topics, reference. Test with `pip install -r requirements-docs.txt` then `mkdocs serve`.
+- Every `.md` file under `docs/` must have an entry in the `nav` section of `mkdocs.yml`. Adding, renaming, or removing a page is a two-file change.
+- A section's `index.md` is listed WITHOUT a title so the section header itself is clickable; giving it a title turns it into a separate item.
+- Order pages by learning progression: index, core concepts, practical guides, advanced topics, reference. Test with `pip install -r requirements-docs.txt` then `mkdocs serve`.
 
 ### Links
 
-- Link text describes the destination, never the raw file name: `[the README](../README.md)`,
-  not `[README.md](../README.md)`. No "click here".
-- Repository URLs in frontmatter use the `https://github.com/Ambiguous-Interactive/DxMessaging`
-  form: no trailing slash, no SSH form, no wrong org. Confirm with `git remote get-url origin`.
-- Use HTTPS, full URLs (no shorteners or tracking parameters), and versioned documentation
-  paths where fragment stability matters.
-- In-repo `#anchor` fragments are the hard PR gate, validated offline by
-  `lychee --offline --include-fragments`. A fragment that matches no heading fails the PR.
-- External-page fragments are NOT fetched by the blocking gate; verify them in a browser.
-  Deep external rot is reported by the scheduled advisory scan, which opens a tracking issue.
-- Only 404, 410, and DNS/connection failures fail the external check. 401/403/405/406/408/415/
-  429/451 and 5xx are bot-detection or throttling responses and are accepted. When a site
-  adopts a new blocking status, widen `accept` in `.lychee.toml`; never add a per-domain
-  `exclude` and never swap to a "more stable" domain.
+- Link text describes the destination, never the raw file name: `[the README](../README.md)`, not `[README.md](../README.md)`. No "click here".
+- Repository URLs in frontmatter use the `https://github.com/Ambiguous-Interactive/DxMessaging` form: no trailing slash, no SSH form, no wrong org. Confirm with
+  `git remote get-url origin`.
+- Use HTTPS, full URLs (no shorteners or tracking parameters), and versioned documentation paths where fragment stability matters.
+- In-repo `#anchor` fragments are the hard PR gate, validated offline by `lychee --offline --include-fragments`. A fragment that matches no heading fails the PR.
+- External-page fragments are NOT fetched by the blocking gate; verify them in a browser. Deep external rot is reported by the scheduled advisory scan, which opens a tracking
+  issue.
+- Only 404, 410, and DNS/connection failures fail the external check. 401/403/405/406/408/415/ 429/451 and 5xx are bot-detection or throttling responses and are accepted. When a
+  site adopts a new blocking status, widen `accept` in `.lychee.toml`; never add a per-domain `exclude` and never swap to a "more stable" domain.
 
 ## References
 

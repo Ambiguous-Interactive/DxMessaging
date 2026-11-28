@@ -40,20 +40,14 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         [Test, Performance, Category("PerfBench")]
         [TestCaseSource(nameof(LifecycleBenchmarkCases))]
-        public void RegistrationLifecycleBenchmark(
-            RegistrationLifecycleOperation operation,
-            int cardinality
-        )
+        public void RegistrationLifecycleBenchmark(RegistrationLifecycleOperation operation, int cardinality)
         {
             RegistrationLifecycleBenchmarkResult result = RunScenario(operation, cardinality);
             Debug.Log(result.ToStructuredLog());
             TestContext.Out.WriteLine(result.ToCsvRow());
         }
 
-        internal static RegistrationLifecycleObservation ExecuteOnceForContract(
-            RegistrationLifecycleOperation operation,
-            int cardinality
-        )
+        internal static RegistrationLifecycleObservation ExecuteOnceForContract(RegistrationLifecycleOperation operation, int cardinality)
         {
             ValidateCardinality(cardinality);
             using LifecycleState state = PrepareState(operation, cardinality);
@@ -61,10 +55,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             return Verify(operation, state);
         }
 
-        internal static RegistrationLifecycleBenchmarkResult RunScenario(
-            RegistrationLifecycleOperation operation,
-            int cardinality
-        )
+        internal static RegistrationLifecycleBenchmarkResult RunScenario(RegistrationLifecycleOperation operation, int cardinality)
         {
             ValidateCardinality(cardinality);
 
@@ -88,8 +79,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 Execute(operation, timingState);
                 long endTimestamp = Stopwatch.GetTimestamp();
                 _ = Verify(operation, timingState);
-                double elapsedSeconds =
-                    (endTimestamp - startTimestamp) / (double)Stopwatch.Frequency;
+                double elapsedSeconds = (endTimestamp - startTimestamp) / (double)Stopwatch.Frequency;
                 if (elapsedSeconds < minElapsedSeconds)
                 {
                     minElapsedSeconds = elapsedSeconds;
@@ -143,8 +133,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 AssertAllocationObservation(operation, allocation.Diagnostics);
             }
 
-            double registrationsPerSecond =
-                cardinality / Math.Max(minElapsedSeconds, double.Epsilon);
+            double registrationsPerSecond = cardinality / Math.Max(minElapsedSeconds, double.Epsilon);
             return new RegistrationLifecycleBenchmarkResult(
                 operation,
                 cardinality,
@@ -158,21 +147,13 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         private static IEnumerable<TestCaseData> LifecycleBenchmarkCases()
         {
-            foreach (
-                RegistrationLifecycleBenchmarkCase benchmarkCase in RegistrationLifecycleScenarios.All
-            )
+            foreach (RegistrationLifecycleBenchmarkCase benchmarkCase in RegistrationLifecycleScenarios.All)
             {
-                yield return new TestCaseData(
-                    benchmarkCase.Operation,
-                    benchmarkCase.Cardinality
-                ).SetName(benchmarkCase.Key);
+                yield return new TestCaseData(benchmarkCase.Operation, benchmarkCase.Cardinality).SetName(benchmarkCase.Key);
             }
         }
 
-        private static LifecycleState PrepareState(
-            RegistrationLifecycleOperation operation,
-            int cardinality
-        )
+        private static LifecycleState PrepareState(RegistrationLifecycleOperation operation, int cardinality)
         {
             LifecycleState state = new(cardinality);
             try
@@ -235,10 +216,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     state.RemoveAll();
                     return;
                 case RegistrationLifecycleOperation.Retarget:
-                    state.Token.RetargetMessageBus(
-                        state.SecondaryBus,
-                        MessageBusRebindMode.RebindActive
-                    );
+                    state.Token.RetargetMessageBus(state.SecondaryBus, MessageBusRebindMode.RebindActive);
                     return;
                 case RegistrationLifecycleOperation.Dispose:
                     state.Token.Dispose();
@@ -248,10 +226,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             }
         }
 
-        private static RegistrationLifecycleObservation Verify(
-            RegistrationLifecycleOperation operation,
-            LifecycleState state
-        )
+        private static RegistrationLifecycleObservation Verify(RegistrationLifecycleOperation operation, LifecycleState state)
         {
             int expectedPrimaryRegistrations = 0;
             int expectedSecondaryRegistrations = 0;
@@ -281,47 +256,24 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     throw new ArgumentOutOfRangeException(nameof(operation), operation, null);
             }
 
-            Assert.AreEqual(
-                expectedPrimaryRegistrations,
-                state.PrimaryBus.RegisteredUntargeted,
-                $"{operation} left an unexpected registration count on the original bus."
-            );
-            Assert.AreEqual(
-                expectedSecondaryRegistrations,
-                state.SecondaryBus.RegisteredUntargeted,
-                $"{operation} left an unexpected registration count on the retarget bus."
-            );
+            Assert.AreEqual(expectedPrimaryRegistrations, state.PrimaryBus.RegisteredUntargeted, $"{operation} left an unexpected registration count on the original bus.");
+            Assert.AreEqual(expectedSecondaryRegistrations, state.SecondaryBus.RegisteredUntargeted, $"{operation} left an unexpected registration count on the retarget bus.");
 
             state.Counter.Reset();
             LifecycleMessage message = default;
             state.PrimaryBus.UntargetedBroadcast(ref message);
             state.SecondaryBus.UntargetedBroadcast(ref message);
-            Assert.AreEqual(
-                expectedInvocations,
-                state.Counter.Count,
-                $"{operation} produced an unexpected exact dispatch fan-out after mutation."
-            );
+            Assert.AreEqual(expectedInvocations, state.Counter.Count, $"{operation} produced an unexpected exact dispatch fan-out after mutation.");
 
-            return new RegistrationLifecycleObservation(
-                state.PrimaryBus.RegisteredUntargeted,
-                state.SecondaryBus.RegisteredUntargeted,
-                state.Counter.Count
-            );
+            return new RegistrationLifecycleObservation(state.PrimaryBus.RegisteredUntargeted, state.SecondaryBus.RegisteredUntargeted, state.Counter.Count);
         }
 
         private static RegistrationLifecycleObservation Observe(LifecycleState state)
         {
-            return new RegistrationLifecycleObservation(
-                state.PrimaryBus.RegisteredUntargeted,
-                state.SecondaryBus.RegisteredUntargeted,
-                state.Counter.Count
-            );
+            return new RegistrationLifecycleObservation(state.PrimaryBus.RegisteredUntargeted, state.SecondaryBus.RegisteredUntargeted, state.Counter.Count);
         }
 
-        private static void AssertAllocationObservation(
-            RegistrationLifecycleOperation operation,
-            RegistrationLifecycleObservation observation
-        )
+        private static void AssertAllocationObservation(RegistrationLifecycleOperation operation, RegistrationLifecycleObservation observation)
         {
             int expectedPrimaryRegistrations = operation switch
             {
@@ -329,34 +281,17 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 RegistrationLifecycleOperation.ReEnable => 1,
                 _ => 0,
             };
-            int expectedSecondaryRegistrations =
-                operation == RegistrationLifecycleOperation.Retarget ? 1 : 0;
-            Assert.AreEqual(
-                expectedPrimaryRegistrations,
-                observation.PrimaryRegistrations,
-                $"{operation}: selected allocation attempt had unexpected primary bus state."
-            );
-            Assert.AreEqual(
-                expectedSecondaryRegistrations,
-                observation.SecondaryRegistrations,
-                $"{operation}: selected allocation attempt had unexpected secondary bus state."
-            );
-            Assert.AreEqual(
-                0,
-                observation.HandlerInvocations,
-                $"{operation}: selected allocation attempt dispatched during the measured operation."
-            );
+            int expectedSecondaryRegistrations = operation == RegistrationLifecycleOperation.Retarget ? 1 : 0;
+            Assert.AreEqual(expectedPrimaryRegistrations, observation.PrimaryRegistrations, $"{operation}: selected allocation attempt had unexpected primary bus state.");
+            Assert.AreEqual(expectedSecondaryRegistrations, observation.SecondaryRegistrations, $"{operation}: selected allocation attempt had unexpected secondary bus state.");
+            Assert.AreEqual(0, observation.HandlerInvocations, $"{operation}: selected allocation attempt dispatched during the measured operation.");
         }
 
         private static void ValidateCardinality(int cardinality)
         {
             if (cardinality <= 0)
             {
-                throw new ArgumentOutOfRangeException(
-                    nameof(cardinality),
-                    cardinality,
-                    "Registration cardinality must be positive."
-                );
+                throw new ArgumentOutOfRangeException(nameof(cardinality), cardinality, "Registration cardinality must be positive.");
             }
         }
 
@@ -479,36 +414,23 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         private const int TimingTrials = 7;
         private const int AllocationAttempts = 7;
 
-        internal static RegistrationAttributionObservation ExecuteOnceForContract(
-            RegistrationAttributionOperation operation
-        )
+        internal static RegistrationAttributionObservation ExecuteOnceForContract(RegistrationAttributionOperation operation)
         {
             using RegistrationAttributionState state = new(operation);
-            using LeakWatcher watcher = new(
-                state.Bus,
-                label: $"registration attribution observed cycle ({operation})"
-            );
+            using LeakWatcher watcher = new(state.Bus, label: $"registration attribution observed cycle ({operation})");
             return state.ExecuteSingleCycleWithObservation();
         }
 
-        internal static void ExecuteCyclesForContract(
-            RegistrationAttributionOperation operation,
-            int cycleCount
-        )
+        internal static void ExecuteCyclesForContract(RegistrationAttributionOperation operation, int cycleCount)
         {
             using RegistrationAttributionState state = new(operation);
-            using LeakWatcher watcher = new(
-                state.Bus,
-                label: $"registration attribution repeated cycles ({operation})"
-            );
+            using LeakWatcher watcher = new(state.Bus, label: $"registration attribution repeated cycles ({operation})");
             state.ExecuteCycles(cycleCount);
             state.ExecuteCycles(cycleCount);
             state.VerifyFinal(expectedCycles: cycleCount * 2);
         }
 
-        internal static DispatchBenchmarkResult RunScenario(
-            RegistrationAttributionOperation operation
-        )
+        internal static DispatchBenchmarkResult RunScenario(RegistrationAttributionOperation operation)
         {
             using (RegistrationAttributionState warmup = new(operation))
             {
@@ -525,8 +447,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 state.ExecuteCycles(CycleCount);
                 long endTimestamp = Stopwatch.GetTimestamp();
                 state.VerifyFinal(CycleCount);
-                double elapsedSeconds =
-                    (endTimestamp - startTimestamp) / (double)Stopwatch.Frequency;
+                double elapsedSeconds = (endTimestamp - startTimestamp) / (double)Stopwatch.Frequency;
                 if (elapsedSeconds < minElapsedSeconds)
                 {
                     minElapsedSeconds = elapsedSeconds;
@@ -535,26 +456,15 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             AllocationProbe.AllocationSample allocation = MeasureAllocation(operation);
 
-            return DispatchBenchmarkResult.ForRegistrationScenario(
-                ScenarioKey(operation),
-                runIndex: -1,
-                allocation.Allocations,
-                allocation.Bytes,
-                minElapsedSeconds * 1000d
-            );
+            return DispatchBenchmarkResult.ForRegistrationScenario(ScenarioKey(operation), runIndex: -1, allocation.Allocations, allocation.Bytes, minElapsedSeconds * 1000d);
         }
 
-        private static AllocationProbe.AllocationSample MeasureAllocation(
-            RegistrationAttributionOperation operation
-        )
+        private static AllocationProbe.AllocationSample MeasureAllocation(RegistrationAttributionOperation operation)
         {
             AllocationProbe.SettleHeapForMeasurement();
             if (!AllocationProbe.IsFunctional)
             {
-                return new AllocationProbe.AllocationSample(
-                    AllocationProbe.Unmeasured,
-                    AllocationProbe.Unmeasured
-                );
+                return new AllocationProbe.AllocationSample(AllocationProbe.Unmeasured, AllocationProbe.Unmeasured);
             }
 
             long minimumCount = long.MaxValue;
@@ -576,14 +486,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                         sample = window.SampleBoth();
                     }
                     state.VerifyFinal(expectedCycles: AllocationCycleCount * 2);
-                    if (
-                        AllocationProbe.ShouldReplaceMinimumAttempt(
-                            sample.Allocations,
-                            sample.Bytes,
-                            minimumCount,
-                            minimumBytes
-                        )
-                    )
+                    if (AllocationProbe.ShouldReplaceMinimumAttempt(sample.Allocations, sample.Bytes, minimumCount, minimumBytes))
                     {
                         minimumCount = sample.Allocations;
                         minimumBytes = sample.Bytes;
@@ -603,14 +506,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             // SYNC: scripts/unity/perf-scenarios.js mirrors these stable rendered keys.
             return operation switch
             {
-                RegistrationAttributionOperation.DirectBus =>
-                    $"RegistrationAttribution_DirectBus_{CycleCount}",
-                RegistrationAttributionOperation.DirectHandler =>
-                    $"RegistrationAttribution_DirectHandler_{CycleCount}",
-                RegistrationAttributionOperation.TokenStage =>
-                    $"RegistrationAttribution_TokenStage_{CycleCount}",
-                RegistrationAttributionOperation.TokenActive =>
-                    $"RegistrationAttribution_TokenActive_{CycleCount}",
+                RegistrationAttributionOperation.DirectBus => $"RegistrationAttribution_DirectBus_{CycleCount}",
+                RegistrationAttributionOperation.DirectHandler => $"RegistrationAttribution_DirectHandler_{CycleCount}",
+                RegistrationAttributionOperation.TokenStage => $"RegistrationAttribution_TokenStage_{CycleCount}",
+                RegistrationAttributionOperation.TokenActive => $"RegistrationAttribution_TokenActive_{CycleCount}",
                 _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null),
             };
         }
@@ -619,18 +518,14 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         private interface IRegistrationCyclePath
         {
-            RegistrationAttributionStateObservation ExecuteObservedCycle(
-                RegistrationAttributionState state
-            );
+            RegistrationAttributionStateObservation ExecuteObservedCycle(RegistrationAttributionState state);
 
             void ExecuteCycles(RegistrationAttributionState state, int cycleCount);
         }
 
         private sealed class DirectBusCyclePath : IRegistrationCyclePath
         {
-            public RegistrationAttributionStateObservation ExecuteObservedCycle(
-                RegistrationAttributionState state
-            )
+            public RegistrationAttributionStateObservation ExecuteObservedCycle(RegistrationAttributionState state)
             {
                 MessageBusRegistration registration = state.RegisterDirectBus();
                 RegistrationAttributionStateObservation live = state.ObserveState();
@@ -650,12 +545,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         private sealed class DirectHandlerCyclePath : IRegistrationCyclePath
         {
-            public RegistrationAttributionStateObservation ExecuteObservedCycle(
-                RegistrationAttributionState state
-            )
+            public RegistrationAttributionStateObservation ExecuteObservedCycle(RegistrationAttributionState state)
             {
-                MessageHandler.TypedHandler<AttributionMessage>.TypedHandlerDeregistrationState deregistration =
-                    state.RegisterDirectHandler();
+                MessageHandler.TypedHandler<AttributionMessage>.TypedHandlerDeregistrationState deregistration = state.RegisterDirectHandler();
                 RegistrationAttributionStateObservation live = state.ObserveState();
                 state.DeregisterDirectHandler(in deregistration);
                 return live;
@@ -665,8 +557,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 for (int index = 0; index < cycleCount; index++)
                 {
-                    MessageHandler.TypedHandler<AttributionMessage>.TypedHandlerDeregistrationState deregistration =
-                        state.RegisterDirectHandler();
+                    MessageHandler.TypedHandler<AttributionMessage>.TypedHandlerDeregistrationState deregistration = state.RegisterDirectHandler();
                     state.DeregisterDirectHandler(in deregistration);
                 }
             }
@@ -674,9 +565,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         private sealed class TokenCyclePath : IRegistrationCyclePath
         {
-            public RegistrationAttributionStateObservation ExecuteObservedCycle(
-                RegistrationAttributionState state
-            )
+            public RegistrationAttributionStateObservation ExecuteObservedCycle(RegistrationAttributionState state)
             {
                 MessageRegistrationHandle handle = state.RegisterToken();
                 RegistrationAttributionStateObservation live = state.ObserveState();
@@ -695,13 +584,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         }
 
         private static readonly IRegistrationCyclePath DirectBusPath = new DirectBusCyclePath();
-        private static readonly IRegistrationCyclePath DirectHandlerPath =
-            new DirectHandlerCyclePath();
+        private static readonly IRegistrationCyclePath DirectHandlerPath = new DirectHandlerCyclePath();
         private static readonly IRegistrationCyclePath TokenPath = new TokenCyclePath();
 
-        private static IRegistrationCyclePath ResolveCyclePath(
-            RegistrationAttributionOperation operation
-        )
+        private static IRegistrationCyclePath ResolveCyclePath(RegistrationAttributionOperation operation)
         {
             return operation switch
             {
@@ -734,10 +620,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 _bus = new MessageBus { DiagnosticsMode = false };
                 _handler = new MessageHandler(new InstanceId(43001), _bus) { active = true };
                 _callback = Handle;
-                if (
-                    operation == RegistrationAttributionOperation.TokenStage
-                    || operation == RegistrationAttributionOperation.TokenActive
-                )
+                if (operation == RegistrationAttributionOperation.TokenStage || operation == RegistrationAttributionOperation.TokenActive)
                 {
                     _token = MessageRegistrationToken.Create(_handler, _bus);
                     _token.DiagnosticMode = false;
@@ -752,9 +635,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             public RegistrationAttributionObservation ExecuteSingleCycleWithObservation()
             {
-                RegistrationAttributionStateObservation live = _cyclePath.ExecuteObservedCycle(
-                    this
-                );
+                RegistrationAttributionStateObservation live = _cyclePath.ExecuteObservedCycle(this);
                 _completedCycles = 1;
                 RegistrationAttributionStateObservation final = ObserveState();
                 return new RegistrationAttributionObservation(_operation, live, final);
@@ -764,11 +645,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 if (cycleCount <= 0)
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(cycleCount),
-                        cycleCount,
-                        "Registration attribution cycle count must be positive."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(cycleCount), cycleCount, "Registration attribution cycle count must be positive.");
                 }
                 _cyclePath.ExecuteCycles(this, cycleCount);
                 _completedCycles = checked(_completedCycles + cycleCount);
@@ -776,32 +653,12 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             public void VerifyFinal(int expectedCycles)
             {
-                Assert.AreEqual(
-                    expectedCycles,
-                    _completedCycles,
-                    $"{_operation}: completed cycle count drifted."
-                );
+                Assert.AreEqual(expectedCycles, _completedCycles, $"{_operation}: completed cycle count drifted.");
                 RegistrationAttributionStateObservation final = ObserveState();
-                Assert.AreEqual(
-                    0,
-                    final.BusRegistrations,
-                    $"{_operation}: registration cycles left a bus registration live."
-                );
-                Assert.AreEqual(
-                    0,
-                    final.HandlerRegistrations,
-                    $"{_operation}: registration cycles left a flat handler live."
-                );
-                Assert.AreEqual(
-                    0,
-                    final.TokenRegistrations,
-                    $"{_operation}: registration cycles left token metadata live."
-                );
-                Assert.AreEqual(
-                    0,
-                    final.HandlerInvocations,
-                    $"{_operation}: registration cycles still delivered after removal."
-                );
+                Assert.AreEqual(0, final.BusRegistrations, $"{_operation}: registration cycles left a bus registration live.");
+                Assert.AreEqual(0, final.HandlerRegistrations, $"{_operation}: registration cycles left a flat handler live.");
+                Assert.AreEqual(0, final.TokenRegistrations, $"{_operation}: registration cycles left token metadata live.");
+                Assert.AreEqual(0, final.HandlerInvocations, $"{_operation}: registration cycles still delivered after removal.");
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -819,17 +676,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public MessageHandler.TypedHandler<AttributionMessage>.TypedHandlerDeregistrationState RegisterDirectHandler()
             {
-                return _handler.RegisterUntargetedMessageHandler(
-                    _callback,
-                    _callback,
-                    messageBus: _bus
-                );
+                return _handler.RegisterUntargetedMessageHandler(_callback, _callback, messageBus: _bus);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void DeregisterDirectHandler(
-                in MessageHandler.TypedHandler<AttributionMessage>.TypedHandlerDeregistrationState deregistration
-            )
+            public void DeregisterDirectHandler(in MessageHandler.TypedHandler<AttributionMessage>.TypedHandlerDeregistrationState deregistration)
             {
                 deregistration.Deregister();
             }
@@ -851,12 +702,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 _handlerInvocations = 0;
                 AttributionMessage message = default;
                 _bus.UntargetedBroadcast(ref message);
-                return new RegistrationAttributionStateObservation(
-                    _bus.RegisteredUntargeted,
-                    CountHandlerRegistrations(),
-                    _token?._metadata.Count ?? 0,
-                    _handlerInvocations
-                );
+                return new RegistrationAttributionStateObservation(_bus.RegisteredUntargeted, CountHandlerRegistrations(), _token?._metadata.Count ?? 0, _handlerInvocations);
             }
 
             private void Handle(in AttributionMessage message)
@@ -916,12 +762,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
     public readonly struct RegistrationAttributionStateObservation
     {
-        public RegistrationAttributionStateObservation(
-            int busRegistrations,
-            int handlerRegistrations,
-            int tokenRegistrations,
-            int handlerInvocations
-        )
+        public RegistrationAttributionStateObservation(int busRegistrations, int handlerRegistrations, int tokenRegistrations, int handlerInvocations)
         {
             BusRegistrations = busRegistrations;
             HandlerRegistrations = handlerRegistrations;
@@ -960,10 +801,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         private const int TimingTrials = 7;
         internal const int PalindromeTimingTrials = 8;
 
-        internal static DeregistrationAttributionObservation ExecuteOnceForContract(
-            DeregistrationAttributionOperation operation,
-            int cardinality
-        )
+        internal static DeregistrationAttributionObservation ExecuteOnceForContract(DeregistrationAttributionOperation operation, int cardinality)
         {
             ValidateCardinality(cardinality);
             using DeregistrationAttributionState state = CreateState(operation, cardinality);
@@ -972,9 +810,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             return state.Verify();
         }
 
-        internal static DispatchBenchmarkResult RunScenario(
-            DeregistrationAttributionOperation operation
-        )
+        internal static DispatchBenchmarkResult RunScenario(DeregistrationAttributionOperation operation)
         {
             _ = ExecuteOnceForContract(operation, cardinality: 16);
 
@@ -993,8 +829,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 state.Execute();
                 long endTimestamp = Stopwatch.GetTimestamp();
                 _ = state.Verify();
-                double elapsedSeconds =
-                    (endTimestamp - startTimestamp) / (double)Stopwatch.Frequency;
+                double elapsedSeconds = (endTimestamp - startTimestamp) / (double)Stopwatch.Frequency;
                 if (elapsedSeconds < minElapsedSeconds)
                 {
                     minElapsedSeconds = elapsedSeconds;
@@ -1015,34 +850,18 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             // SYNC: scripts/unity/perf-scenarios.js mirrors these stable rendered keys.
             return operation switch
             {
-                DeregistrationAttributionOperation.DirectBus =>
-                    $"DeregistrationAttribution_DirectBus_{Cardinality}",
-                DeregistrationAttributionOperation.DirectHandler =>
-                    $"DeregistrationAttribution_DirectHandler_{Cardinality}",
-                DeregistrationAttributionOperation.TokenRemove =>
-                    $"DeregistrationAttribution_TokenRemove_{Cardinality}",
-                DeregistrationAttributionOperation.TokenDisable =>
-                    $"DeregistrationAttribution_TokenDisable_{Cardinality}",
+                DeregistrationAttributionOperation.DirectBus => $"DeregistrationAttribution_DirectBus_{Cardinality}",
+                DeregistrationAttributionOperation.DirectHandler => $"DeregistrationAttribution_DirectHandler_{Cardinality}",
+                DeregistrationAttributionOperation.TokenRemove => $"DeregistrationAttribution_TokenRemove_{Cardinality}",
+                DeregistrationAttributionOperation.TokenDisable => $"DeregistrationAttribution_TokenDisable_{Cardinality}",
                 _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null),
             };
         }
 
-        internal static DeregistrationAttributionPalindromeDiagnostic AnalyzePalindrome(
-            double handlerA,
-            double busA,
-            double busB,
-            double handlerB
-        )
+        internal static DeregistrationAttributionPalindromeDiagnostic AnalyzePalindrome(double handlerA, double busA, double busB, double handlerB)
         {
             return AnalyzePalindrome(
-                new DeregistrationAttributionPalindromeSample(
-                    handlerA,
-                    busA,
-                    busB,
-                    handlerB,
-                    trial: -1,
-                    prepareForward: false
-                ),
+                new DeregistrationAttributionPalindromeSample(handlerA, busA, busB, handlerB, trial: -1, prepareForward: false),
                 timingTrials: 0,
                 jointTrialSelection: false,
                 sameTrialArms: false,
@@ -1060,26 +879,13 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             string trialSequence
         )
         {
-            return new DeregistrationAttributionPalindromeDiagnostic(
-                sample,
-                timingTrials,
-                jointTrialSelection,
-                sameTrialArms,
-                preparationDirectionAlternated,
-                trialSequence
-            );
+            return new DeregistrationAttributionPalindromeDiagnostic(sample, timingTrials, jointTrialSelection, sameTrialArms, preparationDirectionAlternated, trialSequence);
         }
 
         internal static DeregistrationAttributionPalindromeDiagnostic RunPairedDiagnostic()
         {
-            _ = ExecuteOnceForContract(
-                DeregistrationAttributionOperation.DirectHandler,
-                cardinality: 16
-            );
-            _ = ExecuteOnceForContract(
-                DeregistrationAttributionOperation.DirectBus,
-                cardinality: 16
-            );
+            _ = ExecuteOnceForContract(DeregistrationAttributionOperation.DirectHandler, cardinality: 16);
+            _ = ExecuteOnceForContract(DeregistrationAttributionOperation.DirectBus, cardinality: 16);
 
             /*
                 Select one joint H/B/B/H floor. All four fresh states in a trial are prepared
@@ -1088,9 +894,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 phase. Alternate preparation direction so one endpoint is not always hottest.
             */
             AllocationProbe.SettleHeapForMeasurement();
-            DeregistrationAttributionPalindromeSample sample = MeasurePalindromeFloor(
-                out string trialSequence
-            );
+            DeregistrationAttributionPalindromeSample sample = MeasurePalindromeFloor(out string trialSequence);
             return AnalyzePalindrome(
                 sample,
                 PalindromeTimingTrials,
@@ -1121,9 +925,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             };
         }
 
-        private static DeregistrationAttributionPalindromeSample MeasurePalindromeFloor(
-            out string trialSequence
-        )
+        private static DeregistrationAttributionPalindromeSample MeasurePalindromeFloor(out string trialSequence)
         {
             DeregistrationAttributionPalindromeSample best = default;
             bool hasBest = false;
@@ -1131,20 +933,12 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             for (int trial = 0; trial < PalindromeTimingTrials; trial++)
             {
                 bool prepareForward = (trial & 1) == 0;
-                DeregistrationAttributionPalindromeSample candidate = MeasurePalindromeTrial(
-                    trial,
-                    prepareForward
-                );
+                DeregistrationAttributionPalindromeSample candidate = MeasurePalindromeTrial(trial, prepareForward);
                 if (0 < trial)
                 {
                     sequence.Append(',');
                 }
-                sequence
-                    .Append(trial)
-                    .Append(':')
-                    .Append(prepareForward ? 'F' : 'R')
-                    .Append(':')
-                    .Append(candidate.TotalMs.ToString("R", CultureInfo.InvariantCulture));
+                sequence.Append(trial).Append(':').Append(prepareForward ? 'F' : 'R').Append(':').Append(candidate.TotalMs.ToString("R", CultureInfo.InvariantCulture));
                 best = hasBest ? SelectPalindromeFloor(best, candidate) : candidate;
                 hasBest = true;
             }
@@ -1153,68 +947,30 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             return best;
         }
 
-        private static DeregistrationAttributionPalindromeSample MeasurePalindromeTrial(
-            int trial,
-            bool prepareForward
-        )
+        private static DeregistrationAttributionPalindromeSample MeasurePalindromeTrial(int trial, bool prepareForward)
         {
             if (prepareForward)
             {
-                using DeregistrationAttributionState handlerA = NewState(
-                    DeregistrationAttributionOperation.DirectHandler
-                );
-                using DeregistrationAttributionState busA = NewState(
-                    DeregistrationAttributionOperation.DirectBus
-                );
-                using DeregistrationAttributionState busB = NewState(
-                    DeregistrationAttributionOperation.DirectBus
-                );
-                using DeregistrationAttributionState handlerB = NewState(
-                    DeregistrationAttributionOperation.DirectHandler
-                );
-                return MeasurePreparedPalindrome(
-                    handlerA,
-                    busA,
-                    busB,
-                    handlerB,
-                    trial,
-                    prepareForward
-                );
+                using DeregistrationAttributionState handlerA = NewState(DeregistrationAttributionOperation.DirectHandler);
+                using DeregistrationAttributionState busA = NewState(DeregistrationAttributionOperation.DirectBus);
+                using DeregistrationAttributionState busB = NewState(DeregistrationAttributionOperation.DirectBus);
+                using DeregistrationAttributionState handlerB = NewState(DeregistrationAttributionOperation.DirectHandler);
+                return MeasurePreparedPalindrome(handlerA, busA, busB, handlerB, trial, prepareForward);
             }
 
-            using DeregistrationAttributionState reverseHandlerB = NewState(
-                DeregistrationAttributionOperation.DirectHandler
-            );
-            using DeregistrationAttributionState reverseBusB = NewState(
-                DeregistrationAttributionOperation.DirectBus
-            );
-            using DeregistrationAttributionState reverseBusA = NewState(
-                DeregistrationAttributionOperation.DirectBus
-            );
-            using DeregistrationAttributionState reverseHandlerA = NewState(
-                DeregistrationAttributionOperation.DirectHandler
-            );
-            return MeasurePreparedPalindrome(
-                reverseHandlerA,
-                reverseBusA,
-                reverseBusB,
-                reverseHandlerB,
-                trial,
-                prepareForward
-            );
+            using DeregistrationAttributionState reverseHandlerB = NewState(DeregistrationAttributionOperation.DirectHandler);
+            using DeregistrationAttributionState reverseBusB = NewState(DeregistrationAttributionOperation.DirectBus);
+            using DeregistrationAttributionState reverseBusA = NewState(DeregistrationAttributionOperation.DirectBus);
+            using DeregistrationAttributionState reverseHandlerA = NewState(DeregistrationAttributionOperation.DirectHandler);
+            return MeasurePreparedPalindrome(reverseHandlerA, reverseBusA, reverseBusB, reverseHandlerB, trial, prepareForward);
         }
 
-        private static DeregistrationAttributionState NewState(
-            DeregistrationAttributionOperation operation
-        )
+        private static DeregistrationAttributionState NewState(DeregistrationAttributionOperation operation)
         {
             return CreateState(operation, Cardinality);
         }
 
-        private static DeregistrationAttributionState CreateState(
-            DeregistrationAttributionOperation operation,
-            int cardinality
-        )
+        private static DeregistrationAttributionState CreateState(DeregistrationAttributionOperation operation, int cardinality)
         {
             IDisposable registryScope = MessageBusInspection.IsolateIdleSweepRegistryForBenchmark();
             try
@@ -1267,17 +1023,12 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             );
         }
 
-        private static void ExecutePalindromeArm(
-            ref int nextArm,
-            DeregistrationAttributionState state
-        )
+        private static void ExecutePalindromeArm(ref int nextArm, DeregistrationAttributionState state)
         {
             DeregistrationAttributionOperation expected = PalindromeOperationAt(nextArm);
             if (state.Operation != expected)
             {
-                throw new InvalidOperationException(
-                    $"Deregistration palindrome arm {nextArm} must be {expected}, not {state.Operation}."
-                );
+                throw new InvalidOperationException($"Deregistration palindrome arm {nextArm} must be {expected}, not {state.Operation}.");
             }
 
             state.Execute();
@@ -1293,11 +1044,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         {
             if (cardinality <= 0)
             {
-                throw new ArgumentOutOfRangeException(
-                    nameof(cardinality),
-                    cardinality,
-                    "Deregistration attribution cardinality must be positive."
-                );
+                throw new ArgumentOutOfRangeException(nameof(cardinality), cardinality, "Deregistration attribution cardinality must be positive.");
             }
         }
 
@@ -1331,11 +1078,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             private bool _executed;
             private bool _disposed;
 
-            public DeregistrationAttributionState(
-                DeregistrationAttributionOperation operation,
-                int cardinality,
-                IDisposable registryScope
-            )
+            public DeregistrationAttributionState(DeregistrationAttributionOperation operation, int cardinality, IDisposable registryScope)
             {
                 _operation = operation;
                 _cardinality = cardinality;
@@ -1349,9 +1092,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     _busRegistrations = new MessageBusRegistration[cardinality];
                     for (int index = 0; index < cardinality; index++)
                     {
-                        _busRegistrations[index] = _bus.RegisterUntargeted<AttributionMessage>(
-                            _handler
-                        );
+                        _busRegistrations[index] = _bus.RegisterUntargeted<AttributionMessage>(_handler);
                     }
                 }
                 else
@@ -1369,18 +1110,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
                     if (operation == DeregistrationAttributionOperation.DirectHandler)
                     {
-                        _handlerDeregistrations =
-                            new MessageHandler.TypedHandler<AttributionMessage>.TypedHandlerDeregistrationState[
-                                cardinality
-                            ];
+                        _handlerDeregistrations = new MessageHandler.TypedHandler<AttributionMessage>.TypedHandlerDeregistrationState[cardinality];
                         for (int index = 0; index < cardinality; index++)
                         {
-                            _handlerDeregistrations[index] =
-                                _handler.RegisterUntargetedMessageHandler(
-                                    _handlers[index],
-                                    _handlers[index],
-                                    messageBus: _bus
-                                );
+                            _handlerDeregistrations[index] = _handler.RegisterUntargetedMessageHandler(_handlers[index], _handlers[index], messageBus: _bus);
                         }
                     }
                     else
@@ -1390,8 +1123,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                         _tokenRegistrations = new MessageRegistrationHandle[cardinality];
                         for (int index = 0; index < cardinality; index++)
                         {
-                            _tokenRegistrations[index] =
-                                _token.RegisterUntargeted<AttributionMessage>(_handlers[index]);
+                            _tokenRegistrations[index] = _token.RegisterUntargeted<AttributionMessage>(_handlers[index]);
                         }
                         _token.Enable();
                     }
@@ -1402,11 +1134,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             public void VerifyPrepared()
             {
-                Assert.AreEqual(
-                    1,
-                    _bus.RegisteredUntargeted,
-                    $"{_operation}/{_cardinality}: preparation must produce one refcounted bus entry."
-                );
+                Assert.AreEqual(1, _bus.RegisteredUntargeted, $"{_operation}/{_cardinality}: preparation must produce one refcounted bus entry.");
                 Assert.AreEqual(
                     _operation == DeregistrationAttributionOperation.DirectBus ? 0 : _cardinality,
                     CountHandlerRegistrations(),
@@ -1418,33 +1146,21 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 if (_executed)
                 {
-                    throw new InvalidOperationException(
-                        $"{_operation}/{_cardinality}: the destructive operation ran twice."
-                    );
+                    throw new InvalidOperationException($"{_operation}/{_cardinality}: the destructive operation ran twice.");
                 }
 
                 _executed = true;
                 switch (_operation)
                 {
                     case DeregistrationAttributionOperation.DirectBus:
-                        for (
-                            ;
-                            _directBusDeregistered < _busRegistrations.Length;
-                            _directBusDeregistered++
-                        )
+                        for (; _directBusDeregistered < _busRegistrations.Length; _directBusDeregistered++)
                         {
-                            MessageBusRegistration registration = _busRegistrations[
-                                _directBusDeregistered
-                            ];
+                            MessageBusRegistration registration = _busRegistrations[_directBusDeregistered];
                             _bus.Deregister<AttributionMessage>(in registration);
                         }
                         break;
                     case DeregistrationAttributionOperation.DirectHandler:
-                        for (
-                            ;
-                            _directHandlerDeregistered < _handlerDeregistrations.Length;
-                            _directHandlerDeregistered++
-                        )
+                        for (; _directHandlerDeregistered < _handlerDeregistrations.Length; _directHandlerDeregistered++)
                         {
                             _handlerDeregistrations[_directHandlerDeregistered].Deregister();
                         }
@@ -1465,40 +1181,19 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             public DeregistrationAttributionObservation Verify()
             {
-                Assert.IsTrue(
-                    _executed,
-                    $"{_operation}/{_cardinality}: verification requires one completed operation."
-                );
-                Assert.AreEqual(
-                    0,
-                    _bus.RegisteredUntargeted,
-                    $"{_operation}/{_cardinality}: teardown left a bus registration live."
-                );
-                Assert.AreEqual(
-                    0,
-                    CountHandlerRegistrations(),
-                    $"{_operation}/{_cardinality}: teardown left a handler registration live."
-                );
+                Assert.IsTrue(_executed, $"{_operation}/{_cardinality}: verification requires one completed operation.");
+                Assert.AreEqual(0, _bus.RegisteredUntargeted, $"{_operation}/{_cardinality}: teardown left a bus registration live.");
+                Assert.AreEqual(0, CountHandlerRegistrations(), $"{_operation}/{_cardinality}: teardown left a handler registration live.");
 
                 AttributionMessage message = default;
                 _bus.UntargetedBroadcast(ref message);
-                Assert.AreEqual(
-                    0,
-                    _counter.Count,
-                    $"{_operation}/{_cardinality}: teardown still dispatched a handler."
-                );
+                Assert.AreEqual(0, _counter.Count, $"{_operation}/{_cardinality}: teardown still dispatched a handler.");
                 return Observe();
             }
 
             public DeregistrationAttributionObservation Observe()
             {
-                return new DeregistrationAttributionObservation(
-                    _operation,
-                    _cardinality,
-                    _bus.RegisteredUntargeted,
-                    CountHandlerRegistrations(),
-                    _counter.Count
-                );
+                return new DeregistrationAttributionObservation(_operation, _cardinality, _bus.RegisteredUntargeted, CountHandlerRegistrations(), _counter.Count);
             }
 
             private int CountHandlerRegistrations()
@@ -1525,9 +1220,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     {
                         while (_directBusDeregistered < _busRegistrations.Length)
                         {
-                            MessageBusRegistration registration = _busRegistrations[
-                                _directBusDeregistered++
-                            ];
+                            MessageBusRegistration registration = _busRegistrations[_directBusDeregistered++];
                             _bus.Deregister<AttributionMessage>(in registration);
                         }
                     }
@@ -1553,14 +1246,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
     internal readonly struct DeregistrationAttributionPalindromeSample
     {
-        public DeregistrationAttributionPalindromeSample(
-            double handlerA,
-            double busA,
-            double busB,
-            double handlerB,
-            int trial,
-            bool prepareForward
-        )
+        public DeregistrationAttributionPalindromeSample(double handlerA, double busA, double busB, double handlerB, int trial, bool prepareForward)
         {
             HandlerA = handlerA;
             BusA = busA;
@@ -1634,41 +1320,19 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         public double BusDriftPercent => RelativeDriftPercent(BusA, BusB);
 
-        public double HandlerExcessSpreadPercent =>
-            HasFinitePositiveExcesses
-                ? Math.Abs(HandlerExcessB - HandlerExcessA) / CenteredHandlerExcess * 100d
-                : double.PositiveInfinity;
+        public double HandlerExcessSpreadPercent => HasFinitePositiveExcesses ? Math.Abs(HandlerExcessB - HandlerExcessA) / CenteredHandlerExcess * 100d : double.PositiveInfinity;
 
-        public bool HandlerDriftWithinThreshold =>
-            WithinSymmetricThreshold(
-                HandlerA,
-                HandlerB,
-                DeregistrationAttributionBenchmarks.MaxSamePathDriftPercent
-            );
+        public bool HandlerDriftWithinThreshold => WithinSymmetricThreshold(HandlerA, HandlerB, DeregistrationAttributionBenchmarks.MaxSamePathDriftPercent);
 
-        public bool BusDriftWithinThreshold =>
-            WithinSymmetricThreshold(
-                BusA,
-                BusB,
-                DeregistrationAttributionBenchmarks.MaxSamePathDriftPercent
-            );
+        public bool BusDriftWithinThreshold => WithinSymmetricThreshold(BusA, BusB, DeregistrationAttributionBenchmarks.MaxSamePathDriftPercent);
 
         public bool HandlerExcessSpreadWithinThreshold =>
             HasFinitePositiveExcesses
-            && Math.Abs(HandlerExcessB - HandlerExcessA)
-                <= CenteredHandlerExcess
-                    * (DeregistrationAttributionBenchmarks.MaxHandlerExcessSpreadPercent / 100d);
+            && Math.Abs(HandlerExcessB - HandlerExcessA) <= CenteredHandlerExcess * (DeregistrationAttributionBenchmarks.MaxHandlerExcessSpreadPercent / 100d);
 
-        public bool HasFinitePositiveDurations =>
-            IsFinitePositive(HandlerA)
-            && IsFinitePositive(BusA)
-            && IsFinitePositive(BusB)
-            && IsFinitePositive(HandlerB);
+        public bool HasFinitePositiveDurations => IsFinitePositive(HandlerA) && IsFinitePositive(BusA) && IsFinitePositive(BusB) && IsFinitePositive(HandlerB);
 
-        public bool HasFinitePositiveExcesses =>
-            IsFinitePositive(HandlerExcessA)
-            && IsFinitePositive(HandlerExcessB)
-            && IsFinitePositive(CenteredHandlerExcess);
+        public bool HasFinitePositiveExcesses => IsFinitePositive(HandlerExcessA) && IsFinitePositive(HandlerExcessB) && IsFinitePositive(CenteredHandlerExcess);
 
         public bool Interpretable =>
             HasFinitePositiveDurations
@@ -1711,8 +1375,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 + $"candidateCompared=false interpretable={Format(Interpretable)}";
         }
 
-        private static string Format(double value) =>
-            value.ToString("R", CultureInfo.InvariantCulture);
+        private static string Format(double value) => value.ToString("R", CultureInfo.InvariantCulture);
 
         private static string Format(bool value) => value ? "true" : "false";
 
@@ -1728,11 +1391,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             return (maximum - minimum) / minimum * 100d;
         }
 
-        private static bool WithinSymmetricThreshold(
-            double first,
-            double second,
-            double thresholdPercent
-        )
+        private static bool WithinSymmetricThreshold(double first, double second, double thresholdPercent)
         {
             if (!IsFinitePositive(first) || !IsFinitePositive(second))
             {
@@ -1755,11 +1414,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             return minimum + (Math.Max(first, second) - minimum) / 2d;
         }
 
-        private static bool IsFinitePositive(double value) =>
-            0d < value && !double.IsInfinity(value) && !double.IsNaN(value);
+        private static bool IsFinitePositive(double value) => 0d < value && !double.IsInfinity(value) && !double.IsNaN(value);
 
-        private static bool IsFiniteNonNegative(double value) =>
-            0d <= value && !double.IsInfinity(value) && !double.IsNaN(value);
+        private static bool IsFiniteNonNegative(double value) => 0d <= value && !double.IsInfinity(value) && !double.IsNaN(value);
     }
 
     public readonly struct DeregistrationAttributionObservation
@@ -1810,22 +1467,13 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         private static RegistrationLifecycleBenchmarkCase[] BuildCases()
         {
-            RegistrationLifecycleBenchmarkCase[] cases = new RegistrationLifecycleBenchmarkCase[
-                Operations.Length * Cardinalities.Length
-            ];
+            RegistrationLifecycleBenchmarkCase[] cases = new RegistrationLifecycleBenchmarkCase[Operations.Length * Cardinalities.Length];
             int write = 0;
             for (int operationIndex = 0; operationIndex < Operations.Length; operationIndex++)
             {
-                for (
-                    int cardinalityIndex = 0;
-                    cardinalityIndex < Cardinalities.Length;
-                    cardinalityIndex++
-                )
+                for (int cardinalityIndex = 0; cardinalityIndex < Cardinalities.Length; cardinalityIndex++)
                 {
-                    cases[write++] = new RegistrationLifecycleBenchmarkCase(
-                        Operations[operationIndex],
-                        Cardinalities[cardinalityIndex]
-                    );
+                    cases[write++] = new RegistrationLifecycleBenchmarkCase(Operations[operationIndex], Cardinalities[cardinalityIndex]);
                 }
             }
 
@@ -1835,10 +1483,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
     public readonly struct RegistrationLifecycleBenchmarkCase
     {
-        public RegistrationLifecycleBenchmarkCase(
-            RegistrationLifecycleOperation operation,
-            int cardinality
-        )
+        public RegistrationLifecycleBenchmarkCase(RegistrationLifecycleOperation operation, int cardinality)
         {
             Operation = operation;
             Cardinality = cardinality;
@@ -1853,11 +1498,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
     public readonly struct RegistrationLifecycleObservation
     {
-        public RegistrationLifecycleObservation(
-            int primaryRegistrations,
-            int secondaryRegistrations,
-            int handlerInvocations
-        )
+        public RegistrationLifecycleObservation(int primaryRegistrations, int secondaryRegistrations, int handlerInvocations)
         {
             PrimaryRegistrations = primaryRegistrations;
             SecondaryRegistrations = secondaryRegistrations;
@@ -1930,10 +1571,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             );
         }
 
-        private static string FormatAllocation(long value) =>
-            value == AllocationProbe.Unmeasured
-                ? "n/a"
-                : value.ToString(CultureInfo.InvariantCulture);
+        private static string FormatAllocation(long value) => value == AllocationProbe.Unmeasured ? "n/a" : value.ToString(CultureInfo.InvariantCulture);
     }
 }
 #endif

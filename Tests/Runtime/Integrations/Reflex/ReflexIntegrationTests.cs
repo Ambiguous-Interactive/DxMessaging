@@ -27,13 +27,7 @@ namespace DxMessaging.Tests.Runtime.Reflex
             IMessageBus bus = container.Resolve<IMessageBus>();
             Assert.NotNull(bus, "Reflex installer should bind IMessageBus.");
 
-            GameObject go = Track(
-                new GameObject(
-                    nameof(InstallerRegistersMessageBusAndConfiguratorAppliesIt),
-                    typeof(MessagingComponent),
-                    typeof(ReflexConfiguredListener)
-                )
-            );
+            GameObject go = Track(new GameObject(nameof(InstallerRegistersMessageBusAndConfiguratorAppliesIt), typeof(MessagingComponent), typeof(ReflexConfiguredListener)));
 
             ReflexConfiguredListener listener = go.GetComponent<ReflexConfiguredListener>();
             AttributeInjector.Inject(listener, container);
@@ -42,11 +36,7 @@ namespace DxMessaging.Tests.Runtime.Reflex
             SimpleUntargetedMessage message = new();
             message.EmitUntargeted(bus);
 
-            Assert.AreEqual(
-                1,
-                listener.ReceivedCount,
-                "Listener should observe messages emitted through the Reflex container's bus."
-            );
+            Assert.AreEqual(1, listener.ReceivedCount, "Listener should observe messages emitted through the Reflex container's bus.");
         }
 
         [Test]
@@ -56,40 +46,24 @@ namespace DxMessaging.Tests.Runtime.Reflex
             DxMessagingInstaller coreInstaller = new();
             coreInstaller.InstallBindings(builder);
 
-            TestScriptableMessageBusProvider provider = Track(
-                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>()
-            );
+            TestScriptableMessageBusProvider provider = Track(ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>());
             MessageBus providerBus = new();
             provider.Configure(providerBus);
-            ReflexContainerBuilderCompatibility.RegisterSingletonFactory(
-                builder,
-                _ => provider,
-                typeof(TestScriptableMessageBusProvider),
-                typeof(IMessageBusProvider)
-            );
+            ReflexContainerBuilderCompatibility.RegisterSingletonFactory(builder, _ => provider, typeof(TestScriptableMessageBusProvider), typeof(IMessageBusProvider));
 
             DxMessagingRegistrationInstaller registrationInstaller = new();
             registrationInstaller.InstallBindings(builder);
 
             Container container = TrackDisposable(builder.Build());
 
-            IMessageRegistrationBuilder registrationBuilder =
-                container.Resolve<IMessageRegistrationBuilder>();
-            using MessageRegistrationLease lease = registrationBuilder.Build(
-                new MessageRegistrationBuildOptions()
-            );
+            IMessageRegistrationBuilder registrationBuilder = container.Resolve<IMessageRegistrationBuilder>();
+            using MessageRegistrationLease lease = registrationBuilder.Build(new MessageRegistrationBuildOptions());
 
-            Assert.AreSame(
-                providerBus,
-                lease.MessageBus,
-                "Reflex registration installer should prefer the registered IMessageBusProvider."
-            );
+            Assert.AreSame(providerBus, lease.MessageBus, "Reflex registration installer should prefer the registered IMessageBusProvider.");
 
             UnityEngine.Object.DestroyImmediate(provider);
 
-            using MessageRegistrationLease fallbackLease = registrationBuilder.Build(
-                new MessageRegistrationBuildOptions()
-            );
+            using MessageRegistrationLease fallbackLease = registrationBuilder.Build(new MessageRegistrationBuildOptions());
 
             Assert.AreSame(
                 container.Resolve<IMessageBus>(),
@@ -112,17 +86,10 @@ namespace DxMessaging.Tests.Runtime.Reflex
 
             DxMessagingRegistrationInstaller.ContainerMessageRegistrationBuilder concrete =
                 container.Resolve<DxMessagingRegistrationInstaller.ContainerMessageRegistrationBuilder>();
-            Assert.IsNotNull(
-                concrete,
-                "Container should resolve the concrete registration builder type."
-            );
+            Assert.IsNotNull(concrete, "Container should resolve the concrete registration builder type.");
 
-            IMessageRegistrationBuilder builderInterface =
-                container.Resolve<IMessageRegistrationBuilder>();
-            Assert.IsTrue(
-                ReferenceEquals(concrete, builderInterface),
-                "Container should return the same instance for concrete and interface resolutions."
-            );
+            IMessageRegistrationBuilder builderInterface = container.Resolve<IMessageRegistrationBuilder>();
+            Assert.IsTrue(ReferenceEquals(concrete, builderInterface), "Container should return the same instance for concrete and interface resolutions.");
         }
 
         [Test]
@@ -135,11 +102,7 @@ namespace DxMessaging.Tests.Runtime.Reflex
             MessageBus concrete = container.Resolve<MessageBus>();
             IMessageBus iFace = container.Resolve<IMessageBus>();
 
-            Assert.AreSame(
-                concrete,
-                iFace,
-                "Resolving MessageBus and IMessageBus through the helper should yield the same singleton."
-            );
+            Assert.AreSame(concrete, iFace, "Resolving MessageBus and IMessageBus through the helper should yield the same singleton.");
         }
 
         [Test]
@@ -152,11 +115,7 @@ namespace DxMessaging.Tests.Runtime.Reflex
             IMessageBus iFace = container.Resolve<IMessageBus>();
             MessageBus concrete = container.Resolve<MessageBus>();
 
-            Assert.AreSame(
-                iFace,
-                concrete,
-                "Resolving IMessageBus before MessageBus through the helper should yield the same singleton."
-            );
+            Assert.AreSame(iFace, concrete, "Resolving IMessageBus before MessageBus through the helper should yield the same singleton.");
         }
 
         [Test]
@@ -177,25 +136,10 @@ namespace DxMessaging.Tests.Runtime.Reflex
             MessageBus bus = container.Resolve<MessageBus>();
             IMessageBus iFace = container.Resolve<IMessageBus>();
 
-            Assert.AreSame(
-                expected,
-                bus,
-                "Factory overload should construct the bus exactly as the caller supplied."
-            );
-            Assert.AreSame(
-                bus,
-                iFace,
-                "Factory overload should expose one singleton through MessageBus and IMessageBus."
-            );
-            Assert.AreEqual(
-                1,
-                factoryCalls,
-                "Singleton factory should run once even when both MessageBus and IMessageBus are resolved."
-            );
-            Assert.IsTrue(
-                containerWasProvided,
-                "Factory overload should pass the active Reflex container to the caller."
-            );
+            Assert.AreSame(expected, bus, "Factory overload should construct the bus exactly as the caller supplied.");
+            Assert.AreSame(bus, iFace, "Factory overload should expose one singleton through MessageBus and IMessageBus.");
+            Assert.AreEqual(1, factoryCalls, "Singleton factory should run once even when both MessageBus and IMessageBus are resolved.");
+            Assert.IsTrue(containerWasProvided, "Factory overload should pass the active Reflex container to the caller.");
         }
 
         [Test]
@@ -216,25 +160,10 @@ namespace DxMessaging.Tests.Runtime.Reflex
             IMessageBus iFace = container.Resolve<IMessageBus>();
             MessageBus bus = container.Resolve<MessageBus>();
 
-            Assert.AreSame(
-                expected,
-                iFace,
-                "Factory overload should return the caller-supplied bus when IMessageBus resolves first."
-            );
-            Assert.AreSame(
-                iFace,
-                bus,
-                "Factory overload should expose one singleton through IMessageBus and MessageBus."
-            );
-            Assert.AreEqual(
-                1,
-                factoryCalls,
-                "Singleton factory should run once even when IMessageBus resolves before MessageBus."
-            );
-            Assert.IsTrue(
-                containerWasProvided,
-                "Factory overload should pass the active Reflex container to the caller."
-            );
+            Assert.AreSame(expected, iFace, "Factory overload should return the caller-supplied bus when IMessageBus resolves first.");
+            Assert.AreSame(iFace, bus, "Factory overload should expose one singleton through IMessageBus and MessageBus.");
+            Assert.AreEqual(1, factoryCalls, "Singleton factory should run once even when IMessageBus resolves before MessageBus.");
+            Assert.IsTrue(containerWasProvided, "Factory overload should pass the active Reflex container to the caller.");
         }
 
         [Test]
@@ -248,21 +177,13 @@ namespace DxMessaging.Tests.Runtime.Reflex
             MessageBus bus = container.Resolve<MessageBus>();
             IMessageBus iFace = container.Resolve<IMessageBus>();
 
-            Assert.AreEqual(
-                17d,
-                clock.NowSeconds,
-                "Helper should construct the bus through CreateForInternalUse without advancing the clock."
-            );
+            Assert.AreEqual(17d, clock.NowSeconds, "Helper should construct the bus through CreateForInternalUse without advancing the clock.");
             Assert.GreaterOrEqual(
                 clock.ReadCount,
                 2,
                 "Resolving the bus should read the injected clock during MessageBus construction, and the assertion reads it once more for diagnostics."
             );
-            Assert.AreSame(
-                bus,
-                iFace,
-                "Clock overload should expose the same bus through MessageBus and IMessageBus."
-            );
+            Assert.AreSame(bus, iFace, "Clock overload should expose the same bus through MessageBus and IMessageBus.");
             Assert.NotNull(bus);
         }
 
@@ -277,16 +198,8 @@ namespace DxMessaging.Tests.Runtime.Reflex
             IMessageBus iFace = container.Resolve<IMessageBus>();
             MessageBus bus = container.Resolve<MessageBus>();
 
-            Assert.AreSame(
-                iFace,
-                bus,
-                "Clock overload should expose the same bus through IMessageBus and MessageBus."
-            );
-            Assert.AreEqual(
-                17d,
-                clock.NowSeconds,
-                "Clock overload should construct the bus through CreateForInternalUse without advancing the clock."
-            );
+            Assert.AreSame(iFace, bus, "Clock overload should expose the same bus through IMessageBus and MessageBus.");
+            Assert.AreEqual(17d, clock.NowSeconds, "Clock overload should construct the bus through CreateForInternalUse without advancing the clock.");
             Assert.GreaterOrEqual(
                 clock.ReadCount,
                 2,
@@ -298,12 +211,7 @@ namespace DxMessaging.Tests.Runtime.Reflex
         {
             public void InstallBindings(ContainerBuilder containerBuilder)
             {
-                ReflexContainerBuilderCompatibility.RegisterSingletonType(
-                    containerBuilder,
-                    typeof(MessageBus),
-                    typeof(MessageBus),
-                    typeof(IMessageBus)
-                );
+                ReflexContainerBuilderCompatibility.RegisterSingletonType(containerBuilder, typeof(MessageBus), typeof(MessageBus), typeof(IMessageBus));
             }
         }
 

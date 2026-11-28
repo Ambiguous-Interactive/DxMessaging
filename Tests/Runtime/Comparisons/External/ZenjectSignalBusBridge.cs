@@ -78,9 +78,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                 internal object-typed routing boxes it on the dispatch path (its real cost), but
                 the declared payload is still the canonical non-primitive struct.
             */
-            return scenario == ComparisonScenario.StructMessageNoBoxing
-                ? typeof(ComparisonStructPayload)
-                : typeof(int);
+            return scenario == ComparisonScenario.StructMessageNoBoxing ? typeof(ComparisonStructPayload) : typeof(int);
         }
 
         public void Prepare(ComparisonScenario scenario)

@@ -18,11 +18,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
         private static IEnumerable<TestCaseData> Cases()
         {
             using IMessagingTechBridge messagePipe = new MessagePipeBridge();
-            for (
-                int scenarioIndex = 0;
-                scenarioIndex < ComparisonScenarios.All.Length;
-                scenarioIndex++
-            )
+            for (int scenarioIndex = 0; scenarioIndex < ComparisonScenarios.All.Length; scenarioIndex++)
             {
                 ComparisonScenario scenario = ComparisonScenarios.All[scenarioIndex];
                 if (
@@ -37,9 +33,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                     continue;
                 }
 
-                yield return new TestCaseData(scenario).SetName(
-                    $"PairedComparison_{scenarioIndex:D2}_{ComparisonScenarios.Key(scenario)}_DxMessaging_MessagePipe"
-                );
+                yield return new TestCaseData(scenario).SetName($"PairedComparison_{scenarioIndex:D2}_{ComparisonScenarios.Key(scenario)}_DxMessaging_MessagePipe");
             }
         }
 
@@ -53,21 +47,10 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
             {
                 IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.Off;
                 IMessageBus.GlobalDiagnosticsStackTraces = false;
-                PairedBenchmarkMeasurement measurement = PairedComparisonHarness.Run(
-                    () => new DxMessagingBridge(),
-                    () => new MessagePipeBridge(),
-                    scenario
-                );
+                PairedBenchmarkMeasurement measurement = PairedComparisonHarness.Run(() => new DxMessagingBridge(), () => new MessagePipeBridge(), scenario);
 
-                Assert.Greater(
-                    measurement.FirstToSecondRatio,
-                    0d,
-                    $"Paired comparison '{scenario}' must produce a positive DxMessaging/MessagePipe ratio."
-                );
-                Assert.IsFalse(
-                    double.IsNaN(measurement.CycleRatioSpreadPercent),
-                    $"Paired comparison '{scenario}' must produce a numeric raw-cycle spread."
-                );
+                Assert.Greater(measurement.FirstToSecondRatio, 0d, $"Paired comparison '{scenario}' must produce a positive DxMessaging/MessagePipe ratio.");
+                Assert.IsFalse(double.IsNaN(measurement.CycleRatioSpreadPercent), $"Paired comparison '{scenario}' must produce a numeric raw-cycle spread.");
             }
             finally
             {

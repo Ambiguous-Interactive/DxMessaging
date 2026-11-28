@@ -24,10 +24,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             return $"Comparison_{techKey}_{ComparisonScenarios.Key(scenario)}";
         }
 
-        public static void Run(
-            Func<IMessagingTechBridge> bridgeFactory,
-            ComparisonScenario scenario
-        )
+        public static void Run(Func<IMessagingTechBridge> bridgeFactory, ComparisonScenario scenario)
         {
             if (bridgeFactory == null)
             {
@@ -42,16 +39,12 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             }
             if (!bridge.Supports(scenario))
             {
-                Assert.Ignore(
-                    $"{bridge.TechName} does not support '{ComparisonScenarios.DisplayName(scenario)}'."
-                );
+                Assert.Ignore($"{bridge.TechName} does not support '{ComparisonScenarios.DisplayName(scenario)}'.");
                 return;
             }
 
             long invocationsPerOperation = bridge.InvocationsPerOperation(scenario);
-            long canonicalInvocations = ComparisonScenarios.ExpectedInvocationsPerOperation(
-                scenario
-            );
+            long canonicalInvocations = ComparisonScenarios.ExpectedInvocationsPerOperation(scenario);
             Assert.AreEqual(
                 canonicalInvocations,
                 invocationsPerOperation,
@@ -93,8 +86,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 an EXACT correctness check (no tolerance): it must still catch a library that
                 drops, duplicates, or dedups any message.
             */
-            long expectedInvocations =
-                invocationsPerOperation * (warmupEmits + measurement.TotalEmittedOperations);
+            long expectedInvocations = invocationsPerOperation * (warmupEmits + measurement.TotalEmittedOperations);
             long observedInvocations = bridge.ProgressMarker;
             long deltaInvocations = observedInvocations - expectedInvocations;
             Assert.AreEqual(
@@ -137,15 +129,9 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         /// <paramref name="invocationsPerOperation"/> cannot be divided, so the raw invocation
         /// delta is reported as-is.
         /// </summary>
-        internal static string DescribeFanOutDelta(
-            long deltaInvocations,
-            long invocationsPerOperation
-        )
+        internal static string DescribeFanOutDelta(long deltaInvocations, long invocationsPerOperation)
         {
-            return BenchmarkProtocol.DescribeInvocationDelta(
-                deltaInvocations,
-                invocationsPerOperation
-            );
+            return BenchmarkProtocol.DescribeInvocationDelta(deltaInvocations, invocationsPerOperation);
         }
     }
 }

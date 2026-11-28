@@ -4,7 +4,8 @@
 
 ## Overview
 
-A good changelog entry tells users what changed and why it matters. It is brief, specific, and written from the user's point of view. The goal is to help users decide whether to upgrade and understand how to adapt.
+A good changelog entry tells users what changed and why it matters. It is brief, specific, and written from the user's point of view. The goal is to help users decide whether to
+upgrade and understand how to adapt.
 
 ## Problem Statement
 
@@ -156,10 +157,8 @@ To upgrade from v2.x:
 
 **Why it's wrong**: This describes internal process/tooling, not user-facing product impact.
 
-**Correct**: No entry. `llms.txt`, README guidance, and agent routing help people and agents
-reading the repository. They are not library behavior, and a reworded entry does not make them
-eligible. The same holds for documentation-site layout and brand artwork: the changelog records
-what a package consumer experiences in Unity.
+**Correct**: No entry. `llms.txt`, README guidance, and agent routing help people and agents reading the repository. They are not library behavior, and a reworded entry does not
+make them eligible. The same holds for documentation-site layout and brand artwork: the changelog records what a package consumer experiences in Unity.
 
 ### Bad: Missing Breaking Change Warnings
 

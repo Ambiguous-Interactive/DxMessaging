@@ -12,13 +12,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
     using global::Unity.Mathematics;
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-    public unsafe delegate void VectorBatchDelegate(
-        int count,
-        NativeNumericPayload* input,
-        long* output,
-        int* metrics,
-        int rounds
-    );
+    public unsafe delegate void VectorBatchDelegate(int count, NativeNumericPayload* input, long* output, int* metrics, int rounds);
 
     public enum VectorBatchPath
     {
@@ -38,51 +32,21 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
     public static unsafe class VectorPureKernels
     {
         [BurstCompile(CompileSynchronously = true)]
-        public static void ScalarDirect(
-            int count,
-            NativeNumericPayload* input,
-            long* output,
-            int* metrics,
-            int rounds
-        ) => Scalar(count, input, output, metrics, rounds);
+        public static void ScalarDirect(int count, NativeNumericPayload* input, long* output, int* metrics, int rounds) => Scalar(count, input, output, metrics, rounds);
 
         [BurstCompile(CompileSynchronously = true)]
-        public static void VectorDirect(
-            int count,
-            NativeNumericPayload* input,
-            long* output,
-            int* metrics,
-            int rounds
-        ) => Vector(count, input, output, metrics, rounds);
+        public static void VectorDirect(int count, NativeNumericPayload* input, long* output, int* metrics, int rounds) => Vector(count, input, output, metrics, rounds);
 
         [BurstCompile(CompileSynchronously = true, DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(VectorBatchDelegate))]
-        public static void ScalarPointer(
-            int count,
-            NativeNumericPayload* input,
-            long* output,
-            int* metrics,
-            int rounds
-        ) => Scalar(count, input, output, metrics, rounds);
+        public static void ScalarPointer(int count, NativeNumericPayload* input, long* output, int* metrics, int rounds) => Scalar(count, input, output, metrics, rounds);
 
         [BurstCompile(CompileSynchronously = true, DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(VectorBatchDelegate))]
-        public static void VectorPointer(
-            int count,
-            NativeNumericPayload* input,
-            long* output,
-            int* metrics,
-            int rounds
-        ) => Vector(count, input, output, metrics, rounds);
+        public static void VectorPointer(int count, NativeNumericPayload* input, long* output, int* metrics, int rounds) => Vector(count, input, output, metrics, rounds);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void Scalar(
-            int count,
-            NativeNumericPayload* input,
-            long* output,
-            int* metrics,
-            int rounds
-        )
+        public static void Scalar(int count, NativeNumericPayload* input, long* output, int* metrics, int rounds)
         {
             int mode = 0;
             NativeProducerMode.MarkManaged(ref mode);
@@ -94,13 +58,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void Vector(
-            int count,
-            NativeNumericPayload* input,
-            long* output,
-            int* metrics,
-            int rounds
-        )
+        public static void Vector(int count, NativeNumericPayload* input, long* output, int* metrics, int rounds)
         {
             int mode = 0;
             NativeProducerMode.MarkManaged(ref mode);
@@ -116,26 +74,15 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                     ulong c = (ulong)PureBatchKernels.Compute(input[i + 2], 0);
                     ulong d = (ulong)PureBatchKernels.Compute(input[i + 3], 0);
                     uint4 low = new((uint)a, (uint)b, (uint)c, (uint)d);
-                    uint4 high = new(
-                        (uint)(a >> 32),
-                        (uint)(b >> 32),
-                        (uint)(c >> 32),
-                        (uint)(d >> 32)
-                    );
+                    uint4 high = new((uint)(a >> 32), (uint)(b >> 32), (uint)(c >> 32), (uint)(d >> 32));
                     for (int round = 0; round < rounds; ++round)
                     {
                         uint4 mixedLow = low ^ ((low >> 17) | (high << 15));
                         uint4 mixedHigh = high ^ (high >> 17);
                         uint4 productLow = mixedLow * 0x4c957f2du;
-                        uint4 productHigh =
-                            mixedHigh * 0x4c957f2du
-                            + mixedLow * 0x5851f42du
-                            + MultiplyHigh(mixedLow, 0x4c957f2du);
+                        uint4 productHigh = mixedHigh * 0x4c957f2du + mixedLow * 0x5851f42du + MultiplyHigh(mixedLow, 0x4c957f2du);
                         low = productLow + 0xf767814fu;
-                        high =
-                            productHigh
-                            + 0x14057b7eu
-                            + math.select(new uint4(0u), new uint4(1u), low < productLow);
+                        high = productHigh + 0x14057b7eu + math.select(new uint4(0u), new uint4(1u), low < productLow);
                     }
                     output[i] = (long)(((ulong)high.x << 32) | low.x);
                     output[i + 1] = (long)(((ulong)high.y << 32) | low.y);
@@ -195,29 +142,11 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
             {
                 int count = System.Math.Min(Batch, Count - offset);
                 if (Path == VectorBatchPath.JobPointerVector)
-                    Function.Invoke(
-                        count,
-                        input + offset + 1,
-                        output + offset + 1,
-                        metrics + 1 + entry * 3,
-                        Rounds
-                    );
+                    Function.Invoke(count, input + offset + 1, output + offset + 1, metrics + 1 + entry * 3, Rounds);
                 else if (Path == VectorBatchPath.JobVector)
-                    VectorPureKernels.Vector(
-                        count,
-                        input + offset + 1,
-                        output + offset + 1,
-                        metrics + 1 + entry * 3,
-                        Rounds
-                    );
+                    VectorPureKernels.Vector(count, input + offset + 1, output + offset + 1, metrics + 1 + entry * 3, Rounds);
                 else
-                    VectorPureKernels.Scalar(
-                        count,
-                        input + offset + 1,
-                        output + offset + 1,
-                        metrics + 1 + entry * 3,
-                        Rounds
-                    );
+                    VectorPureKernels.Scalar(count, input + offset + 1, output + offset + 1, metrics + 1 + entry * 3, Rounds);
                 ++entry;
             }
         }

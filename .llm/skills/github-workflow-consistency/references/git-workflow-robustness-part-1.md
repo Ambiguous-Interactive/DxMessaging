@@ -159,8 +159,7 @@ Before merging code with git commands or parsers:
 
 ## See Also
 
-- [Test Coverage Requirements](../../test-coverage-design/references/comprehensive-test-coverage.md) - Detailed testing
-  strategies
+- [Test Coverage Requirements](../../test-coverage-design/references/comprehensive-test-coverage.md) - Detailed testing strategies
 - [Documentation Updates](../../documentation-style/references/documentation-updates.md) - Keeping docs in sync
 - [Script and Automation Conventions](../../agent-task-workflow/references/repository-conventions.md#script-and-automation-conventions) - Main context file patterns
 

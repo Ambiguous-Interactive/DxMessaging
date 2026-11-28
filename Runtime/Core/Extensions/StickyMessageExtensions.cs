@@ -66,10 +66,7 @@ namespace DxMessaging.Core.Extensions
             {
                 throw new ArgumentNullException(nameof(bus));
             }
-            return bus as IStickyMessageBus
-                ?? throw new NotSupportedException(
-                    "This bus does not support retained messages. Use a bus implementing IStickyMessageBus."
-                );
+            return bus as IStickyMessageBus ?? throw new NotSupportedException("This bus does not support retained messages. Use a bus implementing IStickyMessageBus.");
         }
     }
 }

@@ -27,15 +27,10 @@ namespace DxMessaging.Tests.Runtime.Core
         public void BusOperationFromNonMainThreadDoesNotCrash()
         {
             BusType bus = new BusType();
-            MessageHandler handler = new MessageHandler(new InstanceId(OwnerInstanceId), bus)
-            {
-                active = true,
-            };
+            MessageHandler handler = new MessageHandler(new InstanceId(OwnerInstanceId), bus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
             int invocationCount = 0;
-            _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                (in SimpleUntargetedMessage _) => Interlocked.Increment(ref invocationCount)
-            );
+            _ = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => Interlocked.Increment(ref invocationCount));
             token.Enable();
 
             Exception captured = null;
@@ -59,10 +54,7 @@ namespace DxMessaging.Tests.Runtime.Core
             worker.Start();
             bool joined = worker.Join(BackgroundJoinTimeoutMilliseconds);
 
-            Assert.IsTrue(
-                joined,
-                "Background bus operation must terminate within the join timeout."
-            );
+            Assert.IsTrue(joined, "Background bus operation must terminate within the join timeout.");
 
             /*
                 Pinning current behavior: the bus does not enforce a threading contract.
@@ -73,9 +65,7 @@ namespace DxMessaging.Tests.Runtime.Core
             */
             if (captured != null)
             {
-                Assert.Fail(
-                    $"Background thread emission produced unexpected exception: {captured}"
-                );
+                Assert.Fail($"Background thread emission produced unexpected exception: {captured}");
             }
 
             /*
@@ -84,11 +74,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 at least once. Tearing reads are possible in theory but the lone
                 worker scenario is not concurrent enough to exhibit them.
             */
-            Assert.GreaterOrEqual(
-                invocationCount,
-                1,
-                "Handler should have been invoked at least once before any potential failure."
-            );
+            Assert.GreaterOrEqual(invocationCount, 1, "Handler should have been invoked at least once before any potential failure.");
 
             token.Dispose();
         }
@@ -102,15 +88,10 @@ namespace DxMessaging.Tests.Runtime.Core
         public void RepeatedSerialEmitProducesDeterministicCounts()
         {
             BusType bus = new BusType();
-            MessageHandler handler = new MessageHandler(new InstanceId(SerialOwnerInstanceId), bus)
-            {
-                active = true,
-            };
+            MessageHandler handler = new MessageHandler(new InstanceId(SerialOwnerInstanceId), bus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
             int invocationCount = 0;
-            _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                (in SimpleUntargetedMessage _) => ++invocationCount
-            );
+            _ = token.RegisterUntargeted<SimpleUntargetedMessage>((in SimpleUntargetedMessage _) => ++invocationCount);
             token.Enable();
 
             const int Iterations = 50;
@@ -120,11 +101,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 bus.UntargetedBroadcast(ref message);
             }
 
-            Assert.AreEqual(
-                Iterations,
-                invocationCount,
-                "Repeated single-thread emissions must dispatch deterministically."
-            );
+            Assert.AreEqual(Iterations, invocationCount, "Repeated single-thread emissions must dispatch deterministically.");
 
             token.Dispose();
         }

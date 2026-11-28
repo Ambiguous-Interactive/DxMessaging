@@ -32,15 +32,7 @@ namespace DxMessaging.Tests.Runtime.Core
                                 {
                                     foreach (bool diagnostics in new[] { false, true })
                                     {
-                                        yield return new TestCaseData(
-                                            scenario,
-                                            fast,
-                                            count,
-                                            after,
-                                            nested,
-                                            rejectCleanup,
-                                            diagnostics
-                                        ).SetName(
+                                        yield return new TestCaseData(scenario, fast, count, after, nested, rejectCleanup, diagnostics).SetName(
                                             $"RollbackReentry_{scenario}_fast{fast}_count{count}_after{after}_nested{nested}_reject{rejectCleanup}_diagnostics{diagnostics}"
                                         );
                                     }
@@ -54,25 +46,9 @@ namespace DxMessaging.Tests.Runtime.Core
 
         /// <summary>Keeps accepted cleanup retryable across failed activation and nested Enable.</summary>
         [TestCaseSource(nameof(RollbackCases))]
-        public void RollbackPreservesNestedActivationCleanup(
-            MessageScenario scenario,
-            bool fast,
-            int count,
-            bool after,
-            bool nested,
-            bool rejectCleanup,
-            bool diagnostics
-        )
+        public void RollbackPreservesNestedActivationCleanup(MessageScenario scenario, bool fast, int count, bool after, bool nested, bool rejectCleanup, bool diagnostics)
         {
-            Scope scope = new Scope(
-                scenario,
-                fast,
-                count,
-                after,
-                nested,
-                rejectCleanup,
-                diagnostics
-            );
+            Scope scope = new Scope(scenario, fast, count, after, nested, rejectCleanup, diagnostics);
             using (new LeakWatcher(scope.Inner, label: scope.Label))
             {
                 try
@@ -148,22 +124,13 @@ namespace DxMessaging.Tests.Runtime.Core
                 TokenCleanupCounters,
                 FinalCounters;
 
-            internal Scope(
-                MessageScenario scenario,
-                bool fast,
-                int count,
-                bool after,
-                bool nested,
-                bool rejectCleanup,
-                bool diagnostics
-            )
+            internal Scope(MessageScenario scenario, bool fast, int count, bool after, bool nested, bool rejectCleanup, bool diagnostics)
             {
                 _scenario = scenario;
                 _fast = fast;
                 _nested = nested;
                 _calls = new int[count];
-                Label =
-                    $"[{scenario.Kind}] fast={fast},count={count},after={after},nested={nested},reject={rejectCleanup},diagnostics={diagnostics}";
+                Label = $"[{scenario.Kind}] fast={fast},count={count},after={after},nested={nested},reject={rejectCleanup},diagnostics={diagnostics}";
                 Bus = new ProbeBus(Inner, count, after, rejectCleanup);
                 _handler = new MessageHandler(new InstanceId(991), Bus) { active = true };
                 _token = MessageRegistrationToken.Create(_handler, Bus);
@@ -172,9 +139,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 MessagingDebug.LogFunction = null;
             }
 
-            internal string Report =>
-                Label
-                + $": failure={Failure},disable={DisableFailure},recovery={RecoveryFailure},unregister={UnregisterFailure},final={FinalCleanupFailure}";
+            internal string Report => Label + $": failure={Failure},disable={DisableFailure},recovery={RecoveryFailure},unregister={UnregisterFailure},final={FinalCleanupFailure}";
 
             internal void Run()
             {
@@ -221,8 +186,7 @@ namespace DxMessaging.Tests.Runtime.Core
             private void Stage(int index)
             {
                 Action<ProbeMessage> action = _ => ++_calls[index];
-                MessageHandler.FastHandler<ProbeMessage> fast = (in ProbeMessage _) =>
-                    ++_calls[index];
+                MessageHandler.FastHandler<ProbeMessage> fast = (in ProbeMessage _) => ++_calls[index];
                 switch (_scenario.Kind)
                 {
                     case MessageKind.Untargeted:
@@ -301,9 +265,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     FinalCleanupFailure = Capture(_token.Dispose);
                     foreach (MessageBusRegistration handle in Bus.Handles)
                     {
-                        Exception failure = Capture(() =>
-                            Inner.Deregister<ProbeMessage>(in handle)
-                        );
+                        Exception failure = Capture(() => Inner.Deregister<ProbeMessage>(in handle));
                         FinalCleanupFailure ??= failure;
                     }
                     _handler.active = false;
@@ -314,9 +276,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     MessagingDebug.enabled = _oldDebug;
                     MessagingDebug.LogFunction = _oldLog;
-                    StaticsRestored =
-                        MessagingDebug.enabled == _oldDebug
-                        && ReferenceEquals(MessagingDebug.LogFunction, _oldLog);
+                    StaticsRestored = MessagingDebug.enabled == _oldDebug && ReferenceEquals(MessagingDebug.LogFunction, _oldLog);
                 }
             }
         }
@@ -342,14 +302,9 @@ namespace DxMessaging.Tests.Runtime.Core
             private int _registrationAttempts;
             internal Action Callback;
             internal int Callbacks;
-            internal readonly List<MessageBusRegistration> Handles =
-                new List<MessageBusRegistration>();
-            internal readonly Exception RegistrationMarker = new InvalidOperationException(
-                "rollback-reentry-registration"
-            );
-            private readonly Exception _cleanupMarker = new InvalidOperationException(
-                "rollback-reentry-cleanup"
-            );
+            internal readonly List<MessageBusRegistration> Handles = new List<MessageBusRegistration>();
+            internal readonly Exception RegistrationMarker = new InvalidOperationException("rollback-reentry-registration");
+            private readonly Exception _cleanupMarker = new InvalidOperationException("rollback-reentry-cleanup");
 
             internal ProbeBus(IMessageBus inner, int failOn, bool after, bool rejectCleanup)
                 : base(inner)
@@ -373,30 +328,19 @@ namespace DxMessaging.Tests.Runtime.Core
                 return handle;
             }
 
-            public override MessageBusRegistration RegisterUntargeted<T>(
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterUntargeted<T>(MessageHandler handler, int priority = 0)
             {
                 BeforeRegistration();
                 return Keep(base.RegisterUntargeted<T>(handler, priority));
             }
 
-            public override MessageBusRegistration RegisterTargeted<T>(
-                InstanceId context,
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterTargeted<T>(InstanceId context, MessageHandler handler, int priority = 0)
             {
                 BeforeRegistration();
                 return Keep(base.RegisterTargeted<T>(context, handler, priority));
             }
 
-            public override MessageBusRegistration RegisterSourcedBroadcast<T>(
-                InstanceId context,
-                MessageHandler handler,
-                int priority = 0
-            )
+            public override MessageBusRegistration RegisterSourcedBroadcast<T>(InstanceId context, MessageHandler handler, int priority = 0)
             {
                 BeforeRegistration();
                 return Keep(base.RegisterSourcedBroadcast<T>(context, handler, priority));
@@ -424,10 +368,7 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private readonly struct ProbeMessage
-            : IUntargetedMessage,
-                ITargetedMessage,
-                IBroadcastMessage
+        private readonly struct ProbeMessage : IUntargetedMessage, ITargetedMessage, IBroadcastMessage
         {
             public Type MessageType => typeof(ProbeMessage);
         }

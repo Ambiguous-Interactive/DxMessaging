@@ -28,14 +28,8 @@ namespace DxMessaging.Tests.Editor
         {
             string packageJson = ReadPackageFile("package.json");
 
-            Assert.That(
-                packageJson,
-                Does.Contain("\"displayName\": \"Diagnostics Tooling Exerciser\"")
-            );
-            Assert.That(
-                packageJson,
-                Does.Contain("\"path\": \"Samples~/Diagnostics Tooling Exerciser\"")
-            );
+            Assert.That(packageJson, Does.Contain("\"displayName\": \"Diagnostics Tooling Exerciser\""));
+            Assert.That(packageJson, Does.Contain("\"path\": \"Samples~/Diagnostics Tooling Exerciser\""));
         }
 
         [Test]
@@ -49,10 +43,7 @@ namespace DxMessaging.Tests.Editor
             Assert.That(scene, Does.Contain($"guid: {receiverGuid}"));
             Assert.That(scene, Does.Contain($"guid: {RuntimeMessagingComponentGuid}"));
             Assert.That(CountOccurrences(scene, $"guid: {receiverGuid}"), Is.EqualTo(3));
-            Assert.That(
-                CountOccurrences(scene, $"guid: {RuntimeMessagingComponentGuid}"),
-                Is.EqualTo(3)
-            );
+            Assert.That(CountOccurrences(scene, $"guid: {RuntimeMessagingComponentGuid}"), Is.EqualTo(3));
         }
 
         [Test]
@@ -110,16 +101,8 @@ namespace DxMessaging.Tests.Editor
             Assert.That(receiver, Does.Contain("messagingComponent.Release(this);"));
             Assert.That(receiver, Does.Contain("messagingComponent.Create(this)"));
             Assert.That(
-                receiver.IndexOf(
-                    "messagingComponent.Release(this);",
-                    System.StringComparison.Ordinal
-                ),
-                Is.LessThan(
-                    receiver.IndexOf(
-                        "messagingComponent.Create(this)",
-                        System.StringComparison.Ordinal
-                    )
-                ),
+                receiver.IndexOf("messagingComponent.Release(this);", System.StringComparison.Ordinal),
+                Is.LessThan(receiver.IndexOf("messagingComponent.Create(this)", System.StringComparison.Ordinal)),
                 "The sample must discard a possibly stale enabled token before creating its live token."
             );
             Assert.That(receiver, Does.Not.Contain("_messageRegistrationToken.Enabled"));
@@ -134,10 +117,7 @@ namespace DxMessaging.Tests.Editor
             Assert.That(receiver, Does.Contain("base.Awake();"));
             Assert.That(receiver, Does.Contain("base.OnEnable();"));
             Assert.That(receiver, Does.Contain("base.OnDisable();"));
-            Assert.That(
-                receiver,
-                Does.Contain("PreparedReceiverIds.Remove(((InstanceId)this).Id)")
-            );
+            Assert.That(receiver, Does.Contain("PreparedReceiverIds.Remove(((InstanceId)this).Id)"));
             Assert.That(receiver, Does.Contain("base.OnDestroy();"));
         }
 
@@ -190,23 +170,13 @@ namespace DxMessaging.Tests.Editor
             Assert.That(guide, Does.Contain("DiagnosticsToolingExerciser.unity"));
             Assert.That(guide, Does.Contain("SessionState.GetBool"));
             Assert.That(guide, Does.Contain("if (runner != null)"));
-            int resetMethodStart = runner.IndexOf(
-                "public void ResetCountersAndEmitBurst()",
-                StringComparison.Ordinal
-            );
+            int resetMethodStart = runner.IndexOf("public void ResetCountersAndEmitBurst()", StringComparison.Ordinal);
             Assert.That(resetMethodStart, Is.GreaterThanOrEqualTo(0));
 
-            int nextMethodStart = runner.IndexOf(
-                "public void EmitOneOfEach()",
-                resetMethodStart,
-                StringComparison.Ordinal
-            );
+            int nextMethodStart = runner.IndexOf("public void EmitOneOfEach()", resetMethodStart, StringComparison.Ordinal);
             Assert.That(nextMethodStart, Is.GreaterThan(resetMethodStart));
 
-            string resetMethod = runner.Substring(
-                resetMethodStart,
-                nextMethodStart - resetMethodStart
-            );
+            string resetMethod = runner.Substring(resetMethodStart, nextMethodStart - resetMethodStart);
             Assert.That(resetMethod, Does.Contain("receiver.ResetCounts();"));
             Assert.That(resetMethod, Does.Contain("EmitBurst();"));
             Assert.That(resetMethod, Does.Not.Contain("sequence = 0;"));
@@ -215,17 +185,11 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void ImportedSampleGuideBuildsInteractiveStateAndClaimsOnlyOneSampleScenePerSession()
         {
-            Type? windowType = FindLoadedType(
-                "WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser.Editor.DiagnosticsToolingGuideWindow"
-            );
-            Type? bootstrapType = FindLoadedType(
-                "WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser.Editor.DiagnosticsToolingGuideBootstrap"
-            );
+            Type? windowType = FindLoadedType("WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser.Editor.DiagnosticsToolingGuideWindow");
+            Type? bootstrapType = FindLoadedType("WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser.Editor.DiagnosticsToolingGuideBootstrap");
             if (windowType == null || bootstrapType == null)
             {
-                Assert.Ignore(
-                    "The guide assembly is available when Unity imports the sample; the CI host copies every sample for this behavior check."
-                );
+                Assert.Ignore("The guide assembly is available when Unity imports the sample; the CI host copies every sample for this behavior check.");
                 return;
             }
 
@@ -235,33 +199,19 @@ namespace DxMessaging.Tests.Editor
             try
             {
                 SessionState.SetBool(sessionKey, false);
-                MethodInfo claim = bootstrapType.GetMethod(
-                    "TryClaimSessionForScene",
-                    BindingFlags.Static | BindingFlags.NonPublic
-                );
+                MethodInfo claim = bootstrapType.GetMethod("TryClaimSessionForScene", BindingFlags.Static | BindingFlags.NonPublic);
                 Assert.That(
-                    claim.Invoke(
-                        null,
-                        new object[] { "Assets/Unrelated/DiagnosticsToolingExerciser.unity" }
-                    ),
+                    claim.Invoke(null, new object[] { "Assets/Unrelated/DiagnosticsToolingExerciser.unity" }),
                     Is.False,
                     "A filename collision outside the sample folder must not open the guide."
                 );
-                const string importedScene =
-                    "Assets/Samples/DxMessaging/1.0.0/Diagnostics Tooling Exerciser/DiagnosticsToolingExerciser.unity";
+                const string importedScene = "Assets/Samples/DxMessaging/1.0.0/Diagnostics Tooling Exerciser/DiagnosticsToolingExerciser.unity";
                 Assert.That(claim.Invoke(null, new object[] { importedScene }), Is.True);
-                Assert.That(
-                    claim.Invoke(null, new object[] { importedScene }),
-                    Is.False,
-                    "The guide must auto-open only once per editor session."
-                );
+                Assert.That(claim.Invoke(null, new object[] { importedScene }), Is.False, "The guide must auto-open only once per editor session.");
 
                 window = ScriptableObject.CreateInstance(windowType) as EditorWindow;
                 Assert.That(window, Is.Not.Null);
-                MethodInfo createGui = windowType.GetMethod(
-                    "CreateGUI",
-                    BindingFlags.Instance | BindingFlags.NonPublic
-                );
+                MethodInfo createGui = windowType.GetMethod("CreateGUI", BindingFlags.Instance | BindingFlags.NonPublic);
                 createGui.Invoke(window, null);
 
                 VisualElement root = window.rootVisualElement;
@@ -275,35 +225,14 @@ namespace DxMessaging.Tests.Editor
                 Button? separateBus = root.Q<Button>("dx-tooling-guide-separate-bus");
                 Assert.That(status, Is.Not.Null);
                 Assert.That(play, Is.Not.Null.And.Property(nameof(VisualElement.enabledSelf)).True);
-                Assert.That(
-                    emit,
-                    Is.Not.Null.And.Property(nameof(VisualElement.enabledSelf)).False
-                );
-                Assert.That(
-                    reset,
-                    Is.Not.Null.And.Property(nameof(VisualElement.enabledSelf)).False
-                );
-                Assert.That(
-                    disableReceiver,
-                    Is.Not.Null.And.Property(nameof(VisualElement.enabledSelf)).False
-                );
-                Assert.That(
-                    releaseToken,
-                    Is.Not.Null.And.Property(nameof(VisualElement.enabledSelf)).False
-                );
-                Assert.That(
-                    destroyReceiver,
-                    Is.Not.Null.And.Property(nameof(VisualElement.enabledSelf)).False
-                );
-                Assert.That(
-                    separateBus,
-                    Is.Not.Null.And.Property(nameof(VisualElement.enabledSelf)).False
-                );
+                Assert.That(emit, Is.Not.Null.And.Property(nameof(VisualElement.enabledSelf)).False);
+                Assert.That(reset, Is.Not.Null.And.Property(nameof(VisualElement.enabledSelf)).False);
+                Assert.That(disableReceiver, Is.Not.Null.And.Property(nameof(VisualElement.enabledSelf)).False);
+                Assert.That(releaseToken, Is.Not.Null.And.Property(nameof(VisualElement.enabledSelf)).False);
+                Assert.That(destroyReceiver, Is.Not.Null.And.Property(nameof(VisualElement.enabledSelf)).False);
+                Assert.That(separateBus, Is.Not.Null.And.Property(nameof(VisualElement.enabledSelf)).False);
 
-                FieldInfo scheduledRefresh = windowType.GetField(
-                    "_statusRefresh",
-                    BindingFlags.Instance | BindingFlags.NonPublic
-                );
+                FieldInfo scheduledRefresh = windowType.GetField("_statusRefresh", BindingFlags.Instance | BindingFlags.NonPublic);
                 Assert.That(scheduledRefresh.GetValue(window), Is.Not.Null);
             }
             finally
@@ -318,17 +247,12 @@ namespace DxMessaging.Tests.Editor
 
         private static Type? FindLoadedType(string fullName)
         {
-            return LoadedAssemblyUtility
-                .GetAssemblies()
-                .Select(assembly => assembly.GetType(fullName, throwOnError: false))
-                .FirstOrDefault(type => type != null);
+            return LoadedAssemblyUtility.GetAssemblies().Select(assembly => assembly.GetType(fullName, throwOnError: false)).FirstOrDefault(type => type != null);
         }
 
         private static string ReadSampleFile(string relativeFilePath)
         {
-            return File.ReadAllText(
-                Path.Combine(GetPackageRoot(), SampleRelativePath, relativeFilePath)
-            );
+            return File.ReadAllText(Path.Combine(GetPackageRoot(), SampleRelativePath, relativeFilePath));
         }
 
         private static string ReadPackageFile(string relativeFilePath)
@@ -359,14 +283,7 @@ namespace DxMessaging.Tests.Editor
 
         private static string GetPackageRoot()
         {
-            return Path.GetFullPath(
-                Path.Combine(
-                    Application.dataPath,
-                    "..",
-                    "Packages",
-                    "com.wallstop-studios.dxmessaging"
-                )
-            );
+            return Path.GetFullPath(Path.Combine(Application.dataPath, "..", "Packages", "com.wallstop-studios.dxmessaging"));
         }
     }
 }

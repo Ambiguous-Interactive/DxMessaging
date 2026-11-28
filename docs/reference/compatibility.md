@@ -1,8 +1,7 @@
 # Compatibility
 
-DxMessaging supports Unity 2021.3 or later with the Built-In Render Pipeline,
-Universal Render Pipeline (URP), or High Definition Render Pipeline (HDRP).
-The messaging runtime and Editor diagnostics use Unity APIs shared by these pipelines.
+DxMessaging supports Unity 2021.3 or later with the Built-In Render Pipeline, Universal Render Pipeline (URP), or High Definition Render Pipeline (HDRP). The messaging runtime and
+Editor diagnostics use Unity APIs shared by these pipelines.
 
 ## Unity versions and render pipelines
 
@@ -15,32 +14,29 @@ The messaging runtime and Editor diagnostics use Unity APIs shared by these pipe
 
 Notes
 
-- The package has no dependency on a render pipeline package. Mini Combat and UI Buttons +
-  Inspector draw their controls using Unity's `OnGUI`. The samples ship without pipeline-specific
-  shaders or materials.
-- Native CI covers selected Unity versions and test scopes. Separate native sample rendering
-  checks in URP and HDRP remain pending.
+- The package has no dependency on a render pipeline package. Mini Combat and UI Buttons + Inspector draw their controls using Unity's `OnGUI`. The samples ship without
+  pipeline-specific shaders or materials.
+- Native CI covers selected Unity versions and test scopes. Separate native sample rendering checks in URP and HDRP remain pending.
 - Minimum version is governed by the package manifest (`unity`: 2021.3). Newer LTS versions are expected to work.
-- Unity 6 migrates object identity to `EntityId` and deprecates `Object.GetInstanceID()` (it becomes a compile error in Unity 6.5). DxMessaging handles this internally: on Unity 6.4+ the dispatch key reads the non-deprecated `EntityId.ToULong(...)` accessor (keeping the same 32-bit value), and older Unity keeps `GetInstanceID()`. The package keeps building across the supported range, including Unity 6.5+ where the old API is removed.
+- Unity 6 migrates object identity to `EntityId` and deprecates `Object.GetInstanceID()` (it becomes a compile error in Unity 6.5). DxMessaging handles this internally: on Unity
+  6.4+ the dispatch key reads the non-deprecated `EntityId.ToULong(...)` accessor (keeping the same 32-bit value), and older Unity keeps `GetInstanceID()`. The package keeps
+  building across the supported range, including Unity 6.5+ where the old API is removed.
 
 ## Generated Record Declarations
 
-**Fixed in v4.0.0:** Message and auto-constructor generators use C# 9 syntax for reference-record
-declarations, including generic records and nested record containers. Declare each generated type
-and its containing types `partial`.
+**Fixed in v4.0.0:** Message and auto-constructor generators use C# 9 syntax for reference-record declarations, including generic records and nested record containers. Declare each
+generated type and its containing types `partial`.
 
-Record structs require a compiler that supports C# 10. Follow
-[Unity's record support requirements](https://docs.unity3d.com/2021.3/Documentation/Manual/CSharpCompiler.html)
-for init-only properties and serialization; the generator does not add those capabilities.
+Record structs require a compiler that supports C# 10. Follow [Unity's record support requirements](https://docs.unity3d.com/2021.3/Documentation/Manual/CSharpCompiler.html) for
+init-only properties and serialization; the generator does not add those capabilities.
 
 ## Architecture Pattern Compatibility
 
 ### Scriptable Object Architecture (SOA)
 
-DxMessaging can bridge existing event assets or report changes to state owned by an asset or
-service. [Unity's architecture guide](https://unity.com/how-to/architect-game-code-scriptable-objects)
-includes mutable runtime variables and event assets; ScriptableObjects are not limited to immutable
-configuration.
+DxMessaging can bridge existing event assets or report changes to state owned by an asset or service.
+[Unity's architecture guide](https://unity.com/how-to/architect-game-code-scriptable-objects) includes mutable runtime variables and event assets; ScriptableObjects are not limited
+to immutable configuration.
 
 #### Quick summary
 
@@ -48,8 +44,7 @@ configuration.
 - Keep an explicit owner for current state, runtime-set membership, reset and saved-game storage.
 - Pair asset listeners and bus registrations with their actual lifetimes.
 - Use shared configuration with runtime messages when that design meets the application needs.
-- See the [SOA integration patterns](../guides/patterns.md#14-compatibility-with-scriptable-object-architecture-soa)
-  for two examples and migration responsibilities.
+- See the [SOA integration patterns](../guides/patterns.md#14-compatibility-with-scriptable-object-architecture-soa) for two examples and migration responsibilities.
 
 ### Dependency Injection (DI) Frameworks
 
@@ -67,52 +62,37 @@ For comparisons with other messaging/event frameworks (UniRx, MessagePipe, Zenje
 
 ## Untyped dispatch
 
-Untyped dispatch accepts a message interface. A boxed struct is copied into a typed local;
-interceptors can change that emission's local value, but the original box stays unchanged.
-Class messages preserve object identity. Reuse a preboxed message when repeated untyped
-emissions must avoid boxing allocations; normal typed struct dispatch needs no box.
+Untyped dispatch accepts a message interface. A boxed struct is copied into a typed local; interceptors can change that emission's local value, but the original box stays
+unchanged. Class messages preserve object identity. Reuse a preboxed message when repeated untyped emissions must avoid boxing allocations; normal typed struct dispatch needs no
+box.
 
-On IL2CPP, a source-generated message includes its dispatch bridge. For a manually implemented
-message, register a handler or interceptor for the concrete message type, or emit that type
-through the typed API, before its first untyped emission. Registration on `MessageBus` is
-sufficient; it does not require a separate typed warm-up. An untyped emission of a manual
-message with no prepared bridge throws an exception that explains how to prepare it.
+On IL2CPP, a source-generated message includes its dispatch bridge. For a manually implemented message, register a handler or interceptor for the concrete message type, or emit
+that type through the typed API, before its first untyped emission. Registration on `MessageBus` is sufficient; it does not require a separate typed warm-up. An untyped emission of
+a manual message with no prepared bridge throws an exception that explains how to prepare it.
 
-Custom `IMessageBus` implementations receive bridge calls through their own typed methods.
-Their implementations remain responsible for making those generic methods available to
+Custom `IMessageBus` implementations receive bridge calls through their own typed methods. Their implementations remain responsible for making those generic methods available to
 IL2CPP.
 
 ## Plain .NET runtime
 
-The source checkout also builds the core runtime for .NET Standard 2.1, with C# 9 and
-an explicit `System.Runtime.CompilerServices.Unsafe` 6.1.2 dependency. Build it with:
+The source checkout also builds the core runtime for .NET Standard 2.1, with C# 9 and an explicit `System.Runtime.CompilerServices.Unsafe` 6.1.2 dependency. Build it with:
 
 ```bash
 dotnet build .net/DxMessaging.csproj --configuration Release
 dotnet test .net-tests/DxMessaging.Net.Tests.csproj --configuration Release
 ```
 
-Reference `.net/DxMessaging.csproj` from a .NET application. This source-build target
-is separate from UPM installation; the repository does not publish a NuGet package.
-The runtime project compiles `Runtime/` without Unity symbols or Unity assemblies.
-The tests run on .NET 10 and share the message-kind scenarios and leak watcher used by
-Unity tests. The checked-in analyzer payload supplies runtime message generation. A project reference
-does not forward analyzers: consumer projects using `[Dx*Message]` attributes must also
-reference `Runtime/Analyzers/*.dll` as MSBuild `Analyzer` items. Implement the message
-interfaces directly when consumer source generation is unnecessary.
+Reference `.net/DxMessaging.csproj` from a .NET application. This source-build target is separate from UPM installation; the repository does not publish a NuGet package. The
+runtime project compiles `Runtime/` without Unity symbols or Unity assemblies. The tests run on .NET 10 and share the message-kind scenarios and leak watcher used by Unity tests.
+The checked-in analyzer payload supplies runtime message generation. A project reference does not forward analyzers: consumer projects using `[Dx*Message]` attributes must also
+reference `Runtime/Analyzers/*.dll` as MSBuild `Analyzer` items. Implement the message interfaces directly when consumer source generation is unnecessary.
 
-Core bus, handler, token, typed/untyped dispatch, numeric `InstanceId`, diagnostic history,
-and explicit trim APIs are available. `MonoBehaviour` components, GameObject routing,
-reflexive GameObject messages, PlayerLoop integration, and `ScriptableObject` settings are
-Unity-only. The settings provider type is absent outside Unity; buses use built-in defaults.
-Call `DxMessagingStaticState.Reset()` when a host needs to reset shared static state.
-It clears the built-in default bus and restores shared configuration. Custom bus
-registrations remain in their original bus. Message type IDs, bus cache indices,
-automatically generated lease owner IDs, and registration handle IDs remain consumed until
-the application domain ends. New buses and automatically owned leases therefore keep
-separate handler storage from retained ones. Creating a bus or generating a lease owner
-throws `InvalidOperationException` if its identifier range is exhausted.
+Core bus, handler, token, typed/untyped dispatch, numeric `InstanceId`, diagnostic history, and explicit trim APIs are available. `MonoBehaviour` components, GameObject routing,
+reflexive GameObject messages, PlayerLoop integration, and `ScriptableObject` settings are Unity-only. The settings provider type is absent outside Unity; buses use built-in
+defaults. Call `DxMessagingStaticState.Reset()` when a host needs to reset shared static state. It clears the built-in default bus and restores shared configuration. Custom bus
+registrations remain in their original bus. Message type IDs, bus cache indices, automatically generated lease owner IDs, and registration handle IDs remain consumed until the
+application domain ends. New buses and automatically owned leases therefore keep separate handler storage from retained ones. Creating a bus or generating a lease owner throws
+`InvalidOperationException` if its identifier range is exhausted.
 
-Keep all bus activity, including trims and registration changes, on one owning thread.
-There is no background sweep outside Unity. Host activity advances idle counters; force
-trim at a maintenance boundary when an inactive bus needs immediate reclamation.
+Keep all bus activity, including trims and registration changes, on one owning thread. There is no background sweep outside Unity. Host activity advances idle counters; force trim
+at a maintenance boundary when an inactive bus needs immediate reclamation.

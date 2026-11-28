@@ -21,17 +21,11 @@ namespace DxMessaging.Tests.Runtime.Core
 
         private static IEnumerable<TestCaseData> Cases()
         {
-            foreach (
-                MessageScenario scenario in MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext
-            )
+            foreach (MessageScenario scenario in MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext)
             {
                 foreach (bool action in new[] { false, true })
                 {
-                    if (
-                        scenario.Kind == MessageKind.Untargeted
-                        && scenario.UsePostProcessor
-                        && action
-                    )
+                    if (scenario.Kind == MessageKind.Untargeted && scenario.UsePostProcessor && action)
                     {
                         continue;
                     }
@@ -39,12 +33,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     {
                         foreach (string phase in new[] { "None", "Before", "After" })
                         {
-                            yield return new TestCaseData(
-                                scenario,
-                                action,
-                                sameReceiver,
-                                phase
-                            ).SetName(
+                            yield return new TestCaseData(scenario, action, sameReceiver, phase).SetName(
                                 $"RetiredCleanup_{scenario}_Action{action}_SameReceiver{sameReceiver}_{phase}"
                             );
                         }
@@ -54,12 +43,7 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [TestCaseSource(nameof(Cases))]
-        public void ForeignCleanupCannotScheduleWorkOnResetSlot(
-            MessageScenario scenario,
-            bool action,
-            bool sameReceiver,
-            string phase
-        )
+        public void ForeignCleanupCannotScheduleWorkOnResetSlot(MessageScenario scenario, bool action, bool sameReceiver, string phase)
         {
             DxMessagingStaticState.Reset();
             HookBus bus = new(MessageHandler.MessageBus) { AfterForward = phase == "After" };
@@ -101,11 +85,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 bool enabledAfterSecond = token.Enabled;
                 Emit(MessageHandler.MessageBus, scenario);
                 Assert.That(enabledAfterFirst, Is.True, "Accepted new cleanup remains owned.");
-                Assert.That(
-                    enabledAfterSecond,
-                    Is.False,
-                    "The next pass consumes the new cleanup."
-                );
+                Assert.That(enabledAfterSecond, Is.False, "The next pass consumes the new cleanup.");
                 Assert.That(originalAfterFirst, Is.EqualTo(sameReceiver ? 1 : 0));
                 Assert.That(survivorAfterFirst, Is.EqualTo(1));
                 Assert.That(first.Calls, Is.Zero);
@@ -113,21 +93,9 @@ namespace DxMessaging.Tests.Runtime.Core
                 if (phase != "None")
                 {
                     Assert.That(versionAtReset, Is.Not.EqualTo(beforeVersion));
-                    Assert.That(
-                        pendingWasNullAtReset,
-                        Is.True,
-                        "Reset returns the old pending set."
-                    );
-                    Assert.That(
-                        capturedStillCurrent,
-                        Is.False,
-                        "The new registration uses a new slot."
-                    );
-                    Assert.That(
-                        pendingAfterFirst,
-                        Is.Null,
-                        "A retired slot has no owner to process newly scheduled context work."
-                    );
+                    Assert.That(pendingWasNullAtReset, Is.True, "Reset returns the old pending set.");
+                    Assert.That(capturedStillCurrent, Is.False, "The new registration uses a new slot.");
+                    Assert.That(pendingAfterFirst, Is.Null, "A retired slot has no owner to process newly scheduled context work.");
                 }
             }
             finally
@@ -140,17 +108,11 @@ namespace DxMessaging.Tests.Runtime.Core
 
         private static TypedSlot<ProbeMessage> Slot(MessageHandler handler, IMessageBus bus)
         {
-            FieldInfo field = typeof(MessageHandler).GetField(
-                "_handlersByTypeByMessageBus",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
-            Dictionary<int, MessageCache<object>> byBus =
-                (Dictionary<int, MessageCache<object>>)field.GetValue(handler);
-            bool found = byBus[bus.RegisteredGlobalSequentialIndex]
-                .TryGetValue<ProbeMessage>(out object raw);
+            FieldInfo field = typeof(MessageHandler).GetField("_handlersByTypeByMessageBus", BindingFlags.Instance | BindingFlags.NonPublic);
+            Dictionary<int, MessageCache<object>> byBus = (Dictionary<int, MessageCache<object>>)field.GetValue(handler);
+            bool found = byBus[bus.RegisteredGlobalSequentialIndex].TryGetValue<ProbeMessage>(out object raw);
             Assert.That(found, Is.True);
-            MessageHandler.TypedHandler<ProbeMessage> typed =
-                (MessageHandler.TypedHandler<ProbeMessage>)raw;
+            MessageHandler.TypedHandler<ProbeMessage> typed = (MessageHandler.TypedHandler<ProbeMessage>)raw;
             TypedSlot<ProbeMessage> result = null;
             int count = 0;
             foreach (TypedSlot<ProbeMessage> slot in typed._slots)
@@ -189,79 +151,29 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private static MessageRegistrationHandle Register(
-            MessageRegistrationToken token,
-            MessageScenario scenario,
-            bool action,
-            Receiver receiver
-        )
+        private static MessageRegistrationHandle Register(MessageRegistrationToken token, MessageScenario scenario, bool action, Receiver receiver)
         {
             return (scenario.Kind, scenario.UsePostProcessor, action) switch
             {
-                (MessageKind.Untargeted, false, true) => token.RegisterUntargeted<ProbeMessage>(
-                    receiver.Receive
-                ),
-                (MessageKind.Untargeted, false, false) => token.RegisterUntargeted<ProbeMessage>(
-                    receiver.ReceiveFast
-                ),
-                (MessageKind.Untargeted, true, _) =>
-                    token.RegisterUntargetedPostProcessor<ProbeMessage>(receiver.ReceiveFast),
-                (MessageKind.Targeted, false, true) => token.RegisterTargeted<ProbeMessage>(
-                    Context,
-                    receiver.Receive
-                ),
-                (MessageKind.Targeted, false, false) => token.RegisterTargeted<ProbeMessage>(
-                    Context,
-                    receiver.ReceiveFast
-                ),
-                (MessageKind.Targeted, true, true) =>
-                    token.RegisterTargetedPostProcessor<ProbeMessage>(Context, receiver.Receive),
-                (MessageKind.Targeted, true, false) =>
-                    token.RegisterTargetedPostProcessor<ProbeMessage>(
-                        Context,
-                        receiver.ReceiveFast
-                    ),
-                (MessageKind.Broadcast, false, true) => token.RegisterBroadcast<ProbeMessage>(
-                    Context,
-                    receiver.Receive
-                ),
-                (MessageKind.Broadcast, false, false) => token.RegisterBroadcast<ProbeMessage>(
-                    Context,
-                    receiver.ReceiveFast
-                ),
-                (MessageKind.Broadcast, true, true) =>
-                    token.RegisterBroadcastPostProcessor<ProbeMessage>(Context, receiver.Receive),
-                (MessageKind.Broadcast, true, false) =>
-                    token.RegisterBroadcastPostProcessor<ProbeMessage>(
-                        Context,
-                        receiver.ReceiveFast
-                    ),
-                (MessageKind.TargetedWithoutTargeting, false, true) =>
-                    token.RegisterTargetedWithoutTargeting<ProbeMessage>(receiver.ReceiveContext),
-                (MessageKind.TargetedWithoutTargeting, false, false) =>
-                    token.RegisterTargetedWithoutTargeting<ProbeMessage>(
-                        receiver.ReceiveContextFast
-                    ),
-                (MessageKind.TargetedWithoutTargeting, true, true) =>
-                    token.RegisterTargetedWithoutTargetingPostProcessor<ProbeMessage>(
-                        receiver.ReceiveContext
-                    ),
-                (MessageKind.TargetedWithoutTargeting, true, false) =>
-                    token.RegisterTargetedWithoutTargetingPostProcessor<ProbeMessage>(
-                        receiver.ReceiveContextFast
-                    ),
-                (MessageKind.BroadcastWithoutSource, false, true) =>
-                    token.RegisterBroadcastWithoutSource<ProbeMessage>(receiver.ReceiveContext),
-                (MessageKind.BroadcastWithoutSource, false, false) =>
-                    token.RegisterBroadcastWithoutSource<ProbeMessage>(receiver.ReceiveContextFast),
-                (MessageKind.BroadcastWithoutSource, true, true) =>
-                    token.RegisterBroadcastWithoutSourcePostProcessor<ProbeMessage>(
-                        receiver.ReceiveContext
-                    ),
-                (MessageKind.BroadcastWithoutSource, true, false) =>
-                    token.RegisterBroadcastWithoutSourcePostProcessor<ProbeMessage>(
-                        receiver.ReceiveContextFast
-                    ),
+                (MessageKind.Untargeted, false, true) => token.RegisterUntargeted<ProbeMessage>(receiver.Receive),
+                (MessageKind.Untargeted, false, false) => token.RegisterUntargeted<ProbeMessage>(receiver.ReceiveFast),
+                (MessageKind.Untargeted, true, _) => token.RegisterUntargetedPostProcessor<ProbeMessage>(receiver.ReceiveFast),
+                (MessageKind.Targeted, false, true) => token.RegisterTargeted<ProbeMessage>(Context, receiver.Receive),
+                (MessageKind.Targeted, false, false) => token.RegisterTargeted<ProbeMessage>(Context, receiver.ReceiveFast),
+                (MessageKind.Targeted, true, true) => token.RegisterTargetedPostProcessor<ProbeMessage>(Context, receiver.Receive),
+                (MessageKind.Targeted, true, false) => token.RegisterTargetedPostProcessor<ProbeMessage>(Context, receiver.ReceiveFast),
+                (MessageKind.Broadcast, false, true) => token.RegisterBroadcast<ProbeMessage>(Context, receiver.Receive),
+                (MessageKind.Broadcast, false, false) => token.RegisterBroadcast<ProbeMessage>(Context, receiver.ReceiveFast),
+                (MessageKind.Broadcast, true, true) => token.RegisterBroadcastPostProcessor<ProbeMessage>(Context, receiver.Receive),
+                (MessageKind.Broadcast, true, false) => token.RegisterBroadcastPostProcessor<ProbeMessage>(Context, receiver.ReceiveFast),
+                (MessageKind.TargetedWithoutTargeting, false, true) => token.RegisterTargetedWithoutTargeting<ProbeMessage>(receiver.ReceiveContext),
+                (MessageKind.TargetedWithoutTargeting, false, false) => token.RegisterTargetedWithoutTargeting<ProbeMessage>(receiver.ReceiveContextFast),
+                (MessageKind.TargetedWithoutTargeting, true, true) => token.RegisterTargetedWithoutTargetingPostProcessor<ProbeMessage>(receiver.ReceiveContext),
+                (MessageKind.TargetedWithoutTargeting, true, false) => token.RegisterTargetedWithoutTargetingPostProcessor<ProbeMessage>(receiver.ReceiveContextFast),
+                (MessageKind.BroadcastWithoutSource, false, true) => token.RegisterBroadcastWithoutSource<ProbeMessage>(receiver.ReceiveContext),
+                (MessageKind.BroadcastWithoutSource, false, false) => token.RegisterBroadcastWithoutSource<ProbeMessage>(receiver.ReceiveContextFast),
+                (MessageKind.BroadcastWithoutSource, true, true) => token.RegisterBroadcastWithoutSourcePostProcessor<ProbeMessage>(receiver.ReceiveContext),
+                (MessageKind.BroadcastWithoutSource, true, false) => token.RegisterBroadcastWithoutSourcePostProcessor<ProbeMessage>(receiver.ReceiveContextFast),
                 _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
             };
         }
@@ -303,14 +215,10 @@ namespace DxMessaging.Tests.Runtime.Core
 
             public void ReceiveContext(InstanceId context, ProbeMessage message) => Record();
 
-            public void ReceiveContextFast(in InstanceId context, in ProbeMessage message) =>
-                Record();
+            public void ReceiveContextFast(in InstanceId context, in ProbeMessage message) => Record();
         }
 
-        private readonly struct ProbeMessage
-            : IUntargetedMessage,
-                ITargetedMessage,
-                IBroadcastMessage
+        private readonly struct ProbeMessage : IUntargetedMessage, ITargetedMessage, IBroadcastMessage
         {
             public Type MessageType => typeof(ProbeMessage);
         }

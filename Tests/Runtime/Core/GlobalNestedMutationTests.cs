@@ -56,15 +56,7 @@ namespace DxMessaging.Tests.Runtime.Core
                             {
                                 foreach (int depth in new[] { 1, 2 })
                                 {
-                                    yield return Case(
-                                        scenario,
-                                        shape,
-                                        count,
-                                        mutation,
-                                        depth,
-                                        offset,
-                                        0
-                                    );
+                                    yield return Case(scenario, shape, count, mutation, depth, offset, 0);
                                 }
                             }
                         }
@@ -87,15 +79,7 @@ namespace DxMessaging.Tests.Runtime.Core
                             {
                                 foreach (int throwing in new[] { 1, 2, 3 })
                                 {
-                                    yield return Case(
-                                        scenario,
-                                        shape,
-                                        count,
-                                        mutation,
-                                        depth,
-                                        0,
-                                        throwing
-                                    );
+                                    yield return Case(scenario, shape, count, mutation, depth, 0, throwing);
                                 }
                             }
                         }
@@ -104,39 +88,10 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private static TestCaseData Case(
-            MessageScenario scenario,
-            int shape,
-            int count,
-            int mutation,
-            int depth,
-            int offset,
-            int throwing
-        )
+        private static TestCaseData Case(MessageScenario scenario, int shape, int count, int mutation, int depth, int offset, int throwing)
         {
-            return new TestCaseData(
-                scenario,
-                shape,
-                count,
-                mutation,
-                depth,
-                offset,
-                throwing
-            ).SetName(
-                "GlobalNested_"
-                    + scenario
-                    + "_shape"
-                    + shape
-                    + "_count"
-                    + count
-                    + "_mutation"
-                    + mutation
-                    + "_depth"
-                    + depth
-                    + "_offset"
-                    + offset
-                    + "_throw"
-                    + throwing
+            return new TestCaseData(scenario, shape, count, mutation, depth, offset, throwing).SetName(
+                "GlobalNested_" + scenario + "_shape" + shape + "_count" + count + "_mutation" + mutation + "_depth" + depth + "_offset" + offset + "_throw" + throwing
             );
         }
 
@@ -153,20 +108,7 @@ namespace DxMessaging.Tests.Runtime.Core
             int throwing
         )
         {
-            string label =
-                scenario
-                + ",shape="
-                + shape
-                + ",count="
-                + count
-                + ",mutation="
-                + mutation
-                + ",depth="
-                + nestingDepth
-                + ",offset="
-                + kindOffset
-                + ",throw="
-                + throwing;
+            string label = scenario + ",shape=" + shape + ",count=" + count + ",mutation=" + mutation + ",depth=" + nestingDepth + ",offset=" + kindOffset + ",throw=" + throwing;
             using CaseState state = new CaseState(label);
             InvalidOperationException failure = new InvalidOperationException(label);
             int depth = 0;
@@ -188,9 +130,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     }
                     if (mutation == 1 || mutation == 3)
                     {
-                        Register(state.Token, shape == 1, () =>
-                            state.Calls.Add("d" + depth + ":C")
-                        );
+                        Register(state.Token, shape == 1, () => state.Calls.Add("d" + depth + ":C"));
                     }
                     if (throwing == 1)
                     {
@@ -204,10 +144,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 if (depth < nestingDepth)
                 {
                     ++depth;
-                    MessageKind nestedKind =
-                        depth % 2 == 0
-                            ? scenario.Kind
-                            : (MessageKind)(((int)scenario.Kind + kindOffset) % 3);
+                    MessageKind nestedKind = depth % 2 == 0 ? scenario.Kind : (MessageKind)(((int)scenario.Kind + kindOffset) % 3);
                     try
                     {
                         state.Emit(nestedKind);
@@ -225,9 +162,7 @@ namespace DxMessaging.Tests.Runtime.Core
             for (int index = 0; index < count - 1; ++index)
             {
                 int captured = index;
-                removed = Register(state.Token, shape == 1, () =>
-                    state.Calls.Add("d" + depth + ":P" + captured)
-                );
+                removed = Register(state.Token, shape == 1, () => state.Calls.Add("d" + depth + ":P" + captured));
             }
 
             Exception observed = null;
@@ -272,25 +207,12 @@ namespace DxMessaging.Tests.Runtime.Core
 
             Assert.That(first, Is.EqualTo(expectedFirst), label + ": first trace");
             Assert.That(second, Is.EqualTo(expectedSecond), label + ": next trace");
-            Assert.That(
-                observed,
-                Is.SameAs(throwing == 0 ? null : failure),
-                label + ": exception identity"
-            );
+            Assert.That(observed, Is.SameAs(throwing == 0 ? null : failure), label + ": exception identity");
             Assert.That(beforeCleanup, Is.EqualTo(1), label + ": same handler stays registered");
-            Assert.That(
-                afterCleanup,
-                Is.EqualTo(0),
-                label + ": valid cleanup before forced maintenance"
-            );
+            Assert.That(afterCleanup, Is.EqualTo(0), label + ": valid cleanup before forced maintenance");
         }
 
-        private static IEnumerable<TestCaseData> OwnershipCases(
-            string name,
-            int[] shapes,
-            int[] counts,
-            int[] variants
-        )
+        private static IEnumerable<TestCaseData> OwnershipCases(string name, int[] shapes, int[] counts, int[] variants)
         {
             foreach (MessageScenario scenario in MessageScenarios.AllKinds)
             {
@@ -301,16 +223,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         foreach (int variant in variants)
                         {
                             yield return new TestCaseData(scenario, shape, count, variant).SetName(
-                                "GlobalOwnership_"
-                                    + name
-                                    + "_"
-                                    + scenario
-                                    + "_shape"
-                                    + shape
-                                    + "_count"
-                                    + count
-                                    + "_variant"
-                                    + variant
+                                "GlobalOwnership_" + name + "_" + scenario + "_shape" + shape + "_count" + count + "_variant" + variant
                             );
                         }
                     }
@@ -318,28 +231,18 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private static IEnumerable<TestCaseData> ResetCases() =>
-            OwnershipCases("Reset", new[] { 0, 1, 2 }, new[] { 3, 8 }, new[] { 0, 1 });
+        private static IEnumerable<TestCaseData> ResetCases() => OwnershipCases("Reset", new[] { 0, 1, 2 }, new[] { 3, 8 }, new[] { 0, 1 });
 
-        private static IEnumerable<TestCaseData> EmptyPhaseCases() =>
-            OwnershipCases("EmptyPhase", new[] { 2 }, new[] { 2, 3, 8 }, new[] { 0, 1 });
+        private static IEnumerable<TestCaseData> EmptyPhaseCases() => OwnershipCases("EmptyPhase", new[] { 2 }, new[] { 2, 3, 8 }, new[] { 0, 1 });
 
-        private static IEnumerable<TestCaseData> DistinctHandlerCases() =>
-            OwnershipCases("Distinct", new[] { 0, 1 }, new[] { 3, 8 }, new[] { 0, 1 });
+        private static IEnumerable<TestCaseData> DistinctHandlerCases() => OwnershipCases("Distinct", new[] { 0, 1 }, new[] { 3, 8 }, new[] { 0, 1 });
 
-        private static IEnumerable<TestCaseData> ActivityCases() =>
-            OwnershipCases("Activity", new[] { 0, 1, 2 }, new[] { 3, 8 }, new[] { 0 });
+        private static IEnumerable<TestCaseData> ActivityCases() => OwnershipCases("Activity", new[] { 0, 1, 2 }, new[] { 3, 8 }, new[] { 0 });
 
-        private static IEnumerable<TestCaseData> RepeatedMutationCases() =>
-            OwnershipCases("Repeated", new[] { 0, 1, 2 }, new[] { 3, 8 }, new[] { 2, 4 });
+        private static IEnumerable<TestCaseData> RepeatedMutationCases() => OwnershipCases("Repeated", new[] { 0, 1, 2 }, new[] { 3, 8 }, new[] { 2, 4 });
 
         [TestCaseSource(nameof(ResetCases))]
-        public void ResetAfterNestedRebuildStopsOldSnapshotsAndReleasesBorrowers(
-            MessageScenario scenario,
-            int shape,
-            int count,
-            int throwing
-        )
+        public void ResetAfterNestedRebuildStopsOldSnapshotsAndReleasesBorrowers(MessageScenario scenario, int shape, int count, int throwing)
         {
             string label = scenario + ",shape=" + shape + ",count=" + count + ",throw=" + throwing;
             using CaseState state = new CaseState(label);
@@ -397,12 +300,7 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [TestCaseSource(nameof(EmptyPhaseCases))]
-        public void RemovingAllActionPeersPreservesTheLiveEmptyPhaseGuard(
-            MessageScenario scenario,
-            int shape,
-            int count,
-            int nested
-        )
+        public void RemovingAllActionPeersPreservesTheLiveEmptyPhaseGuard(MessageScenario scenario, int shape, int count, int nested)
         {
             string label = scenario + ",shape=" + shape + ",count=" + count + ",nested=" + nested;
             using CaseState state = new CaseState(label);
@@ -436,9 +334,7 @@ namespace DxMessaging.Tests.Runtime.Core
             });
             for (int index = 0; index < count - 1; ++index)
             {
-                peers.Add(
-                    Register(state.Token, fast: false, () => state.Calls.Add("removed-action"))
-                );
+                peers.Add(Register(state.Token, fast: false, () => state.Calls.Add("removed-action")));
             }
             state.Emit(scenario.Kind);
             string[] first = state.Calls.ToArray();
@@ -447,32 +343,17 @@ namespace DxMessaging.Tests.Runtime.Core
             string[] second = state.Calls.ToArray();
             state.Token.Dispose();
             state.CheckLeaksBeforeMaintenance();
-            Assert.That(
-                first,
-                Is.EqualTo(nested == 0 ? new[] { "d0:A" } : new[] { "d0:A", "d1:A" }),
-                label
-            );
+            Assert.That(first, Is.EqualTo(nested == 0 ? new[] { "d0:A" } : new[] { "d0:A", "d1:A" }), label);
             Assert.That(second, Is.EqualTo(new[] { "d0:A" }), label + ": next emission");
         }
 
         [TestCaseSource(nameof(DistinctHandlerCases))]
-        public void DistinctHandlersKeepLazyPrefreezeAfterNestedMutation(
-            MessageScenario scenario,
-            int shape,
-            int count,
-            int nested
-        )
+        public void DistinctHandlersKeepLazyPrefreezeAfterNestedMutation(MessageScenario scenario, int shape, int count, int nested)
         {
             string label = scenario + ",shape=" + shape + ",count=" + count + ",nested=" + nested;
             using CaseState state = new CaseState(label);
-            MessageHandler peerHandler = new MessageHandler(new InstanceId(1651), state.Bus)
-            {
-                active = true,
-            };
-            using MessageRegistrationToken peer = MessageRegistrationToken.Create(
-                peerHandler,
-                state.Bus
-            );
+            MessageHandler peerHandler = new MessageHandler(new InstanceId(1651), state.Bus) { active = true };
+            using MessageRegistrationToken peer = MessageRegistrationToken.Create(peerHandler, state.Bus);
             peer.Enable();
             bool mutated = false;
             int depth = 0;
@@ -503,9 +384,7 @@ namespace DxMessaging.Tests.Runtime.Core
             for (int index = 0; index < count - 1; ++index)
             {
                 int captured = index;
-                removed = Register(peer, shape == 1, () =>
-                    state.Calls.Add("d" + depth + ":P" + captured)
-                );
+                removed = Register(peer, shape == 1, () => state.Calls.Add("d" + depth + ":P" + captured));
             }
             state.Emit(scenario.Kind);
             string[] first = state.Calls.ToArray();
@@ -529,12 +408,7 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [TestCaseSource(nameof(ActivityCases))]
-        public void InactiveHandlerResumesWithAllSnapshotsUsable(
-            MessageScenario scenario,
-            int shape,
-            int count,
-            int variant
-        )
+        public void InactiveHandlerResumesWithAllSnapshotsUsable(MessageScenario scenario, int shape, int count, int variant)
         {
             string label = scenario + ",shape=" + shape + ",count=" + count + ",variant=" + variant;
             using CaseState state = new CaseState(label);
@@ -543,9 +417,7 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 string name = "P" + index;
                 expected.Add(name);
-                Register(state.Token, shape == 1 || (shape == 2 && index == 0), () =>
-                    state.Calls.Add(name)
-                );
+                Register(state.Token, shape == 1 || (shape == 2 && index == 0), () => state.Calls.Add(name));
             }
             state.Handler.active = false;
             state.Emit(scenario.Kind);
@@ -569,15 +441,9 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [TestCaseSource(nameof(RepeatedMutationCases))]
-        public void EveryNestedMutationRetainsItsOwnEntrySnapshot(
-            MessageScenario scenario,
-            int shape,
-            int count,
-            int nestingDepth
-        )
+        public void EveryNestedMutationRetainsItsOwnEntrySnapshot(MessageScenario scenario, int shape, int count, int nestingDepth)
         {
-            string label =
-                scenario + ",shape=" + shape + ",count=" + count + ",depth=" + nestingDepth;
+            string label = scenario + ",shape=" + shape + ",count=" + count + ",depth=" + nestingDepth;
             using CaseState state = new CaseState(label);
             int depth = 0;
             bool started = false;
@@ -599,9 +465,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 state.Token.RemoveRegistration(removed);
                 string replacement = "C" + depth;
-                removed = Register(state.Token, shape == 1, () =>
-                    state.Calls.Add("d" + depth + ":" + replacement)
-                );
+                removed = Register(state.Token, shape == 1, () => state.Calls.Add("d" + depth + ":" + replacement));
                 ++depth;
                 try
                 {
@@ -615,9 +479,7 @@ namespace DxMessaging.Tests.Runtime.Core
             for (int index = 0; index < count - 1; ++index)
             {
                 int captured = index;
-                removed = Register(state.Token, shape == 1, () =>
-                    state.Calls.Add("d" + depth + ":P" + captured)
-                );
+                removed = Register(state.Token, shape == 1, () => state.Calls.Add("d" + depth + ":P" + captured));
             }
             state.Emit(scenario.Kind);
             string[] first = state.Calls.ToArray();
@@ -637,9 +499,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     expected.Add("d" + level + ":P" + index);
                 }
-                expected.Add(
-                    "d" + level + ":" + (level == 0 ? "P" + (count - 2) : "C" + (level - 1))
-                );
+                expected.Add("d" + level + ":" + (level == 0 ? "P" + (count - 2) : "C" + (level - 1)));
             }
             List<string> expectedSecond = new List<string> { "d0:A" };
             for (int index = 0; index < count - 2; ++index)
@@ -651,13 +511,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.That(second, Is.EqualTo(expectedSecond), label + ": final live registrations");
         }
 
-        private static void AppendPeers(
-            List<string> expected,
-            int count,
-            int mutation,
-            int depth,
-            bool updated
-        )
+        private static void AppendPeers(List<string> expected, int count, int mutation, int depth, bool updated)
         {
             int originalPeers = updated && (mutation == 2 || mutation == 3) ? count - 2 : count - 1;
             for (int index = 0; index < originalPeers; ++index)
@@ -670,11 +524,7 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private static MessageRegistrationHandle Register(
-            MessageRegistrationToken token,
-            bool fast,
-            Action callback
-        )
+        private static MessageRegistrationHandle Register(MessageRegistrationToken token, bool fast, Action callback)
         {
             if (fast)
             {
@@ -684,11 +534,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     (in InstanceId _, in IBroadcastMessage __) => callback()
                 );
             }
-            return token.RegisterGlobalAcceptAll(
-                _ => callback(),
-                (_, _) => callback(),
-                (_, _) => callback()
-            );
+            return token.RegisterGlobalAcceptAll(_ => callback(), (_, _) => callback(), (_, _) => callback());
         }
 
         private sealed class CaseState : IDisposable
@@ -758,10 +604,7 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private readonly struct ProbeMessage
-            : IUntargetedMessage,
-                ITargetedMessage,
-                IBroadcastMessage
+        private readonly struct ProbeMessage : IUntargetedMessage, ITargetedMessage, IBroadcastMessage
         {
             public Type MessageType => typeof(ProbeMessage);
         }

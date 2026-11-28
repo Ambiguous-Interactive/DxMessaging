@@ -65,73 +65,37 @@ namespace DxMessaging.Tests.Editor.Allocations
                 sink = new byte[16];
             };
 
-            AssertionException failure = Assert.Throws<AssertionException>(() =>
-                AllocationAssertions.AssertNoAllocations(label, allocate, 0, iterations, () =>
+            AssertionException failure = Assert.Throws<AssertionException>(() => AllocationAssertions.AssertNoAllocations(label, allocate, 0, iterations, () =>
                 {
                     ++reports;
-                    Assert.IsFalse(
-                        RecorderEnabled,
-                        $"iterations={iterations}: context is outside measurement."
-                    );
+                    Assert.IsFalse(RecorderEnabled, $"iterations={iterations}: context is outside measurement.");
                     return $"calls={calls}; reporting complete";
-                })
-            );
+                }));
             StringAssert.Contains(label, failure.Message, $"iterations={iterations}");
             Assert.AreEqual(1, reports, $"iterations={iterations}: report once on failure.");
             StringAssert.Contains($"calls={iterations * 2}; reporting complete", failure.Message);
-            System.Text.RegularExpressions.Match count = System.Text.RegularExpressions.Regex.Match(
-                failure.Message,
-                @"made (\d+) GC allocation\(s\)"
-            );
+            System.Text.RegularExpressions.Match count = System.Text.RegularExpressions.Regex.Match(failure.Message, @"made (\d+) GC allocation\(s\)");
             Assert.IsTrue(count.Success, $"iterations={iterations}: {failure.Message}");
             Assert.GreaterOrEqual(
-                long.Parse(
-                    count.Groups[1].Value,
-                    System.Globalization.CultureInfo.InvariantCulture
-                ),
+                long.Parse(count.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture),
                 iterations,
                 $"iterations={iterations}: diagnostic must retain the positive allocation count."
             );
-            StringAssert.Contains(
-                $"across {iterations} iterations",
-                failure.Message,
-                $"iterations={iterations}"
-            );
-            Assert.AreEqual(
-                iterations * 2,
-                calls,
-                $"iterations={iterations}: one wrapper warmup and one measured window; no retry."
-            );
+            StringAssert.Contains($"across {iterations} iterations", failure.Message, $"iterations={iterations}");
+            Assert.AreEqual(iterations * 2, calls, $"iterations={iterations}: one wrapper warmup and one measured window; no retry.");
             Assert.IsFalse(RecorderEnabled, $"iterations={iterations}: recorder must be disabled.");
             GC.KeepAlive(sink);
         }
 
         [TestCase(0, 1)]
         [TestCase(2, 3)]
-        public void ZeroAllocationSuccessPreservesWarmupAndMeasurementCounts(
-            int warmup,
-            int iterations
-        )
+        public void ZeroAllocationSuccessPreservesWarmupAndMeasurementCounts(int warmup, int iterations)
         {
             int calls = 0;
             int reports = 0;
-            AllocationAssertions.AssertNoAllocations(
-                "Nonallocating control",
-                () => ++calls,
-                warmup,
-                iterations,
-                () => (++reports).ToString()
-            );
-            Assert.AreEqual(
-                0,
-                reports,
-                $"warmup={warmup}, iterations={iterations}: passing windows need no report."
-            );
-            Assert.AreEqual(
-                warmup + iterations * 2,
-                calls,
-                $"warmup={warmup}, iterations={iterations}: the diagnostic must not remeasure."
-            );
+            AllocationAssertions.AssertNoAllocations("Nonallocating control", () => ++calls, warmup, iterations, () => (++reports).ToString());
+            Assert.AreEqual(0, reports, $"warmup={warmup}, iterations={iterations}: passing windows need no report.");
+            Assert.AreEqual(warmup + iterations * 2, calls, $"warmup={warmup}, iterations={iterations}: the diagnostic must not remeasure.");
             Assert.IsFalse(RecorderEnabled, $"warmup={warmup}, iterations={iterations}");
         }
 
@@ -143,9 +107,7 @@ namespace DxMessaging.Tests.Editor.Allocations
                 Assert.Ignore("GC.Alloc recorder is non-functional on this backend.");
             }
 
-            InvalidOperationException thrown = Assert.Throws<InvalidOperationException>(() =>
-                AllocationProbe.Measure(() => throw new InvalidOperationException("boom"))
-            );
+            InvalidOperationException thrown = Assert.Throws<InvalidOperationException>(() => AllocationProbe.Measure(() => throw new InvalidOperationException("boom")));
             Assert.AreEqual("boom", thrown.Message, "Measure must propagate the body's exception.");
             Assert.IsFalse(
                 RecorderEnabled,
@@ -170,8 +132,7 @@ namespace DxMessaging.Tests.Editor.Allocations
             });
             Assert.IsFalse(
                 RecorderEnabled,
-                "A using-scoped AllocationProbe.Window must disable the recorder on Dispose even "
-                    + "when the measured body throws before Sample() is reached."
+                "A using-scoped AllocationProbe.Window must disable the recorder on Dispose even " + "when the measured body throws before Sample() is reached."
             );
         }
 
@@ -199,8 +160,7 @@ namespace DxMessaging.Tests.Editor.Allocations
             );
             Assert.IsFalse(
                 RecorderEnabled,
-                "MeasureColdLatency must release the GC.Alloc recorder when the timed operation "
-                    + "throws; the per-trial using-window disposes before tearDownTrial runs."
+                "MeasureColdLatency must release the GC.Alloc recorder when the timed operation " + "throws; the per-trial using-window disposes before tearDownTrial runs."
             );
         }
 
@@ -215,15 +175,8 @@ namespace DxMessaging.Tests.Editor.Allocations
             object sink = null;
             long count = AllocationProbe.Measure(() => sink = new byte[64]);
             Assert.IsNotNull(sink, "The measured body must have run.");
-            Assert.GreaterOrEqual(
-                count,
-                1,
-                "A functional probe must count the byte[64] allocation as at least one call."
-            );
-            Assert.IsFalse(
-                RecorderEnabled,
-                "Measure must disable the recorder on the success path."
-            );
+            Assert.GreaterOrEqual(count, 1, "A functional probe must count the byte[64] allocation as at least one call.");
+            Assert.IsFalse(RecorderEnabled, "Measure must disable the recorder on the success path.");
         }
 
         [Test]
@@ -251,19 +204,12 @@ namespace DxMessaging.Tests.Editor.Allocations
                 leak's true harm is the profiler overhead a left-enabled recorder adds to any
                 unrelated code that runs before the next window opens.
             */
-            Assert.IsFalse(
-                RecorderEnabled,
-                "The recorder must be disabled immediately after a throwing Measure."
-            );
+            Assert.IsFalse(RecorderEnabled, "The recorder must be disabled immediately after a throwing Measure.");
 
             object sink = null;
             long count = AllocationProbe.Measure(() => sink = new byte[64]);
             Assert.IsNotNull(sink);
-            Assert.GreaterOrEqual(
-                count,
-                1,
-                "The measurement after a throwing measurement must still observe the allocation."
-            );
+            Assert.GreaterOrEqual(count, 1, "The measurement after a throwing measurement must still observe the allocation.");
             Assert.IsFalse(RecorderEnabled);
         }
 
@@ -273,13 +219,11 @@ namespace DxMessaging.Tests.Editor.Allocations
             Type windowType = typeof(AllocationProbe.Window);
             Assert.IsTrue(
                 windowType.IsValueType,
-                "AllocationProbe.Window must be a value type so opening a window allocates nothing "
-                    + "of its own (these are allocation measurements)."
+                "AllocationProbe.Window must be a value type so opening a window allocates nothing " + "of its own (these are allocation measurements)."
             );
             Assert.IsTrue(
                 typeof(IDisposable).IsAssignableFrom(windowType),
-                "AllocationProbe.Window must implement IDisposable so `using` always releases the "
-                    + "recorder. This is the contract that makes the recorder leak impossible."
+                "AllocationProbe.Window must implement IDisposable so `using` always releases the " + "recorder. This is the contract that makes the recorder leak impossible."
             );
         }
 
@@ -295,8 +239,7 @@ namespace DxMessaging.Tests.Editor.Allocations
             );
             Assert.IsNull(
                 probe.GetMethod("End", BindingFlags.Public | BindingFlags.Static),
-                "AllocationProbe must not expose a raw End() method paired with Begin(); use the "
-                    + "using-scoped BeginWindow()/Window so cleanup is automatic and exception-safe."
+                "AllocationProbe must not expose a raw End() method paired with Begin(); use the " + "using-scoped BeginWindow()/Window so cleanup is automatic and exception-safe."
             );
         }
 
@@ -322,9 +265,7 @@ namespace DxMessaging.Tests.Editor.Allocations
         {
             if (!AllocationProbe.BytesFunctional)
             {
-                Assert.Ignore(
-                    "GC Allocated In Frame byte counter is non-functional on this backend."
-                );
+                Assert.Ignore("GC Allocated In Frame byte counter is non-functional on this backend.");
             }
 
             /*
@@ -345,14 +286,9 @@ namespace DxMessaging.Tests.Editor.Allocations
             Assert.That(
                 sample.Bytes,
                 Is.GreaterThan(1_000_000L),
-                $"100 x byte[10000] must measure > 1,000,000 bytes (was {sample.Bytes}); the live "
-                    + "GC.Alloc byte counter is exact and collection-immune."
+                $"100 x byte[10000] must measure > 1,000,000 bytes (was {sample.Bytes}); the live " + "GC.Alloc byte counter is exact and collection-immune."
             );
-            Assert.That(
-                sample.Allocations,
-                Is.GreaterThanOrEqualTo(100L),
-                $"The same region must count at least 100 allocation calls (was {sample.Allocations})."
-            );
+            Assert.That(sample.Allocations, Is.GreaterThanOrEqualTo(100L), $"The same region must count at least 100 allocation calls (was {sample.Allocations}).");
         }
 
         [Test]
@@ -360,9 +296,7 @@ namespace DxMessaging.Tests.Editor.Allocations
         {
             if (!AllocationProbe.BytesFunctional)
             {
-                Assert.Ignore(
-                    "GC Allocated In Frame byte counter is non-functional on this backend."
-                );
+                Assert.Ignore("GC Allocated In Frame byte counter is non-functional on this backend.");
             }
 
             /*
@@ -390,11 +324,7 @@ namespace DxMessaging.Tests.Editor.Allocations
                     minBytes = sample.Bytes;
                 }
             }
-            Assert.That(
-                accumulator,
-                Is.GreaterThan(0),
-                "Anchors the loop so the optimizer cannot elide the non-allocating body."
-            );
+            Assert.That(accumulator, Is.GreaterThan(0), "Anchors the loop so the optimizer cannot elide the non-allocating body.");
             Assert.That(
                 minBytes,
                 Is.InRange(0L, 2048L),
@@ -407,33 +337,17 @@ namespace DxMessaging.Tests.Editor.Allocations
         [Test]
         public void MeasureMinThrowsOnNonPositiveAttempts()
         {
-            Assert.Throws<ArgumentOutOfRangeException>(() =>
-                AllocationProbe.MeasureMin(0, prepare: null, operation: () => { })
-            );
-            Assert.Throws<ArgumentOutOfRangeException>(() =>
-                AllocationProbe.MeasureMin(-1, prepare: null, operation: () => { })
-            );
-            Assert.Throws<ArgumentOutOfRangeException>(() =>
-                AllocationProbe.MeasureMinWithDiagnostics(0, prepare: null, operation: () => 0)
-            );
-            Assert.Throws<ArgumentOutOfRangeException>(() =>
-                AllocationProbe.MeasureMinWithDiagnostics(-1, prepare: null, operation: () => 0)
-            );
+            Assert.Throws<ArgumentOutOfRangeException>(() => AllocationProbe.MeasureMin(0, prepare: null, operation: () => { }));
+            Assert.Throws<ArgumentOutOfRangeException>(() => AllocationProbe.MeasureMin(-1, prepare: null, operation: () => { }));
+            Assert.Throws<ArgumentOutOfRangeException>(() => AllocationProbe.MeasureMinWithDiagnostics(0, prepare: null, operation: () => 0));
+            Assert.Throws<ArgumentOutOfRangeException>(() => AllocationProbe.MeasureMinWithDiagnostics(-1, prepare: null, operation: () => 0));
         }
 
         [Test]
         public void MeasureMinThrowsOnNullOperation()
         {
-            Assert.Throws<ArgumentNullException>(() =>
-                AllocationProbe.MeasureMin(4, prepare: null, operation: null)
-            );
-            Assert.Throws<ArgumentNullException>(() =>
-                AllocationProbe.MeasureMinWithDiagnostics(
-                    4,
-                    prepare: null,
-                    operation: (Func<int>)null
-                )
-            );
+            Assert.Throws<ArgumentNullException>(() => AllocationProbe.MeasureMin(4, prepare: null, operation: null));
+            Assert.Throws<ArgumentNullException>(() => AllocationProbe.MeasureMinWithDiagnostics(4, prepare: null, operation: (Func<int>)null));
         }
 
         [Test]
@@ -447,11 +361,7 @@ namespace DxMessaging.Tests.Editor.Allocations
             const int attempts = 5;
             int prepareCount = 0;
             int operationCount = 0;
-            _ = AllocationProbe.MeasureMin(
-                attempts,
-                prepare: () => ++prepareCount,
-                operation: () => ++operationCount
-            );
+            _ = AllocationProbe.MeasureMin(attempts, prepare: () => ++prepareCount, operation: () => ++operationCount);
             Assert.AreEqual(attempts, prepareCount, "prepare must run once per attempt.");
             Assert.AreEqual(attempts, operationCount, "operation must run once per attempt.");
         }
@@ -483,11 +393,7 @@ namespace DxMessaging.Tests.Editor.Allocations
                     sink = new byte[16];
                 }
             });
-            Assert.That(
-                min,
-                Is.GreaterThanOrEqualTo(100),
-                $"The smallest attempt allocated 100 arrays, so the floor is >= 100 (was {min})."
-            );
+            Assert.That(min, Is.GreaterThanOrEqualTo(100), $"The smallest attempt allocated 100 arrays, so the floor is >= 100 (was {min}).");
             Assert.That(
                 min,
                 Is.LessThanOrEqualTo(400),
@@ -515,38 +421,27 @@ namespace DxMessaging.Tests.Editor.Allocations
             const int allocationsInFirstAttempt = 10_000;
             int attempt = 0;
             object sink = null;
-            AllocationProbe.MinimumMeasurement<int> measurement =
-                AllocationProbe.MeasureMinWithDiagnostics(2, prepare: null, operation: () =>
+            AllocationProbe.MinimumMeasurement<int> measurement = AllocationProbe.MeasureMinWithDiagnostics(2, prepare: null, operation: () =>
+            {
+                int currentAttempt = attempt;
+                ++attempt;
+                if (currentAttempt == 0)
                 {
-                    int currentAttempt = attempt;
-                    ++attempt;
-                    if (currentAttempt == 0)
+                    for (int i = 0; i < allocationsInFirstAttempt; ++i)
                     {
-                        for (int i = 0; i < allocationsInFirstAttempt; ++i)
-                        {
-                            sink = new byte[16];
-                        }
+                        sink = new byte[16];
                     }
+                }
 
-                    return currentAttempt;
-                });
+                return currentAttempt;
+            });
 
-            Assert.That(
-                measurement.GcAllocations,
-                Is.LessThan(allocationsInFirstAttempt),
-                "The allocation count must come from the low-allocation second attempt."
-            );
-            Assert.AreEqual(
-                1,
-                measurement.AttemptIndex,
-                "AttemptIndex must identify the zero-based attempt that produced the minimum."
-            );
+            Assert.That(measurement.GcAllocations, Is.LessThan(allocationsInFirstAttempt), "The allocation count must come from the low-allocation second attempt.");
+            Assert.AreEqual(1, measurement.AttemptIndex, "AttemptIndex must identify the zero-based attempt that produced the minimum.");
             Assert.AreEqual(
                 1,
                 measurement.Diagnostics,
-                "Diagnostics must come from the same attempt that produced the minimum. "
-                    + "Anchoring sink: "
-                    + (sink == null ? "null" : "set")
+                "Diagnostics must come from the same attempt that produced the minimum. " + "Anchoring sink: " + (sink == null ? "null" : "set")
             );
         }
 
@@ -554,44 +449,20 @@ namespace DxMessaging.Tests.Editor.Allocations
         public void MeasureMinTieBreakerPrefersMeasuredBytesForEqualMinimumCount()
         {
             Assert.IsTrue(
-                AllocationProbe.ShouldReplaceMinimumAttempt(
-                    candidateAllocations: 5,
-                    candidateBytes: 2048,
-                    currentAllocations: 5,
-                    currentBytes: AllocationProbe.Unmeasured
-                ),
-                "A later attempt with the SAME minimum count and measured bytes must replace "
-                    + "an earlier tied attempt whose bytes were Unmeasured."
+                AllocationProbe.ShouldReplaceMinimumAttempt(candidateAllocations: 5, candidateBytes: 2048, currentAllocations: 5, currentBytes: AllocationProbe.Unmeasured),
+                "A later attempt with the SAME minimum count and measured bytes must replace " + "an earlier tied attempt whose bytes were Unmeasured."
             );
             Assert.IsFalse(
-                AllocationProbe.ShouldReplaceMinimumAttempt(
-                    candidateAllocations: 6,
-                    candidateBytes: 2048,
-                    currentAllocations: 5,
-                    currentBytes: AllocationProbe.Unmeasured
-                ),
-                "Measured bytes from a higher-count attempt must not replace the minimum-count "
-                    + "attempt; the byte companion must stay tied to a minimum allocation count."
+                AllocationProbe.ShouldReplaceMinimumAttempt(candidateAllocations: 6, candidateBytes: 2048, currentAllocations: 5, currentBytes: AllocationProbe.Unmeasured),
+                "Measured bytes from a higher-count attempt must not replace the minimum-count " + "attempt; the byte companion must stay tied to a minimum allocation count."
             );
             Assert.IsFalse(
-                AllocationProbe.ShouldReplaceMinimumAttempt(
-                    candidateAllocations: 5,
-                    candidateBytes: 4096,
-                    currentAllocations: 5,
-                    currentBytes: 2048
-                ),
-                "Once the selected minimum-count attempt already has measured bytes, a later "
-                    + "equal-count attempt is not a separate byte-minimum search."
+                AllocationProbe.ShouldReplaceMinimumAttempt(candidateAllocations: 5, candidateBytes: 4096, currentAllocations: 5, currentBytes: 2048),
+                "Once the selected minimum-count attempt already has measured bytes, a later " + "equal-count attempt is not a separate byte-minimum search."
             );
             Assert.IsTrue(
-                AllocationProbe.ShouldReplaceMinimumAttempt(
-                    candidateAllocations: 4,
-                    candidateBytes: AllocationProbe.Unmeasured,
-                    currentAllocations: 5,
-                    currentBytes: 2048
-                ),
-                "A lower measured allocation count remains the primary selection key even when "
-                    + "its byte companion is Unmeasured."
+                AllocationProbe.ShouldReplaceMinimumAttempt(candidateAllocations: 4, candidateBytes: AllocationProbe.Unmeasured, currentAllocations: 5, currentBytes: 2048),
+                "A lower measured allocation count remains the primary selection key even when " + "its byte companion is Unmeasured."
             );
             Assert.IsFalse(
                 AllocationProbe.ShouldReplaceMinimumAttempt(
@@ -600,8 +471,7 @@ namespace DxMessaging.Tests.Editor.Allocations
                     currentAllocations: long.MaxValue,
                     currentBytes: AllocationProbe.Unmeasured
                 ),
-                "MeasureMin is count-keyed; an Unmeasured count cannot win solely because bytes "
-                    + "were measured."
+                "MeasureMin is count-keyed; an Unmeasured count cannot win solely because bytes " + "were measured."
             );
         }
 
@@ -615,112 +485,50 @@ namespace DxMessaging.Tests.Editor.Allocations
 
             object sink = null;
             _ = AllocationProbe.MeasureMin(3, prepare: null, operation: () => sink = new byte[16]);
-            Assert.IsFalse(
-                RecorderEnabled,
-                "MeasureMin must leave the GC.Alloc recorder disabled. Anchoring sink: "
-                    + (sink == null ? "null" : "set")
-            );
+            Assert.IsFalse(RecorderEnabled, "MeasureMin must leave the GC.Alloc recorder disabled. Anchoring sink: " + (sink == null ? "null" : "set"));
         }
 
         [Test]
         public void SettleHeapForMeasurementUsesCompleteCollectWaitCollectSequence()
         {
-            string method = ExtractMethodBody(
-                ReadAllocationProbeSource(),
-                "public static void SettleHeapForMeasurement()"
-            );
+            string method = ExtractMethodBody(ReadAllocationProbeSource(), "public static void SettleHeapForMeasurement()");
             string collectCall = "GC.Collect();";
             string waitCall = "GC.WaitForPending" + "Finalizers();";
             int firstCollect = method.IndexOf(collectCall, StringComparison.Ordinal);
             int wait = method.IndexOf(waitCall, StringComparison.Ordinal);
-            int secondCollect = method.IndexOf(
-                collectCall,
-                firstCollect + collectCall.Length,
-                StringComparison.Ordinal
-            );
+            int secondCollect = method.IndexOf(collectCall, firstCollect + collectCall.Length, StringComparison.Ordinal);
 
-            Assert.That(
-                CountOccurrences(method, collectCall),
-                Is.EqualTo(2),
-                "SettleHeapForMeasurement must perform exactly two GC.Collect calls."
-            );
-            Assert.That(
-                CountOccurrences(method, waitCall),
-                Is.EqualTo(1),
-                "SettleHeapForMeasurement must wait for pending finalizers exactly once."
-            );
-            Assert.That(
-                firstCollect,
-                Is.GreaterThanOrEqualTo(0),
-                "SettleHeapForMeasurement must start with GC.Collect()."
-            );
-            Assert.That(
-                wait,
-                Is.GreaterThan(firstCollect),
-                "SettleHeapForMeasurement must wait for finalizers after the first collection."
-            );
-            Assert.That(
-                secondCollect,
-                Is.GreaterThan(wait),
-                "SettleHeapForMeasurement must run a second GC.Collect after waiting for finalizers."
-            );
+            Assert.That(CountOccurrences(method, collectCall), Is.EqualTo(2), "SettleHeapForMeasurement must perform exactly two GC.Collect calls.");
+            Assert.That(CountOccurrences(method, waitCall), Is.EqualTo(1), "SettleHeapForMeasurement must wait for pending finalizers exactly once.");
+            Assert.That(firstCollect, Is.GreaterThanOrEqualTo(0), "SettleHeapForMeasurement must start with GC.Collect().");
+            Assert.That(wait, Is.GreaterThan(firstCollect), "SettleHeapForMeasurement must wait for finalizers after the first collection.");
+            Assert.That(secondCollect, Is.GreaterThan(wait), "SettleHeapForMeasurement must run a second GC.Collect after waiting for finalizers.");
         }
 
         [Test]
         public void MeasureMinUsesCentralizedSettlementBeforeAttemptsAndBeforeReturn()
         {
-            string method = ExtractMethodBody(
-                ReadAllocationProbeSource(),
-                "private static MinimumMeasurement<TDiagnostics> MeasureMinCore<TDiagnostics>("
-            );
+            string method = ExtractMethodBody(ReadAllocationProbeSource(), "private static MinimumMeasurement<TDiagnostics> MeasureMinCore<TDiagnostics>(");
             string settleCall = "SettleHeapForMeasurement();";
             int firstSettle = method.IndexOf(settleCall, StringComparison.Ordinal);
-            int attemptLoop = method.IndexOf(
-                "for (int attempt = 0; attempt < attempts; ++attempt)",
-                StringComparison.Ordinal
-            );
-            int secondSettle = method.IndexOf(
-                settleCall,
-                firstSettle + settleCall.Length,
-                StringComparison.Ordinal
-            );
+            int attemptLoop = method.IndexOf("for (int attempt = 0; attempt < attempts; ++attempt)", StringComparison.Ordinal);
+            int secondSettle = method.IndexOf(settleCall, firstSettle + settleCall.Length, StringComparison.Ordinal);
             /*
                 LastIndexOf targets the FINAL return (after the settle/finally); the core also
                 has an EARLY return for the non-functional-probe case, which is the first
                 occurrence and precedes the settlement calls.
             */
-            int returnMeasurement = method.LastIndexOf(
-                "return new MinimumMeasurement<TDiagnostics>(",
-                StringComparison.Ordinal
-            );
+            int returnMeasurement = method.LastIndexOf("return new MinimumMeasurement<TDiagnostics>(", StringComparison.Ordinal);
 
             Assert.That(
                 CountOccurrences(method, settleCall),
                 Is.EqualTo(2),
-                "The shared MeasureMin core must call the centralized complete GC settlement "
-                    + "helper before attempts and before returning."
+                "The shared MeasureMin core must call the centralized complete GC settlement " + "helper before attempts and before returning."
             );
-            Assert.That(
-                firstSettle,
-                Is.GreaterThanOrEqualTo(0),
-                "The shared MeasureMin core must settle the heap before opening any "
-                    + "measurement window."
-            );
-            Assert.That(
-                attemptLoop,
-                Is.GreaterThan(firstSettle),
-                "The shared MeasureMin core must settle before the measurement attempt loop."
-            );
-            Assert.That(
-                secondSettle,
-                Is.GreaterThan(attemptLoop),
-                "The shared MeasureMin core must settle again after the repeated attempts."
-            );
-            Assert.That(
-                returnMeasurement,
-                Is.GreaterThan(secondSettle),
-                "The shared MeasureMin core must reclaim attempt garbage before returning."
-            );
+            Assert.That(firstSettle, Is.GreaterThanOrEqualTo(0), "The shared MeasureMin core must settle the heap before opening any " + "measurement window.");
+            Assert.That(attemptLoop, Is.GreaterThan(firstSettle), "The shared MeasureMin core must settle before the measurement attempt loop.");
+            Assert.That(secondSettle, Is.GreaterThan(attemptLoop), "The shared MeasureMin core must settle again after the repeated attempts.");
+            Assert.That(returnMeasurement, Is.GreaterThan(secondSettle), "The shared MeasureMin core must reclaim attempt garbage before returning.");
         }
 
         [Test]
@@ -730,13 +538,7 @@ namespace DxMessaging.Tests.Editor.Allocations
             List<string> offenders = new();
             foreach (string root in ResolveAllocationEditorTestRootsFallback())
             {
-                foreach (
-                    string file in System.IO.Directory.EnumerateFiles(
-                        root,
-                        "*.cs",
-                        System.IO.SearchOption.AllDirectories
-                    )
-                )
+                foreach (string file in System.IO.Directory.EnumerateFiles(root, "*.cs", System.IO.SearchOption.AllDirectories))
                 {
                     string text = System.IO.File.ReadAllText(file);
                     if (text.Contains(bannedCall))
@@ -778,13 +580,7 @@ namespace DxMessaging.Tests.Editor.Allocations
             List<string> roots = new();
             string[] candidates =
             {
-                System.IO.Path.Combine(
-                    UnityEngine.Application.dataPath,
-                    "..",
-                    "Packages",
-                    "com.wallstop-studios.dxmessaging",
-                    "Tests"
-                ),
+                System.IO.Path.Combine(UnityEngine.Application.dataPath, "..", "Packages", "com.wallstop-studios.dxmessaging", "Tests"),
                 System.IO.Path.Combine(UnityEngine.Application.dataPath, "..", "Tests"),
                 System.IO.Path.Combine(System.IO.Directory.GetCurrentDirectory(), "Tests"),
             };
@@ -805,12 +601,7 @@ namespace DxMessaging.Tests.Editor.Allocations
         {
             foreach (string root in ResolveTestsTreeRootsFallback())
             {
-                string candidate = System.IO.Path.Combine(
-                    root,
-                    "Runtime",
-                    "Benchmarks",
-                    "AllocationProbe.cs"
-                );
+                string candidate = System.IO.Path.Combine(root, "Runtime", "Benchmarks", "AllocationProbe.cs");
                 if (System.IO.File.Exists(candidate))
                 {
                     return System.IO.File.ReadAllText(candidate);
@@ -824,11 +615,7 @@ namespace DxMessaging.Tests.Editor.Allocations
         private static string ExtractMethodBody(string source, string signature)
         {
             int signatureIndex = source.IndexOf(signature, StringComparison.Ordinal);
-            Assert.That(
-                signatureIndex,
-                Is.GreaterThanOrEqualTo(0),
-                "Could not find method signature: " + signature
-            );
+            Assert.That(signatureIndex, Is.GreaterThanOrEqualTo(0), "Could not find method signature: " + signature);
 
             int openBrace = source.IndexOf('{', signatureIndex);
             Assert.That(openBrace, Is.GreaterThan(signatureIndex));
@@ -880,9 +667,7 @@ namespace DxMessaging.Tests.Editor.Allocations
                 cwd += System.IO.Path.DirectorySeparatorChar;
             }
 
-            string display = full.StartsWith(cwd, StringComparison.Ordinal)
-                ? full.Substring(cwd.Length)
-                : full;
+            string display = full.StartsWith(cwd, StringComparison.Ordinal) ? full.Substring(cwd.Length) : full;
             return display.Replace('\\', '/');
         }
     }

@@ -39,73 +39,35 @@ namespace DxMessaging.Tests.Runtime.Core
                 case Storage.Private:
                     PrivateState privateValue = new(42);
                     PrivateState privateSeed = new(true);
-                    actual = new[]
-                    {
-                        privateValue.Value,
-                        privateValue.State,
-                        privateSeed.Value,
-                        privateSeed.State,
-                    };
+                    actual = new[] { privateValue.Value, privateValue.State, privateSeed.Value, privateSeed.State };
                     break;
                 case Storage.Internal:
                     InternalState internalValue = new(42);
                     InternalState internalSeed = new(true);
-                    actual = new[]
-                    {
-                        internalValue.Value,
-                        internalValue.State,
-                        internalSeed.Value,
-                        internalSeed.State,
-                    };
+                    actual = new[] { internalValue.Value, internalValue.State, internalSeed.Value, internalSeed.State };
                     break;
                 case Storage.AutoProperty:
                     PropertyState propertyValue = new(42);
                     PropertyState propertySeed = new(true);
-                    actual = new[]
-                    {
-                        propertyValue.Value,
-                        propertyValue.State,
-                        propertySeed.Value,
-                        propertySeed.State,
-                    };
+                    actual = new[] { propertyValue.Value, propertyValue.State, propertySeed.Value, propertySeed.State };
                     break;
                 case Storage.ExplicitProperty:
                     ExplicitState explicitValue = new(42);
                     ExplicitState explicitSeed = new(true);
-                    actual = new[]
-                    {
-                        explicitValue.Value,
-                        ((IState)explicitValue).State,
-                        explicitSeed.Value,
-                        ((IState)explicitSeed).State,
-                    };
+                    actual = new[] { explicitValue.Value, ((IState)explicitValue).State, explicitSeed.Value, ((IState)explicitSeed).State };
                     seededState = 0;
                     break;
                 case Storage.Event:
                     EventState eventValue = new(42);
                     EventState eventSeed = new(true);
-                    actual = new[]
-                    {
-                        eventValue.Value,
-                        eventValue.State,
-                        eventSeed.Value,
-                        eventSeed.State,
-                    };
+                    actual = new[] { eventValue.Value, eventValue.State, eventSeed.Value, eventSeed.State };
                     seededState = 1;
                     break;
                 case Storage.GenericReference:
                     GenericState<string> genericValue = new(42);
                     GenericState<string> genericSeed = new(true, "seed");
-                    Assert.That(
-                        genericValue.State,
-                        Is.Null,
-                        "Generated generic reference state must start null."
-                    );
-                    Assert.That(
-                        genericSeed.State,
-                        Is.EqualTo("seed"),
-                        "Existing constructor must keep its reference."
-                    );
+                    Assert.That(genericValue.State, Is.Null, "Generated generic reference state must start null.");
+                    Assert.That(genericSeed.State, Is.EqualTo("seed"), "Existing constructor must keep its reference.");
                     actual = new[] { genericValue.Value, 0, genericSeed.Value, 73 };
                     break;
                 case Storage.RefLike:
@@ -118,11 +80,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     Assert.Fail($"Unknown storage shape: {storage}");
                     return;
             }
-            Assert.That(
-                actual,
-                Is.EqualTo(new[] { 42, 0, -1, seededState }),
-                $"{storage}: preserve generated payload and seeded constructor state; default excluded storage."
-            );
+            Assert.That(actual, Is.EqualTo(new[] { 42, 0, -1, seededState }), $"{storage}: preserve generated payload and seeded constructor state; default excluded storage.");
         }
 
         [DxAutoConstructor]

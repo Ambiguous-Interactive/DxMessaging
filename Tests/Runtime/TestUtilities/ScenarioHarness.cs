@@ -43,10 +43,7 @@ namespace DxMessaging.Tests.Runtime
 
             if (scenario.Kind != MessageKind.Untargeted)
             {
-                throw new ArgumentException(
-                    $"RegisterUntargeted requires Kind=Untargeted but got {scenario.Kind}.",
-                    nameof(scenario)
-                );
+                throw new ArgumentException($"RegisterUntargeted requires Kind=Untargeted but got {scenario.Kind}.", nameof(scenario));
             }
 
             return token.RegisterUntargeted<TMessage>(handler, priority: priority);
@@ -82,10 +79,7 @@ namespace DxMessaging.Tests.Runtime
 
             if (scenario.Kind != MessageKind.Targeted)
             {
-                throw new ArgumentException(
-                    $"RegisterTargeted requires Kind=Targeted but got {scenario.Kind}.",
-                    nameof(scenario)
-                );
+                throw new ArgumentException($"RegisterTargeted requires Kind=Targeted but got {scenario.Kind}.", nameof(scenario));
             }
 
             return token.RegisterTargeted<TMessage>(target, handler, priority: priority);
@@ -121,10 +115,7 @@ namespace DxMessaging.Tests.Runtime
 
             if (scenario.Kind != MessageKind.Broadcast)
             {
-                throw new ArgumentException(
-                    $"RegisterBroadcast requires Kind=Broadcast but got {scenario.Kind}.",
-                    nameof(scenario)
-                );
+                throw new ArgumentException($"RegisterBroadcast requires Kind=Broadcast but got {scenario.Kind}.", nameof(scenario));
             }
 
             return token.RegisterBroadcast<TMessage>(source, handler, priority: priority);
@@ -133,11 +124,7 @@ namespace DxMessaging.Tests.Runtime
         /// <summary>
         /// Emits an untargeted struct message via the canonical extension method.
         /// </summary>
-        public static void EmitUntargeted<TMessage>(
-            MessageScenario scenario,
-            ref TMessage message,
-            IMessageBus messageBus = null
-        )
+        public static void EmitUntargeted<TMessage>(MessageScenario scenario, ref TMessage message, IMessageBus messageBus = null)
             where TMessage : struct, IUntargetedMessage
         {
             if (scenario == null)
@@ -147,10 +134,7 @@ namespace DxMessaging.Tests.Runtime
 
             if (scenario.Kind != MessageKind.Untargeted)
             {
-                throw new ArgumentException(
-                    $"EmitUntargeted requires Kind=Untargeted but got {scenario.Kind}.",
-                    nameof(scenario)
-                );
+                throw new ArgumentException($"EmitUntargeted requires Kind=Untargeted but got {scenario.Kind}.", nameof(scenario));
             }
 
             message.EmitUntargeted(messageBus);
@@ -159,11 +143,7 @@ namespace DxMessaging.Tests.Runtime
         /// <summary>
         /// Emits an untargeted reference-type message via the canonical extension method.
         /// </summary>
-        public static void EmitUntargeted<TMessage>(
-            MessageScenario scenario,
-            TMessage message,
-            IMessageBus messageBus = null
-        )
+        public static void EmitUntargeted<TMessage>(MessageScenario scenario, TMessage message, IMessageBus messageBus = null)
             where TMessage : class, IUntargetedMessage
         {
             if (scenario == null)
@@ -173,10 +153,7 @@ namespace DxMessaging.Tests.Runtime
 
             if (scenario.Kind != MessageKind.Untargeted)
             {
-                throw new ArgumentException(
-                    $"EmitUntargeted requires Kind=Untargeted but got {scenario.Kind}.",
-                    nameof(scenario)
-                );
+                throw new ArgumentException($"EmitUntargeted requires Kind=Untargeted but got {scenario.Kind}.", nameof(scenario));
             }
 
             message.EmitUntargeted(messageBus);
@@ -185,12 +162,7 @@ namespace DxMessaging.Tests.Runtime
         /// <summary>
         /// Emits a targeted struct message via the canonical extension method.
         /// </summary>
-        public static void EmitTargeted<TMessage>(
-            MessageScenario scenario,
-            ref TMessage message,
-            InstanceId target,
-            IMessageBus messageBus = null
-        )
+        public static void EmitTargeted<TMessage>(MessageScenario scenario, ref TMessage message, InstanceId target, IMessageBus messageBus = null)
             where TMessage : struct, ITargetedMessage
         {
             if (scenario == null)
@@ -200,10 +172,7 @@ namespace DxMessaging.Tests.Runtime
 
             if (scenario.Kind != MessageKind.Targeted)
             {
-                throw new ArgumentException(
-                    $"EmitTargeted requires Kind=Targeted but got {scenario.Kind}.",
-                    nameof(scenario)
-                );
+                throw new ArgumentException($"EmitTargeted requires Kind=Targeted but got {scenario.Kind}.", nameof(scenario));
             }
 
             message.EmitTargeted(target, messageBus);
@@ -212,12 +181,7 @@ namespace DxMessaging.Tests.Runtime
         /// <summary>
         /// Emits a targeted reference-type message via the canonical extension method.
         /// </summary>
-        public static void EmitTargeted<TMessage>(
-            MessageScenario scenario,
-            TMessage message,
-            InstanceId target,
-            IMessageBus messageBus = null
-        )
+        public static void EmitTargeted<TMessage>(MessageScenario scenario, TMessage message, InstanceId target, IMessageBus messageBus = null)
             where TMessage : class, ITargetedMessage
         {
             if (scenario == null)
@@ -227,10 +191,7 @@ namespace DxMessaging.Tests.Runtime
 
             if (scenario.Kind != MessageKind.Targeted)
             {
-                throw new ArgumentException(
-                    $"EmitTargeted requires Kind=Targeted but got {scenario.Kind}.",
-                    nameof(scenario)
-                );
+                throw new ArgumentException($"EmitTargeted requires Kind=Targeted but got {scenario.Kind}.", nameof(scenario));
             }
 
             message.EmitTargeted(target, messageBus);
@@ -239,12 +200,7 @@ namespace DxMessaging.Tests.Runtime
         /// <summary>
         /// Emits a broadcast struct message via the canonical extension method.
         /// </summary>
-        public static void EmitBroadcast<TMessage>(
-            MessageScenario scenario,
-            ref TMessage message,
-            InstanceId source,
-            IMessageBus messageBus = null
-        )
+        public static void EmitBroadcast<TMessage>(MessageScenario scenario, ref TMessage message, InstanceId source, IMessageBus messageBus = null)
             where TMessage : struct, IBroadcastMessage
         {
             if (scenario == null)
@@ -254,10 +210,7 @@ namespace DxMessaging.Tests.Runtime
 
             if (scenario.Kind != MessageKind.Broadcast)
             {
-                throw new ArgumentException(
-                    $"EmitBroadcast requires Kind=Broadcast but got {scenario.Kind}.",
-                    nameof(scenario)
-                );
+                throw new ArgumentException($"EmitBroadcast requires Kind=Broadcast but got {scenario.Kind}.", nameof(scenario));
             }
 
             message.EmitBroadcast(source, messageBus);
@@ -266,12 +219,7 @@ namespace DxMessaging.Tests.Runtime
         /// <summary>
         /// Emits a broadcast reference-type message via the canonical extension method.
         /// </summary>
-        public static void EmitBroadcast<TMessage>(
-            MessageScenario scenario,
-            TMessage message,
-            InstanceId source,
-            IMessageBus messageBus = null
-        )
+        public static void EmitBroadcast<TMessage>(MessageScenario scenario, TMessage message, InstanceId source, IMessageBus messageBus = null)
             where TMessage : class, IBroadcastMessage
         {
             if (scenario == null)
@@ -281,10 +229,7 @@ namespace DxMessaging.Tests.Runtime
 
             if (scenario.Kind != MessageKind.Broadcast)
             {
-                throw new ArgumentException(
-                    $"EmitBroadcast requires Kind=Broadcast but got {scenario.Kind}.",
-                    nameof(scenario)
-                );
+                throw new ArgumentException($"EmitBroadcast requires Kind=Broadcast but got {scenario.Kind}.", nameof(scenario));
             }
 
             message.EmitBroadcast(source, messageBus);
@@ -319,10 +264,7 @@ namespace DxMessaging.Tests.Runtime
 
             if (scenario.Kind != MessageKind.Untargeted)
             {
-                throw new ArgumentException(
-                    $"RegisterUntargetedInterceptor requires Kind=Untargeted but got {scenario.Kind}.",
-                    nameof(scenario)
-                );
+                throw new ArgumentException($"RegisterUntargetedInterceptor requires Kind=Untargeted but got {scenario.Kind}.", nameof(scenario));
             }
 
             return token.RegisterUntargetedInterceptor<TMessage>(interceptor, priority: priority);
@@ -357,10 +299,7 @@ namespace DxMessaging.Tests.Runtime
 
             if (scenario.Kind != MessageKind.Targeted)
             {
-                throw new ArgumentException(
-                    $"RegisterTargetedInterceptor requires Kind=Targeted but got {scenario.Kind}.",
-                    nameof(scenario)
-                );
+                throw new ArgumentException($"RegisterTargetedInterceptor requires Kind=Targeted but got {scenario.Kind}.", nameof(scenario));
             }
 
             return token.RegisterTargetedInterceptor<TMessage>(interceptor, priority: priority);
@@ -395,10 +334,7 @@ namespace DxMessaging.Tests.Runtime
 
             if (scenario.Kind != MessageKind.Broadcast)
             {
-                throw new ArgumentException(
-                    $"RegisterBroadcastInterceptor requires Kind=Broadcast but got {scenario.Kind}.",
-                    nameof(scenario)
-                );
+                throw new ArgumentException($"RegisterBroadcastInterceptor requires Kind=Broadcast but got {scenario.Kind}.", nameof(scenario));
             }
 
             return token.RegisterBroadcastInterceptor<TMessage>(interceptor, priority: priority);
@@ -433,16 +369,10 @@ namespace DxMessaging.Tests.Runtime
 
             if (scenario.Kind != MessageKind.Untargeted)
             {
-                throw new ArgumentException(
-                    $"RegisterUntargetedPostProcessor requires Kind=Untargeted but got {scenario.Kind}.",
-                    nameof(scenario)
-                );
+                throw new ArgumentException($"RegisterUntargetedPostProcessor requires Kind=Untargeted but got {scenario.Kind}.", nameof(scenario));
             }
 
-            return token.RegisterUntargetedPostProcessor<TMessage>(
-                postProcessor,
-                priority: priority
-            );
+            return token.RegisterUntargetedPostProcessor<TMessage>(postProcessor, priority: priority);
         }
 
         /// <summary>
@@ -475,17 +405,10 @@ namespace DxMessaging.Tests.Runtime
 
             if (scenario.Kind != MessageKind.Targeted)
             {
-                throw new ArgumentException(
-                    $"RegisterTargetedPostProcessor requires Kind=Targeted but got {scenario.Kind}.",
-                    nameof(scenario)
-                );
+                throw new ArgumentException($"RegisterTargetedPostProcessor requires Kind=Targeted but got {scenario.Kind}.", nameof(scenario));
             }
 
-            return token.RegisterTargetedPostProcessor<TMessage>(
-                target,
-                postProcessor,
-                priority: priority
-            );
+            return token.RegisterTargetedPostProcessor<TMessage>(target, postProcessor, priority: priority);
         }
 
         /// <summary>
@@ -518,17 +441,10 @@ namespace DxMessaging.Tests.Runtime
 
             if (scenario.Kind != MessageKind.Broadcast)
             {
-                throw new ArgumentException(
-                    $"RegisterBroadcastPostProcessor requires Kind=Broadcast but got {scenario.Kind}.",
-                    nameof(scenario)
-                );
+                throw new ArgumentException($"RegisterBroadcastPostProcessor requires Kind=Broadcast but got {scenario.Kind}.", nameof(scenario));
             }
 
-            return token.RegisterBroadcastPostProcessor<TMessage>(
-                source,
-                postProcessor,
-                priority: priority
-            );
+            return token.RegisterBroadcastPostProcessor<TMessage>(source, postProcessor, priority: priority);
         }
     }
 }

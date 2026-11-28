@@ -1,29 +1,20 @@
 # Lifecycle Edge-Case Test Coverage
 
-> **One-line summary**: Every change to the bus dispatch path must be tested
-> against the canonical lifecycle edge-case set; new dispatch behavior MUST
-> cover scene unload mid-dispatch, DontDestroyOnLoad transitions, prefab
-> pooling churn, token disable / re-enable mid-dispatch, post-Reset emit,
-> OnApplicationQuit drain, and cross-kind reentrancy.
+> **One-line summary**: Every change to the bus dispatch path must be tested against the canonical lifecycle edge-case set; new dispatch behavior MUST cover scene unload
+> mid-dispatch, DontDestroyOnLoad transitions, prefab pooling churn, token disable / re-enable mid-dispatch, post-Reset emit, OnApplicationQuit drain, and cross-kind reentrancy.
 
 ## Overview
 
-The bus-freezing fix surfaced a class of bugs that the existing fixtures did
-not exercise: a handler that disables its token mid-dispatch, a handler that
-unloads its scene mid-dispatch, and emissions that arrive after
-`DxMessagingStaticState.Reset` cleared the global bus. Each one was a real
-production bug. The lifecycle edge-case fixtures pin the behavior so a
-future dispatch-path change cannot reintroduce the regressions silently.
+The bus-freezing fix surfaced a class of bugs that the existing fixtures did not exercise: a handler that disables its token mid-dispatch, a handler that unloads its scene
+mid-dispatch, and emissions that arrive after `DxMessagingStaticState.Reset` cleared the global bus. Each one was a real production bug. The lifecycle edge-case fixtures pin the
+behavior so a future dispatch-path change cannot reintroduce the regressions silently.
 
-This skill documents the scenarios that MUST be covered, where the canonical
-fixtures live, and the conventions for adding new entries.
+This skill documents the scenarios that MUST be covered, where the canonical fixtures live, and the conventions for adding new entries.
 
 ## Required Scenario Set
 
-Every change that touches the bus dispatch path (registration, emission,
-deregistration, interceptor / post-processor pipeline) is expected to keep
-this scenario list green. New dispatch behavior must add scenarios when the
-mechanism it introduces is not already covered.
+Every change that touches the bus dispatch path (registration, emission, deregistration, interceptor / post-processor pipeline) is expected to keep this scenario list green. New
+dispatch behavior must add scenarios when the mechanism it introduces is not already covered.
 
 | Scenario                                                      | Pinned by                                      | Notes                                                                |
 | ------------------------------------------------------------- | ---------------------------------------------- | -------------------------------------------------------------------- |
@@ -49,46 +40,29 @@ mechanism it introduces is not already covered.
 
 Three fixtures, all parameterized by `MessageScenario`:
 
-- `Tests/Runtime/Core/LifecycleEdgeCasesTests.cs` -- destruction, scene
-  loading, token disable / re-enable, post-Reset, OnApplicationQuit,
-  empty-bus emit. Scene-loading tests carry `[Category("UnityRuntime")]`.
-- `Tests/Runtime/Core/ReentrantEmissionExtendedTests.cs` -- cross-kind
-  reentrancy, deep recursion, self-resubscribe, nested-throw, interceptor
-  veto, interceptor mutation. Default category (no gating).
-- `Tests/Runtime/Core/MutationInterceptorTests.cs` -- interceptor mutation and
-  reset from the interceptor phase. Default category (no gating).
+- `Tests/Runtime/Core/LifecycleEdgeCasesTests.cs` -- destruction, scene loading, token disable / re-enable, post-Reset, OnApplicationQuit, empty-bus emit. Scene-loading tests carry
+  `[Category("UnityRuntime")]`.
+- `Tests/Runtime/Core/ReentrantEmissionExtendedTests.cs` -- cross-kind reentrancy, deep recursion, self-resubscribe, nested-throw, interceptor veto, interceptor mutation. Default
+  category (no gating).
+- `Tests/Runtime/Core/MutationInterceptorTests.cs` -- interceptor mutation and reset from the interceptor phase. Default category (no gating).
 
-The supporting `LeakWatcher` utility lives at
-`Tests/Runtime/TestUtilities/LeakWatcher.cs`. See
-`leak-watcher-usage.md` for its public-counter contract and usage rules.
+The supporting `LeakWatcher` utility lives at `Tests/Runtime/TestUtilities/LeakWatcher.cs`. See `leak-watcher-usage.md` for its public-counter contract and usage rules.
 
 ## Adding a New Edge Case
 
-When a new dispatch-path change introduces a lifecycle interaction that is
-not already covered, extend the appropriate fixture:
+When a new dispatch-path change introduces a lifecycle interaction that is not already covered, extend the appropriate fixture:
 
-1. Drive the test from
-   `[ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]`
-   so every entry covers all three kinds. The
-   `tests-must-be-parameterized-by-message-kind` skill is enforced by
-   `TestAttributeContractTests.TripletEmitTestsUseScenarioParameterization`;
-   per-kind triplets fail CI.
-1. Track every spawned `GameObject` via `_spawned.Add(host)`. The
-   `MessagingTestBase` cleanup loop relies on this list; the rule is pinned
-   by `TestAttributeContractTests.FixturesUsingMessagingTestBaseUseSpawnedCleanupPattern`.
-1. Group scene-load / scene-unload tests under `[Category("UnityRuntime")]`.
-   Fast lifecycle tests run in the normal PlayMode and Standalone correctness
-   legs; EditMode excludes them. Yield only for the actual asynchronous operation.
-   The runtime suite budget includes these tests and remains enforced; the category
-   does not exempt a run from its wall-clock limit.
-1. When the test creates and tears down registrations in a small region,
-   wrap the region in `using (LeakWatcher.Watch(...))`. The watcher reads
-   every public counter on `IMessageBus`; new counter kinds added to the
-   bus must extend the watcher (see `leak-watcher-usage.md`).
-1. Pick assertion shapes that name the kind under test. The fixtures use
-   `[{0}] ...` format strings keyed on `scenario.Kind` so a per-kind
-   regression is easy to triage. Example from
-   `LifecycleEdgeCasesTests.TokenDisableMidDispatch`:
+1. Drive the test from `[ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]` so every entry covers all three kinds. The
+   `tests-must-be-parameterized-by-message-kind` skill is enforced by `TestAttributeContractTests.TripletEmitTestsUseScenarioParameterization`; per-kind triplets fail CI.
+1. Track every spawned `GameObject` via `_spawned.Add(host)`. The `MessagingTestBase` cleanup loop relies on this list; the rule is pinned by
+   `TestAttributeContractTests.FixturesUsingMessagingTestBaseUseSpawnedCleanupPattern`.
+1. Group scene-load / scene-unload tests under `[Category("UnityRuntime")]`. Fast lifecycle tests run in the normal PlayMode and Standalone correctness legs; EditMode excludes
+   them. Yield only for the actual asynchronous operation. The runtime suite budget includes these tests and remains enforced; the category does not exempt a run from its
+   wall-clock limit.
+1. When the test creates and tears down registrations in a small region, wrap the region in `using (LeakWatcher.Watch(...))`. The watcher reads every public counter on
+   `IMessageBus`; new counter kinds added to the bus must extend the watcher (see `leak-watcher-usage.md`).
+1. Pick assertion shapes that name the kind under test. The fixtures use `[{0}] ...` format strings keyed on `scenario.Kind` so a per-kind regression is easy to triage. Example
+   from `LifecycleEdgeCasesTests.TokenDisableMidDispatch`:
 
    ```csharp
    Assert.AreEqual(
@@ -104,58 +78,34 @@ not already covered, extend the appropriate fixture:
 
 ## Common Gotchas
 
-These bit real pull requests during the bus-freezing fix work; document them
-as the failure modes to expect.
+These bit real pull requests during the bus-freezing fix work; document them as the failure modes to expect.
 
-- **Scene-load tests must build transient scenes dynamically.** Do not
-  assume Build Settings contains a stub scene; the package can be consumed
-  by a project with no scenes registered. Use
-  `SceneManager.CreateScene(name)` and unload with
-  `SceneManager.UnloadSceneAsync(scene)` (yield a frame after `CreateScene`
-  before moving objects into it).
-- **`LogAssert.Expect` must be placed BEFORE the triggering action.** Unity
-  matches expected logs against the log queue accumulated during the test,
-  not retroactively; an `Expect` after the throwing emit fails to match.
-- **Iteration counts: stay under 100 in the default suite.**
-  `PrefabPoolingEnableDisableCycles` runs 100 SetActive cycles -- that is
-  the default ceiling. Heavier counts (1000+) belong behind
-  `[Category("Stress")]` or `[Category("Allocation")]` so the wall-clock
-  budget in `SuiteWallClockBudgetTest.cs` does not breach.
-- **`LeakWatcher` is the canonical leak-detection mechanism.** Do not
-  re-implement counter snapshotting inline. If a leak is missed by the
-  watcher, the cause is a missing counter on `IMessageBus`; the fix is
-  extending the bus's public surface and the watcher in lock-step (see
+- **Scene-load tests must build transient scenes dynamically.** Do not assume Build Settings contains a stub scene; the package can be consumed by a project with no scenes
+  registered. Use `SceneManager.CreateScene(name)` and unload with `SceneManager.UnloadSceneAsync(scene)` (yield a frame after `CreateScene` before moving objects into it).
+- **`LogAssert.Expect` must be placed BEFORE the triggering action.** Unity matches expected logs against the log queue accumulated during the test, not retroactively; an `Expect`
+  after the throwing emit fails to match.
+- **Iteration counts: stay under 100 in the default suite.** `PrefabPoolingEnableDisableCycles` runs 100 SetActive cycles -- that is the default ceiling. Heavier counts (1000+)
+  belong behind `[Category("Stress")]` or `[Category("Allocation")]` so the wall-clock budget in `SuiteWallClockBudgetTest.cs` does not breach.
+- **`LeakWatcher` is the canonical leak-detection mechanism.** Do not re-implement counter snapshotting inline. If a leak is missed by the watcher, the cause is a missing counter
+  on `IMessageBus`; the fix is extending the bus's public surface and the watcher in lock-step (see
   `PublicSurfaceContractTests.PublicTypeSetInDxMessagingCoreNamespaceMatchesSnapshot`).
-- **`DxMessagingStaticState.Reset` is the only legitimate way to clear the
-  global bus mid-test.** The post-Reset guard in
-  `EmitImmediatelyAfterResetIsSilentNoOp` pins that handlers registered
-  before a Reset cannot fire on emissions issued after it. Direct
-  manipulation of bus internals from a test bypasses the guard and will
-  drift if the reset-generation counter is renamed.
+- **`DxMessagingStaticState.Reset` is the only legitimate way to clear the global bus mid-test.** The post-Reset guard in `EmitImmediatelyAfterResetIsSilentNoOp` pins that handlers
+  registered before a Reset cannot fire on emissions issued after it. Direct manipulation of bus internals from a test bypasses the guard and will drift if the reset-generation
+  counter is renamed.
 
 ## Why These Scenarios and Not Others
 
-The set above is not exhaustive; it is the floor. Each entry was added in
-response to a real production-side issue:
+The set above is not exhaustive; it is the floor. Each entry was added in response to a real production-side issue:
 
-- Scene unload mid-dispatch: a user reported a crash when a UI handler
-  destroyed its parent scene from inside a click callback.
-- Prefab pooling churn: a pooled enemy that flickered SetActive false / true
-  every frame leaked one registration per cycle on a previous version of
-  the bus.
-- Token disable / re-enable mid-dispatch: snapshot semantics were unclear
-  in user reports; the tests pin the documented contract.
-- Post-Reset emit: an in-editor scene-reload sequence was issuing emissions
-  against a freshly-reset bus and silently corrupting registration state.
-- OnApplicationQuit drain: the previous version threw on shutdown when a
-  handler tried to deregister during its own quit callback.
-- Cross-kind reentrancy: an interceptor on the targeted bus emitting
-  untargeted from inside its callback deadlocked one revision of the
-  dispatcher.
+- Scene unload mid-dispatch: a user reported a crash when a UI handler destroyed its parent scene from inside a click callback.
+- Prefab pooling churn: a pooled enemy that flickered SetActive false / true every frame leaked one registration per cycle on a previous version of the bus.
+- Token disable / re-enable mid-dispatch: snapshot semantics were unclear in user reports; the tests pin the documented contract.
+- Post-Reset emit: an in-editor scene-reload sequence was issuing emissions against a freshly-reset bus and silently corrupting registration state.
+- OnApplicationQuit drain: the previous version threw on shutdown when a handler tried to deregister during its own quit callback.
+- Cross-kind reentrancy: an interceptor on the targeted bus emitting untargeted from inside its callback deadlocked one revision of the dispatcher.
 
-When a future regression uncovers a lifecycle interaction not on the list,
-add it to the fixture, add the row to the table above, and reference the
-diagnosing PR in the test's XML doc.
+When a future regression uncovers a lifecycle interaction not on the list, add it to the fixture, add the row to the table above, and reference the diagnosing PR in the test's XML
+doc.
 
 ## See Also
 

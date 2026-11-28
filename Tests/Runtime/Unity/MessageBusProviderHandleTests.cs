@@ -37,9 +37,7 @@ namespace DxMessaging.Tests.Runtime.Unity
         public void TryGetProviderReturnsRuntimeProvider()
         {
             TestMessageBusProvider runtimeProvider = new(new MessageBus());
-            MessageBusProviderHandle handle = MessageBusProviderHandle.FromProvider(
-                runtimeProvider
-            );
+            MessageBusProviderHandle handle = MessageBusProviderHandle.FromProvider(runtimeProvider);
 
             bool resolved = handle.TryGetProvider(out IMessageBusProvider provider);
 
@@ -50,8 +48,7 @@ namespace DxMessaging.Tests.Runtime.Unity
         [Test]
         public void TryGetProviderReturnsAssetProvider()
         {
-            TestScriptableMessageBusProvider providerAsset =
-                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
+            TestScriptableMessageBusProvider providerAsset = ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
             providerAsset.Configure(new MessageBus());
             MessageBusProviderHandle handle = new(providerAsset);
             TrackForCleanup(providerAsset);
@@ -65,18 +62,14 @@ namespace DxMessaging.Tests.Runtime.Unity
         [Test]
         public void DestroyedProviderAssetBecomesUnavailable()
         {
-            TestScriptableMessageBusProvider providerAsset =
-                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
+            TestScriptableMessageBusProvider providerAsset = ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
             providerAsset.Configure(new MessageBus());
             MessageBusProviderHandle handle = new(providerAsset);
             TrackForCleanup(providerAsset);
 
             Object.DestroyImmediate(providerAsset);
 
-            Assert.IsFalse(
-                handle.TryGetProvider(out IMessageBusProvider provider),
-                "A destroyed provider asset must not survive through its interface reference."
-            );
+            Assert.IsFalse(handle.TryGetProvider(out IMessageBusProvider provider), "A destroyed provider asset must not survive through its interface reference.");
             Assert.IsNull(provider);
             Assert.IsNull(handle.ResolveBus());
         }
@@ -94,8 +87,7 @@ namespace DxMessaging.Tests.Runtime.Unity
         [Test]
         public void HandleSurvivesSerializationCycle()
         {
-            TestScriptableMessageBusProvider providerAsset =
-                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
+            TestScriptableMessageBusProvider providerAsset = ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
             providerAsset.Configure(new MessageBus());
             MessageBusProviderHandle handle = new(providerAsset);
             TrackForCleanup(providerAsset);
@@ -114,8 +106,7 @@ namespace DxMessaging.Tests.Runtime.Unity
         public void WithRuntimeProviderOverridesSerializedProvider()
         {
             MessageBus serializedBus = new();
-            TestScriptableMessageBusProvider providerAsset =
-                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
+            TestScriptableMessageBusProvider providerAsset = ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
             providerAsset.Configure(serializedBus);
             MessageBusProviderHandle handle = new(providerAsset);
             TrackForCleanup(providerAsset);
@@ -138,26 +129,18 @@ namespace DxMessaging.Tests.Runtime.Unity
         public void DestroyedRuntimeOverrideFallsBackToSerializedProvider()
         {
             MessageBus serializedBus = new();
-            TestScriptableMessageBusProvider serializedProvider =
-                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
+            TestScriptableMessageBusProvider serializedProvider = ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
             serializedProvider.Configure(serializedBus);
             TrackForCleanup(serializedProvider);
-            TestScriptableMessageBusProvider runtimeProvider =
-                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
+            TestScriptableMessageBusProvider runtimeProvider = ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
             runtimeProvider.Configure(new MessageBus());
             TrackForCleanup(runtimeProvider);
-            MessageBusProviderHandle handle = new MessageBusProviderHandle(
-                serializedProvider
-            ).WithRuntimeProvider(runtimeProvider);
+            MessageBusProviderHandle handle = new MessageBusProviderHandle(serializedProvider).WithRuntimeProvider(runtimeProvider);
 
             Object.DestroyImmediate(runtimeProvider);
 
             Assert.IsTrue(handle.TryGetProvider(out IMessageBusProvider provider));
-            Assert.AreSame(
-                serializedProvider,
-                provider,
-                "A destroyed runtime override must reveal the still-live serialized provider."
-            );
+            Assert.AreSame(serializedProvider, provider, "A destroyed runtime override must reveal the still-live serialized provider.");
             Assert.AreSame(serializedBus, handle.ResolveBus());
         }
 
@@ -165,8 +148,7 @@ namespace DxMessaging.Tests.Runtime.Unity
         public void RuntimeProviderIsNotSerialized()
         {
             MessageBus serializedBus = new();
-            TestScriptableMessageBusProvider providerAsset =
-                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
+            TestScriptableMessageBusProvider providerAsset = ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
             providerAsset.Configure(serializedBus);
             MessageBusProviderHandle handle = new(providerAsset);
             TrackForCleanup(providerAsset);
@@ -180,11 +162,7 @@ namespace DxMessaging.Tests.Runtime.Unity
             HandleWrapper deserialized = JsonUtility.FromJson<HandleWrapper>(json);
 
             Assert.IsTrue(deserialized.Handle.TryGetProvider(out IMessageBusProvider provider));
-            Assert.AreSame(
-                providerAsset,
-                provider,
-                "Serialized handle should resolve the asset provider."
-            );
+            Assert.AreSame(providerAsset, provider, "Serialized handle should resolve the asset provider.");
             Assert.AreSame(serializedBus, deserialized.Handle.ResolveBus());
         }
 

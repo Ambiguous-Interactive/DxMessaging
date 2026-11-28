@@ -65,9 +65,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             {
                 return null;
             }
-            return scenario == ComparisonScenario.StructMessageNoBoxing
-                ? typeof(ComparisonStructPayload)
-                : typeof(int);
+            return scenario == ComparisonScenario.StructMessageNoBoxing ? typeof(ComparisonStructPayload) : typeof(int);
         }
 
         public void Prepare(ComparisonScenario scenario)

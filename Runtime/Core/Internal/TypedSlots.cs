@@ -273,19 +273,12 @@ namespace DxMessaging.Core.Internal
         /// <summary>
         /// Removes an empty, still-current priority cache when no dispatch can consume it.
         /// </summary>
-        internal void PruneEmptyContextPriority(
-            InstanceId context,
-            int priority,
-            IHandlerActionCache cache
-        )
+        internal void PruneEmptyContextPriority(InstanceId context, int priority, IHandlerActionCache cache)
         {
             if (
                 !cache.IsEmpty
                 || byContext == null
-                || !byContext.TryGetValue(
-                    context,
-                    out Dictionary<int, IHandlerActionCache> priorities
-                )
+                || !byContext.TryGetValue(context, out Dictionary<int, IHandlerActionCache> priorities)
                 || !priorities.TryGetValue(priority, out IHandlerActionCache current)
                 || !ReferenceEquals(cache, current)
             )
@@ -315,13 +308,7 @@ namespace DxMessaging.Core.Internal
             {
                 foreach (InstanceId context in pendingContextCleanup)
                 {
-                    if (
-                        byContext == null
-                        || !byContext.TryGetValue(
-                            context,
-                            out Dictionary<int, IHandlerActionCache> priorities
-                        )
-                    )
+                    if (byContext == null || !byContext.TryGetValue(context, out Dictionary<int, IHandlerActionCache> priorities))
                     {
                         continue;
                     }
@@ -399,9 +386,7 @@ namespace DxMessaging.Core.Internal
             }
             if (byContext != null)
             {
-                foreach (
-                    KeyValuePair<InstanceId, Dictionary<int, IHandlerActionCache>> ctx in byContext
-                )
+                foreach (KeyValuePair<InstanceId, Dictionary<int, IHandlerActionCache>> ctx in byContext)
                 {
                     if (ctx.Value == null)
                     {
@@ -436,9 +421,7 @@ namespace DxMessaging.Core.Internal
                 return;
             }
 
-            foreach (
-                KeyValuePair<InstanceId, Dictionary<int, IHandlerActionCache>> ctx in byContext
-            )
+            foreach (KeyValuePair<InstanceId, Dictionary<int, IHandlerActionCache>> ctx in byContext)
             {
                 DxPools.TypedHandlerPriorityDicts.Return(ctx.Value);
             }

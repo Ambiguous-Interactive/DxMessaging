@@ -82,13 +82,17 @@ source:
 
 ### External Link Validation
 
-External URLs can break without warning. Follow these practices to point at the right page. Note what CI does and does not gate: external link _liveness_ is non-deterministic (authoritative sites return 403/429/503 to CI bots via WAF or bot detection even when the page loads in a browser), so the blocking PR check accepts those responses and fails only on genuinely-dead links (404/410 or DNS/connection failure). Deep external rot is caught by the scheduled advisory scan, which opens a tracking issue instead of failing CI. See [Lychee Link Checker Configuration Management](../../github-workflow-consistency/references/lychee-configuration.md) for the accept-list policy.
+External URLs can break without warning. Follow these practices to point at the right page. Note what CI does and does not gate: external link _liveness_ is non-deterministic
+(authoritative sites return 403/429/503 to CI bots via WAF or bot detection even when the page loads in a browser), so the blocking PR check accepts those responses and fails only
+on genuinely-dead links (404/410 or DNS/connection failure). Deep external rot is caught by the scheduled advisory scan, which opens a tracking issue instead of failing CI. See
+[Lychee Link Checker Configuration Management](../../github-workflow-consistency/references/lychee-configuration.md) for the accept-list policy.
 
 #### Before Adding External Links
 
 1. **Open the URL in a browser**: Confirm it resolves and check for redirects
 1. **Use the correct canonical URL**: Some sites redirect to a preferred format; link to that one directly
-1. **Use versioned documentation when it exists**: A `/2021.3/` path keeps a fragment stable; this is a content-accuracy choice, not a way to dodge a CI failure (swapping to a "more stable" domain does not help when the new domain also blocks bots)
+1. **Use versioned documentation when it exists**: A `/2021.3/` path keeps a fragment stable; this is a content-accuracy choice, not a way to dodge a CI failure (swapping to a
+   "more stable" domain does not help when the new domain also blocks bots)
 
 #### Unity Documentation URLs
 
@@ -148,11 +152,13 @@ When the blocking PR check reports an external-link error:
 
 1. **Confirm it is a dead-link failure**: The blocking check fails only on 404/410 or a DNS/connection error. A 403/429/503 is already accepted and never reds the PR.
 1. **Open the URL in a browser**: If a 404/410 reproduces, the page moved or was removed; update the link to its new location.
-1. **If the page loads fine but a NEW blocking status appears in CI**: the site adopted a status code not yet in `accept`. Widen `accept` (see below), do not add a per-domain exclude.
+1. **If the page loads fine but a NEW blocking status appears in CI**: the site adopted a status code not yet in `accept`. Widen `accept` (see below), do not add a per-domain
+   exclude.
 
 #### The Fix Is To Widen `accept`, Not To Exclude
 
-External link liveness is non-deterministic, so the policy is to accept every "server answered but refused/throttled the bot" status in `.lychee.toml` rather than silence individual domains. If a real site starts returning a blocking status that is not yet accepted, add that status to the shared `accept` list:
+External link liveness is non-deterministic, so the policy is to accept every "server answered but refused/throttled the bot" status in `.lychee.toml` rather than silence
+individual domains. If a real site starts returning a blocking status that is not yet accepted, add that status to the shared `accept` list:
 
 ```toml
 accept = [
@@ -169,7 +175,10 @@ accept = [
 ]
 ```
 
-Do NOT add a per-domain `exclude` (for example a regex for the npm registry page or the Game Programming Patterns site) to silence a bot-detection response, and do NOT swap the link to a "more stable" domain. Both are the fragile patterns this policy retired: the prior `webaim.org` to `w3.org` swap failed identically because both block bots. The `exclude` list in `.lychee.toml` is reserved for endpoints CI cannot reach at all (localhost, the not-yet-deployed GitHub Pages site, and self-repo blob/tree links validated offline). Keep `.lychee.toml` accepting 403/429 (bot blocks) and never accepting 404/410 (true dead links).
+Do NOT add a per-domain `exclude` (for example a regex for the npm registry page or the Game Programming Patterns site) to silence a bot-detection response, and do NOT swap the
+link to a "more stable" domain. Both are the fragile patterns this policy retired: the prior `webaim.org` to `w3.org` swap failed identically because both block bots. The `exclude`
+list in `.lychee.toml` is reserved for endpoints CI cannot reach at all (localhost, the not-yet-deployed GitHub Pages site, and self-repo blob/tree links validated offline). Keep
+`.lychee.toml` accepting 403/429 (bot blocks) and never accepting 404/410 (true dead links).
 
 #### `exclude` Pattern Guidelines (reserved cases only)
 
@@ -180,7 +189,8 @@ Do NOT add a per-domain `exclude` (for example a regex for the npm registry page
 
 ### GitHub Actions Version Consistency
 
-Workflow files should use consistent action versions across all workflows. For detailed guidance including version update processes and common actions to monitor, see [GitHub Actions Version Consistency](../../unity-editor-ci/references/github-actions-version-consistency.md).
+Workflow files should use consistent action versions across all workflows. For detailed guidance including version update processes and common actions to monitor, see
+[GitHub Actions Version Consistency](../../unity-editor-ci/references/github-actions-version-consistency.md).
 
 ## See Also
 

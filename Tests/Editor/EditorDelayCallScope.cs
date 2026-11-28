@@ -38,30 +38,20 @@ namespace DxMessaging.Tests.Editor
             }
         }
 
-        private static Delegate[] Current() =>
-            EditorApplication.delayCall?.GetInvocationList() ?? Array.Empty<Delegate>();
+        private static Delegate[] Current() => EditorApplication.delayCall?.GetInvocationList() ?? Array.Empty<Delegate>();
 
         private void Observe()
         {
             foreach (Delegate callback in Current())
             {
-                if (
-                    !_baseline.Contains(callback)
-                    && !_history.Contains((EditorApplication.CallbackFunction)callback)
-                    && BelongsTo(callback, _owner, new HashSet<object>(), 0)
-                )
+                if (!_baseline.Contains(callback) && !_history.Contains((EditorApplication.CallbackFunction)callback) && BelongsTo(callback, _owner, new HashSet<object>(), 0))
                 {
                     _history.Add((EditorApplication.CallbackFunction)callback);
                 }
             }
         }
 
-        private static bool BelongsTo(
-            Delegate callback,
-            Type owner,
-            HashSet<object> seen,
-            int depth
-        )
+        private static bool BelongsTo(Delegate callback, Type owner, HashSet<object> seen, int depth)
         {
             for (Type type = callback.Method.DeclaringType; type != null; type = type.DeclaringType)
             {
@@ -71,25 +61,13 @@ namespace DxMessaging.Tests.Editor
                 }
             }
             object target = callback.Target;
-            if (
-                target == null
-                || 8 < depth
-                || !seen.Add(target)
-                || !Attribute.IsDefined(target.GetType(), typeof(CompilerGeneratedAttribute))
-            )
+            if (target == null || 8 < depth || !seen.Add(target) || !Attribute.IsDefined(target.GetType(), typeof(CompilerGeneratedAttribute)))
             {
                 return false;
             }
-            foreach (
-                FieldInfo field in target
-                    .GetType()
-                    .GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-            )
+            foreach (FieldInfo field in target.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
             {
-                if (
-                    field.GetValue(target) is Delegate nested
-                    && BelongsTo(nested, owner, seen, depth + 1)
-                )
+                if (field.GetValue(target) is Delegate nested && BelongsTo(nested, owner, seen, depth + 1))
                 {
                     return true;
                 }
@@ -159,10 +137,7 @@ namespace DxMessaging.Tests.Editor
         {
             foreach (string name in fields)
             {
-                FieldInfo field = owner.GetField(
-                    name,
-                    BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic
-                );
+                FieldInfo field = owner.GetField(name, BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
                 if (field == null)
                 {
                     throw new MissingFieldException(owner.FullName, name);
@@ -171,8 +146,7 @@ namespace DxMessaging.Tests.Editor
             }
         }
 
-        internal void Set(string name, object value) =>
-            _saved.Keys.Single(field => field.Name == name).SetValue(null, value);
+        internal void Set(string name, object value) => _saved.Keys.Single(field => field.Name == name).SetValue(null, value);
 
         public void Dispose()
         {

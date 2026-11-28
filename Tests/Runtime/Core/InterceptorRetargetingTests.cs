@@ -34,28 +34,14 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void RewrittenContextRoutesHandlersToNewId(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.KindsWithComponentTarget)
-            )]
-                MessageScenario scenario
-        )
+        public void RewrittenContextRoutesHandlersToNewId([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.KindsWithComponentTarget))] MessageScenario scenario)
         {
-            GameObject originalHost = new(
-                nameof(RewrittenContextRoutesHandlersToNewId) + "_Original_" + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject originalHost = new(nameof(RewrittenContextRoutesHandlersToNewId) + "_Original_" + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(originalHost);
-            GameObject redirectedHost = new(
-                nameof(RewrittenContextRoutesHandlersToNewId) + "_Redirected_" + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject redirectedHost = new(nameof(RewrittenContextRoutesHandlersToNewId) + "_Redirected_" + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(redirectedHost);
 
-            MessageRegistrationToken token = GetToken(
-                originalHost.GetComponent<EmptyMessageAwareComponent>()
-            );
+            MessageRegistrationToken token = GetToken(originalHost.GetComponent<EmptyMessageAwareComponent>());
             InstanceId originalId = originalHost;
             InstanceId redirectedId = redirectedHost;
 
@@ -65,15 +51,9 @@ namespace DxMessaging.Tests.Runtime.Core
 
             using (LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName))
             {
-                handles.Add(
-                    RegisterRewritingInterceptor(scenario, token, originalId, redirectedId)
-                );
-                handles.Add(
-                    RegisterCountingHandler(scenario, token, originalId, () => originalCount++)
-                );
-                handles.Add(
-                    RegisterCountingHandler(scenario, token, redirectedId, () => redirectedCount++)
-                );
+                handles.Add(RegisterRewritingInterceptor(scenario, token, originalId, redirectedId));
+                handles.Add(RegisterCountingHandler(scenario, token, originalId, () => originalCount++));
+                handles.Add(RegisterCountingHandler(scenario, token, redirectedId, () => redirectedCount++));
 
                 EmitForScenario(scenario, originalId);
                 RemoveAll(token, handles);
@@ -99,31 +79,15 @@ namespace DxMessaging.Tests.Runtime.Core
 
         [Test]
         public void RewrittenContextIsObservedByWithoutContextSinksAndGlobals(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.KindsWithComponentTarget)
-            )]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.KindsWithComponentTarget))] MessageScenario scenario
         )
         {
-            GameObject originalHost = new(
-                nameof(RewrittenContextIsObservedByWithoutContextSinksAndGlobals)
-                    + "_Original_"
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject originalHost = new(nameof(RewrittenContextIsObservedByWithoutContextSinksAndGlobals) + "_Original_" + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(originalHost);
-            GameObject redirectedHost = new(
-                nameof(RewrittenContextIsObservedByWithoutContextSinksAndGlobals)
-                    + "_Redirected_"
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject redirectedHost = new(nameof(RewrittenContextIsObservedByWithoutContextSinksAndGlobals) + "_Redirected_" + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(redirectedHost);
 
-            MessageRegistrationToken token = GetToken(
-                originalHost.GetComponent<EmptyMessageAwareComponent>()
-            );
+            MessageRegistrationToken token = GetToken(originalHost.GetComponent<EmptyMessageAwareComponent>());
             InstanceId originalId = originalHost;
             InstanceId redirectedId = redirectedHost;
 
@@ -133,12 +97,8 @@ namespace DxMessaging.Tests.Runtime.Core
 
             using (LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName))
             {
-                handles.Add(
-                    RegisterRewritingInterceptor(scenario, token, originalId, redirectedId)
-                );
-                handles.Add(
-                    RegisterWithoutContextRecorder(scenario, token, observedByWithoutContext.Add)
-                );
+                handles.Add(RegisterRewritingInterceptor(scenario, token, originalId, redirectedId));
+                handles.Add(RegisterWithoutContextRecorder(scenario, token, observedByWithoutContext.Add));
                 handles.Add(RegisterGlobalContextRecorder(token, observedByGlobal.Add));
 
                 EmitForScenario(scenario, originalId);
@@ -161,13 +121,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 originalId,
                 observedByWithoutContext[0]
             );
-            Assert.AreEqual(
-                1,
-                observedByGlobal.Count,
-                "[{0}] GlobalAcceptAll must observe exactly one dispatch. count={1}.",
-                scenario.Kind,
-                observedByGlobal.Count
-            );
+            Assert.AreEqual(1, observedByGlobal.Count, "[{0}] GlobalAcceptAll must observe exactly one dispatch. count={1}.", scenario.Kind, observedByGlobal.Count);
             Assert.AreEqual(
                 redirectedId,
                 observedByGlobal[0],
@@ -188,30 +142,14 @@ namespace DxMessaging.Tests.Runtime.Core
         /// original-id snapshot is preferred only when the id is unchanged).
         /// </summary>
         [Test]
-        public void RewrittenContextRoutesPostProcessorsToNewId(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.KindsWithComponentTarget)
-            )]
-                MessageScenario scenario
-        )
+        public void RewrittenContextRoutesPostProcessorsToNewId([ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.KindsWithComponentTarget))] MessageScenario scenario)
         {
-            GameObject originalHost = new(
-                nameof(RewrittenContextRoutesPostProcessorsToNewId) + "_Original_" + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject originalHost = new(nameof(RewrittenContextRoutesPostProcessorsToNewId) + "_Original_" + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(originalHost);
-            GameObject redirectedHost = new(
-                nameof(RewrittenContextRoutesPostProcessorsToNewId)
-                    + "_Redirected_"
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject redirectedHost = new(nameof(RewrittenContextRoutesPostProcessorsToNewId) + "_Redirected_" + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(redirectedHost);
 
-            MessageRegistrationToken token = GetToken(
-                originalHost.GetComponent<EmptyMessageAwareComponent>()
-            );
+            MessageRegistrationToken token = GetToken(originalHost.GetComponent<EmptyMessageAwareComponent>());
             InstanceId originalId = originalHost;
             InstanceId redirectedId = redirectedHost;
 
@@ -220,14 +158,8 @@ namespace DxMessaging.Tests.Runtime.Core
 
             using (LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName))
             {
-                handles.Add(
-                    RegisterRewritingInterceptor(scenario, token, originalId, redirectedId)
-                );
-                handles.Add(
-                    RegisterCountingPostProcessor(scenario, token, redirectedId, () =>
-                        redirectedPostCount++
-                    )
-                );
+                handles.Add(RegisterRewritingInterceptor(scenario, token, originalId, redirectedId));
+                handles.Add(RegisterCountingPostProcessor(scenario, token, redirectedId, () => redirectedPostCount++));
 
                 EmitForScenario(scenario, originalId);
                 RemoveAll(token, handles);
@@ -249,31 +181,15 @@ namespace DxMessaging.Tests.Runtime.Core
         /// </summary>
         [Test]
         public void RewrittenContextSkipsPostProcessorsForOriginalId(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.KindsWithComponentTarget)
-            )]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.KindsWithComponentTarget))] MessageScenario scenario
         )
         {
-            GameObject originalHost = new(
-                nameof(RewrittenContextSkipsPostProcessorsForOriginalId)
-                    + "_Original_"
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject originalHost = new(nameof(RewrittenContextSkipsPostProcessorsForOriginalId) + "_Original_" + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(originalHost);
-            GameObject redirectedHost = new(
-                nameof(RewrittenContextSkipsPostProcessorsForOriginalId)
-                    + "_Redirected_"
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject redirectedHost = new(nameof(RewrittenContextSkipsPostProcessorsForOriginalId) + "_Redirected_" + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(redirectedHost);
 
-            MessageRegistrationToken token = GetToken(
-                originalHost.GetComponent<EmptyMessageAwareComponent>()
-            );
+            MessageRegistrationToken token = GetToken(originalHost.GetComponent<EmptyMessageAwareComponent>());
             InstanceId originalId = originalHost;
             InstanceId redirectedId = redirectedHost;
 
@@ -282,14 +198,8 @@ namespace DxMessaging.Tests.Runtime.Core
 
             using (LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName))
             {
-                handles.Add(
-                    RegisterRewritingInterceptor(scenario, token, originalId, redirectedId)
-                );
-                handles.Add(
-                    RegisterCountingPostProcessor(scenario, token, originalId, () =>
-                        originalPostCount++
-                    )
-                );
+                handles.Add(RegisterRewritingInterceptor(scenario, token, originalId, redirectedId));
+                handles.Add(RegisterCountingPostProcessor(scenario, token, originalId, () => originalPostCount++));
 
                 EmitForScenario(scenario, originalId);
                 RemoveAll(token, handles);
@@ -314,34 +224,19 @@ namespace DxMessaging.Tests.Runtime.Core
         /// </summary>
         [Test]
         public void RewrittenContextPostProcessorsOnDistinctComponentsFollowNewId(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.KindsWithComponentTarget)
-            )]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.KindsWithComponentTarget))] MessageScenario scenario
         )
         {
-            GameObject originalHost = new(
-                nameof(RewrittenContextPostProcessorsOnDistinctComponentsFollowNewId)
-                    + "_Original_"
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject originalHost = new(nameof(RewrittenContextPostProcessorsOnDistinctComponentsFollowNewId) + "_Original_" + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(originalHost);
             GameObject redirectedHost = new(
-                nameof(RewrittenContextPostProcessorsOnDistinctComponentsFollowNewId)
-                    + "_Redirected_"
-                    + scenario.Kind,
+                nameof(RewrittenContextPostProcessorsOnDistinctComponentsFollowNewId) + "_Redirected_" + scenario.Kind,
                 typeof(EmptyMessageAwareComponent)
             );
             _spawned.Add(redirectedHost);
 
-            MessageRegistrationToken originalToken = GetToken(
-                originalHost.GetComponent<EmptyMessageAwareComponent>()
-            );
-            MessageRegistrationToken redirectedToken = GetToken(
-                redirectedHost.GetComponent<EmptyMessageAwareComponent>()
-            );
+            MessageRegistrationToken originalToken = GetToken(originalHost.GetComponent<EmptyMessageAwareComponent>());
+            MessageRegistrationToken redirectedToken = GetToken(redirectedHost.GetComponent<EmptyMessageAwareComponent>());
             InstanceId originalId = originalHost;
             InstanceId redirectedId = redirectedHost;
 
@@ -352,19 +247,9 @@ namespace DxMessaging.Tests.Runtime.Core
 
             using (LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName))
             {
-                originalHandles.Add(
-                    RegisterRewritingInterceptor(scenario, originalToken, originalId, redirectedId)
-                );
-                originalHandles.Add(
-                    RegisterCountingPostProcessor(scenario, originalToken, originalId, () =>
-                        originalPostCount++
-                    )
-                );
-                redirectedHandles.Add(
-                    RegisterCountingPostProcessor(scenario, redirectedToken, redirectedId, () =>
-                        redirectedPostCount++
-                    )
-                );
+                originalHandles.Add(RegisterRewritingInterceptor(scenario, originalToken, originalId, redirectedId));
+                originalHandles.Add(RegisterCountingPostProcessor(scenario, originalToken, originalId, () => originalPostCount++));
+                redirectedHandles.Add(RegisterCountingPostProcessor(scenario, redirectedToken, redirectedId, () => redirectedPostCount++));
 
                 EmitForScenario(scenario, originalId);
                 RemoveAll(originalToken, originalHandles);
@@ -391,33 +276,20 @@ namespace DxMessaging.Tests.Runtime.Core
 
         [Test]
         public void PostProcessorAddedForRewrittenContextWaitsUntilNextEmission(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.KindsWithComponentTarget)
-            )]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.KindsWithComponentTarget))] MessageScenario scenario,
             [Values] PostProcessorDelegateShape delegateShape,
             [Values] bool hasExistingProcessor
         )
         {
-            GameObject originalHost = new(
-                nameof(PostProcessorAddedForRewrittenContextWaitsUntilNextEmission)
-                    + "_Original_"
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject originalHost = new(nameof(PostProcessorAddedForRewrittenContextWaitsUntilNextEmission) + "_Original_" + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(originalHost);
             GameObject redirectedHost = new(
-                nameof(PostProcessorAddedForRewrittenContextWaitsUntilNextEmission)
-                    + "_Redirected_"
-                    + scenario.Kind,
+                nameof(PostProcessorAddedForRewrittenContextWaitsUntilNextEmission) + "_Redirected_" + scenario.Kind,
                 typeof(EmptyMessageAwareComponent)
             );
             _spawned.Add(redirectedHost);
 
-            MessageRegistrationToken token = GetToken(
-                originalHost.GetComponent<EmptyMessageAwareComponent>()
-            );
+            MessageRegistrationToken token = GetToken(originalHost.GetComponent<EmptyMessageAwareComponent>());
             InstanceId originalId = originalHost;
             InstanceId redirectedId = redirectedHost;
             int existingPostCount = 0;
@@ -428,42 +300,20 @@ namespace DxMessaging.Tests.Runtime.Core
             int firstLatePostCount = 0;
             int historyCountAfterFirstEmission = -1;
 
-            using (
-                LeakWatcher watcher = LeakWatcher.Watch(
-                    label: scenario.Kind + "/" + delegateShape + "/existing=" + hasExistingProcessor
-                )
-            )
+            using (LeakWatcher watcher = LeakWatcher.Watch(label: scenario.Kind + "/" + delegateShape + "/existing=" + hasExistingProcessor))
             {
                 if (hasExistingProcessor)
                 {
-                    handles.Add(
-                        RegisterCountingPostProcessor(
-                            scenario,
-                            token,
-                            redirectedId,
-                            () => ++existingPostCount,
-                            delegateShape
-                        )
-                    );
+                    handles.Add(RegisterCountingPostProcessor(scenario, token, redirectedId, () => ++existingPostCount, delegateShape));
                 }
-                handles.Add(
-                    RegisterRewritingInterceptor(scenario, token, originalId, redirectedId, () =>
+                handles.Add(RegisterRewritingInterceptor(scenario, token, originalId, redirectedId, () =>
                     {
                         if (!added)
                         {
                             added = true;
-                            handles.Add(
-                                RegisterCountingPostProcessor(
-                                    scenario,
-                                    token,
-                                    redirectedId,
-                                    () => ++latePostCount,
-                                    delegateShape
-                                )
-                            );
+                            handles.Add(RegisterCountingPostProcessor(scenario, token, redirectedId, () => ++latePostCount, delegateShape));
                         }
-                    })
-                );
+                    }));
 
                 EmitForScenario(scenario, originalId);
                 firstExistingPostCount = existingPostCount;
@@ -476,9 +326,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Assert.AreEqual(
                     hasExistingProcessor ? 1 : 0,
                     firstExistingPostCount,
-                    "[{0}] A processor already registered for the rewritten context must run "
-                        + "on the first emission. firstExistingPostCount={1}, "
-                        + "firstLatePostCount={2}.",
+                    "[{0}] A processor already registered for the rewritten context must run " + "on the first emission. firstExistingPostCount={1}, " + "firstLatePostCount={2}.",
                     scenario.Kind + "/" + delegateShape + "/existing=" + hasExistingProcessor,
                     firstExistingPostCount,
                     firstLatePostCount
@@ -486,9 +334,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Assert.AreEqual(
                     0,
                     firstLatePostCount,
-                    "[{0}] A processor registered during the interceptor must wait until the "
-                        + "next emission. firstExistingPostCount={1}, "
-                        + "firstLatePostCount={2}.",
+                    "[{0}] A processor registered during the interceptor must wait until the " + "next emission. firstExistingPostCount={1}, " + "firstLatePostCount={2}.",
                     scenario.Kind + "/" + delegateShape + "/existing=" + hasExistingProcessor,
                     firstExistingPostCount,
                     firstLatePostCount
@@ -496,8 +342,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Assert.AreEqual(
                     hasExistingProcessor ? 2 : 0,
                     existingPostCount,
-                    "[{0}] The existing processor must run once per emission. "
-                        + "existingPostCount={1}, latePostCount={2}.",
+                    "[{0}] The existing processor must run once per emission. " + "existingPostCount={1}, latePostCount={2}.",
                     scenario.Kind + "/" + delegateShape + "/existing=" + hasExistingProcessor,
                     existingPostCount,
                     latePostCount
@@ -505,8 +350,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Assert.AreEqual(
                     1,
                     latePostCount,
-                    "[{0}] The late processor must start on the next emission. "
-                        + "existingPostCount={1}, latePostCount={2}.",
+                    "[{0}] The late processor must start on the next emission. " + "existingPostCount={1}, latePostCount={2}.",
                     scenario.Kind + "/" + delegateShape + "/existing=" + hasExistingProcessor,
                     existingPostCount,
                     latePostCount
@@ -525,52 +369,33 @@ namespace DxMessaging.Tests.Runtime.Core
 
         [Test]
         public void PostProcessorRemovedForRewrittenContextFinishesCurrentEmission(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.KindsWithComponentTarget)
-            )]
-                MessageScenario scenario,
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.KindsWithComponentTarget))] MessageScenario scenario,
             [Values] PostProcessorDelegateShape delegateShape
         )
         {
             GameObject originalHost = new(
-                nameof(PostProcessorRemovedForRewrittenContextFinishesCurrentEmission)
-                    + "_Original_"
-                    + scenario.Kind,
+                nameof(PostProcessorRemovedForRewrittenContextFinishesCurrentEmission) + "_Original_" + scenario.Kind,
                 typeof(EmptyMessageAwareComponent)
             );
             _spawned.Add(originalHost);
             GameObject redirectedHost = new(
-                nameof(PostProcessorRemovedForRewrittenContextFinishesCurrentEmission)
-                    + "_Redirected_"
-                    + scenario.Kind,
+                nameof(PostProcessorRemovedForRewrittenContextFinishesCurrentEmission) + "_Redirected_" + scenario.Kind,
                 typeof(EmptyMessageAwareComponent)
             );
             _spawned.Add(redirectedHost);
 
-            MessageRegistrationToken token = GetToken(
-                originalHost.GetComponent<EmptyMessageAwareComponent>()
-            );
+            MessageRegistrationToken token = GetToken(originalHost.GetComponent<EmptyMessageAwareComponent>());
             InstanceId originalId = originalHost;
             InstanceId redirectedId = redirectedHost;
             int postCount = 0;
             bool removed = false;
             List<MessageRegistrationHandle> handles = new();
 
-            using (
-                LeakWatcher watcher = LeakWatcher.Watch(label: scenario.Kind + "/" + delegateShape)
-            )
+            using (LeakWatcher watcher = LeakWatcher.Watch(label: scenario.Kind + "/" + delegateShape))
             {
-                MessageRegistrationHandle postHandle = RegisterCountingPostProcessor(
-                    scenario,
-                    token,
-                    redirectedId,
-                    () => ++postCount,
-                    delegateShape
-                );
+                MessageRegistrationHandle postHandle = RegisterCountingPostProcessor(scenario, token, redirectedId, () => ++postCount, delegateShape);
                 handles.Add(postHandle);
-                handles.Add(
-                    RegisterRewritingInterceptor(scenario, token, originalId, redirectedId, () =>
+                handles.Add(RegisterRewritingInterceptor(scenario, token, originalId, redirectedId, () =>
                     {
                         if (removed)
                         {
@@ -580,8 +405,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         removed = true;
                         token.RemoveRegistration(postHandle);
                         _ = handles.Remove(postHandle);
-                    })
-                );
+                    }));
 
                 EmitForScenario(scenario, originalId);
                 int firstEmissionCount = postCount;
@@ -591,8 +415,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Assert.AreEqual(
                     1,
                     firstEmissionCount,
-                    "[{0}, {1}] A final-route processor removed by the rewriting interceptor "
-                        + "must finish the frozen emission. firstEmissionCount={2}, totalCount={3}.",
+                    "[{0}, {1}] A final-route processor removed by the rewriting interceptor " + "must finish the frozen emission. firstEmissionCount={2}, totalCount={3}.",
                     scenario.Kind,
                     delegateShape,
                     firstEmissionCount,
@@ -601,8 +424,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Assert.AreEqual(
                     1,
                     postCount,
-                    "[{0}, {1}] The removed final-route processor must disappear on the next "
-                        + "emission. firstEmissionCount={2}, totalCount={3}.",
+                    "[{0}, {1}] The removed final-route processor must disappear on the next " + "emission. firstEmissionCount={2}, totalCount={3}.",
                     scenario.Kind,
                     delegateShape,
                     firstEmissionCount,
@@ -613,31 +435,15 @@ namespace DxMessaging.Tests.Runtime.Core
 
         [Test]
         public void NestedRewriteUsesEachEmissionsDestinationSnapshot(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.KindsWithComponentTarget)
-            )]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.KindsWithComponentTarget))] MessageScenario scenario
         )
         {
-            GameObject originalHost = new(
-                nameof(NestedRewriteUsesEachEmissionsDestinationSnapshot)
-                    + "_Original_"
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject originalHost = new(nameof(NestedRewriteUsesEachEmissionsDestinationSnapshot) + "_Original_" + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(originalHost);
-            GameObject redirectedHost = new(
-                nameof(NestedRewriteUsesEachEmissionsDestinationSnapshot)
-                    + "_Redirected_"
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject redirectedHost = new(nameof(NestedRewriteUsesEachEmissionsDestinationSnapshot) + "_Redirected_" + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(redirectedHost);
 
-            MessageRegistrationToken token = GetToken(
-                originalHost.GetComponent<EmptyMessageAwareComponent>()
-            );
+            MessageRegistrationToken token = GetToken(originalHost.GetComponent<EmptyMessageAwareComponent>());
             InstanceId originalId = originalHost;
             InstanceId redirectedId = redirectedHost;
             int postCount = 0;
@@ -647,17 +453,11 @@ namespace DxMessaging.Tests.Runtime.Core
 
             using (LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName))
             {
-                handles.Add(
-                    RegisterRewritingInterceptor(scenario, token, originalId, redirectedId, () =>
+                handles.Add(RegisterRewritingInterceptor(scenario, token, originalId, redirectedId, () =>
                     {
                         if (!inNestedEmission)
                         {
-                            nestedPostHandle = RegisterCountingPostProcessor(
-                                scenario,
-                                token,
-                                redirectedId,
-                                () => ++postCount
-                            );
+                            nestedPostHandle = RegisterCountingPostProcessor(scenario, token, redirectedId, () => ++postCount);
                             handles.Add(nestedPostHandle);
                             inNestedEmission = true;
                             EmitForScenario(scenario, originalId);
@@ -667,8 +467,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
                         token.RemoveRegistration(nestedPostHandle);
                         _ = handles.Remove(nestedPostHandle);
-                    })
-                );
+                    }));
 
                 EmitForScenario(scenario, originalId);
                 RemoveAll(token, handles);
@@ -687,31 +486,21 @@ namespace DxMessaging.Tests.Runtime.Core
 
         [Test]
         public void RepeatedRouteMutationsRetainOneSnapshotPerRouteAndDropOversizedHistory(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.KindsWithComponentTarget)
-            )]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.KindsWithComponentTarget))] MessageScenario scenario
         )
         {
             GameObject originalHost = new(
-                nameof(RepeatedRouteMutationsRetainOneSnapshotPerRouteAndDropOversizedHistory)
-                    + "_Original_"
-                    + scenario.Kind,
+                nameof(RepeatedRouteMutationsRetainOneSnapshotPerRouteAndDropOversizedHistory) + "_Original_" + scenario.Kind,
                 typeof(EmptyMessageAwareComponent)
             );
             _spawned.Add(originalHost);
             GameObject redirectedHost = new(
-                nameof(RepeatedRouteMutationsRetainOneSnapshotPerRouteAndDropOversizedHistory)
-                    + "_Redirected_"
-                    + scenario.Kind,
+                nameof(RepeatedRouteMutationsRetainOneSnapshotPerRouteAndDropOversizedHistory) + "_Redirected_" + scenario.Kind,
                 typeof(EmptyMessageAwareComponent)
             );
             _spawned.Add(redirectedHost);
 
-            MessageRegistrationToken token = GetToken(
-                originalHost.GetComponent<EmptyMessageAwareComponent>()
-            );
+            MessageRegistrationToken token = GetToken(originalHost.GetComponent<EmptyMessageAwareComponent>());
             InstanceId originalId = originalHost;
             InstanceId redirectedId = redirectedHost;
             List<MessageRegistrationHandle> handles = new();
@@ -724,36 +513,20 @@ namespace DxMessaging.Tests.Runtime.Core
 
             using (LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName))
             {
-                handles.Add(
-                    RegisterRewritingInterceptor(scenario, token, originalId, redirectedId, () =>
+                handles.Add(RegisterRewritingInterceptor(scenario, token, originalId, redirectedId, () =>
                     {
                         for (int i = 0; i < sameRouteMutationCount; ++i)
                         {
-                            handles.Add(
-                                RegisterCountingPostProcessor(
-                                    scenario,
-                                    token,
-                                    redirectedId,
-                                    () => { }
-                                )
-                            );
+                            handles.Add(RegisterCountingPostProcessor(scenario, token, redirectedId, () => { }));
                         }
 
                         for (int i = 0; i < distinctRouteCount; ++i)
                         {
-                            handles.Add(
-                                RegisterCountingPostProcessor(
-                                    scenario,
-                                    token,
-                                    new InstanceId(0x6000_0000 + i),
-                                    () => { }
-                                )
-                            );
+                            handles.Add(RegisterCountingPostProcessor(scenario, token, new InstanceId(0x6000_0000 + i), () => { }));
                         }
 
                         historyCountDuringMutation = GetPostRouteSnapshotHistoryCount();
-                    })
-                );
+                    }));
 
                 EmitForScenario(scenario, originalId);
                 historyRetainedAfterEmission = GetPostRouteSnapshotHistory() != null;
@@ -763,16 +536,14 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(
                 distinctRouteCount + 1,
                 historyCountDuringMutation,
-                "[{0}] Repeated mutations of one route need one pre-mutation snapshot; each "
-                    + "distinct route needs one. sameRouteMutations={1}, distinctRoutes={2}.",
+                "[{0}] Repeated mutations of one route need one pre-mutation snapshot; each " + "distinct route needs one. sameRouteMutations={1}, distinctRoutes={2}.",
                 scenario.Kind,
                 sameRouteMutationCount,
                 distinctRouteCount
             );
             Assert.IsFalse(
                 historyRetainedAfterEmission,
-                "[{0}] A history whose capacity crossed the configured retention cap must be "
-                    + "dropped when the outermost lease exits. maxRetained={1}.",
+                "[{0}] A history whose capacity crossed the configured retention cap must be " + "dropped when the outermost lease exits. maxRetained={1}.",
                 scenario.Kind,
                 maxRetained
             );
@@ -780,31 +551,21 @@ namespace DxMessaging.Tests.Runtime.Core
 
         [Test]
         public void SequentialNestedSiblingMutationsReleaseSupersededRouteSnapshots(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.KindsWithComponentTarget)
-            )]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.KindsWithComponentTarget))] MessageScenario scenario
         )
         {
             GameObject originalHost = new(
-                nameof(SequentialNestedSiblingMutationsReleaseSupersededRouteSnapshots)
-                    + "_Original_"
-                    + scenario.Kind,
+                nameof(SequentialNestedSiblingMutationsReleaseSupersededRouteSnapshots) + "_Original_" + scenario.Kind,
                 typeof(EmptyMessageAwareComponent)
             );
             _spawned.Add(originalHost);
             GameObject redirectedHost = new(
-                nameof(SequentialNestedSiblingMutationsReleaseSupersededRouteSnapshots)
-                    + "_Redirected_"
-                    + scenario.Kind,
+                nameof(SequentialNestedSiblingMutationsReleaseSupersededRouteSnapshots) + "_Redirected_" + scenario.Kind,
                 typeof(EmptyMessageAwareComponent)
             );
             _spawned.Add(redirectedHost);
 
-            MessageRegistrationToken token = GetToken(
-                originalHost.GetComponent<EmptyMessageAwareComponent>()
-            );
+            MessageRegistrationToken token = GetToken(originalHost.GetComponent<EmptyMessageAwareComponent>());
             InstanceId originalId = originalHost;
             InstanceId redirectedId = redirectedHost;
             List<MessageRegistrationHandle> handles = new();
@@ -822,27 +583,13 @@ namespace DxMessaging.Tests.Runtime.Core
 
             using (LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName))
             {
-                handles.Add(
-                    RegisterRewritingInterceptor(scenario, token, originalId, redirectedId, () =>
+                handles.Add(RegisterRewritingInterceptor(scenario, token, originalId, redirectedId, () =>
                     {
                         if (emittingNestedSibling)
                         {
-                            handles.Add(
-                                RegisterCountingPostProcessor(
-                                    scenario,
-                                    token,
-                                    redirectedId,
-                                    () => { }
-                                )
-                            );
-                            maximumHistoryCount = Math.Max(
-                                maximumHistoryCount,
-                                GetPostRouteSnapshotHistoryCount()
-                            );
-                            maximumRetainedEntryCount = Math.Max(
-                                maximumRetainedEntryCount,
-                                GetPostRouteSnapshotHistoryResolvedEntryCount()
-                            );
+                            handles.Add(RegisterCountingPostProcessor(scenario, token, redirectedId, () => { }));
+                            maximumHistoryCount = Math.Max(maximumHistoryCount, GetPostRouteSnapshotHistoryCount());
+                            maximumRetainedEntryCount = Math.Max(maximumRetainedEntryCount, GetPostRouteSnapshotHistoryResolvedEntryCount());
                             capturedSnapshots.Add(GetLatestPostRouteSnapshot());
                             return;
                         }
@@ -859,13 +606,7 @@ namespace DxMessaging.Tests.Runtime.Core
                                 emittingNestedSibling = false;
                             }
 
-                            if (
-                                0 < i
-                                && (
-                                    capturedSnapshots.Count <= i
-                                    || !IsDispatchSnapshotReleased(capturedSnapshots[i])
-                                )
-                            )
+                            if (0 < i && (capturedSnapshots.Count <= i || !IsDispatchSnapshotReleased(capturedSnapshots[i])))
                             {
                                 supersededSnapshotsReleased = false;
                             }
@@ -880,15 +621,12 @@ namespace DxMessaging.Tests.Runtime.Core
                                 compactionIndexReused = false;
                             }
                         }
-                    })
-                );
+                    }));
 
                 try
                 {
                     EmitForScenario(scenario, originalId);
-                    allSnapshotsReleasedAfterEmission = capturedSnapshots.TrueForAll(
-                        IsDispatchSnapshotReleased
-                    );
+                    allSnapshotsReleasedAfterEmission = capturedSnapshots.TrueForAll(IsDispatchSnapshotReleased);
                     compactionIndexRetainedBeforeForceTrim = GetPostRouteCompactionIndex() != null;
                     historyRetainedBeforeForceTrim = GetPostRouteSnapshotHistory() != null;
                 }
@@ -905,90 +643,38 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.LessOrEqual(
                 maximumHistoryCount,
                 2,
-                "[{0}] Each nested sibling may add one working snapshot beside the parent's "
-                    + "earliest snapshot, but completed siblings must not accumulate. siblings={1}.",
+                "[{0}] Each nested sibling may add one working snapshot beside the parent's " + "earliest snapshot, but completed siblings must not accumulate. siblings={1}.",
                 scenario.Kind,
                 siblingCount
             );
             Assert.LessOrEqual(
                 maximumRetainedEntryCount,
                 siblingCount,
-                "[{0}] Sequential siblings must retain O(n), not triangular O(n^2), resolved "
-                    + "route entries. siblings={1}.",
+                "[{0}] Sequential siblings must retain O(n), not triangular O(n^2), resolved " + "route entries. siblings={1}.",
                 scenario.Kind,
                 siblingCount
             );
-            Assert.AreEqual(
-                siblingCount,
-                capturedSnapshots.Count,
-                "[{0}] Every nested sibling must capture one pre-mutation route snapshot.",
-                scenario.Kind
-            );
-            Assert.IsTrue(
-                supersededSnapshotsReleased,
-                "[{0}] Each completed sibling after the first must release its superseded flat "
-                    + "snapshot immediately.",
-                scenario.Kind
-            );
-            Assert.IsTrue(
-                allSnapshotsReleasedAfterEmission,
-                "[{0}] The outermost lease must release the first snapshot promoted to its frame.",
-                scenario.Kind
-            );
-            Assert.IsTrue(
-                compactionIndexReused,
-                "[{0}] Sequential siblings must reuse the same bus-owned compaction index.",
-                scenario.Kind
-            );
-            Assert.IsTrue(
-                compactionIndexRetainedBeforeForceTrim,
-                "[{0}] A small compaction index should remain available for reuse until trimmed.",
-                scenario.Kind
-            );
-            Assert.IsTrue(
-                historyRetainedBeforeForceTrim,
-                "[{0}] A small cleared route-history list should remain available until trimmed.",
-                scenario.Kind
-            );
-            Assert.IsFalse(
-                compactionIndexRetainedAfterForceTrim,
-                "[{0}] Force trim must reclaim the bus-owned compaction index.",
-                scenario.Kind
-            );
-            Assert.IsFalse(
-                historyRetainedAfterForceTrim,
-                "[{0}] Force trim must reclaim the cleared route-history list.",
-                scenario.Kind
-            );
+            Assert.AreEqual(siblingCount, capturedSnapshots.Count, "[{0}] Every nested sibling must capture one pre-mutation route snapshot.", scenario.Kind);
+            Assert.IsTrue(supersededSnapshotsReleased, "[{0}] Each completed sibling after the first must release its superseded flat " + "snapshot immediately.", scenario.Kind);
+            Assert.IsTrue(allSnapshotsReleasedAfterEmission, "[{0}] The outermost lease must release the first snapshot promoted to its frame.", scenario.Kind);
+            Assert.IsTrue(compactionIndexReused, "[{0}] Sequential siblings must reuse the same bus-owned compaction index.", scenario.Kind);
+            Assert.IsTrue(compactionIndexRetainedBeforeForceTrim, "[{0}] A small compaction index should remain available for reuse until trimmed.", scenario.Kind);
+            Assert.IsTrue(historyRetainedBeforeForceTrim, "[{0}] A small cleared route-history list should remain available until trimmed.", scenario.Kind);
+            Assert.IsFalse(compactionIndexRetainedAfterForceTrim, "[{0}] Force trim must reclaim the bus-owned compaction index.", scenario.Kind);
+            Assert.IsFalse(historyRetainedAfterForceTrim, "[{0}] Force trim must reclaim the cleared route-history list.", scenario.Kind);
         }
 
         [Test]
         public void ManyDistinctNestedRoutesUseBoundedCompactionIndex(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.KindsWithComponentTarget)
-            )]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.KindsWithComponentTarget))] MessageScenario scenario
         )
         {
-            GameObject originalHost = new(
-                nameof(ManyDistinctNestedRoutesUseBoundedCompactionIndex)
-                    + "_Original_"
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject originalHost = new(nameof(ManyDistinctNestedRoutesUseBoundedCompactionIndex) + "_Original_" + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(originalHost);
-            GameObject redirectedHost = new(
-                nameof(ManyDistinctNestedRoutesUseBoundedCompactionIndex)
-                    + "_Redirected_"
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject redirectedHost = new(nameof(ManyDistinctNestedRoutesUseBoundedCompactionIndex) + "_Redirected_" + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(redirectedHost);
 
-            MessageRegistrationToken token = GetToken(
-                originalHost.GetComponent<EmptyMessageAwareComponent>()
-            );
+            MessageRegistrationToken token = GetToken(originalHost.GetComponent<EmptyMessageAwareComponent>());
             InstanceId originalId = originalHost;
             InstanceId redirectedId = redirectedHost;
             List<MessageRegistrationHandle> handles = new();
@@ -1005,21 +691,13 @@ namespace DxMessaging.Tests.Runtime.Core
 
             using (LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName))
             {
-                handles.Add(
-                    RegisterRewritingInterceptor(scenario, token, originalId, redirectedId, () =>
+                handles.Add(RegisterRewritingInterceptor(scenario, token, originalId, redirectedId, () =>
                     {
                         if (emittingNested)
                         {
                             for (int i = 0; i < distinctRouteCount; ++i)
                             {
-                                handles.Add(
-                                    RegisterCountingPostProcessor(
-                                        scenario,
-                                        token,
-                                        new InstanceId(0x7000_0000 + i),
-                                        () => { }
-                                    )
-                                );
+                                handles.Add(RegisterCountingPostProcessor(scenario, token, new InstanceId(0x7000_0000 + i), () => { }));
                             }
 
                             return;
@@ -1050,8 +728,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
                         historyCountAfterNested = GetPostRouteSnapshotHistoryCount();
                         compactionIndexRetainedAfterNested = GetPostRouteCompactionIndex() != null;
-                    })
-                );
+                    }));
 
                 try
                 {
@@ -1068,62 +745,32 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(
                 distinctRouteCount,
                 historyCountAfterNested,
-                "[{0}] A nested child must promote the earliest snapshot for every distinct "
-                    + "route to its parent. distinctRoutes={1}.",
+                "[{0}] A nested child must promote the earliest snapshot for every distinct " + "route to its parent. distinctRoutes={1}.",
                 scenario.Kind,
                 distinctRouteCount
             );
             Assert.IsTrue(
                 compactionIndexRetainedAfterNested,
-                "[{0}] An oversized compaction index must remain reusable while its outer "
-                    + "dispatch is active. maxRetained={1}.",
+                "[{0}] An oversized compaction index must remain reusable while its outer " + "dispatch is active. maxRetained={1}.",
                 scenario.Kind,
                 maxRetained
             );
-            Assert.IsTrue(
-                compactionIndexReused,
-                "[{0}] Oversized sequential siblings must reuse one compaction index.",
-                scenario.Kind
-            );
-            Assert.IsFalse(
-                compactionIndexRetainedAfterEmission,
-                "[{0}] The outermost lease must drop an oversized compaction index.",
-                scenario.Kind
-            );
-            Assert.IsFalse(
-                historyRetainedAfterEmission,
-                "[{0}] The outermost lease must drop an oversized history list.",
-                scenario.Kind
-            );
+            Assert.IsTrue(compactionIndexReused, "[{0}] Oversized sequential siblings must reuse one compaction index.", scenario.Kind);
+            Assert.IsFalse(compactionIndexRetainedAfterEmission, "[{0}] The outermost lease must drop an oversized compaction index.", scenario.Kind);
+            Assert.IsFalse(historyRetainedAfterEmission, "[{0}] The outermost lease must drop an oversized history list.", scenario.Kind);
         }
 
         [Test]
         public void ExceptionalRewrittenRouteMutationReleasesSnapshotHistory(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.KindsWithComponentTarget)
-            )]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.KindsWithComponentTarget))] MessageScenario scenario
         )
         {
-            GameObject originalHost = new(
-                nameof(ExceptionalRewrittenRouteMutationReleasesSnapshotHistory)
-                    + "_Original_"
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject originalHost = new(nameof(ExceptionalRewrittenRouteMutationReleasesSnapshotHistory) + "_Original_" + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(originalHost);
-            GameObject redirectedHost = new(
-                nameof(ExceptionalRewrittenRouteMutationReleasesSnapshotHistory)
-                    + "_Redirected_"
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject redirectedHost = new(nameof(ExceptionalRewrittenRouteMutationReleasesSnapshotHistory) + "_Redirected_" + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(redirectedHost);
 
-            MessageRegistrationToken token = GetToken(
-                originalHost.GetComponent<EmptyMessageAwareComponent>()
-            );
+            MessageRegistrationToken token = GetToken(originalHost.GetComponent<EmptyMessageAwareComponent>());
             InstanceId originalId = originalHost;
             InstanceId redirectedId = redirectedHost;
             List<MessageRegistrationHandle> handles = new();
@@ -1132,15 +779,11 @@ namespace DxMessaging.Tests.Runtime.Core
 
             using (LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName))
             {
-                handles.Add(
-                    RegisterRewritingInterceptor(scenario, token, originalId, redirectedId, () =>
+                handles.Add(RegisterRewritingInterceptor(scenario, token, originalId, redirectedId, () =>
                     {
-                        handles.Add(
-                            RegisterCountingPostProcessor(scenario, token, redirectedId, () => { })
-                        );
+                        handles.Add(RegisterCountingPostProcessor(scenario, token, redirectedId, () => { }));
                         throw new InvalidOperationException("expected route mutation failure");
-                    })
-                );
+                    }));
 
                 try
                 {
@@ -1159,52 +802,32 @@ namespace DxMessaging.Tests.Runtime.Core
 
             Assert.IsInstanceOf<InvalidOperationException>(
                 thrown,
-                "[{0}] The interceptor must propagate its expected exception after mutating the "
-                    + "rewritten route.",
+                "[{0}] The interceptor must propagate its expected exception after mutating the " + "rewritten route.",
                 scenario.Kind
             );
-            Assert.AreEqual(
-                "expected route mutation failure",
-                thrown.Message,
-                "[{0}] The propagated exception must be the interceptor's sentinel.",
-                scenario.Kind
-            );
+            Assert.AreEqual("expected route mutation failure", thrown.Message, "[{0}] The propagated exception must be the interceptor's sentinel.", scenario.Kind);
             Assert.AreEqual(
                 0,
                 historyCountAfterException,
-                "[{0}] DispatchLease.Dispose must clear the route history while unwinding an "
-                    + "exceptional interceptor.",
+                "[{0}] DispatchLease.Dispose must clear the route history while unwinding an " + "exceptional interceptor.",
                 scenario.Kind
             );
         }
 
         [Test]
         public void PostResetNestedEmissionDoesNotReuseStaleOuterCaptureIdentity(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.KindsWithComponentTarget)
-            )]
-                MessageScenario scenario
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.KindsWithComponentTarget))] MessageScenario scenario
         )
         {
-            GameObject originalHost = new(
-                nameof(PostResetNestedEmissionDoesNotReuseStaleOuterCaptureIdentity)
-                    + "_Original_"
-                    + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
+            GameObject originalHost = new(nameof(PostResetNestedEmissionDoesNotReuseStaleOuterCaptureIdentity) + "_Original_" + scenario.Kind, typeof(EmptyMessageAwareComponent));
             _spawned.Add(originalHost);
             GameObject redirectedHost = new(
-                nameof(PostResetNestedEmissionDoesNotReuseStaleOuterCaptureIdentity)
-                    + "_Redirected_"
-                    + scenario.Kind,
+                nameof(PostResetNestedEmissionDoesNotReuseStaleOuterCaptureIdentity) + "_Redirected_" + scenario.Kind,
                 typeof(EmptyMessageAwareComponent)
             );
             _spawned.Add(redirectedHost);
 
-            MessageRegistrationToken originalToken = GetToken(
-                originalHost.GetComponent<EmptyMessageAwareComponent>()
-            );
+            MessageRegistrationToken originalToken = GetToken(originalHost.GetComponent<EmptyMessageAwareComponent>());
             InstanceId originalId = originalHost;
             InstanceId redirectedId = redirectedHost;
             MessageRegistrationToken postResetToken = null;
@@ -1213,91 +836,58 @@ namespace DxMessaging.Tests.Runtime.Core
             int latePostCount = 0;
             bool latePostAdded = false;
 
-            _ = RegisterRewritingInterceptor(
-                scenario,
-                originalToken,
-                originalId,
-                redirectedId,
-                () =>
+            _ = RegisterRewritingInterceptor(scenario, originalToken, originalId, redirectedId, () =>
+            {
+                if (stage == 1)
                 {
-                    if (stage == 1)
-                    {
-                        DxMessagingStaticState.Reset();
-                        return;
-                    }
-
-                    if (stage != 0)
-                    {
-                        return;
-                    }
-
-                    stage = 1;
-                    EmitForScenario(scenario, originalId);
-
-                    GameObject postResetHost = new(
-                        nameof(PostResetNestedEmissionDoesNotReuseStaleOuterCaptureIdentity)
-                            + "_PostReset_"
-                            + scenario.Kind,
-                        typeof(EmptyMessageAwareComponent)
-                    );
-                    _spawned.Add(postResetHost);
-                    postResetToken = GetToken(
-                        postResetHost.GetComponent<EmptyMessageAwareComponent>()
-                    );
-                    _ = RegisterCountingPostProcessor(scenario, postResetToken, redirectedId, () =>
-                        ++existingPostCount
-                    );
-                    _ = RegisterRewritingInterceptor(
-                        scenario,
-                        postResetToken,
-                        originalId,
-                        redirectedId,
-                        () =>
-                        {
-                            if (latePostAdded)
-                            {
-                                return;
-                            }
-
-                            latePostAdded = true;
-                            _ = RegisterCountingPostProcessor(
-                                scenario,
-                                postResetToken,
-                                redirectedId,
-                                () => ++latePostCount
-                            );
-                        }
-                    );
-
-                    stage = 2;
-                    EmitForScenario(scenario, originalId);
-                    stage = 3;
+                    DxMessagingStaticState.Reset();
+                    return;
                 }
-            );
+
+                if (stage != 0)
+                {
+                    return;
+                }
+
+                stage = 1;
+                EmitForScenario(scenario, originalId);
+
+                GameObject postResetHost = new(
+                    nameof(PostResetNestedEmissionDoesNotReuseStaleOuterCaptureIdentity) + "_PostReset_" + scenario.Kind,
+                    typeof(EmptyMessageAwareComponent)
+                );
+                _spawned.Add(postResetHost);
+                postResetToken = GetToken(postResetHost.GetComponent<EmptyMessageAwareComponent>());
+                _ = RegisterCountingPostProcessor(scenario, postResetToken, redirectedId, () => ++existingPostCount);
+                _ = RegisterRewritingInterceptor(scenario, postResetToken, originalId, redirectedId, () =>
+                {
+                    if (latePostAdded)
+                    {
+                        return;
+                    }
+
+                    latePostAdded = true;
+                    _ = RegisterCountingPostProcessor(scenario, postResetToken, redirectedId, () => ++latePostCount);
+                });
+
+                stage = 2;
+                EmitForScenario(scenario, originalId);
+                stage = 3;
+            });
 
             Assert.DoesNotThrow(() => EmitForScenario(scenario, originalId));
             postResetToken?.UnregisterAll();
 
-            Assert.AreEqual(
-                1,
-                existingPostCount,
-                "[{0}] The valid post-reset nested emission must dispatch the processor that "
-                    + "existed when it began.",
-                scenario.Kind
-            );
+            Assert.AreEqual(1, existingPostCount, "[{0}] The valid post-reset nested emission must dispatch the processor that " + "existed when it began.", scenario.Kind);
             Assert.AreEqual(
                 0,
                 latePostCount,
-                "[{0}] The first processor added by the valid post-reset nested emission must "
-                    + "wait. A stale outer capture identity must not deduplicate its snapshot.",
+                "[{0}] The first processor added by the valid post-reset nested emission must " + "wait. A stale outer capture identity must not deduplicate its snapshot.",
                 scenario.Kind
             );
         }
 
-        private static void RemoveAll(
-            MessageRegistrationToken token,
-            List<MessageRegistrationHandle> handles
-        )
+        private static void RemoveAll(MessageRegistrationToken token, List<MessageRegistrationHandle> handles)
         {
             foreach (MessageRegistrationHandle handle in handles)
             {
@@ -1325,34 +915,17 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 System.Reflection.FieldInfo snapshotField = historyEntry
                     .GetType()
-                    .GetField(
-                        "snapshot",
-                        System.Reflection.BindingFlags.Instance
-                            | System.Reflection.BindingFlags.Public
-                    );
-                Assert.IsNotNull(
-                    snapshotField,
-                    "Each route history entry must expose its frozen snapshot."
-                );
+                    .GetField("snapshot", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public);
+                Assert.IsNotNull(snapshotField, "Each route history entry must expose its frozen snapshot.");
 
                 object snapshot = snapshotField.GetValue(historyEntry);
                 Assert.IsNotNull(snapshot, "A route history entry must own a snapshot instance.");
                 System.Reflection.FieldInfo entryCountField = snapshot
                     .GetType()
-                    .GetField(
-                        "entryCount",
-                        System.Reflection.BindingFlags.Instance
-                            | System.Reflection.BindingFlags.Public
-                    );
-                Assert.IsNotNull(
-                    entryCountField,
-                    "Each frozen snapshot must expose its resolved dispatch entry count."
-                );
+                    .GetField("entryCount", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public);
+                Assert.IsNotNull(entryCountField, "Each frozen snapshot must expose its resolved dispatch entry count.");
                 object value = entryCountField.GetValue(snapshot);
-                Assert.IsInstanceOf<int>(
-                    value,
-                    "A frozen snapshot's resolved dispatch entry count must be an integer."
-                );
+                Assert.IsInstanceOf<int>(value, "A frozen snapshot's resolved dispatch entry count must be an integer.");
                 entryCount += (int)value;
             }
 
@@ -1371,12 +944,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 latestEntry = historyEntry;
             }
 
-            System.Reflection.FieldInfo snapshotField = latestEntry
-                .GetType()
-                .GetField(
-                    "snapshot",
-                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public
-                );
+            System.Reflection.FieldInfo snapshotField = latestEntry.GetType().GetField("snapshot", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public);
             Assert.IsNotNull(snapshotField, "A route history entry must expose its snapshot.");
             object snapshot = snapshotField.GetValue(latestEntry);
             Assert.IsNotNull(snapshot, "A route history entry must own a snapshot instance.");
@@ -1386,14 +954,8 @@ namespace DxMessaging.Tests.Runtime.Core
         private static bool IsDispatchSnapshotReleased(object snapshot)
         {
             System.Type snapshotType = snapshot.GetType();
-            System.Reflection.FieldInfo entryCountField = snapshotType.GetField(
-                "entryCount",
-                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public
-            );
-            System.Reflection.FieldInfo flatField = snapshotType.GetField(
-                "flat",
-                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public
-            );
+            System.Reflection.FieldInfo entryCountField = snapshotType.GetField("entryCount", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public);
+            System.Reflection.FieldInfo flatField = snapshotType.GetField("flat", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public);
             Assert.IsNotNull(entryCountField, "A frozen snapshot must expose its entry count.");
             Assert.IsNotNull(flatField, "A frozen snapshot must expose its flat dispatch holder.");
             object value = entryCountField.GetValue(snapshot);
@@ -1403,16 +965,11 @@ namespace DxMessaging.Tests.Runtime.Core
 
         private static object GetPostRouteCompactionIndex()
         {
-            System.Reflection.FieldInfo indexField =
-                typeof(DxMessaging.Core.MessageBus.MessageBus).GetField(
-                    "_postRouteCompactionRoutes",
-                    System.Reflection.BindingFlags.Instance
-                        | System.Reflection.BindingFlags.NonPublic
-                );
-            Assert.IsNotNull(
-                indexField,
-                "MessageBus must expose the transient route compaction index to structural tests."
+            System.Reflection.FieldInfo indexField = typeof(DxMessaging.Core.MessageBus.MessageBus).GetField(
+                "_postRouteCompactionRoutes",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic
             );
+            Assert.IsNotNull(indexField, "MessageBus must expose the transient route compaction index to structural tests.");
             return indexField.GetValue(MessageHandler.MessageBus);
         }
 
@@ -1428,10 +985,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 _isolation = MessageBusInspection.IsolateContextMapPoolForBenchmark();
                 try
                 {
-                    MessageBusInspection.ConfigureContextMapPoolForBenchmark(
-                        _baseline.UseLru,
-                        maxRetained
-                    );
+                    MessageBusInspection.ConfigureContextMapPoolForBenchmark(_baseline.UseLru, maxRetained);
                 }
                 catch
                 {
@@ -1450,10 +1004,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 _disposed = true;
                 try
                 {
-                    MessageBusInspection.ConfigureContextMapPoolForBenchmark(
-                        _baseline.UseLru,
-                        _baseline.MaxRetained
-                    );
+                    MessageBusInspection.ConfigureContextMapPoolForBenchmark(_baseline.UseLru, _baseline.MaxRetained);
                 }
                 finally
                 {
@@ -1464,16 +1015,11 @@ namespace DxMessaging.Tests.Runtime.Core
 
         private static System.Collections.ICollection GetPostRouteSnapshotHistory()
         {
-            System.Reflection.FieldInfo historyField =
-                typeof(DxMessaging.Core.MessageBus.MessageBus).GetField(
-                    "_postRouteSnapshotHistory",
-                    System.Reflection.BindingFlags.Instance
-                        | System.Reflection.BindingFlags.NonPublic
-                );
-            Assert.IsNotNull(
-                historyField,
-                "MessageBus must retain the pre-mutation route history field."
+            System.Reflection.FieldInfo historyField = typeof(DxMessaging.Core.MessageBus.MessageBus).GetField(
+                "_postRouteSnapshotHistory",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic
             );
+            Assert.IsNotNull(historyField, "MessageBus must retain the pre-mutation route history field.");
 
             object value = historyField.GetValue(MessageHandler.MessageBus);
             if (value == null)
@@ -1481,10 +1027,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 return null;
             }
 
-            Assert.IsInstanceOf<System.Collections.ICollection>(
-                value,
-                "The route history must expose collection count semantics for structural tests."
-            );
+            Assert.IsInstanceOf<System.Collections.ICollection>(value, "The route history must expose collection count semantics for structural tests.");
             return (System.Collections.ICollection)value;
         }
 
@@ -1500,83 +1043,52 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 case MessageKind.Targeted:
                 {
-                    return ScenarioHarness.RegisterTargetedInterceptor<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        (ref InstanceId target, ref SimpleTargetedMessage _) =>
+                    return ScenarioHarness.RegisterTargetedInterceptor<SimpleTargetedMessage>(scenario, token, (ref InstanceId target, ref SimpleTargetedMessage _) =>
+                    {
+                        if (target == from)
                         {
-                            if (target == from)
-                            {
-                                target = to;
-                                onRewritten?.Invoke();
-                            }
-
-                            return true;
+                            target = to;
+                            onRewritten?.Invoke();
                         }
-                    );
+
+                        return true;
+                    });
                 }
                 case MessageKind.Broadcast:
                 {
-                    return ScenarioHarness.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        (ref InstanceId source, ref SimpleBroadcastMessage _) =>
+                    return ScenarioHarness.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(scenario, token, (ref InstanceId source, ref SimpleBroadcastMessage _) =>
+                    {
+                        if (source == from)
                         {
-                            if (source == from)
-                            {
-                                source = to;
-                                onRewritten?.Invoke();
-                            }
-
-                            return true;
+                            source = to;
+                            onRewritten?.Invoke();
                         }
-                    );
+
+                        return true;
+                    });
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
 
-        private static MessageRegistrationHandle RegisterCountingHandler(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            InstanceId context,
-            Action onInvoked
-        )
+        private static MessageRegistrationHandle RegisterCountingHandler(MessageScenario scenario, MessageRegistrationToken token, InstanceId context, Action onInvoked)
         {
             switch (scenario.Kind)
             {
                 case MessageKind.Targeted:
                 {
-                    return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        context,
-                        (in SimpleTargetedMessage _) => onInvoked()
-                    );
+                    return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(scenario, token, context, (in SimpleTargetedMessage _) => onInvoked());
                 }
                 case MessageKind.Broadcast:
                 {
-                    return ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        context,
-                        (in SimpleBroadcastMessage _) => onInvoked()
-                    );
+                    return ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(scenario, token, context, (in SimpleBroadcastMessage _) => onInvoked());
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
@@ -1595,82 +1107,47 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     if (delegateShape == PostProcessorDelegateShape.Action)
                     {
-                        return token.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
-                            context,
-                            (SimpleTargetedMessage _) => onInvoked()
-                        );
+                        return token.RegisterTargetedPostProcessor<SimpleTargetedMessage>(context, (SimpleTargetedMessage _) => onInvoked());
                     }
 
-                    return ScenarioHarness.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        context,
-                        (in SimpleTargetedMessage _) => onInvoked()
-                    );
+                    return ScenarioHarness.RegisterTargetedPostProcessor<SimpleTargetedMessage>(scenario, token, context, (in SimpleTargetedMessage _) => onInvoked());
                 }
                 case MessageKind.Broadcast:
                 {
                     if (delegateShape == PostProcessorDelegateShape.Action)
                     {
-                        return token.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(
-                            context,
-                            (SimpleBroadcastMessage _) => onInvoked()
-                        );
+                        return token.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(context, (SimpleBroadcastMessage _) => onInvoked());
                     }
 
-                    return ScenarioHarness.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        context,
-                        (in SimpleBroadcastMessage _) => onInvoked()
-                    );
+                    return ScenarioHarness.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(scenario, token, context, (in SimpleBroadcastMessage _) => onInvoked());
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
 
-        private static MessageRegistrationHandle RegisterWithoutContextRecorder(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            Action<InstanceId> onObserved
-        )
+        private static MessageRegistrationHandle RegisterWithoutContextRecorder(MessageScenario scenario, MessageRegistrationToken token, Action<InstanceId> onObserved)
         {
             switch (scenario.Kind)
             {
                 case MessageKind.Targeted:
                 {
-                    return token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(
-                        (InstanceId target, SimpleTargetedMessage _) => onObserved(target)
-                    );
+                    return token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>((InstanceId target, SimpleTargetedMessage _) => onObserved(target));
                 }
                 case MessageKind.Broadcast:
                 {
-                    return token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>(
-                        (InstanceId source, SimpleBroadcastMessage _) => onObserved(source)
-                    );
+                    return token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>((InstanceId source, SimpleBroadcastMessage _) => onObserved(source));
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }
 
-        private static MessageRegistrationHandle RegisterGlobalContextRecorder(
-            MessageRegistrationToken token,
-            Action<InstanceId> onObserved
-        )
+        private static MessageRegistrationHandle RegisterGlobalContextRecorder(MessageRegistrationToken token, Action<InstanceId> onObserved)
         {
             return token.RegisterGlobalAcceptAll(
                 (IUntargetedMessage _) => { },
@@ -1709,11 +1186,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 default:
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, "Unsupported message kind.");
                 }
             }
         }

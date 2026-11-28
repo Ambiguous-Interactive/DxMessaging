@@ -1,6 +1,7 @@
 # DxMessaging Patterns: Real-World Solutions
 
-[Back to Index](../getting-started/index.md) | [Getting Started](../getting-started/getting-started.md) | [Message Types](../concepts/message-types.md) | [Samples](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/Samples~)
+[Back to Index](../getting-started/index.md) | [Getting Started](../getting-started/getting-started.md) | [Message Types](../concepts/message-types.md) |
+[Samples](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/Samples~)
 
 ---
 
@@ -239,12 +240,10 @@ Untargeted messages flow anywhere; targeted/broadcast require a valid `InstanceI
 
 `ReflexiveMessage` mirrors `SendMessage*` patterns but keeps you in the bus pipeline.
 
-> **Fixed in v4.0.0:** Combine `Flat`, `Upwards`, and `Downwards` to traverse more than one
-> direction. Sends include disabled components and inactive GameObjects unless you also set
-> `OnlyIncludeActive`. A missing receiver is silent for every argument count. Nested reflexive
-> sends preserve the outer traversal, and receivers destroyed during traversal are skipped. Active
-> single-direction sends with zero or one argument keep Unity's native per-GameObject behavior, so a
-> reset from one receiver completes that GameObject before traversal stops.
+> **Fixed in v4.0.0:** Combine `Flat`, `Upwards`, and `Downwards` to traverse more than one direction. Sends include disabled components and inactive GameObjects unless you also
+> set `OnlyIncludeActive`. A missing receiver is silent for every argument count. Nested reflexive sends preserve the outer traversal, and receivers destroyed during traversal are
+> skipped. Active single-direction sends with zero or one argument keep Unity's native per-GameObject behavior, so a reset from one receiver completes that GameObject before
+> traversal stops.
 
 ```csharp
 using DxMessaging.Core;
@@ -415,7 +414,8 @@ public class Boss : MessageAwareComponent {
 
 **Key insight:** Persistent listeners (`DontDestroyOnLoad`) stay registered across scenes. Scene-specific emitters come/go, but the observer remains.
 
-**Gotcha:** If you emit `Targeted` or `Broadcast` messages, ensure the target/source `InstanceId` is still valid after scene loads. For cross-scene communication, prefer `Untargeted` messages.
+**Gotcha:** If you emit `Targeted` or `Broadcast` messages, ensure the target/source `InstanceId` is still valid after scene loads. For cross-scene communication, prefer
+`Untargeted` messages.
 
 ### Pattern: Large-Scale UI System (20+ Panels)
 
@@ -504,9 +504,8 @@ public class PlayerStats : MonoBehaviour {
 
 **Challenge:** Invoke save, audio and UI handlers in a chosen order.
 
-Save each component class in a matching `.cs` file with the shown imports. Attach and enable the
-three listeners before calling `ExitController.RequestExit`. This example logs handler invocation;
-replace each log with the corresponding application work. All components use the global bus here.
+Save each component class in a matching `.cs` file with the shown imports. Attach and enable the three listeners before calling `ExitController.RequestExit`. This example logs
+handler invocation; replace each log with the corresponding application work. All components use the global bus here.
 
 ```csharp
 using DxMessaging.Core.Attributes;
@@ -570,8 +569,7 @@ public sealed class ExitController : MonoBehaviour
 }
 ```
 
-**Key insight:** Lower priority numbers run first. Priority orders these synchronous callback
-invocations; asynchronous or deferred work needs its own completion coordination.
+**Key insight:** Lower priority numbers run first. Priority orders these synchronous callback invocations; asynchronous or deferred work needs its own completion coordination.
 
 #### Recommended priority ranges
 
@@ -660,9 +658,8 @@ public class GameAnalytics : MessageAwareComponent {
 }
 ```
 
-**Key insight:** Handlers own gameplay and presentation state. Post-processors let you add
-analytics, logging, and telemetry without modifying those handlers. A post-processor sees the
-processed message, not proof that a handler changed health or any other state.
+**Key insight:** Handlers own gameplay and presentation state. Post-processors let you add analytics, logging, and telemetry without modifying those handlers. A post-processor sees
+the processed message, not proof that a handler changed health or any other state.
 
 ### Performance Optimization Patterns at Scale
 
@@ -725,16 +722,13 @@ void LateUpdate() {
 }
 ```
 
-This example coalesces changes made before `LateUpdate` into one emission from that callback.
-Clear the dirty flag before emitting: dispatch is synchronous, so a listener can call `TakeDamage`
-and mark the next batch dirty. Those changes are emitted on the next `LateUpdate` instead of being
-lost when the current emission returns. Intermediate health values are omitted. The reduction
-depends on how many changes occur between flushes; this example does not measure throughput.
+This example coalesces changes made before `LateUpdate` into one emission from that callback. Clear the dirty flag before emitting: dispatch is synchronous, so a listener can call
+`TakeDamage` and mark the next batch dirty. Those changes are emitted on the next `LateUpdate` instead of being lost when the current emission returns. Intermediate health values
+are omitted. The reduction depends on how many changes occur between flushes; this example does not measure throughput.
 
 ### Scaling Guidelines
 
-Measure representative workloads on the target hardware, Unity backend and build configuration.
-Record subscriber fan-out and callback work alongside the message rate:
+Measure representative workloads on the target hardware, Unity backend and build configuration. Record subscriber fan-out and callback work alongside the message rate:
 
 | Workload                  | Measurements to collect                                          |
 | ------------------------- | ---------------------------------------------------------------- |
@@ -743,10 +737,8 @@ Record subscriber fan-out and callback work alongside the message rate:
 | Spawn, despawn or pooling | Registration work, cleanup work and managed allocations          |
 | Diagnostics enabled       | Capture mode, recording cost and retained history                |
 
-Compare results within the scope recorded by the
-[performance benchmarks](../architecture/performance.md). Use the
-[measurement methodology](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/docs/runbooks/perf-benchmark-methodology.md)
-when collecting new results.
+Compare results within the scope recorded by the [performance benchmarks](../architecture/performance.md). Use the
+[measurement methodology](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/docs/runbooks/perf-benchmark-methodology.md) when collecting new results.
 
 <a id="real-world-production-example-battle-royale-game"></a>
 
@@ -833,45 +825,35 @@ public class MatchStats : MessageAwareComponent {
 
 #### Example traffic assumptions
 
-Assume each of the 100 players emits 10 damage messages per second and the match emits 5 kill
-messages per second:
+Assume each of the 100 players emits 10 damage messages per second and the match emits 5 kill messages per second:
 
 - Self health UI: 1 source-filtered registration observes 10 damage messages/sec.
 - Team health UI: 4 source-filtered registrations observe 40 damage messages/sec in total.
 - Kill feed UI: 1 registration observes all 5 kill messages/sec.
 - Match stats: 1 post-processor observes all 1000 damage messages/sec and counts processed payloads.
 
-These assumed rates describe message volume and filtering. They do not measure dispatch cost, UI
-updates, dictionary growth, allocations or frame time. Measure the complete workload on the target
-hardware and backend; the [published benchmarks](../architecture/performance.md) cover their named
-dispatch scenarios with minimal handler work.
+These assumed rates describe message volume and filtering. They do not measure dispatch cost, UI updates, dictionary growth, allocations or frame time. Measure the complete
+workload on the target hardware and backend; the [published benchmarks](../architecture/performance.md) cover their named dispatch scenarios with minimal handler work.
 
 ---
 
-Use source-filtered observation for specific entities, global observation for analytics, and
-post-processors for metrics. Batch emissions only when omitting intermediate values is acceptable,
-and measure diagnostics overhead in the configuration you plan to ship.
+Use source-filtered observation for specific entities, global observation for analytics, and post-processors for metrics. Batch emissions only when omitting intermediate values is
+acceptable, and measure diagnostics overhead in the configuration you plan to ship.
 
 ---
 
 ## 14) Compatibility with Scriptable Object Architecture (SOA)
 
-Scriptable Object Architecture uses shared assets for data, variables, event channels or runtime
-sets. DxMessaging can carry notifications between systems that use those assets.
+Scriptable Object Architecture uses shared assets for data, variables, event channels or runtime sets. DxMessaging can carry notifications between systems that use those assets.
 
-[Unity's architecture guide](https://unity.com/how-to/architect-game-code-scriptable-objects)
-demonstrates both mutable runtime variables and asset-based events. ScriptableObjects are not
-restricted to immutable configuration. The
-[Unity 2021.3 manual](https://docs.unity3d.com/2021.3/Documentation/Manual/class-ScriptableObject.html)
-distinguishes shared data loaded from assets from saving asset changes: a deployed player needs its
-own save system for persistent runtime changes.
+[Unity's architecture guide](https://unity.com/how-to/architect-game-code-scriptable-objects) demonstrates both mutable runtime variables and asset-based events. ScriptableObjects
+are not restricted to immutable configuration. The [Unity 2021.3 manual](https://docs.unity3d.com/2021.3/Documentation/Manual/class-ScriptableObject.html) distinguishes shared data
+loaded from assets from saving asset changes: a deployed player needs its own save system for persistent runtime changes.
 
 ### What is Scriptable Object Architecture?
 
-Ryan Hipple's [Unite Austin 2017 talk](https://www.youtube.com/watch?v=raQ3iHhE_Kk) describes assets
-used as shared variables, event channels and runtime collections. Serialized references let multiple
-components access the same asset. The asset's implementation defines its payload, mutation and
-listener behavior.
+Ryan Hipple's [Unite Austin 2017 talk](https://www.youtube.com/watch?v=raQ3iHhE_Kk) describes assets used as shared variables, event channels and runtime collections. Serialized
+references let multiple components access the same asset. The asset's implementation defines its payload, mutation and listener behavior.
 
 <a id="why-soa-is-controversial"></a>
 
@@ -879,28 +861,21 @@ listener behavior.
 
 Decide these responsibilities before connecting an asset to the bus:
 
-- **State owner:** Identify which asset or service owns health, scores or collection membership.
-  A notification reports a change; it does not replace that state or answer a current-state query.
-- **Initial state:** Give new listeners a current snapshot when they need one. A listener that
-  subscribes after a change cannot reconstruct it from future notifications alone.
-- **Reset:** Define what resets at a new game, scene boundary and play session. Test the domain
-  reload configuration used by the project.
-- **Subscription lifetime:** Pair asset listeners and bus registrations with their actual owners.
-  A bridge owns subscriptions on both sides.
-- **Persistence:** Separate authored defaults, runtime values and saved-game data. Decide which
-  changes should survive a session and which storage writes them.
-- **Testing:** Restore shared asset state and dispose subscriptions between tests. Local buses
-  isolate message routing; they do not isolate a shared asset's data.
+- **State owner:** Identify which asset or service owns health, scores or collection membership. A notification reports a change; it does not replace that state or answer a
+  current-state query.
+- **Initial state:** Give new listeners a current snapshot when they need one. A listener that subscribes after a change cannot reconstruct it from future notifications alone.
+- **Reset:** Define what resets at a new game, scene boundary and play session. Test the domain reload configuration used by the project.
+- **Subscription lifetime:** Pair asset listeners and bus registrations with their actual owners. A bridge owns subscriptions on both sides.
+- **Persistence:** Separate authored defaults, runtime values and saved-game data. Decide which changes should survive a session and which storage writes them.
+- **Testing:** Restore shared asset state and dispose subscriptions between tests. Local buses isolate message routing; they do not isolate a shared asset's data.
 
-[Anti-ScriptableObject Architecture](https://github.com/cathei/AntiScriptableObjectArchitecture)
-is a critique of these patterns. Evaluate its arguments alongside Unity's examples and the needs of
-your project; it does not establish that every runtime asset use is invalid.
+[Anti-ScriptableObject Architecture](https://github.com/cathei/AntiScriptableObjectArchitecture) is a critique of these patterns. Evaluate its arguments alongside Unity's examples
+and the needs of your project; it does not establish that every runtime asset use is invalid.
 
 ### Can DxMessaging Work with SOA?
 
-Use an asset or service to own state and DxMessaging to report changes. Choose event assets when
-serialized asset references suit the authoring workflow. Choose typed bus registrations when code
-needs DxMessaging routing, interception, priorities or diagnostics. A bridge can connect the two.
+Use an asset or service to own state and DxMessaging to report changes. Choose event assets when serialized asset references suit the authoring workflow. Choose typed bus
+registrations when code needs DxMessaging routing, interception, priorities or diagnostics. A bridge can connect the two.
 
 | Responsibility   | ScriptableObject-based design                                      | DxMessaging                                                                  |
 | ---------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
@@ -924,9 +899,8 @@ needs DxMessaging routing, interception, priorities or diagnostics. A bridge can
 
 **Strategy:** SOA GameEventListener forwards to DxMessaging.
 
-> **This uses the SOA GameEvent pattern:** If you're NOT using designer-created GameEvent assets
-> with `Raise()`/listener management, you don't need this pattern. For immutable config data,
-> see Pattern B instead.
+> **This uses the SOA GameEvent pattern:** If you're NOT using designer-created GameEvent assets with `Raise()`/listener management, you don't need this pattern. For immutable
+> config data, see Pattern B instead.
 
 #### Example: Scene Transitions
 
@@ -1037,17 +1011,13 @@ public class AudioSystem : MessageAwareComponent
 }
 ```
 
-Each `Raise()` uses a snapshot in reverse registration order. Listener edits affect later raises;
-a nested raise uses the updated list. Null callbacks are skipped, and an exception stops the current
-raise. `RegisterListener` permits duplicates; `UnregisterListener` removes the first matching entry.
-A nonempty listener list creates an array for each raise. Include that allocation when profiling
-this custom channel.
+Each `Raise()` uses a snapshot in reverse registration order. Listener edits affect later raises; a nested raise uses the updated list. Null callbacks are skipped, and an exception
+stops the current raise. `RegisterListener` permits duplicates; `UnregisterListener` removes the first matching entry. A nonempty listener list creates an array for each raise.
+Include that allocation when profiling this custom channel.
 
-Assign the event asset before enabling the bridge. Each enable replaces the previous binding and
-creates a callback for that binding. Teardown invalidates it before unregistering from the cached
-asset, so a callback captured by an earlier raise cannot forward after that binding ends. Editing
-or clearing the Inspector field affects the next enable; cleanup still uses the subscribed asset.
-The audio listener logs the notification; replace that log with the application's fade operation.
+Assign the event asset before enabling the bridge. Each enable replaces the previous binding and creates a callback for that binding. Teardown invalidates it before unregistering
+from the cached asset, so a callback captured by an earlier raise cannot forward after that binding ends. Editing or clearing the Inspector field affects the next enable; cleanup
+still uses the subscribed asset. The audio listener logs the notification; replace that log with the application's fade operation.
 
 ##### Benefits
 
@@ -1065,9 +1035,8 @@ The audio listener logs the notification; replace that log with the application'
 
 **Use case:** ScriptableObjects for immutable config data, DxMessaging for runtime events.
 
-**Strategy:** Read shared configuration from assets and emit runtime notifications through the bus.
-No event-asset bridge is needed for this arrangement. This example leaves the configuration unchanged
-during play; that is an application choice, not a ScriptableObject restriction.
+**Strategy:** Read shared configuration from assets and emit runtime notifications through the bus. No event-asset bridge is needed for this arrangement. This example leaves the
+configuration unchanged during play; that is an application choice, not a ScriptableObject restriction.
 
 #### Example: Combat with Designer-Tunable Data
 
@@ -1154,14 +1123,11 @@ Migrate a notification channel separately from the state it describes:
 1. Move listeners incrementally, checking that a transition does not produce duplicate delivery.
 1. Remove a bridge or asset only after every remaining reference and owner has been accounted for.
 
-For shared variables, keep an explicit state owner. An asset or service can hold the current value
-while messages report changes. Preserve initialization, reset and save behavior if you move that
-state to another owner.
+For shared variables, keep an explicit state owner. An asset or service can hold the current value while messages report changes. Preserve initialization, reset and save behavior
+if you move that state to another owner.
 
-For runtime sets, retain a membership collection or service with queries for current members.
-Messages can announce additions and removals, but a new observer still needs an initial snapshot
-and a defined ordering between that snapshot and subsequent changes. A
-`RegisterBroadcastWithoutSource` subscription alone is not a replacement for a runtime set.
+For runtime sets, retain a membership collection or service with queries for current members. Messages can announce additions and removals, but a new observer still needs an
+initial snapshot and a defined ordering between that snapshot and subsequent changes. A `RegisterBroadcastWithoutSource` subscription alone is not a replacement for a runtime set.
 
 ### Final Recommendations
 

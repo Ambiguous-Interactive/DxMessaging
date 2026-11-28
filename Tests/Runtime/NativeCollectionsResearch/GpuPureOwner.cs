@@ -14,8 +14,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
         public uint High;
         public long Signed => unchecked((long)(((ulong)High << 32) | Low));
 
-        public static GpuWordPair From(long value) =>
-            new() { Low = unchecked((uint)value), High = unchecked((uint)((ulong)value >> 32)) };
+        public static GpuWordPair From(long value) => new() { Low = unchecked((uint)value), High = unchecked((uint)((ulong)value >> 32)) };
     }
 
     internal sealed class GpuPureOwner : IDisposable
@@ -32,15 +31,9 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
         internal int ReleaseCount { get; private set; }
         internal bool HasPending => _pending;
         internal bool HasBuffers => _input != null && _stage != null && _final != null;
-        internal bool HasResources =>
-            _input != null || _stage != null || _final != null || _commands != null;
+        internal bool HasResources => _input != null || _stage != null || _final != null || _commands != null;
         internal bool HasReadbackError { get; private set; }
-        internal bool ScratchCleared =>
-            OriginalInput == null
-            && ObservedInput == null
-            && ObservedStage == null
-            && ObservedFinal == null
-            && _shader == null;
+        internal bool ScratchCleared => OriginalInput == null && ObservedInput == null && ObservedStage == null && ObservedFinal == null && _shader == null;
         private readonly int _thread = Thread.CurrentThread.ManagedThreadId;
         private ComputeShader _shader;
         private GraphicsBuffer _input,
@@ -160,10 +153,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                 Dispatches += 2;
                 Groups += groups * 2;
             }
-            _fence = _commands.CreateGraphicsFence(
-                GraphicsFenceType.CPUSynchronisation,
-                SynchronisationStageFlags.AllGPUOperations
-            );
+            _fence = _commands.CreateGraphicsFence(GraphicsFenceType.CPUSynchronisation, SynchronisationStageFlags.AllGPUOperations);
             _submitted = true;
             _pending = true;
             Graphics.ExecuteCommandBuffer(_commands);
@@ -174,9 +164,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
         {
             RequireLive();
             if (!_submitted || _issued != 0)
-                throw new InvalidOperationException(
-                    "Exactly one observation per submission required."
-                );
+                throw new InvalidOperationException("Exactly one observation per submission required.");
             _pending = true;
             _requests[_issued] = AsyncGPUReadback.Request(_input);
             ++_issued;
@@ -226,9 +214,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
             if (_disposed)
                 return;
             if (_pending)
-                throw new InvalidOperationException(
-                    "Observe actual GPU completion before release."
-                );
+                throw new InvalidOperationException("Observe actual GPU completion before release.");
             if (_commands != null)
             {
                 _commands.Release();

@@ -126,11 +126,7 @@ namespace DxMessaging.Editor
             ApplyCompleteBorder(element, borderColor, CompleteBorderWidth);
         }
 
-        internal static void ApplyCompleteBorder(
-            VisualElement element,
-            Color borderColor,
-            float borderWidth
-        )
+        internal static void ApplyCompleteBorder(VisualElement element, Color borderColor, float borderWidth)
         {
             if (element == null)
             {
@@ -169,14 +165,7 @@ namespace DxMessaging.Editor
 
         internal static void AddRouteKindTypeBadgeClasses(VisualElement element, string routeKind)
         {
-            AddRouteKindClasses(
-                element,
-                routeKind,
-                TypeBadgeClassName,
-                TypeBadgeUntargetedClassName,
-                TypeBadgeTargetedClassName,
-                TypeBadgeBroadcastClassName
-            );
+            AddRouteKindClasses(element, routeKind, TypeBadgeClassName, TypeBadgeUntargetedClassName, TypeBadgeTargetedClassName, TypeBadgeBroadcastClassName);
         }
 
         private static void AddRouteKindClasses(
@@ -215,14 +204,7 @@ namespace DxMessaging.Editor
         /// </summary>
         internal static void AddRouteKindDotClasses(VisualElement element, string routeKind)
         {
-            AddRouteKindClasses(
-                element,
-                routeKind,
-                DotClassName,
-                DotUntargetedClassName,
-                DotTargetedClassName,
-                DotBroadcastClassName
-            );
+            AddRouteKindClasses(element, routeKind, DotClassName, DotUntargetedClassName, DotTargetedClassName, DotBroadcastClassName);
         }
 
         /// <summary>
@@ -231,14 +213,7 @@ namespace DxMessaging.Editor
         /// </summary>
         internal static void AddRouteKindChipClasses(VisualElement element, string routeKind)
         {
-            AddRouteKindClasses(
-                element,
-                routeKind,
-                ChipClassName,
-                ChipUntargetedClassName,
-                ChipTargetedClassName,
-                ChipBroadcastClassName
-            );
+            AddRouteKindClasses(element, routeKind, ChipClassName, ChipUntargetedClassName, ChipTargetedClassName, ChipBroadcastClassName);
         }
 
         /// <summary>
@@ -247,12 +222,7 @@ namespace DxMessaging.Editor
         /// <c>.dx-empty__body</c> detail label. Callers may name the title/body labels so tests
         /// and callbacks can query them.
         /// </summary>
-        internal static VisualElement CreateEmptyState(
-            string title,
-            string body,
-            string bodyName = null,
-            string titleName = null
-        )
+        internal static VisualElement CreateEmptyState(string title, string body, string bodyName = null, string titleName = null)
         {
             VisualElement container = new();
             container.AddToClassList(EmptyClassName);
@@ -358,10 +328,7 @@ namespace DxMessaging.Editor
                     the opposite of what the names suggest -- so before the first drag this falls
                     back to the resolved height rather than reading a `value` of 0 and jumping.
                 */
-                startHeight =
-                    !allowTargetShrink && target.style.height.keyword == StyleKeyword.Undefined
-                        ? target.style.height.value.value
-                        : target.resolvedStyle.height;
+                startHeight = !allowTargetShrink && target.style.height.keyword == StyleKeyword.Undefined ? target.style.height.value.value : target.resolvedStyle.height;
                 handle.CapturePointer(evt.pointerId);
                 evt.StopPropagation();
             });
@@ -374,9 +341,7 @@ namespace DxMessaging.Editor
 
                 float pointerDelta = evt.position.y - pointerStartY;
                 float requested = startHeight + (growsUpward ? -pointerDelta : pointerDelta);
-                onHeightChanged?.Invoke(
-                    ApplyResizedHeight(target, requested, minHeight, maxHeight, allowTargetShrink)
-                );
+                onHeightChanged?.Invoke(ApplyResizedHeight(target, requested, minHeight, maxHeight, allowTargetShrink));
                 evt.StopPropagation();
             });
             handle.RegisterCallback<PointerUpEvent>(evt =>
@@ -398,13 +363,7 @@ namespace DxMessaging.Editor
         /// height is only a starting size that Yoga takes straight back unless the caller
         /// explicitly keeps shrink enabled for a window-level pane.
         /// </summary>
-        internal static float ApplyResizedHeight(
-            VisualElement target,
-            float requestedHeight,
-            float minHeight,
-            float maxHeight,
-            bool allowTargetShrink = false
-        )
+        internal static float ApplyResizedHeight(VisualElement target, float requestedHeight, float minHeight, float maxHeight, bool allowTargetShrink = false)
         {
             if (target == null)
             {
@@ -450,14 +409,8 @@ namespace DxMessaging.Editor
             container.style.flexWrap = Wrap.Wrap;
             container.style.alignContent = Align.FlexStart;
             WrapHeightFit fit = new(container);
-            container.RegisterCallback<GeometryChangedEvent, WrapHeightFit>(
-                static (_, state) => state.Fit(),
-                fit
-            );
-            container.RegisterCallback<DetachFromPanelEvent, WrapHeightFit>(
-                static (_, state) => state.Release(),
-                fit
-            );
+            container.RegisterCallback<GeometryChangedEvent, WrapHeightFit>(static (_, state) => state.Fit(), fit);
+            container.RegisterCallback<DetachFromPanelEvent, WrapHeightFit>(static (_, state) => state.Release(), fit);
         }
 
         /// <summary>
@@ -504,10 +457,7 @@ namespace DxMessaging.Editor
                     return 0f;
                 }
 
-                contentBottom = Mathf.Max(
-                    contentBottom,
-                    childLayout.yMax + child.resolvedStyle.marginBottom
-                );
+                contentBottom = Mathf.Max(contentBottom, childLayout.yMax + child.resolvedStyle.marginBottom);
                 measured = true;
             }
 
@@ -595,10 +545,7 @@ namespace DxMessaging.Editor
                         continue;
                     }
 
-                    child.RegisterCallback<GeometryChangedEvent, WrapHeightFit>(
-                        static (_, state) => state.Fit(),
-                        this
-                    );
+                    child.RegisterCallback<GeometryChangedEvent, WrapHeightFit>(static (_, state) => state.Fit(), this);
                 }
             }
         }
@@ -613,10 +560,7 @@ namespace DxMessaging.Editor
             StyleSheet styleSheet = LoadStyleSheet(path);
             if (styleSheet == null)
             {
-                DxMessagingEditorLog.LogWarning(
-                    $"DxMessaging editor stylesheet was not found at '{path}'.",
-                    exception: null
-                );
+                DxMessagingEditorLog.LogWarning($"DxMessaging editor stylesheet was not found at '{path}'.", exception: null);
                 return;
             }
 

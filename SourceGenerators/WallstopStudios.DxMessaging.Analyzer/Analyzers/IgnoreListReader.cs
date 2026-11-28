@@ -38,15 +38,9 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
 
         private static readonly char[] DirectorySeparators = { '/', '\\' };
 
-        private static readonly ConditionalWeakTable<
-            AnalyzerOptions,
-            Lazy<ImmutableHashSet<string>>
-        > Cache = new();
+        private static readonly ConditionalWeakTable<AnalyzerOptions, Lazy<ImmutableHashSet<string>>> Cache = new();
 
-        internal static ImmutableHashSet<string> Load(
-            AnalyzerOptions options,
-            CancellationToken cancellationToken
-        )
+        internal static ImmutableHashSet<string> Load(AnalyzerOptions options, CancellationToken cancellationToken)
         {
             if (options is null)
             {
@@ -65,9 +59,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                 file, so dropping cancellation here is acceptable; the outer `cancellationToken`
                 parameter still flows through symbol-side lookups in the analyzer call sites.
             */
-            Lazy<ImmutableHashSet<string>> lazy = Cache.GetValue(options, key => new Lazy<
-                ImmutableHashSet<string>
-            >(
+            Lazy<ImmutableHashSet<string>> lazy = Cache.GetValue(options, key => new Lazy<ImmutableHashSet<string>>(
                 () => Parse(key, CancellationToken.None),
                 System.Threading.LazyThreadSafetyMode.ExecutionAndPublication
             ));
@@ -75,14 +67,9 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
             return lazy.Value;
         }
 
-        private static ImmutableHashSet<string> Parse(
-            AnalyzerOptions options,
-            CancellationToken cancellationToken
-        )
+        private static ImmutableHashSet<string> Parse(AnalyzerOptions options, CancellationToken cancellationToken)
         {
-            ImmutableHashSet<string>.Builder builder = ImmutableHashSet.CreateBuilder<string>(
-                StringComparer.Ordinal
-            );
+            ImmutableHashSet<string>.Builder builder = ImmutableHashSet.CreateBuilder<string>(StringComparer.Ordinal);
 
             foreach (AdditionalText additionalText in options.AdditionalFiles)
             {
@@ -127,10 +114,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                         correctly. The analyzer always compares against an FQN with the global
                         namespace style omitted.
                     */
-                    while (
-                        trimmed.StartsWith(GlobalPrefix, StringComparison.Ordinal)
-                        && GlobalPrefix.Length < trimmed.Length
-                    )
+                    while (trimmed.StartsWith(GlobalPrefix, StringComparison.Ordinal) && GlobalPrefix.Length < trimmed.Length)
                     {
                         trimmed = trimmed.Substring(GlobalPrefix.Length);
                     }

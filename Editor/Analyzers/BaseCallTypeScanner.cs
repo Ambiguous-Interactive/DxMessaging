@@ -78,8 +78,7 @@ namespace DxMessaging.Editor.Analyzers
                 TypeCache (rather than scanning every loaded assembly via AppDomain) is important
                 for performance; a fresh project can have hundreds of assemblies loaded.
             */
-            TypeCache.TypeCollection candidates =
-                TypeCache.GetTypesDerivedFrom<MessageAwareComponent>();
+            TypeCache.TypeCollection candidates = TypeCache.GetTypesDerivedFrom<MessageAwareComponent>();
 
             /*
                 Defensive: TypeCache.GetTypesDerivedFrom<T>() returns strict subclasses, but
@@ -87,11 +86,7 @@ namespace DxMessaging.Editor.Analyzers
                 list through Core.Scan which itself skips MessageAwareComponent by FQN match.
                 The Core handles abstract / generic-definition / null-FQN skipping uniformly.
             */
-            Dictionary<string, BaseCallTypeScannerCore.ScanEntry> coreResult =
-                BaseCallTypeScannerCore.Scan(
-                    candidates,
-                    settings != null ? settings._baseCallIgnoredTypes : null
-                );
+            Dictionary<string, BaseCallTypeScannerCore.ScanEntry> coreResult = BaseCallTypeScannerCore.Scan(candidates, settings != null ? settings._baseCallIgnoredTypes : null);
 
             Dictionary<string, BaseCallReportEntry> result = new(StringComparer.Ordinal);
             foreach (KeyValuePair<string, BaseCallTypeScannerCore.ScanEntry> kvp in coreResult)

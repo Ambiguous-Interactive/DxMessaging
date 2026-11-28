@@ -25,10 +25,7 @@ namespace DxMessaging.Unity
     /// // startupBus still references the original global bus
     /// </code>
     /// </example>
-    [CreateAssetMenu(
-        fileName = "InitialGlobalMessageBusProvider",
-        menuName = "Wallstop Studios/DxMessaging/Message Bus Providers/Initial Global Message Bus"
-    )]
+    [CreateAssetMenu(fileName = "InitialGlobalMessageBusProvider", menuName = "Wallstop Studios/DxMessaging/Message Bus Providers/Initial Global Message Bus")]
     public sealed class InitialGlobalMessageBusProvider : ScriptableMessageBusProvider
     {
         /// <summary>

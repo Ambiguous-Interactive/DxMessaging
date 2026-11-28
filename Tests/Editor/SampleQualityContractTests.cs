@@ -25,9 +25,7 @@ namespace DxMessaging.Tests.Editor
         public void RunnableSamplesShipScenesWithResolvableScriptReferences()
         {
             string miniScene = ReadPackageFile("Samples~/Mini Combat/MiniCombat.unity");
-            string uiScene = ReadPackageFile(
-                "Samples~/UI Buttons + Inspector/UIButtonsInspector.unity"
-            );
+            string uiScene = ReadPackageFile("Samples~/UI Buttons + Inspector/UIButtonsInspector.unity");
 
             AssertSceneReferences(
                 miniScene,
@@ -61,10 +59,7 @@ namespace DxMessaging.Tests.Editor
             }
 
             AssertImportedSceneLoads(importedSamplesRoot, "Mini Combat/MiniCombat.unity");
-            AssertImportedSceneLoads(
-                importedSamplesRoot,
-                "UI Buttons + Inspector/UIButtonsInspector.unity"
-            );
+            AssertImportedSceneLoads(importedSamplesRoot, "UI Buttons + Inspector/UIButtonsInspector.unity");
         }
 
         [Test]
@@ -76,34 +71,22 @@ namespace DxMessaging.Tests.Editor
                 return;
             }
 
-            using OwnedEditModeScene isolatedScene = OwnedEditModeScene.OpenAuthored(
-                $"{importedSamplesRoot}/Mini Combat/MiniCombat.unity"
-            );
+            using OwnedEditModeScene isolatedScene = OwnedEditModeScene.OpenAuthored($"{importedSamplesRoot}/Mini Combat/MiniCombat.unity");
             GameObject? host = null;
 
             try
             {
-                Assert.That(
-                    isolatedScene.Scene.IsValid(),
-                    Is.True,
-                    "The fallback test must open an isolated scene."
-                );
+                Assert.That(isolatedScene.Scene.IsValid(), Is.True, "The fallback test must open an isolated scene.");
                 isolatedScene.Activate();
                 Type bootType = FindSceneComponent(isolatedScene.Scene, "Boot").GetType();
                 host = isolatedScene.CreateGameObject("Mini Combat fallback owner");
                 Component boot = host.AddComponent(bootType);
-                FieldInfo playerField = bootType.GetField(
-                    "player",
-                    BindingFlags.Instance | BindingFlags.NonPublic
-                ) ?? throw new AssertionException("Boot must retain its fallback Player.");
-                FieldInfo enemyField = bootType.GetField(
-                    "enemy",
-                    BindingFlags.Instance | BindingFlags.NonPublic
-                ) ?? throw new AssertionException("Boot must retain its fallback Enemy.");
-                FieldInfo overlayField = bootType.GetField(
-                    "uiOverlay",
-                    BindingFlags.Instance | BindingFlags.NonPublic
-                ) ?? throw new AssertionException("Boot must retain its fallback UI Overlay.");
+                FieldInfo playerField = bootType.GetField("player", BindingFlags.Instance | BindingFlags.NonPublic)
+                    ?? throw new AssertionException("Boot must retain its fallback Player.");
+                FieldInfo enemyField = bootType.GetField("enemy", BindingFlags.Instance | BindingFlags.NonPublic)
+                    ?? throw new AssertionException("Boot must retain its fallback Enemy.");
+                FieldInfo overlayField = bootType.GetField("uiOverlay", BindingFlags.Instance | BindingFlags.NonPublic)
+                    ?? throw new AssertionException("Boot must retain its fallback UI Overlay.");
 
                 if (playerField.GetValue(boot) == null)
                 {
@@ -123,16 +106,8 @@ namespace DxMessaging.Tests.Editor
                 );
 
                 InvokeRequired(boot, "OnDestroy");
-                Assert.That(
-                    ownedObjects.All(ownedObject => ownedObject == null),
-                    Is.True,
-                    "Boot.OnDestroy must destroy every fallback it created."
-                );
-                Assert.That(
-                    host,
-                    Is.Not.Null,
-                    "Fallback cleanup must not destroy the externally owned Boot GameObject."
-                );
+                Assert.That(ownedObjects.All(ownedObject => ownedObject == null), Is.True, "Boot.OnDestroy must destroy every fallback it created.");
+                Assert.That(host, Is.Not.Null, "Fallback cleanup must not destroy the externally owned Boot GameObject.");
             }
             finally
             {
@@ -152,9 +127,7 @@ namespace DxMessaging.Tests.Editor
                 return;
             }
 
-            using OwnedEditModeScene isolatedScene = OwnedEditModeScene.OpenAuthored(
-                $"{importedSamplesRoot}/Mini Combat/MiniCombat.unity"
-            );
+            using OwnedEditModeScene isolatedScene = OwnedEditModeScene.OpenAuthored($"{importedSamplesRoot}/Mini Combat/MiniCombat.unity");
             GameObject? host = null;
             GameObject? assignedPlayer = null;
             GameObject? assignedOverlay = null;
@@ -162,11 +135,7 @@ namespace DxMessaging.Tests.Editor
 
             try
             {
-                Assert.That(
-                    isolatedScene.Scene.IsValid(),
-                    Is.True,
-                    "The mixed-ownership test must open an isolated scene."
-                );
+                Assert.That(isolatedScene.Scene.IsValid(), Is.True, "The mixed-ownership test must open an isolated scene.");
                 isolatedScene.Activate();
                 Type bootType = FindSceneComponent(isolatedScene.Scene, "Boot").GetType();
                 Type playerType = FindSceneComponent(isolatedScene.Scene, "Player").GetType();
@@ -185,33 +154,13 @@ namespace DxMessaging.Tests.Editor
 
                 InvokeRequired(boot, "Awake");
                 createdEnemy = ((Component)enemyField.GetValue(boot)).gameObject;
-                Assert.That(
-                    playerField.GetValue(boot),
-                    Is.SameAs(player),
-                    "Boot must retain the assigned Player instead of replacing it."
-                );
-                Assert.That(
-                    overlayField.GetValue(boot),
-                    Is.SameAs(overlay),
-                    "Boot must retain the assigned UI Overlay instead of replacing it."
-                );
+                Assert.That(playerField.GetValue(boot), Is.SameAs(player), "Boot must retain the assigned Player instead of replacing it.");
+                Assert.That(overlayField.GetValue(boot), Is.SameAs(overlay), "Boot must retain the assigned UI Overlay instead of replacing it.");
 
                 InvokeRequired(boot, "OnDestroy");
-                Assert.That(
-                    createdEnemy == null,
-                    Is.True,
-                    "Boot must destroy the missing Enemy fallback that it created."
-                );
-                Assert.That(
-                    assignedPlayer,
-                    Is.Not.Null,
-                    "Boot must not destroy a scene-owned Player."
-                );
-                Assert.That(
-                    assignedOverlay,
-                    Is.Not.Null,
-                    "Boot must not destroy a scene-owned UI Overlay."
-                );
+                Assert.That(createdEnemy == null, Is.True, "Boot must destroy the missing Enemy fallback that it created.");
+                Assert.That(assignedPlayer, Is.Not.Null, "Boot must not destroy a scene-owned Player.");
+                Assert.That(assignedOverlay, Is.Not.Null, "Boot must not destroy a scene-owned UI Overlay.");
             }
             finally
             {
@@ -239,10 +188,7 @@ namespace DxMessaging.Tests.Editor
         [TestCase(true, false)]
         [TestCase(true, true)]
         [Category(CiImportedSamplesCategory)]
-        public void DiagnosticsToolingOwnersRestoreGlobalModeAfterEitherReleaseOrder(
-            bool originalMode,
-            bool releaseSecondOwnerFirst
-        )
+        public void DiagnosticsToolingOwnersRestoreGlobalModeAfterEitherReleaseOrder(bool originalMode, bool releaseSecondOwnerFirst)
         {
             if (!TryGetImportedSamplesRoot(out string importedSamplesRoot))
             {
@@ -250,30 +196,17 @@ namespace DxMessaging.Tests.Editor
             }
 
             MessageBus messageBus =
-                MessageHandler.MessageBus as MessageBus
-                ?? throw new AssertionException(
-                    "The diagnostics sample requires the default concrete global MessageBus."
-                );
-            using OwnedEditModeScene isolatedScene = OwnedEditModeScene.OpenAuthored(
-                $"{importedSamplesRoot}/Diagnostics Tooling Exerciser/DiagnosticsToolingExerciser.unity"
-            );
+                MessageHandler.MessageBus as MessageBus ?? throw new AssertionException("The diagnostics sample requires the default concrete global MessageBus.");
+            using OwnedEditModeScene isolatedScene = OwnedEditModeScene.OpenAuthored($"{importedSamplesRoot}/Diagnostics Tooling Exerciser/DiagnosticsToolingExerciser.unity");
             GameObject? firstHost = null;
             GameObject? secondHost = null;
             Type? exerciserType = null;
 
             try
             {
-                Assert.That(
-                    isolatedScene.Scene.IsValid(),
-                    Is.True,
-                    "The diagnostics ownership test must open an isolated scene."
-                );
+                Assert.That(isolatedScene.Scene.IsValid(), Is.True, "The diagnostics ownership test must open an isolated scene.");
                 isolatedScene.Activate();
-                exerciserType = FindSceneComponent(
-                        isolatedScene.Scene,
-                        "DiagnosticsToolingExerciser"
-                    )
-                    .GetType();
+                exerciserType = FindSceneComponent(isolatedScene.Scene, "DiagnosticsToolingExerciser").GetType();
                 messageBus.DiagnosticsMode = originalMode;
                 firstHost = isolatedScene.CreateGameObject("Diagnostics owner 1");
                 secondHost = isolatedScene.CreateGameObject("Diagnostics owner 2");
@@ -284,112 +217,54 @@ namespace DxMessaging.Tests.Editor
                 long globalEmissionBefore = messageBus.EmissionId;
                 InvokeRequired(first, "ConfigureStandaloneDiagnostics");
                 MessageBus separateBus =
-                    GetRequiredField(exerciserType, "separateMessageBus").GetValue(first)
-                        as MessageBus
-                    ?? throw new AssertionException(
-                        "The diagnostics sample must create its separate concrete MessageBus."
-                    );
+                    GetRequiredField(exerciserType, "separateMessageBus").GetValue(first) as MessageBus
+                    ?? throw new AssertionException("The diagnostics sample must create its separate concrete MessageBus.");
                 MessageRegistrationToken standaloneToken =
-                    GetRequiredField(exerciserType, "standaloneToken").GetValue(first)
-                        as MessageRegistrationToken
-                    ?? throw new AssertionException(
-                        "The diagnostics sample must create its standalone token."
-                    );
+                    GetRequiredField(exerciserType, "standaloneToken").GetValue(first) as MessageRegistrationToken
+                    ?? throw new AssertionException("The diagnostics sample must create its standalone token.");
                 Assert.That(separateBus.DiagnosticsMode, Is.True);
                 Assert.That(standaloneToken.DiagnosticMode, Is.True);
                 Assert.That(standaloneToken.Enabled, Is.True);
-                Assert.That(
-                    separateBus.RegisteredUntargeted,
-                    Is.EqualTo(1),
-                    "The standalone token must own one isolated registration."
-                );
-                Assert.That(
-                    separateBus.Log.Registrations.Count,
-                    Is.EqualTo(1),
-                    "The separate bus must expose its registration through its own log."
-                );
+                Assert.That(separateBus.RegisteredUntargeted, Is.EqualTo(1), "The standalone token must own one isolated registration.");
+                Assert.That(separateBus.Log.Registrations.Count, Is.EqualTo(1), "The separate bus must expose its registration through its own log.");
                 InvokePublic(first, "EmitOnSeparateBus");
                 Assert.That(
                     GetRequiredProperty(exerciserType, "SeparateBusCallCount").GetValue(first),
                     Is.EqualTo(1),
                     "One separate-bus action must invoke the standalone token once."
                 );
-                Assert.That(
-                    messageBus.RegisteredUntargeted,
-                    Is.EqualTo(globalUntargetedBefore),
-                    "The separate-bus walkthrough must not register against the global bus."
-                );
-                Assert.That(
-                    messageBus.EmissionId,
-                    Is.EqualTo(globalEmissionBefore),
-                    "The separate-bus walkthrough must not emit against the global bus."
-                );
-                Assert.That(
-                    separateBus.EmissionId,
-                    Is.EqualTo(1),
-                    "The isolated bus must retain its own emission evidence."
-                );
+                Assert.That(messageBus.RegisteredUntargeted, Is.EqualTo(globalUntargetedBefore), "The separate-bus walkthrough must not register against the global bus.");
+                Assert.That(messageBus.EmissionId, Is.EqualTo(globalEmissionBefore), "The separate-bus walkthrough must not emit against the global bus.");
+                Assert.That(separateBus.EmissionId, Is.EqualTo(1), "The isolated bus must retain its own emission evidence.");
                 InvokeRequired(first, "ReleaseStandaloneDiagnostics");
-                Assert.That(
-                    separateBus.RegisteredUntargeted,
-                    Is.Zero,
-                    "Releasing the standalone token must remove its isolated registration."
-                );
-                Assert.That(
-                    separateBus.Log.Registrations,
-                    Is.Empty,
-                    "Releasing the separate diagnostics must clear its retained log evidence."
-                );
+                Assert.That(separateBus.RegisteredUntargeted, Is.Zero, "Releasing the standalone token must remove its isolated registration.");
+                Assert.That(separateBus.Log.Registrations, Is.Empty, "Releasing the separate diagnostics must clear its retained log evidence.");
 
                 InvokeRequired(first, "ConfigureDiagnostics");
                 InvokeRequired(second, "ConfigureDiagnostics");
-                Assert.That(
-                    messageBus.DiagnosticsMode,
-                    Is.True,
-                    "Both active tooling owners require global diagnostics."
-                );
+                Assert.That(messageBus.DiagnosticsMode, Is.True, "Both active tooling owners require global diagnostics.");
 
                 Component releasedFirst = releaseSecondOwnerFirst ? second : first;
                 Component releasedLast = releaseSecondOwnerFirst ? first : second;
                 InvokeRequired(releasedFirst, "ReleaseDiagnosticsLease");
-                Assert.That(
-                    messageBus.DiagnosticsMode,
-                    Is.True,
-                    "One remaining tooling owner must keep diagnostics enabled."
-                );
+                Assert.That(messageBus.DiagnosticsMode, Is.True, "One remaining tooling owner must keep diagnostics enabled.");
 
                 InvokeRequired(releasedLast, "ReleaseDiagnosticsLease");
-                Assert.That(
-                    messageBus.DiagnosticsMode,
-                    Is.EqualTo(originalMode),
-                    "The final tooling owner must restore the original global mode."
-                );
+                Assert.That(messageBus.DiagnosticsMode, Is.EqualTo(originalMode), "The final tooling owner must restore the original global mode.");
             }
             finally
             {
                 if (firstHost != null && exerciserType != null)
                 {
-                    InvokeIfPresent(
-                        firstHost.GetComponent(exerciserType),
-                        "ReleaseDiagnosticsLease"
-                    );
-                    InvokeIfPresent(
-                        firstHost.GetComponent(exerciserType),
-                        "ReleaseStandaloneDiagnostics"
-                    );
+                    InvokeIfPresent(firstHost.GetComponent(exerciserType), "ReleaseDiagnosticsLease");
+                    InvokeIfPresent(firstHost.GetComponent(exerciserType), "ReleaseStandaloneDiagnostics");
                     Object.DestroyImmediate(firstHost);
                 }
 
                 if (secondHost != null && exerciserType != null)
                 {
-                    InvokeIfPresent(
-                        secondHost.GetComponent(exerciserType),
-                        "ReleaseDiagnosticsLease"
-                    );
-                    InvokeIfPresent(
-                        secondHost.GetComponent(exerciserType),
-                        "ReleaseStandaloneDiagnostics"
-                    );
+                    InvokeIfPresent(secondHost.GetComponent(exerciserType), "ReleaseDiagnosticsLease");
+                    InvokeIfPresent(secondHost.GetComponent(exerciserType), "ReleaseStandaloneDiagnostics");
                     Object.DestroyImmediate(secondHost);
                 }
 
@@ -399,19 +274,13 @@ namespace DxMessaging.Tests.Editor
 
         private static void AssertMiniCombatMessageFlow(string importedSamplesRoot)
         {
-            using OwnedEditModeScene sampleScene = OwnedEditModeScene.OpenAuthored(
-                $"{importedSamplesRoot}/Mini Combat/MiniCombat.unity"
-            );
+            using OwnedEditModeScene sampleScene = OwnedEditModeScene.OpenAuthored($"{importedSamplesRoot}/Mini Combat/MiniCombat.unity");
             Component? player = null;
             Component? overlay = null;
 
             try
             {
-                Assert.That(
-                    sampleScene.Scene.IsValid(),
-                    Is.True,
-                    "The Mini Combat smoke test must open its imported scene."
-                );
+                Assert.That(sampleScene.Scene.IsValid(), Is.True, "The Mini Combat smoke test must open its imported scene.");
                 sampleScene.Activate();
                 Component boot = FindSceneComponent(sampleScene.Scene, "Boot");
                 player = FindSceneComponent(sampleScene.Scene, "Player");
@@ -425,11 +294,7 @@ namespace DxMessaging.Tests.Editor
                 int initialHp = (int)hpField.GetValue(player);
                 InvokeRequired(boot, "Start");
 
-                Assert.That(
-                    hpField.GetValue(player),
-                    Is.EqualTo(initialHp + 10),
-                    "The authored Mini Combat scene must apply its targeted Heal to Player."
-                );
+                Assert.That(hpField.GetValue(player), Is.EqualTo(initialHp + 10), "The authored Mini Combat scene must apply its targeted Heal to Player.");
                 Assert.That(
                     GetRequiredField(overlay.GetType(), "resolutionText").GetValue(overlay),
                     Is.EqualTo("Resolution: 1920 x 1080"),
@@ -450,18 +315,12 @@ namespace DxMessaging.Tests.Editor
 
         private static void AssertUiButtonsMessageFlow(string importedSamplesRoot)
         {
-            using OwnedEditModeScene sampleScene = OwnedEditModeScene.OpenAuthored(
-                $"{importedSamplesRoot}/UI Buttons + Inspector/UIButtonsInspector.unity"
-            );
+            using OwnedEditModeScene sampleScene = OwnedEditModeScene.OpenAuthored($"{importedSamplesRoot}/UI Buttons + Inspector/UIButtonsInspector.unity");
             Component? observer = null;
 
             try
             {
-                Assert.That(
-                    sampleScene.Scene.IsValid(),
-                    Is.True,
-                    "The UI Buttons smoke test must open its imported scene."
-                );
+                Assert.That(sampleScene.Scene.IsValid(), Is.True, "The UI Buttons smoke test must open its imported scene.");
                 sampleScene.Activate();
                 observer = FindSceneComponent(sampleScene.Scene, "MessagingObserver");
                 Type observerType = observer.GetType();
@@ -482,11 +341,7 @@ namespace DxMessaging.Tests.Editor
                     Is.EqualTo(2),
                     "The observer must see both the broadcast and targeted demo routes."
                 );
-                Assert.That(
-                    GetRequiredField(observerType, "lastButtonId").GetValue(observer),
-                    Is.EqualTo("Play"),
-                    "The authored button ID must reach the typed observer."
-                );
+                Assert.That(GetRequiredField(observerType, "lastButtonId").GetValue(observer), Is.EqualTo("Play"), "The authored button ID must reach the typed observer.");
                 Assert.That(
                     GetRequiredField(observerType, "lastButtonSource").GetValue(observer),
                     Is.EqualTo((InstanceId)emitter.gameObject),
@@ -518,16 +373,10 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void DiagnosticsSamplesRestoreGlobalStateAndUiNeedsNoManualHookup()
         {
-            string observer = ReadPackageFile(
-                "Samples~/UI Buttons + Inspector/MessagingObserver.cs"
-            );
+            string observer = ReadPackageFile("Samples~/UI Buttons + Inspector/MessagingObserver.cs");
             string emitter = ReadPackageFile("Samples~/UI Buttons + Inspector/UIButtonEmitter.cs");
-            string tooling = ReadPackageFile(
-                "Samples~/Diagnostics Tooling Exerciser/DiagnosticsToolingExerciser.cs"
-            );
-            string toolingGuide = ReadPackageFile(
-                "Samples~/Diagnostics Tooling Exerciser/Editor/DiagnosticsToolingGuideWindow.cs"
-            );
+            string tooling = ReadPackageFile("Samples~/Diagnostics Tooling Exerciser/DiagnosticsToolingExerciser.cs");
+            string toolingGuide = ReadPackageFile("Samples~/Diagnostics Tooling Exerciser/Editor/DiagnosticsToolingGuideWindow.cs");
 
             AssertSourceContains(observer, "Token.DiagnosticMode = true;", "UI observer");
             AssertSourceOmits(observer, "MessageHandler.MessageBus", "UI observer");
@@ -543,27 +392,11 @@ namespace DxMessaging.Tests.Editor
             AssertSourceContains(toolingGuide, "_statusRefresh?.Pause();", "Tooling guide");
             AssertSourceContains(toolingGuide, "_statusRefresh = null;", "Tooling guide");
             AssertSourceContains(toolingGuide, "if (Application.isBatchMode)", "Tooling guide");
-            AssertSourceContains(
-                toolingGuide,
-                "AssemblyReloadEvents.beforeAssemblyReload += Shutdown;",
-                "Tooling guide"
-            );
-            AssertSourceContains(
-                toolingGuide,
-                "EditorApplication.quitting += Shutdown;",
-                "Tooling guide"
-            );
+            AssertSourceContains(toolingGuide, "AssemblyReloadEvents.beforeAssemblyReload += Shutdown;", "Tooling guide");
+            AssertSourceContains(toolingGuide, "EditorApplication.quitting += Shutdown;", "Tooling guide");
             AssertSourceContains(toolingGuide, "private static void Shutdown()", "Tooling guide");
-            AssertSourceContains(
-                toolingGuide,
-                "EditorSceneManager.sceneOpened -= HandleSceneOpened;",
-                "Tooling guide"
-            );
-            AssertSourceContains(
-                toolingGuide,
-                "EditorApplication.delayCall -= OpenForActiveSampleSceneOnce;",
-                "Tooling guide"
-            );
+            AssertSourceContains(toolingGuide, "EditorSceneManager.sceneOpened -= HandleSceneOpened;", "Tooling guide");
+            AssertSourceContains(toolingGuide, "EditorApplication.delayCall -= OpenForActiveSampleSceneOnce;", "Tooling guide");
         }
 
         [Test]
@@ -574,32 +407,16 @@ namespace DxMessaging.Tests.Editor
             string reflex = ReadPackageFile("Samples~/DI/Reflex/SampleInstaller.cs");
 
             AssertSourceContains(vContainer, "EmitIntervalSeconds", "VContainer sample");
-            AssertSourceContains(
-                vContainer,
-                "Time.unscaledTime < nextEmitTime",
-                "VContainer sample"
-            );
-            AssertSourceContains(
-                vContainer,
-                "private readonly IMessageBus messageBus;",
-                "VContainer sample"
-            );
+            AssertSourceContains(vContainer, "Time.unscaledTime < nextEmitTime", "VContainer sample");
+            AssertSourceContains(vContainer, "private readonly IMessageBus messageBus;", "VContainer sample");
             AssertSourceContains(vContainer, "IMessageBus messageBus,", "VContainer sample");
             AssertSourceContains(vContainer, "message.Emit(messageBus);", "VContainer sample");
             AssertSourceOmits(vContainer, "message.Emit();", "VContainer sample");
             AssertSourceContains(vContainer, "lease.Dispose();", "VContainer sample");
             AssertSourceContains(zenject, "lease.Dispose();", "Zenject sample");
             AssertSourceContains(reflex, "_lease.Dispose();", "Reflex sample");
-            AssertSourceContains(
-                reflex,
-                "builder.OnContainerBuilt += OnContainerBuilt;",
-                "Reflex sample"
-            );
-            AssertSourceContains(
-                reflex,
-                "_builder.OnContainerBuilt -= OnContainerBuilt;",
-                "Reflex sample"
-            );
+            AssertSourceContains(reflex, "builder.OnContainerBuilt += OnContainerBuilt;", "Reflex sample");
+            AssertSourceContains(reflex, "_builder.OnContainerBuilt -= OnContainerBuilt;", "Reflex sample");
             AssertSourceContains(reflex, "UnsubscribeFromContainerBuilt();", "Reflex sample");
         }
 
@@ -622,33 +439,13 @@ namespace DxMessaging.Tests.Editor
             AssertSourceContains(diReadme, "prefab does not register `IMessageBus`", "DI README");
             AssertSourceContains(diReadme, "resolve the same `IMessageBus`", "DI README");
             AssertSourceOmits(diReadme, "Because the prefab already configured", "DI README");
-            AssertSourceContains(
-                miniOverlay,
-                "GUI.Box(overlayRect, \"Combat Feed\")",
-                "Mini Combat UI Overlay"
-            );
-            AssertSourceContains(
-                miniOverlay,
-                "totalDamageObserved += damage;",
-                "Mini Combat UI Overlay"
-            );
+            AssertSourceContains(miniOverlay, "GUI.Box(overlayRect, \"Combat Feed\")", "Mini Combat UI Overlay");
+            AssertSourceContains(miniOverlay, "totalDamageObserved += damage;", "Mini Combat UI Overlay");
             AssertSourceOmits(miniOverlay, "Debug.Log", "Mini Combat UI Overlay");
-            AssertSourceContains(
-                packageJson,
-                "token-local diagnostics disposed with the observer",
-                "package sample description"
-            );
-            AssertSourceContains(
-                gettingStarted,
-                "token-local diagnostics that are disposed with the observer",
-                "getting-started sample description"
-            );
+            AssertSourceContains(packageJson, "token-local diagnostics disposed with the observer", "package sample description");
+            AssertSourceContains(gettingStarted, "token-local diagnostics that are disposed with the observer", "getting-started sample description");
             AssertSourceOmits(packageJson, "restore global state", "package sample description");
-            AssertSourceOmits(
-                gettingStarted,
-                "restore the previous global setting",
-                "getting-started sample description"
-            );
+            AssertSourceOmits(gettingStarted, "restore the previous global setting", "getting-started sample description");
         }
 
         private static void AssertSceneReferences(string scene, params string[] metaPaths)
@@ -658,32 +455,19 @@ namespace DxMessaging.Tests.Editor
                 string meta = ReadPackageFile(metaPath);
                 Match match = Regex.Match(meta, "^guid: ([0-9a-f]{32})$", RegexOptions.Multiline);
                 Assert.That(match.Success, Is.True, $"Missing Unity GUID in {metaPath}.");
-                Assert.That(
-                    scene,
-                    Does.Contain($"guid: {match.Groups[1].Value}"),
-                    $"The scene must reference the script GUID declared by {metaPath}."
-                );
+                Assert.That(scene, Does.Contain($"guid: {match.Groups[1].Value}"), $"The scene must reference the script GUID declared by {metaPath}.");
             }
         }
 
-        private static void AssertImportedSceneLoads(
-            string importedSamplesRoot,
-            string relativePath
-        )
+        private static void AssertImportedSceneLoads(string importedSamplesRoot, string relativePath)
         {
             string scenePath = $"{importedSamplesRoot}/{relativePath}";
             string absoluteScenePath = Path.Combine(
                 Application.dataPath,
-                importedSamplesRoot
-                    .Substring("Assets/".Length)
-                    .Replace('/', Path.DirectorySeparatorChar),
+                importedSamplesRoot.Substring("Assets/".Length).Replace('/', Path.DirectorySeparatorChar),
                 relativePath.Replace('/', Path.DirectorySeparatorChar)
             );
-            Assert.That(
-                File.Exists(absoluteScenePath),
-                Is.True,
-                $"The CI sample fixture must copy {scenePath}."
-            );
+            Assert.That(File.Exists(absoluteScenePath), Is.True, $"The CI sample fixture must copy {scenePath}.");
 
             using (OwnedEditModeScene ownedScene = OwnedEditModeScene.OpenAuthored(scenePath))
             {
@@ -696,9 +480,7 @@ namespace DxMessaging.Tests.Editor
                     foreach (Transform child in root.GetComponentsInChildren<Transform>(true))
                     {
                         Assert.That(
-                            GameObjectUtility.GetMonoBehavioursWithMissingScriptCount(
-                                child.gameObject
-                            ),
+                            GameObjectUtility.GetMonoBehavioursWithMissingScriptCount(child.gameObject),
                             Is.Zero,
                             $"{scenePath} contains a missing script on '{child.name}'."
                         );
@@ -715,33 +497,19 @@ namespace DxMessaging.Tests.Editor
                 importedSamplesRoot = CiImportedSamplesRoot;
             }
             importedSamplesRoot = importedSamplesRoot.Replace('\\', '/').TrimEnd('/');
-            Assert.That(
-                importedSamplesRoot.StartsWith("Assets/", StringComparison.Ordinal),
-                Is.True,
-                "DXM_IMPORTED_SAMPLES_ROOT must be a project-relative Assets path."
-            );
+            Assert.That(importedSamplesRoot.StartsWith("Assets/", StringComparison.Ordinal), Is.True, "DXM_IMPORTED_SAMPLES_ROOT must be a project-relative Assets path.");
             bool fixtureExists = AssetDatabase.IsValidFolder(importedSamplesRoot);
-            Assert.That(
-                fixtureExists || !IsContinuousIntegration(),
-                Is.True,
-                $"CI must import {importedSamplesRoot} before running fixture-gated sample contracts."
-            );
+            Assert.That(fixtureExists || !IsContinuousIntegration(), Is.True, $"CI must import {importedSamplesRoot} before running fixture-gated sample contracts.");
             if (!fixtureExists)
             {
-                Assert.Inconclusive(
-                    "This fixture-gated contract runs when the Unity matrix imports Assets/DxmCiSamples."
-                );
+                Assert.Inconclusive("This fixture-gated contract runs when the Unity matrix imports Assets/DxmCiSamples.");
             }
             return fixtureExists;
         }
 
         private static bool IsContinuousIntegration()
         {
-            return string.Equals(
-                Environment.GetEnvironmentVariable("CI"),
-                "true",
-                StringComparison.OrdinalIgnoreCase
-            );
+            return string.Equals(Environment.GetEnvironmentVariable("CI"), "true", StringComparison.OrdinalIgnoreCase);
         }
 
         private static Component FindSceneComponent(Scene scene, string componentTypeName)
@@ -749,37 +517,25 @@ namespace DxMessaging.Tests.Editor
             Component? component = scene
                 .GetRootGameObjects()
                 .SelectMany(root => root.GetComponentsInChildren<Component>(includeInactive: true))
-                .FirstOrDefault(candidate =>
-                    candidate != null && candidate.GetType().Name == componentTypeName
-                );
-            return component
-                ?? throw new AssertionException(
-                    $"The imported scene {scene.path} must contain {componentTypeName}."
-                );
+                .FirstOrDefault(candidate => candidate != null && candidate.GetType().Name == componentTypeName);
+            return component ?? throw new AssertionException($"The imported scene {scene.path} must contain {componentTypeName}.");
         }
 
         private static FieldInfo GetRequiredField(Type type, string fieldName)
         {
-            return type.GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic)
-                ?? throw new AssertionException($"{type.Name} must retain its {fieldName} field.");
+            return type.GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic) ?? throw new AssertionException($"{type.Name} must retain its {fieldName} field.");
         }
 
         private static PropertyInfo GetRequiredProperty(Type type, string propertyName)
         {
             return type.GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public)
-                ?? throw new AssertionException(
-                    $"{type.Name} must expose its {propertyName} property."
-                );
+                ?? throw new AssertionException($"{type.Name} must expose its {propertyName} property.");
         }
 
         private static void InvokePublic(Component component, string methodName)
         {
-            MethodInfo method = component
-                .GetType()
-                .GetMethod(methodName, BindingFlags.Instance | BindingFlags.Public)
-                ?? throw new AssertionException(
-                    $"{component.GetType().Name} must expose {methodName}()."
-                );
+            MethodInfo method = component.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.Public)
+                ?? throw new AssertionException($"{component.GetType().Name} must expose {methodName}().");
             _ = method.Invoke(component, null);
         }
 
@@ -804,51 +560,30 @@ namespace DxMessaging.Tests.Editor
 
         private static void AssertSourceContains(string source, string expected, string owner)
         {
-            Assert.That(
-                source,
-                Does.Contain(expected),
-                $"{owner} must contain the contract fragment: {expected}"
-            );
+            Assert.That(source, Does.Contain(expected), $"{owner} must contain the contract fragment: {expected}");
         }
 
         private static void AssertSourceOmits(string source, string forbidden, string owner)
         {
-            Assert.That(
-                source,
-                Does.Not.Contain(forbidden),
-                $"{owner} must omit the unsafe or stale fragment: {forbidden}"
-            );
+            Assert.That(source, Does.Not.Contain(forbidden), $"{owner} must omit the unsafe or stale fragment: {forbidden}");
         }
 
         private static void InvokeRequired(Component component, string methodName)
         {
-            MethodInfo method = component
-                .GetType()
-                .GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic)
-                ?? throw new AssertionException(
-                    $"{component.GetType().Name} must declare {methodName}()."
-                );
+            MethodInfo method = component.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic)
+                ?? throw new AssertionException($"{component.GetType().Name} must declare {methodName}().");
             _ = method.Invoke(component, null);
         }
 
         private static void InvokeIfPresent(Component component, string methodName)
         {
-            MethodInfo? method = component
-                .GetType()
-                .GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic);
+            MethodInfo? method = component.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic);
             _ = method?.Invoke(component, null);
         }
 
         private static string ReadPackageFile(string relativePath)
         {
-            string packageRoot = Path.GetFullPath(
-                Path.Combine(
-                    Application.dataPath,
-                    "..",
-                    "Packages",
-                    "com.wallstop-studios.dxmessaging"
-                )
-            );
+            string packageRoot = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "Packages", "com.wallstop-studios.dxmessaging"));
             return File.ReadAllText(Path.Combine(packageRoot, relativePath));
         }
     }

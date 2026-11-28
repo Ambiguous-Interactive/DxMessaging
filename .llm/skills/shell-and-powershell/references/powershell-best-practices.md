@@ -1,14 +1,11 @@
 # PowerShell Scripting Best Practices
 
-> **One-line summary**: Avoid common PowerShell pitfalls involving regex patterns, here-strings,
-> file encoding, and terminology precision.
+> **One-line summary**: Avoid common PowerShell pitfalls involving regex patterns, here-strings, file encoding, and terminology precision.
 
 ## Overview
 
-PowerShell has unique behaviors that differ from other scripting languages and even other .NET
-contexts. This skill documents lessons learned from real PR feedback cycles to help avoid
-repeated mistakes involving regex patterns, here-string quoting, file encoding, and precise
-terminology for git hooks.
+PowerShell has unique behaviors that differ from other scripting languages and even other .NET contexts. This skill documents lessons learned from real PR feedback cycles to help
+avoid repeated mistakes involving regex patterns, here-string quoting, file encoding, and precise terminology for git hooks.
 
 ## Solution
 
@@ -21,8 +18,7 @@ terminology for git hooks.
 
 ## Case-Sensitive File Paths
 
-PowerShell scripts that run fine on Windows fail on Linux due to case-sensitive file paths.
-Verify paths with `git ls-files` or `Get-ChildItem` before hardcoding, and test in
+PowerShell scripts that run fine on Windows fail on Linux due to case-sensitive file paths. Verify paths with `git ls-files` or `Get-ChildItem` before hardcoding, and test in
 case-sensitive environments (Docker, WSL) before committing.
 
 See the [Cross-Platform Compatibility skill](./cross-platform-compatibility.md) for detailed patterns.

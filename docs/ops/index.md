@@ -1,8 +1,6 @@
 # Operations
 
-Operational documents in this section describe repository, packaging, and
-release setup that has to be performed by a human maintainer in external
-systems.
+Operational documents in this section describe repository, packaging, and release setup that has to be performed by a human maintainer in external systems.
 
 - [Ambiguous release migration](ambiguous-release-migration.md)
 - [Release operations](release-operations.md)

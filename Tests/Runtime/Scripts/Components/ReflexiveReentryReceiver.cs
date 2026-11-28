@@ -9,11 +9,9 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
     {
         internal Action<string, int, int> OnMessage { get; set; }
 
-        public void Receive(int first, int second) =>
-            OnMessage?.Invoke(nameof(Receive), first, second);
+        public void Receive(int first, int second) => OnMessage?.Invoke(nameof(Receive), first, second);
 
-        public void ReceiveOther(int first, int second) =>
-            OnMessage?.Invoke(nameof(ReceiveOther), first, second);
+        public void ReceiveOther(int first, int second) => OnMessage?.Invoke(nameof(ReceiveOther), first, second);
     }
 }
 #endif

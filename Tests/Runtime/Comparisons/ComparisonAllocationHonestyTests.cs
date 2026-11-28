@@ -61,20 +61,13 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 {
                     continue;
                 }
-                yield return new TestCaseData(scenario).SetName(
-                    $"SendMessageBoxesEveryCall_{ComparisonScenarios.Key(scenario)}"
-                );
+                yield return new TestCaseData(scenario).SetName($"SendMessageBoxesEveryCall_{ComparisonScenarios.Key(scenario)}");
             }
         }
 
         private static IEnumerable<TestCaseData> BoxingFreeStructBridges()
         {
-            foreach (
-                (
-                    string key,
-                    Func<IMessagingTechBridge> factory
-                ) in ZeroDependencyComparisonRoster.Bridges
-            )
+            foreach ((string key, Func<IMessagingTechBridge> factory) in ZeroDependencyComparisonRoster.Bridges)
             {
                 /*
                     DxMessaging's zero-allocation dispatch is pinned exhaustively by the editor
@@ -101,8 +94,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             if (!Application.isPlaying)
             {
                 Assert.Ignore(
-                    "Unity SendMessage requires PlayMode for a faithful allocation measurement "
-                        + "(EditMode adds editor-only reflection instrumentation that is not shipped)."
+                    "Unity SendMessage requires PlayMode for a faithful allocation measurement " + "(EditMode adds editor-only reflection instrumentation that is not shipped)."
                 );
             }
 
@@ -135,17 +127,12 @@ namespace DxMessaging.Tests.Runtime.Comparisons
 
         [Test]
         [TestCaseSource(nameof(BoxingFreeStructBridges))]
-        public void BoxingFreeBridgeStructDispatchAllocatesNothing(
-            Func<IMessagingTechBridge> factory
-        )
+        public void BoxingFreeBridgeStructDispatchAllocatesNothing(Func<IMessagingTechBridge> factory)
         {
             using IMessagingTechBridge identity = factory();
             string techKey = identity.TechKey;
 
-            long floor = MeasureDispatchAllocationFloor(
-                factory(),
-                ComparisonScenario.StructMessageNoBoxing
-            );
+            long floor = MeasureDispatchAllocationFloor(factory(), ComparisonScenario.StructMessageNoBoxing);
             if (floor == AllocationProbe.Unmeasured)
             {
                 Assert.Ignore("GC.Alloc probe is non-functional on this backend.");
@@ -178,10 +165,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             AllocationProbe.Unmeasured when no reliable probe exists on this backend). The minimum is
             the true per-batch floor: warm-editor spikes only ADD, so they never lower it.
         */
-        private static long MeasureDispatchAllocationFloor(
-            IMessagingTechBridge bridge,
-            ComparisonScenario scenario
-        )
+        private static long MeasureDispatchAllocationFloor(IMessagingTechBridge bridge, ComparisonScenario scenario)
         {
             using (bridge)
             {

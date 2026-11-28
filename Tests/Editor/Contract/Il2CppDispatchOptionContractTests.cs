@@ -30,59 +30,33 @@ namespace DxMessaging.Tests.Editor.Contract
             "BroadcastGlobalSourcedBroadcast",
         };
 
-        private static readonly string[] NullCheckElidedMethods =
-        {
-            "InvokeGlobalUntargetedEntry",
-            "InvokeGlobalTargetedEntry",
-            "InvokeGlobalBroadcastEntry",
-        };
+        private static readonly string[] NullCheckElidedMethods = { "InvokeGlobalUntargetedEntry", "InvokeGlobalTargetedEntry", "InvokeGlobalBroadcastEntry" };
 
         [Test]
         public void VendoredIl2CppSetOptionAttributeHasTheShapeIl2CppMatches()
         {
-            Type attributeType = typeof(MessageBus).Assembly.GetType(
-                "Unity.IL2CPP.CompilerServices.Il2CppSetOptionAttribute"
-            );
+            Type attributeType = typeof(MessageBus).Assembly.GetType("Unity.IL2CPP.CompilerServices.Il2CppSetOptionAttribute");
             Assert.IsNotNull(
                 attributeType,
-                "The vendored Il2CppSetOptionAttribute must live at the exact full name "
-                    + "il2cpp.exe matches: Unity.IL2CPP.CompilerServices.Il2CppSetOptionAttribute."
+                "The vendored Il2CppSetOptionAttribute must live at the exact full name " + "il2cpp.exe matches: Unity.IL2CPP.CompilerServices.Il2CppSetOptionAttribute."
             );
 
-            ConstructorInfo[] constructors = attributeType.GetConstructors(
-                BindingFlags.Public | BindingFlags.Instance
-            );
-            Assert.AreEqual(
-                1,
-                constructors.Length,
-                "Il2CppSetOptionAttribute must keep Unity's single (Option, object) constructor."
-            );
+            ConstructorInfo[] constructors = attributeType.GetConstructors(BindingFlags.Public | BindingFlags.Instance);
+            Assert.AreEqual(1, constructors.Length, "Il2CppSetOptionAttribute must keep Unity's single (Option, object) constructor.");
             ParameterInfo[] parameters = constructors[0].GetParameters();
             Assert.AreEqual(2, parameters.Length, "Constructor must take (Option, object).");
-            Assert.AreEqual(
-                "Unity.IL2CPP.CompilerServices.Option",
-                parameters[0].ParameterType.FullName,
-                "First constructor parameter must be the vendored Option enum."
-            );
-            Assert.AreEqual(
-                typeof(object),
-                parameters[1].ParameterType,
-                "Second constructor parameter must be object."
-            );
+            Assert.AreEqual("Unity.IL2CPP.CompilerServices.Option", parameters[0].ParameterType.FullName, "First constructor parameter must be the vendored Option enum.");
+            Assert.AreEqual(typeof(object), parameters[1].ParameterType, "Second constructor parameter must be object.");
         }
 
         [Test]
-        public void HotDispatchLoopsCarryNullAndBoundsCheckElision(
-            [ValueSource(nameof(FullyElidedMethods))] string methodName
-        )
+        public void HotDispatchLoopsCarryNullAndBoundsCheckElision([ValueSource(nameof(FullyElidedMethods))] string methodName)
         {
             AssertHasOptions(methodName, expectBoundsElision: true);
         }
 
         [Test]
-        public void GlobalEntryInvokersCarryNullCheckElision(
-            [ValueSource(nameof(NullCheckElidedMethods))] string methodName
-        )
+        public void GlobalEntryInvokersCarryNullCheckElision([ValueSource(nameof(NullCheckElidedMethods))] string methodName)
         {
             AssertHasOptions(methodName, expectBoundsElision: false);
         }
@@ -105,10 +79,7 @@ namespace DxMessaging.Tests.Editor.Contract
             Dictionary<int, bool> optionValues = new();
             foreach (CustomAttributeData attribute in method.GetCustomAttributesData())
             {
-                if (
-                    attribute.AttributeType.FullName
-                    != "Unity.IL2CPP.CompilerServices.Il2CppSetOptionAttribute"
-                )
+                if (attribute.AttributeType.FullName != "Unity.IL2CPP.CompilerServices.Il2CppSetOptionAttribute")
                 {
                     continue;
                 }
@@ -119,16 +90,10 @@ namespace DxMessaging.Tests.Editor.Contract
             }
 
             // Option.NullChecks == 1, Option.ArrayBoundsChecks == 2 (Unity's enum values).
-            Assert.IsTrue(
-                optionValues.TryGetValue(1, out bool nullChecks) && !nullChecks,
-                $"{methodName} must carry [Il2CppSetOption(Option.NullChecks, false)]."
-            );
+            Assert.IsTrue(optionValues.TryGetValue(1, out bool nullChecks) && !nullChecks, $"{methodName} must carry [Il2CppSetOption(Option.NullChecks, false)].");
             if (expectBoundsElision)
             {
-                Assert.IsTrue(
-                    optionValues.TryGetValue(2, out bool boundsChecks) && !boundsChecks,
-                    $"{methodName} must carry [Il2CppSetOption(Option.ArrayBoundsChecks, false)]."
-                );
+                Assert.IsTrue(optionValues.TryGetValue(2, out bool boundsChecks) && !boundsChecks, $"{methodName} must carry [Il2CppSetOption(Option.ArrayBoundsChecks, false)].");
             }
         }
     }

@@ -1,19 +1,15 @@
 # Performance evidence bundles
 
-CI artifacts expire after 14 days and the checked-in baseline CSV is replaced on every run, so a
-published performance number outlives the evidence behind it. A content-addressed bundle keeps the
-raw bytes, the identity of the run that produced them, and the normalized result, so a reviewer can
-prove a reported effect came from the retained evidence rather than from a screenshot or a
-hand-copied winner.
+CI artifacts expire after 14 days and the checked-in baseline CSV is replaced on every run, so a published performance number outlives the evidence behind it. A content-addressed
+bundle keeps the raw bytes, the identity of the run that produced them, and the normalized result, so a reviewer can prove a reported effect came from the retained evidence rather
+than from a screenshot or a hand-copied winner.
 
-This runbook covers issue #508. It documents the tool, not the campaign protocol. For the
-measurement rules themselves see
+This runbook covers issue #508. It documents the tool, not the campaign protocol. For the measurement rules themselves see
 [the performance benchmark methodology runbook](./perf-benchmark-methodology.md).
 
 ## What a bundle is
 
-A bundle is a directory of evidence plus one `evidence-manifest.json` at its root. The manifest
-declares:
+A bundle is a directory of evidence plus one `evidence-manifest.json` at its root. The manifest declares:
 
 | Field           | Meaning                                                                         |
 | --------------- | ------------------------------------------------------------------------------- |
@@ -39,59 +35,42 @@ Each reducer accepts only its registered artifact class:
 | `editor-latency-clock-capture`     | `editor-latency-clock-capture-v1`     |
 | `managed-clock-fault-identity`     | `managed-clock-fault-identity-v1`     |
 
-Seal, verify, replay, and manifest writes reject a different class, even when its digest was
-recomputed. The paired screen retains the existing exploratory bracket decision. It does not
-supply confirmatory intervals, native binaries, or the full paired-throughput campaign contract.
-The SubUnsub class retains individual benchmark observations, including unmeasured allocation
-probes. Allocation-heavy SubUnsub campaigns, cold latency, frame/queue latency, WPR/PMU native
-mapping, and ARM64 energy still need their complete raw-input contracts and reducers under #508.
-The Editor open-loop class is a descriptive protocol screen; it does not establish an independent
-player session, interval precision, or a latency promotion verdict.
+Seal, verify, replay, and manifest writes reject a different class, even when its digest was recomputed. The paired screen retains the existing exploratory bracket decision. It
+does not supply confirmatory intervals, native binaries, or the full paired-throughput campaign contract. The SubUnsub class retains individual benchmark observations, including
+unmeasured allocation probes. Allocation-heavy SubUnsub campaigns, cold latency, frame/queue latency, WPR/PMU native mapping, and ARM64 energy still need their complete raw-input
+contracts and reducers under #508. The Editor open-loop class is a descriptive protocol screen; it does not establish an independent player session, interval precision, or a
+latency promotion verdict.
 
 ### Managed clock-fault observations
 
-The managed clock class retains a fixed 24-row observation format from #503. It requires exactly
-ten text files: `observations.json`, `source-bindings.json`, `pre-execution-bindings.json`,
-`debug-source-binding.json`, `observer-debug-binding.json`, `observer-source.cs.txt`,
-`observer-project.csproj.txt`, `observer-source-projection.json`, `execution.log`, and `scope.json`.
-The case roster covers three message kinds, two priority layouts, two clock triggers, and caught
-versus escaping faults. The reducer preserves every raw row and diagnostic. It recomputes callback
-order, scoped emission IDs, registration counters, cleanup, and the declared exception/control
-checks. A structurally complete adverse observation produces `ADVERSE`; missing or duplicate cases,
-inconsistent identities, or a false retained summary fail replay.
+The managed clock class retains a fixed 24-row observation format from #503. It requires exactly ten text files: `observations.json`, `source-bindings.json`,
+`pre-execution-bindings.json`, `debug-source-binding.json`, `observer-debug-binding.json`, `observer-source.cs.txt`, `observer-project.csproj.txt`,
+`observer-source-projection.json`, `execution.log`, and `scope.json`. The case roster covers three message kinds, two priority layouts, two clock triggers, and caught versus
+escaping faults. The reducer preserves every raw row and diagnostic. It recomputes callback order, scoped emission IDs, registration counters, cleanup, and the declared
+exception/control checks. A structurally complete adverse observation produces `ADVERSE`; missing or duplicate cases, inconsistent identities, or a false retained summary fail
+replay.
 
-The source projection descriptor has schema version 1, `mode`, original and retained `Sha256` and
-`Bytes` fields, a `markers` count map, and a `redactor` record. Exact mode requires identical
-original/retained hashes and lengths, no markers, and a null redactor. Redacted mode requires changed
-hashes, an exact inventory of retained `[redacted:<id>]` markers, and the recorded
-`scripts/unity/credential-patterns.js` module hash with function `redactSensitiveData`. Prepare the
-retained copy with that existing function; keep the original observation packet unchanged. The
-original source hash joins the frozen input roster and recorded PDB document checksum. The retained
-hash joins the supplied text bytes. The descriptor and normalized result expose both hashes.
+The source projection descriptor has schema version 1, `mode`, original and retained `Sha256` and `Bytes` fields, a `markers` count map, and a `redactor` record. Exact mode
+requires identical original/retained hashes and lengths, no markers, and a null redactor. Redacted mode requires changed hashes, an exact inventory of retained `[redacted:<id>]`
+markers, and the recorded `scripts/unity/credential-patterns.js` module hash with function `redactSensitiveData`. Prepare the retained copy with that existing function; keep the
+original observation packet unchanged. The original source hash joins the frozen input roster and recorded PDB document checksum. The retained hash joins the supplied text bytes.
+The descriptor and normalized result expose both hashes.
 
-`scope.json` must expose `observerSourceProjectionMode`, `originalObserverSourceRetained`, and
-`observerRedactionReexecutedByReplay: false`. A redacted projection does not retain the original
-observer source. Replay checks the recorded provenance joins; without original bytes it cannot
-reconstruct that source or independently repeat the redaction. The recorded redactor hash is
-provenance, not proof of a new transform execution. Binary DLL/PDB files and Runtime source snapshots
-remain unretained in either mode. Their recorded hashes and identity metadata do not replace those
-bytes. The unresolved clock-getter contract remains explicit.
+`scope.json` must expose `observerSourceProjectionMode`, `originalObserverSourceRetained`, and `observerRedactionReexecutedByReplay: false`. A redacted projection does not retain
+the original observer source. Replay checks the recorded provenance joins; without original bytes it cannot reconstruct that source or independently repeat the redaction. The
+recorded redactor hash is provenance, not proof of a new transform execution. Binary DLL/PDB files and Runtime source snapshots remain unretained in either mode. Their recorded
+hashes and identity metadata do not replace those bytes. The unresolved clock-getter contract remains explicit.
 
-Node dispatches the supplied bytes to the pure Python reducer. Replay does not load the product or
-repeat `ReferenceEquals`: it retains the producer's instrumented identity values and negative
-controls. This class establishes no new runtime, native, retained-memory, or performance result.
-Sealing and local replay alone also do not satisfy the immutable publication and independent
-restore procedure below.
+Node dispatches the supplied bytes to the pure Python reducer. Replay does not load the product or repeat `ReferenceEquals`: it retains the producer's instrumented identity values
+and negative controls. This class establishes no new runtime, native, retained-memory, or performance result. Sealing and local replay alone also do not satisfy the immutable
+publication and independent restore procedure below.
 
 ### Native attribution capture admission (protocol only)
 
-`.github/perf/native-attribution-capture.v1.schema.json` and
-`scripts/unity/validate_native_attribution_capture.py` define the pre-capture admission boundary for
-one #511 Windows IL2CPP trace unit. The manifest binds the clean build, player, PDB, generated C++,
-WPR profile, ETL, marker events, sampled stacks, mapping, disassembly, PMU observations, reducer
-output, tool versions, and command provenance. Its outer workload intervals must use one declared
-player process and main thread. Resolved and unresolved samples must reconcile exactly, and an
-unavailable PMU source cannot report a zero count as if it had been measured.
+`.github/perf/native-attribution-capture.v1.schema.json` and `scripts/unity/validate_native_attribution_capture.py` define the pre-capture admission boundary for one #511 Windows
+IL2CPP trace unit. The manifest binds the clean build, player, PDB, generated C++, WPR profile, ETL, marker events, sampled stacks, mapping, disassembly, PMU observations, reducer
+output, tool versions, and command provenance. Its outer workload intervals must use one declared player process and main thread. Resolved and unresolved samples must reconcile
+exactly, and an unavailable PMU source cannot report a zero count as if it had been measured.
 
 Validate a prepared manifest and all of its local artifacts with:
 
@@ -102,38 +81,26 @@ python3 scripts/unity/validate_native_attribution_capture.py \
   --source-commit "$MEASURED_SOURCE_COMMIT"
 ```
 
-Acceptance reports only a protocol summary. The schema freezes the strictly-greater-than 3% primary
-share screen and at-most 1% unresolved-share boundary for one trace, but one trace is not an
-independent replicated decision. This contract is not registered with `perf-evidence-bundle.js`:
-opaque ETL, player, and PDB bytes still need format-aware privacy review, a deterministic reducer,
-and independent restore before #508 durable publication. A schema-valid manifest does not prove
-that WPR markers, PMU controls, observer effects, or native attribution passed at runtime.
+Acceptance reports only a protocol summary. The schema freezes the strictly-greater-than 3% primary share screen and at-most 1% unresolved-share boundary for one trace, but one
+trace is not an independent replicated decision. This contract is not registered with `perf-evidence-bundle.js`: opaque ETL, player, and PDB bytes still need format-aware privacy
+review, a deterministic reducer, and independent restore before #508 durable publication. A schema-valid manifest does not prove that WPR markers, PMU controls, observer effects,
+or native attribution passed at runtime.
 
-The open-loop class requires exactly eight text files: `capture-environment.json`,
-`capture-replay.json`, `open-loop-editor-plan.json`, one maintained-runner result JSON, and that
-result's `.run.json`, `.cleanup.json`, `.status`, and `.cleanup.status` sidecars. The `.status`
-extension receives the same reviewed-text privacy scan as other admitted extensions. The reducer
-binds the manifest source commit to the environment descriptor, hashes the plan, checks terminal
-runner ownership and clean-scene state, then recomputes every offered arrival, completion, exact
-quantile, and tail effect from the raw result. It rejects a retained replay summary that differs
-from the raw-derived result. The Node bundle tool passes only the supplied file bytes and source
-commit to the Python exact-integer auditor over process stdin; the auditor reads no data files,
-clock, or environment variables. Restorers need Python 3 and Node; the three-OS script matrix
-pins Python 3.12 and uses `python` on Windows. Source-tree and
-Unity-assembly identity still require separate remote/source checks.
+The open-loop class requires exactly eight text files: `capture-environment.json`, `capture-replay.json`, `open-loop-editor-plan.json`, one maintained-runner result JSON, and that
+result's `.run.json`, `.cleanup.json`, `.status`, and `.cleanup.status` sidecars. The `.status` extension receives the same reviewed-text privacy scan as other admitted extensions.
+The reducer binds the manifest source commit to the environment descriptor, hashes the plan, checks terminal runner ownership and clean-scene state, then recomputes every offered
+arrival, completion, exact quantile, and tail effect from the raw result. It rejects a retained replay summary that differs from the raw-derived result. The Node bundle tool passes
+only the supplied file bytes and source commit to the Python exact-integer auditor over process stdin; the auditor reads no data files, clock, or environment variables. Restorers
+need Python 3 and Node; the three-OS script matrix pins Python 3.12 and uses `python` on Windows. Source-tree and Unity-assembly identity still require separate remote/source
+checks.
 
-The Editor clock class requires exactly seven text files: `clock-environment.json`,
-`clock-replay.json`, one raw maintained-runner result JSON, and that result's four run/cleanup
-sidecars. The strict environment descriptor selects either the single-pair or batched clock
-control. The reducer binds source commit and run GUID, requires terminal clean-scene capture,
-rederives all ticks and descriptive summaries from the raw result, and rejects a retained replay
-that differs. These controls measure Editor Mono timer behavior only. Batched elapsed time includes
-loop and checksum work; neither control establishes individual player p99 resolution or IL2CPP cost.
+The Editor clock class requires exactly seven text files: `clock-environment.json`, `clock-replay.json`, one raw maintained-runner result JSON, and that result's four run/cleanup
+sidecars. The strict environment descriptor selects either the single-pair or batched clock control. The reducer binds source commit and run GUID, requires terminal clean-scene
+capture, rederives all ticks and descriptive summaries from the raw result, and rejects a retained replay that differs. These controls measure Editor Mono timer behavior only.
+Batched elapsed time includes loop and checksum work; neither control establishes individual player p99 resolution or IL2CPP cost.
 
-Paths are POSIX-relative. The sealer rejects absolute paths, drive letters, backslashes, traversal,
-Windows-forbidden or reserved names, trailing spaces or dots, and names that collide after Unicode
-normalization and case folding. A bundle sealed on the Windows perf runner therefore verifies
-unchanged on a Linux or macOS reviewer machine.
+Paths are POSIX-relative. The sealer rejects absolute paths, drive letters, backslashes, traversal, Windows-forbidden or reserved names, trailing spaces or dots, and names that
+collide after Unicode normalization and case folding. A bundle sealed on the Windows perf runner therefore verifies unchanged on a Linux or macOS reviewer machine.
 
 ## Commands
 
@@ -154,12 +121,10 @@ node scripts/unity/perf-evidence-bundle.js replay \
   .artifacts/unity/6000.5.2f1-shipping/evidence-manifest.json
 ```
 
-`verify` checks the manifest digest, every file length and hash, the absence of undeclared files,
-and the current sensitive-data policy over the raw manifest and every declared file. Inspecting the
-manifest bytes before trusting parsed keys prevents duplicate JSON keys from hiding private data. A
-bundle sealed under an older policy can therefore fail current verification; scrub it and publish a
-new revision. `replay` first verifies, then proves the published conclusion follows from the sealed
-bytes. Cite a result only after `replay` succeeds.
+`verify` checks the manifest digest, every file length and hash, the absence of undeclared files, and the current sensitive-data policy over the raw manifest and every declared
+file. Inspecting the manifest bytes before trusting parsed keys prevents duplicate JSON keys from hiding private data. A bundle sealed under an older policy can therefore fail
+current verification; scrub it and publish a new revision. `replay` first verifies, then proves the published conclusion follows from the sealed bytes. Cite a result only after
+`replay` succeeds.
 
 ## What fails, and what it means
 
@@ -178,30 +143,22 @@ bytes. Cite a result only after `replay` succeeds.
 
 ## Sensitive-data refusal
 
-Sealing accepts only reviewed text evidence extensions declared in
-`scripts/unity/credential-patterns.js`. Each file must decode completely as UTF-8 or
-byte-order-marked UTF-16 and may contain only normal text controls. A scanned Unity log may carry
-up to eight sparse stray NULs from native subprocess output. The sealer still scans the whole decoded file
-for credentials and private identifiers. It rejects unreviewed extensions, malformed text, opaque
-data, a binary tail, and excess control bytes. Add a format-specific inspection rule before a new
-file class enters durable evidence.
+Sealing accepts only reviewed text evidence extensions declared in `scripts/unity/credential-patterns.js`. Each file must decode completely as UTF-8 or byte-order-marked UTF-16 and
+may contain only normal text controls. A scanned Unity log may carry up to eight sparse stray NULs from native subprocess output. The sealer still scans the whole decoded file for
+credentials and private identifiers. It rejects unreviewed extensions, malformed text, opaque data, a binary tail, and excess control bytes. Add a format-specific inspection rule
+before a new file class enters durable evidence.
 
-The `./.github/actions/redact-unity-artifacts` step runs before every Unity artifact upload, not
-only before sealing. The same text diagnostic logs are available during their workflow artifact
-retention period, so seal-only redaction would still expose the identifiers. The redactor rewrites only
-reviewed text extensions. It reads byte-order-marked UTF-16, prefers strict UTF-8, and uses a
-byte-preserving Latin-1 fallback for malformed UTF-8. It also scans a lossy UTF-8 view before
-allowing that fallback. It removes stray NUL separators before matching. For an unreviewed
-extension, it scans strict text and fails the upload if sensitive data is present, but never rewrites
-the file. It also scans decoded JSON and XML escape forms. It blocks encoded sensitive values that
-cannot be mapped back safely. Opaque files remain byte-identical and are reported as unscanned; ordinary workflow
-artifacts are not certified as privacy-safe evidence. The sealer is the fail-closed boundary that
-prevents an unreviewed format from entering a bundle intended for durable publication.
+The `./.github/actions/redact-unity-artifacts` step runs before every Unity artifact upload, not only before sealing. The same text diagnostic logs are available during their
+workflow artifact retention period, so seal-only redaction would still expose the identifiers. The redactor rewrites only reviewed text extensions. It reads byte-order-marked
+UTF-16, prefers strict UTF-8, and uses a byte-preserving Latin-1 fallback for malformed UTF-8. It also scans a lossy UTF-8 view before allowing that fallback. It removes stray NUL
+separators before matching. For an unreviewed extension, it scans strict text and fails the upload if sensitive data is present, but never rewrites the file. It also scans decoded
+JSON and XML escape forms. It blocks encoded sensitive values that cannot be mapped back safely. Opaque files remain byte-identical and are reported as unscanned; ordinary workflow
+artifacts are not certified as privacy-safe evidence. The sealer is the fail-closed boundary that prevents an unreviewed format from entering a bundle intended for durable
+publication.
 
 If sealing refuses a file, scrub the file. Do not weaken the pattern.
 
-The private-identifier policy removes values that identify the runner account, host, network, or
-licensed machine:
+The private-identifier policy removes values that identify the runner account, host, network, or licensed machine:
 
 | Removed                                       | Retained                                           |
 | --------------------------------------------- | -------------------------------------------------- |
@@ -211,55 +168,38 @@ licensed machine:
 | Unity machine IDs and explicit host fields    | Timing, process IDs, ports, and player-session IDs |
 | Accelerator and Cache Server endpoints        | Non-network benchmark inputs and outputs           |
 
-An unlabelled public address can identify a runner network, so canonical IP literals are removed.
-This intentionally also removes a four-component numeric value such as `1.2.3.4`; without context,
-it is indistinguishable from IPv4. HTTP(S) hosts are classified after WHATWG normalization. This
-catches encoded or Unicode private hosts, legacy IPv4 URL spellings, backslash separators, and user
-information. Repeated trailing dots are removed before classification. Literal or serialized format
-and non-spacing control characters in HTTP(S), file, and UNC authorities fail closed. Sealed reviewed
-text rejects any remaining format control. A bare legacy IPv4 spelling remains ordinary numeric text
-because it is ambiguous outside a URL. Domain-based public service URLs and `localhost` remain
-intact; single-label HTTP(S) hosts and names under `.local` or `.internal` are treated as private.
-Forward-slash authorities are treated as UNC only when a `path`, `share`, or `UNC` label supplies
-that context; an unlabelled `//host/path` is retained because it is indistinguishable from a
-scheme-relative URL. Backslash UNC paths, extended UNC and Windows volume paths, backslash WSL
-homes, macOS and Fedora home aliases, and MSYS/Cygwin Windows-home aliases are recognized directly.
-A remote share name alone is not inferred to be an account name because ordinary project shares
-use the same syntax; explicit `home`, `Users`, and `Documents and Settings` segments remain
-account-home evidence.
+An unlabelled public address can identify a runner network, so canonical IP literals are removed. This intentionally also removes a four-component numeric value such as `1.2.3.4`;
+without context, it is indistinguishable from IPv4. HTTP(S) hosts are classified after WHATWG normalization. This catches encoded or Unicode private hosts, legacy IPv4 URL
+spellings, backslash separators, and user information. Repeated trailing dots are removed before classification. Literal or serialized format and non-spacing control characters in
+HTTP(S), file, and UNC authorities fail closed. Sealed reviewed text rejects any remaining format control. A bare legacy IPv4 spelling remains ordinary numeric text because it is
+ambiguous outside a URL. Domain-based public service URLs and `localhost` remain intact; single-label HTTP(S) hosts and names under `.local` or `.internal` are treated as private.
+Forward-slash authorities are treated as UNC only when a `path`, `share`, or `UNC` label supplies that context; an unlabelled `//host/path` is retained because it is
+indistinguishable from a scheme-relative URL. Backslash UNC paths, extended UNC and Windows volume paths, backslash WSL homes, macOS and Fedora home aliases, and MSYS/Cygwin
+Windows-home aliases are recognized directly. A remote share name alone is not inferred to be an account name because ordinary project shares use the same syntax; explicit `home`,
+`Users`, and `Documents and Settings` segments remain account-home evidence.
 
-An unlabelled backslash pair followed by a valid host and share shape is a UNC path. That syntax is
-also legal in TeX-like prose, so the privacy-first policy can redact such text. Use ordinary `/`
-paths in durable evidence when the source is not a Windows path.
+An unlabelled backslash pair followed by a valid host and share shape is a UNC path. That syntax is also legal in TeX-like prose, so the privacy-first policy can redact such text.
+Use ordinary `/` paths in durable evidence when the source is not a Windows path.
 
-Redaction preserves the label and structurally bounded delimiters while replacing the private value
-with a square-bracketed named placeholder. The placeholder is safe inside JSON strings and XML
-attributes. An unquoted, line-oriented value may consume an ambiguous remainder of its line; do
-not use redacted diagnostic text as a metric source. Every placeholder is outside its source
-pattern, so a second pass is byte-identical.
+Redaction preserves the label and structurally bounded delimiters while replacing the private value with a square-bracketed named placeholder. The placeholder is safe inside JSON
+strings and XML attributes. An unquoted, line-oriented value may consume an ambiguous remainder of its line; do not use redacted diagnostic text as a metric source. Every
+placeholder is outside its source pattern, so a second pass is byte-identical.
 
-The privacy policy added for #522 was checked against a real 441-file shipping-fidelity bundle from
-Unity Tests run 33739376165. The scrubber removed 400 IP address occurrences, 400 Unity host-name
-occurrences, 200 single-label web-host occurrences, 40 Unity IPC host suffixes, and 40 Unity machine
-IDs across 40 files. An independent inventory found ten distinct raw address, host, and machine
-values and found none in the corrected tree. A second pass changed no files. The corrected bundle
-sealed all 441 files, verified, and replayed the same 20-cell normalized result as the original.
+The privacy policy added for #522 was checked against a real 441-file shipping-fidelity bundle from Unity Tests run 33739376165. The scrubber removed 400 IP address occurrences,
+400 Unity host-name occurrences, 200 single-label web-host occurrences, 40 Unity IPC host suffixes, and 40 Unity machine IDs across 40 files. An independent inventory found ten
+distinct raw address, host, and machine values and found none in the corrected tree. A second pass changed no files. The corrected bundle sealed all 441 files, verified, and
+replayed the same 20-cell normalized result as the original.
 
-The shipping reducer checks the matrix and cell schema, Unity version, numeric types, unique cell
-identities, declared counts, and every rendered summary column, including timings. Each completed
-row requires its raw cell file. Failed and unreadable outcomes must be explicit, unique, and
-separate from completed cells. A partial run can retain those outcomes without presenting missing
-cells as completed evidence.
+The shipping reducer checks the matrix and cell schema, Unity version, numeric types, unique cell identities, declared counts, and every rendered summary column, including timings.
+Each completed row requires its raw cell file. Failed and unreadable outcomes must be explicit, unique, and separate from completed cells. A partial run can retain those outcomes
+without presenting missing cells as completed evidence.
 
 ## Retaining a paired screen
 
-Copy the original bracket declaration to `bracket-manifest.json` without rewriting its bytes.
-The bundle's `sourceCommit` must match the first run; `normalized.provenance` retains all three
-measured commits and source trees. Record the analysis source revision separately.
-Copy each run's `paired-comparison-summary.json` to `first.json`, `center.json`, and `last.json`
-in declared run order. Each summary must retain its raw cycle ratios, source identities, protocol,
-execution profile, and matching declaration digest. Keep other reviewed text evidence alongside
-these inputs; the bundle inventory hashes every retained file.
+Copy the original bracket declaration to `bracket-manifest.json` without rewriting its bytes. The bundle's `sourceCommit` must match the first run; `normalized.provenance` retains
+all three measured commits and source trees. Record the analysis source revision separately. Copy each run's `paired-comparison-summary.json` to `first.json`, `center.json`, and
+`last.json` in declared run order. Each summary must retain its raw cycle ratios, source identities, protocol, execution profile, and matching declaration digest. Keep other
+reviewed text evidence alongside these inputs; the bundle inventory hashes every retained file.
 
 ```bash
 node scripts/unity/perf-evidence-bundle.js seal .artifacts/paired-screen \
@@ -271,31 +211,25 @@ node scripts/unity/perf-evidence-bundle.js replay \
   .artifacts/paired-screen/evidence-manifest.json
 ```
 
-Retain four `cycleMeasurements` per row. Each cycle must have positive safe integer operation
-counts, equal work for both arms, and a multiple of 40,000 operations per arm. Both elapsed times
-must be finite and at least 0.625 seconds. The retained cycle ratio and corresponding `cycleRatios`
-entry must match the rates derived from that work and time within relative error `1e-12`.
-`aggregateRateRatio` must match total work divided by total active time for each arm. Totals must
-remain finite, and operation sums must remain safe integers.
+Retain four `cycleMeasurements` per row. Each cycle must have positive safe integer operation counts, equal work for both arms, and a multiple of 40,000 operations per arm. Both
+elapsed times must be finite and at least 0.625 seconds. The retained cycle ratio and corresponding `cycleRatios` entry must match the rates derived from that work and time within
+relative error `1e-12`. `aggregateRateRatio` must match total work divided by total active time for each arm. Totals must remain finite, and operation sums must remain safe
+integers.
 
-Verifier revisions before [the raw cycle fix](https://github.com/Ambiguous-Interactive/DxMessaging/issues/618)
-checked cycle ratios without validating raw work, active time, or the aggregate ratio. Historical
-publication tags retain their original verifier. Check raw cycle consistency with a revision
-containing that fix, and record the analysis revision separately from the unchanged archive.
+Verifier revisions before [the raw cycle fix](https://github.com/Ambiguous-Interactive/DxMessaging/issues/618) checked cycle ratios without validating raw work, active time, or the
+aggregate ratio. Historical publication tags retain their original verifier. Check raw cycle consistency with a revision containing that fix, and record the analysis revision
+separately from the unchanged archive.
 
-The adapter calls `reduce-paired-bracket.js` directly. It validates all three positions, raw cycle
-consistency, source relationships, declaration identity, and the shared execution profile before
-reproducing effects and the `accepted`, `rejected`, or `uninterpretable` screen decision. Replaying
-a rejected or uninterpretable screen succeeds when its original decision is reproduced. Missing
-inputs, changed bytes, or a different decision fail. These files do not prove native payload
-retention, independent build replication, or immutable remote restoration.
+The adapter calls `reduce-paired-bracket.js` directly. It validates all three positions, raw cycle consistency, source relationships, declaration identity, and the shared execution
+profile before reproducing effects and the `accepted`, `rejected`, or `uninterpretable` screen decision. Replaying a rejected or uninterpretable screen succeeds when its original
+decision is reproduced. Missing inputs, changed bytes, or a different decision fail. These files do not prove native payload retention, independent build replication, or immutable
+remote restoration.
 
 ## Retaining SubUnsub allocation observations
 
-Retain the original benchmark output in `comparison-output.log`. For an MCP result, copy the
-selected test leaf's `output` string without editing its metric lines. Keep the source result and
-its SHA-256 in the local experiment record; inspect any full result before publication because
-suite names can contain private paths. Extract the CSV with the production extractor:
+Retain the original benchmark output in `comparison-output.log`. For an MCP result, copy the selected test leaf's `output` string without editing its metric lines. Keep the source
+result and its SHA-256 in the local experiment record; inspect any full result before publication because suite names can contain private paths. Extract the CSV with the production
+extractor:
 
 ```bash
 node scripts/unity/extract-perf-baseline.js \
@@ -309,40 +243,28 @@ node scripts/unity/perf-evidence-bundle.js seal .artifacts/subunsub \
 node scripts/unity/perf-evidence-bundle.js replay .artifacts/subunsub/evidence-manifest.json
 ```
 
-The reducer requires the current canonical eight-column CSV and an exact match with rows
-extracted from the retained output. Unknown or malformed CSV rows, duplicate run identities,
-legacy missing byte columns, unsafe integer measurements, and invalid negative values fail.
-Every retained row must share the declared source commit and exact platform string, with one
-recognized execution scope. At least one `Comparison_DxMessaging_SubUnsub` row is required.
-The normalized result copies all SubUnsub rows in source order, including their run identities,
-throughput, window duration, allocation call counts, and informational allocated bytes.
+The reducer requires the current canonical eight-column CSV and an exact match with rows extracted from the retained output. Unknown or malformed CSV rows, duplicate run
+identities, legacy missing byte columns, unsafe integer measurements, and invalid negative values fail. Every retained row must share the declared source commit and exact platform
+string, with one recognized execution scope. At least one `Comparison_DxMessaging_SubUnsub` row is required. The normalized result copies all SubUnsub rows in source order,
+including their run identities, throughput, window duration, allocation call counts, and informational allocated bytes.
 
-`gcAllocations` and `gcAllocatedBytes` retain their producer's `-1` unmeasured sentinel
-independently. A measured zero remains zero; neither field is inferred from the other.
-These are aggregate benchmark observations. The CSV does not carry probe sample distributions,
-operation denominators, independent build identities, workload schedules, or confirmatory
-intervals. Do not infer per-operation allocation costs or campaign acceptance from this class.
-Local Mono observations retain their scope and cannot establish a Standalone IL2CPP headline.
+`gcAllocations` and `gcAllocatedBytes` retain their producer's `-1` unmeasured sentinel independently. A measured zero remains zero; neither field is inferred from the other. These
+are aggregate benchmark observations. The CSV does not carry probe sample distributions, operation denominators, independent build identities, workload schedules, or confirmatory
+intervals. Do not infer per-operation allocation costs or campaign acceptance from this class. Local Mono observations retain their scope and cannot establish a Standalone IL2CPP
+headline.
 
 ## Retaining a differential replay failure
 
-Set `DXM_DIFFERENTIAL_REPLAY_EVIDENCE_DIRECTORY` to the bundle's `replays` directory before
-running
-`DifferentialHostTraceTests.GeneratedLifecycleReplayMatchesAndShrinksDestroyedHostMutation`.
-The variable is opt-in: ordinary CI runs do no evidence I/O and execute the same test cases. Use an
-empty directory because the writer refuses to replace a prior capture. The fixture writes one raw
-JSON record for each of `Untargeted`, `Targeted`, and `Broadcast`, retaining the seed,
-generator and observation schema versions, complete original and minimized operations, both
-control/candidate traces, and the first mismatch classification.
+Set `DXM_DIFFERENTIAL_REPLAY_EVIDENCE_DIRECTORY` to the bundle's `replays` directory before running
+`DifferentialHostTraceTests.GeneratedLifecycleReplayMatchesAndShrinksDestroyedHostMutation`. The variable is opt-in: ordinary CI runs do no evidence I/O and execute the same test
+cases. Use an empty directory because the writer refuses to replace a prior capture. The fixture writes one raw JSON record for each of `Untargeted`, `Targeted`, and `Broadcast`,
+retaining the seed, generator and observation schema versions, complete original and minimized operations, both control/candidate traces, and the first mismatch classification.
 
 Add these reviewed text inputs at the bundle root:
 
-- `differential-replay-environment.json`: schema version, source commit and tree, Unity version,
-  test mode, scripting backend, assembly, and full test name.
-- `differential-replay-profile.json`: the exact `profile` object from
-  `scripts/unity/differential-replay-contract.json`.
-- `candidate-adapter.txt`: the source path, commit, line range, and exact excerpt that implements
-  the injected candidate fault.
+- `differential-replay-environment.json`: schema version, source commit and tree, Unity version, test mode, scripting backend, assembly, and full test name.
+- `differential-replay-profile.json`: the exact `profile` object from `scripts/unity/differential-replay-contract.json`.
+- `candidate-adapter.txt`: the source path, commit, line range, and exact excerpt that implements the injected candidate fault.
 - `replay-command.txt`: the exact command or MCP invocation needed to rerun the focused fixture.
 
 ```bash
@@ -355,58 +277,43 @@ node scripts/unity/perf-evidence-bundle.js replay \\
   .artifacts/differential-replay-failure/evidence-manifest.json
 ```
 
-The v1 reducer is deliberately specific to the reviewed seed-509, six-operation native lifecycle
-profile. It independently locates the first observable mismatch with the same ordered comparison
-categories as the C# oracle. It requires the original operation-kind sequence, a one-operation
-`DestroyHost` deletion-minimal subsequence, matching `state` failures for all three message
-kinds, exact profile/source agreement, and non-empty candidate and replay inputs. A future
-generator profile needs a new reducer version; do not weaken this contract to admit it.
+The v1 reducer is deliberately specific to the reviewed seed-509, six-operation native lifecycle profile. It independently locates the first observable mismatch with the same
+ordered comparison categories as the C# oracle. It requires the original operation-kind sequence, a one-operation `DestroyHost` deletion-minimal subsequence, matching `state`
+failures for all three message kinds, exact profile/source agreement, and non-empty candidate and replay inputs. A future generator profile needs a new reducer version; do not
+weaken this contract to admit it.
 
 ## Retaining native Editor settings cache evidence
 
-The `editor-settings-cache-v1` reducer retains the specific #613 native Editor characterization
-profile in `scripts/unity/editor-settings-cache-contract.json`. It requires the stopped 64-call
-legacy phase and the separately preregistered 8-call followup: four complete ABBA/BAAB blocks,
-one warmup call per arm, the two-second stopping rule, and the 128 MiB growth limit. It checks
-every call, found-object and search counter, schedule position, numeric value, and stopping reason.
-Its block timing check sums the recorded phase times; the original probe did not retain the
-whole-block stopwatch values. The producer's complete block timing cannot be reconstructed.
+The `editor-settings-cache-v1` reducer retains the specific #613 native Editor characterization profile in `scripts/unity/editor-settings-cache-contract.json`. It requires the
+stopped 64-call legacy phase and the separately preregistered 8-call followup: four complete ABBA/BAAB blocks, one warmup call per arm, the two-second stopping rule, and the 128
+MiB growth limit. It checks every call, found-object and search counter, schedule position, numeric value, and stopping reason. Its block timing check sums the recorded phase
+times; the original probe did not retain the whole-block stopwatch values. The producer's complete block timing cannot be reconstructed.
 
 Retain these inputs at the bundle root:
 
 - `editor-settings-profile.json`: the contract's exact `profile` object.
-- `stopped-baseline.json` and `followup.json`: the original MCP `result` objects, including all
-  memory readings and the stopped row. Keep the original requests alongside them.
-- For each of `focused`, `import`, `control`, `affected`, and `full`: `<id>.result.json`,
-  `<id>.run.json`, `<id>.cleanup.json`, `<id>.status.txt`, and `<id>.cleanup.status.txt`.
-- `source-proof.json` and `candidate/<source-path>.txt`: measured commit/tree, complete overlay
-  inventory, original and retained source hashes, redaction counts, and package restoration proof.
-- `freshness.json`, `samples.json`, `preflight.json`, and `restoration.json`: assembly timestamps,
-  imported sample/source equality, saved original scene, and final fixture cleanup observations.
+- `stopped-baseline.json` and `followup.json`: the original MCP `result` objects, including all memory readings and the stopped row. Keep the original requests alongside them.
+- For each of `focused`, `import`, `control`, `affected`, and `full`: `<id>.result.json`, `<id>.run.json`, `<id>.cleanup.json`, `<id>.status.txt`, and `<id>.cleanup.status.txt`.
+- `source-proof.json` and `candidate/<source-path>.txt`: measured commit/tree, complete overlay inventory, original and retained source hashes, redaction counts, and package
+  restoration proof.
+- `freshness.json`, `samples.json`, `preflight.json`, and `restoration.json`: assembly timestamps, imported sample/source equality, saved original scene, and final fixture cleanup
+  observations.
 - `original-samples.json` and `restored-samples.json`: all original file hashes and root metadata.
 
-The reducer derives leaf counts from native result nodes and checks the declared summaries:
-22 focused passes, four import passes, the expected three control failures and one control pass,
-117 affected passes, and 975 full Editor passes. It requires matching run ownership, terminal
-status, an inactive framework, and restoration of the clean original scene. The control's cleanup
-status remains its original expected test-failure error; it is not changed to `done`.
-The full run also requires fresh package and sample assemblies before its preflight. Earlier
-focused runs used selected Editor/test overlays; only the full run used the complete candidate
-Unity tree. A different workload or coverage profile requires a new reducer version.
+The reducer derives leaf counts from native result nodes and checks the declared summaries: 22 focused passes, four import passes, the expected three control failures and one
+control pass, 117 affected passes, and 975 full Editor passes. It requires matching run ownership, terminal status, an inactive framework, and restoration of the clean original
+scene. The control's cleanup status remains its original expected test-failure error; it is not changed to `done`. The full run also requires fresh package and sample assemblies
+before its preflight. Earlier focused runs used selected Editor/test overlays; only the full run used the complete candidate Unity tree. A different workload or coverage profile
+requires a new reducer version.
 
-The normalized result retains the stopped baseline and every followup row, with signed live-memory
-changes and search counts. These are descriptive observations. They establish no speedup ratio,
-confidence interval, managed allocation count, leak, OOM cause, or player performance result.
-The existing settings asset was preserved, so absence transitions have native test coverage but
-no native absence timing. Background processes and same-object equivalence of the two present
-settings lookups were not measured.
+The normalized result retains the stopped baseline and every followup row, with signed live-memory changes and search counts. These are descriptive observations. They establish no
+speedup ratio, confidence interval, managed allocation count, leak, OOM cause, or player performance result. The existing settings asset was preserved, so absence transitions have
+native test coverage but no native absence timing. Background processes and same-object equivalence of the two present settings lookups were not measured.
 
-Privacy preparation can redact ordinary token assignments in a source excerpt. Keep its original
-`candidateSha256`, the scrubbed `retainedSha256`, and explicit `redactionCounts`; replay verifies
-the retained bytes and the declared redaction relationship. During independent restoration,
-compare every original candidate source hash with the measured commit's checkout. A retained
-redacted excerpt is not the original compiled source. Keep the original hash and sanitized hash
-provenance for diagnostic outputs too; never include license-bearing historical crash logs.
+Privacy preparation can redact ordinary token assignments in a source excerpt. Keep its original `candidateSha256`, the scrubbed `retainedSha256`, and explicit `redactionCounts`;
+replay verifies the retained bytes and the declared redaction relationship. During independent restoration, compare every original candidate source hash with the measured commit's
+checkout. A retained redacted excerpt is not the original compiled source. Keep the original hash and sanitized hash provenance for diagnostic outputs too; never include
+license-bearing historical crash logs.
 
 ```bash
 node scripts/unity/perf-evidence-bundle.js seal .artifacts/editor-settings-cache \
@@ -422,127 +329,93 @@ node scripts/unity/perf-evidence-bundle.js replay \
 
 <!-- cspell:ignore pdbpath -->
 
-`scripts/unity/capture-dispatch-codegen.ps1` retains the exact `GameAssembly.dll` and the
-`GameAssembly.pdb` selected by `dumpbin /pdbpath:verbose` in a new `native-inputs-{GUID}`
-directory beneath its artifacts directory. The native inventory and disassembly identify that
-directory, both retained paths, byte lengths, and SHA-256 hashes. Repeated captures create new
-directories and preserve earlier binary copies.
+`scripts/unity/capture-dispatch-codegen.ps1` retains the exact `GameAssembly.dll` and the `GameAssembly.pdb` selected by `dumpbin /pdbpath:verbose` in a new `native-inputs-{GUID}`
+directory beneath its artifacts directory. The native inventory and disassembly identify that directory, both retained paths, byte lengths, and SHA-256 hashes. Repeated captures
+create new directories and preserve earlier binary copies.
 
-The exporter holds read-only source handles through the native tool calls and verifies source
-and retained-file hashes after copying, after source-line mapping, and after disassembly. A
-persistent change fails the capture; partial files from a failed capture remain diagnostic
-material. Windows read sharing prevents ordinary writes and deletes while a handle is held.
-On hosts where sharing is advisory, hash checks do not exclude a change that is reverted between
-checks. This is input retention and observed-change refusal, not a universal race guarantee.
+The exporter holds read-only source handles through the native tool calls and verifies source and retained-file hashes after copying, after source-line mapping, and after
+disassembly. A persistent change fails the capture; partial files from a failed capture remain diagnostic material. Windows read sharing prevents ordinary writes and deletes while
+a handle is held. On hosts where sharing is advisory, hash checks do not exclude a change that is reverted between checks. This is input retention and observed-change refusal, not
+a universal race guarantee.
 
-Copy and hashing overhead is unmeasured and gives no campaign budget credit. Raw DLL/PDB files
-are opaque binary material under the current redaction policy. The ordinary perf artifact upload
-retains them for 14 days; inspect them before durable publication. They do not enter the existing
-reviewed-text sealer or supply native trace replay, WPR/PMU controls, attribution, or performance
-confirmation. Those contracts remain under #508 and #511.
+Copy and hashing overhead is unmeasured and gives no campaign budget credit. Raw DLL/PDB files are opaque binary material under the current redaction policy. The ordinary perf
+artifact upload retains them for 14 days; inspect them before durable publication. They do not enter the existing reviewed-text sealer or supply native trace replay, WPR/PMU
+controls, attribution, or performance confirmation. Those contracts remain under #508 and #511.
 
-Artifact preparation keeps its whole-file read cap for text. Oversized files with unreviewed
-extensions use bounded-memory strict decoding: decoding failure identifies opaque bytes, which
-remain unchanged and are reported as unscanned. Oversized decodable files and reviewed text
-extensions still refuse preparation. This classification does not inspect binary strings or
-certify their privacy; inspect raw native inputs before durable publication.
+Artifact preparation keeps its whole-file read cap for text. Oversized files with unreviewed extensions use bounded-memory strict decoding: decoding failure identifies opaque
+bytes, which remain unchanged and are reported as unscanned. Oversized decodable files and reviewed text extensions still refuse preparation. This classification does not inspect
+binary strings or certify their privacy; inspect raw native inputs before durable publication.
 
 ## Adding a reducer
 
-A reducer must be a pure function of the bundle's bytes. Read only from the supplied content map,
-never from disk, the clock, or the environment. Copy measured values verbatim. Order arrays by an
-ordinal key or a declared experimental position rather than by directory-walk order. The shipping
-reducer derives only integer comparisons. The paired screen reuses the existing floating-point
-analysis without rounding or tolerances in replay: a different normalized result fails replay.
-Retain the analysis source revision and Node.js version with a paired experiment to diagnose any
-engine-dependent arithmetic difference. Such a mismatch is failed restoration, not permission to
-replace the sealed result.
+A reducer must be a pure function of the bundle's bytes. Read only from the supplied content map, never from disk, the clock, or the environment. Copy measured values verbatim.
+Order arrays by an ordinal key or a declared experimental position rather than by directory-walk order. The shipping reducer derives only integer comparisons. The paired screen
+reuses the existing floating-point analysis without rounding or tolerances in replay: a different normalized result fails replay. Retain the analysis source revision and Node.js
+version with a paired experiment to diagnose any engine-dependent arithmetic difference. Such a mismatch is failed restoration, not permission to replace the sealed result.
 
-Register it in `REDUCERS` in `scripts/unity/perf-evidence-bundle.js` and add cases to
-`scripts/__tests__/perf-evidence-bundle.test.js` covering a missing input, a corrupted input, and a
-summary that disagrees with the raw rows it claims to describe. Compare every copied
-field, including profile identity and nested fields, while allowing object-key order
-and the producer's `cellId` override.
+Register it in `REDUCERS` in `scripts/unity/perf-evidence-bundle.js` and add cases to `scripts/__tests__/perf-evidence-bundle.test.js` covering a missing input, a corrupted input,
+and a summary that disagrees with the raw rows it claims to describe. Compare every copied field, including profile identity and nested fields, while allowing object-key order and
+the producer's `cellId` override.
 
 ## Where bundles are produced
 
-The `unity-tests` job seals the shipping-fidelity matrix after redaction and before upload, then
-replays it, so a bundle that cannot reproduce its own result fails the run. The manifest travels
-inside the 14-day workflow artifact.
+The `unity-tests` job seals the shipping-fidelity matrix after redaction and before upload, then replays it, so a bundle that cannot reproduce its own result fails the run. The
+manifest travels inside the 14-day workflow artifact.
 
-The [evidence index](#evidence-index) records immutable publications and their restore checks.
-A workflow artifact alone is not durable campaign evidence. New bundles must pass the publication
-and restore gates below before entering the index.
+The [evidence index](#evidence-index) records immutable publications and their restore checks. A workflow artifact alone is not durable campaign evidence. New bundles must pass the
+publication and restore gates below before entering the index.
 
 ## Durable publication contract
 
-Repository maintainers own the evidence releases and the tracked evidence index below, linked from
-issue #500 and reviewed with its code change. `PLAN.md` is a transient routing page, not the durable index. Retain each published
-revision without an expiry date, including superseded revisions. A correction
-adds a revision and an index entry; it does not replace an asset, move a tag, or erase the previous
-entry. If privacy or access loss requires withdrawal, mark the entry unavailable and every dependent
-conclusion incomplete. Never substitute a local copy for a failed durable retrieval.
+Repository maintainers own the evidence releases and the tracked evidence index below, linked from issue #500 and reviewed with its code change. `PLAN.md` is a transient routing
+page, not the durable index. Retain each published revision without an expiry date, including superseded revisions. A correction adds a revision and an index entry; it does not
+replace an asset, move a tag, or erase the previous entry. If privacy or access loss requires withdrawal, mark the entry unavailable and every dependent conclusion incomplete.
+Never substitute a local copy for a failed durable retrieval.
 
-Use `perf-evidence-<experiment-id>-r<revision>-<manifest-sha8>` for the tag. Here `manifest-sha8`
-means the first eight characters of SHA-256 over the exact manifest file bytes, not `bundleDigest`.
-The explicit revision prevents ambiguity between corrections; the short hash is a label, not an
-integrity check. Record the full manifest SHA-256, full archive SHA-256, `bundleDigest`, revision,
-source commit, verifier commit, release URL, and exact asset name in the reviewed evidence index.
-The source commit identifies the measured build; the verifier commit identifies the checked-out
-scripts used to inspect and replay it. They need not match.
+Use `perf-evidence-<experiment-id>-r<revision>-<manifest-sha8>` for the tag. Here `manifest-sha8` means the first eight characters of SHA-256 over the exact manifest file bytes,
+not `bundleDigest`. The explicit revision prevents ambiguity between corrections; the short hash is a label, not an integrity check. Record the full manifest SHA-256, full archive
+SHA-256, `bundleDigest`, revision, source commit, verifier commit, release URL, and exact asset name in the reviewed evidence index. The source commit identifies the measured
+build; the verifier commit identifies the checked-out scripts used to inspect and replay it. They need not match.
 
-Choose an unused revision and pass it as `--revision <revision>` when sealing the publication's
-staging copy. Ordinary shipping CI seals its workflow artifact with the default revision `1`.
-For a later revision, prepare a fresh staging directory and seal it with the chosen revision
-before naming the tag or creating a draft. Copy the declared evidence files, leaving the old
-manifest with its original archive. The sealed manifest, tag, and reviewed index must agree on
-the experiment ID and revision. Stop on a mismatch even if the archive hash and replay agree.
+Choose an unused revision and pass it as `--revision <revision>` when sealing the publication's staging copy. Ordinary shipping CI seals its workflow artifact with the default
+revision `1`. For a later revision, prepare a fresh staging directory and seal it with the chosen revision before naming the tag or creating a draft. Copy the declared evidence
+files, leaving the old manifest with its original archive. The sealed manifest, tag, and reviewed index must agree on the experiment ID and revision. Stop on a mismatch even if the
+archive hash and replay agree.
 
 Before enabling publication:
 
-1. Confirm the package release workflow uploads and verifies assets while the release is a draft.
-   Its published-rerun path must verify downloaded bytes without replacing assets. Keep these
-   checks when updating the workflow; repository immutability also affects package releases.
-1. Have a repository administrator enable immutable releases. Check the authenticated repository
-   setting and require `enabled: true`; a successful HTTP response alone is not proof. Missing
-   permissions, unavailable settings, and a false value all block publication.
-1. Seal, verify, and replay the scrubbed bundle. Package only its manifest and declared files in one
-   archive, with relative paths, no links, and normalized archive ownership. Keep large evidence out
-   of Git history; `progress/` is local and ignored. If it cannot fit the chosen release asset, leave the result incomplete
-   until a reviewed storage decision supplies an equally verifiable durable location.
-1. Reject an existing experiment/revision with different manifest bytes, even if its tag has a
-   different hash suffix. An identical existing publication is reusable only after downloading and
-   verifying its assets. Never use an asset-replacement option. Local `seal` checks only the manifest
-   in its current directory; it does not enforce uniqueness across releases or preserve old folders.
-1. Create a new draft prerelease at the verifier commit, upload every asset, and download and verify
-   the draft's complete asset inventory before publishing. A failed or interrupted draft is not
-   durable evidence. Do not automatically delete, overwrite, or publish it on a retry.
-1. Publish the completed draft, then require the release response to report `draft: false`,
-   `prerelease: true`, and `immutable: true`. Check the tag commit and every asset name and digest.
-   Perform the independent restore below before recording the result as durable.
+1. Confirm the package release workflow uploads and verifies assets while the release is a draft. Its published-rerun path must verify downloaded bytes without replacing assets.
+   Keep these checks when updating the workflow; repository immutability also affects package releases.
+1. Have a repository administrator enable immutable releases. Check the authenticated repository setting and require `enabled: true`; a successful HTTP response alone is not proof.
+   Missing permissions, unavailable settings, and a false value all block publication.
+1. Seal, verify, and replay the scrubbed bundle. Package only its manifest and declared files in one archive, with relative paths, no links, and normalized archive ownership. Keep
+   large evidence out of Git history; `progress/` is local and ignored. If it cannot fit the chosen release asset, leave the result incomplete until a reviewed storage decision
+   supplies an equally verifiable durable location.
+1. Reject an existing experiment/revision with different manifest bytes, even if its tag has a different hash suffix. An identical existing publication is reusable only after
+   downloading and verifying its assets. Never use an asset-replacement option. Local `seal` checks only the manifest in its current directory; it does not enforce uniqueness
+   across releases or preserve old folders.
+1. Create a new draft prerelease at the verifier commit, upload every asset, and download and verify the draft's complete asset inventory before publishing. A failed or interrupted
+   draft is not durable evidence. Do not automatically delete, overwrite, or publish it on a retry.
+1. Publish the completed draft, then require the release response to report `draft: false`, `prerelease: true`, and `immutable: true`. Check the tag commit and every asset name and
+   digest. Perform the independent restore below before recording the result as durable.
 
-GitHub locks the tag and assets only after publication. Release titles, notes, and the prerelease
-flag remain editable, so they cannot replace the reviewed digest index. See GitHub's
-[immutable release guarantees](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases)
-and [repository immutability settings API](https://docs.github.com/en/rest/repos/repos#check-if-immutable-releases-are-enabled-for-a-repository).
+GitHub locks the tag and assets only after publication. Release titles, notes, and the prerelease flag remain editable, so they cannot replace the reviewed digest index. See
+GitHub's [immutable release guarantees](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases) and
+[repository immutability settings API](https://docs.github.com/en/rest/repos/repos#check-if-immutable-releases-are-enabled-for-a-repository).
 
 ## Independent restore acceptance
 
-Use a reviewer environment with no runner artifact cache. Clone the repository into a new directory,
-check out the full verifier commit from the reviewed index, and require an empty
-`git status --porcelain`. Run `npm ci --ignore-scripts` to install the pinned verifier dependencies.
-The credential scanner uses XML and YAML parsers from the lockfile. Do not copy scripts or
-dependencies from the producing checkout. The bundle commands do not require Unity.
+Use a reviewer environment with no runner artifact cache. Clone the repository into a new directory, check out the full verifier commit from the reviewed index, and require an
+empty `git status --porcelain`. Run `npm ci --ignore-scripts` to install the pinned verifier dependencies. The credential scanner uses XML and YAML parsers from the lockfile. Do
+not copy scripts or dependencies from the producing checkout. The bundle commands do not require Unity.
 
-1. Retrieve the indexed release and exact asset from GitHub, using the supported authentication
-   path when needed. Require the immutable release metadata above. A 401, 403, 404, timeout,
-   missing asset, or failed download is an incomplete experiment, never an empty passing result.
-   Do not fall back to a workflow artifact, another revision, or a cached local archive.
-1. Download into a new temporary directory. Require the full archive SHA-256 to equal the reviewed
-   index before extraction. Inspect the archive inventory for absolute paths, traversal, links, or
-   special files, then extract into a separate empty directory without restoring ownership.
-1. Require the extracted manifest's full SHA-256 to equal the index. Check its experiment ID,
-   revision, source commit, and `bundleDigest` against that same index, not against release notes.
+1. Retrieve the indexed release and exact asset from GitHub, using the supported authentication path when needed. Require the immutable release metadata above. A 401, 403, 404,
+   timeout, missing asset, or failed download is an incomplete experiment, never an empty passing result. Do not fall back to a workflow artifact, another revision, or a cached
+   local archive.
+1. Download into a new temporary directory. Require the full archive SHA-256 to equal the reviewed index before extraction. Inspect the archive inventory for absolute paths,
+   traversal, links, or special files, then extract into a separate empty directory without restoring ownership.
+1. Require the extracted manifest's full SHA-256 to equal the index. Check its experiment ID, revision, source commit, and `bundleDigest` against that same index, not against
+   release notes.
 1. Run the existing commands from the clean verifier checkout, using the restored manifest path:
 
    ```bash
@@ -550,24 +423,21 @@ dependencies from the producing checkout. The bundle commands do not require Uni
    node scripts/unity/perf-evidence-bundle.js replay /tmp/restored-evidence/evidence-manifest.json
    ```
 
-1. Require both commands to exit zero. `replay` checks exact normalized-result equality, not just
-   file availability. Record the release and asset identities, digests, verifier commit, command
-   exit codes, and clean checkout status in the evidence index.
-1. Exercise denied access to an actual required remote asset in an isolated reviewer context,
-   without deleting or changing the publication. Require retrieval to fail and the experiment to
-   remain incomplete. A fabricated URL, missing local file, or HTTP mock does not prove this gate.
+1. Require both commands to exit zero. `replay` checks exact normalized-result equality, not just file availability. Record the release and asset identities, digests, verifier
+   commit, command exit codes, and clean checkout status in the evidence index.
+1. Exercise denied access to an actual required remote asset in an isolated reviewer context, without deleting or changing the publication. Require retrieval to fail and the
+   experiment to remain incomplete. A fabricated URL, missing local file, or HTTP mock does not prove this gate.
 
-A local archive round trip can test packaging, byte integrity, and reducer replay. It cannot prove
-GitHub retention, immutable publication, independent remote retrieval, or denied remote access.
+A local archive round trip can test packaging, byte integrity, and reducer replay. It cannot prove GitHub retention, immutable publication, independent remote retrieval, or denied
+remote access.
 
 ## Evidence index
 
 ### Managed clock-fault identity text from source 7c9bec8a
 
-Published and restored from GitHub on 2026-11-15. Revision 1 retains 24 recorded fault-reference
-observations and 24 identity controls from the
-[managed continuation study](https://github.com/Ambiguous-Interactive/DxMessaging/issues/503#issuecomment-6898212818).
-The text reducer preserves every raw row and diagnostic and derives zero declared violations.
+Published and restored from GitHub on 2026-11-15. Revision 1 retains 24 recorded fault-reference observations and 24 identity controls from the
+[managed continuation study](https://github.com/Ambiguous-Interactive/DxMessaging/issues/503#issuecomment-6898212818). The text reducer preserves every raw row and diagnostic and
+derives zero declared violations.
 
 | Field                                  | Value                                                                                                                                                                                                                                                       |
 | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -588,27 +458,21 @@ The text reducer preserves every raw row and diagnostic and derives zero declare
 | Independent restore                    | Fresh remote verifier clone and pinned `npm ci`; public download HTTP 200; archive/manifest hashes, relative regular-file inventory, source/revision/digest and remote tag match                                                                            |
 | Verifier result                        | `verify=0`, `replay=0`; clean checkout before and after                                                                                                                                                                                                     |
 
-The archive contains eleven regular files: ten declared text inputs and the manifest. No producing
-checkout scripts, dependencies, or archive were copied into the reviewer environment. The retained
-observer text has one `credential-assignment` redaction marker. Its original and retained hashes,
-marker inventory, and source-retention limits remain explicit in normalized output.
+The archive contains eleven regular files: ten declared text inputs and the manifest. No producing checkout scripts, dependencies, or archive were copied into the reviewer
+environment. The retained observer text has one `credential-assignment` redaction marker. Its original and retained hashes, marker inventory, and source-retention limits remain
+explicit in normalized output.
 
-An earlier anonymous API request for the actual draft asset returned HTTP 403 with a rate-limit
-message. That context remained incomplete and used no fallback. Its scratch observer had expected
-404 specifically and stopped on the actual 403; the original failure remains retained. This is a
-retrieval refusal, with no conclusion about draft visibility. The later published-asset restoration
-uses a separate directory and the canonical public download URL.
+An earlier anonymous API request for the actual draft asset returned HTTP 403 with a rate-limit message. That context remained incomplete and used no fallback. Its scratch observer
+had expected 404 specifically and stopped on the actual 403; the original failure remains retained. This is a retrieval refusal, with no conclusion about draft visibility. The
+later published-asset restoration uses a separate directory and the canonical public download URL.
 
-Replay retains instrumented reference observations and checks their recorded relationships. It
-does not execute the product, reconstruct original observer source, or retain DLL/PDB bytes. The
-getter contract remains unresolved, and native, memory, performance, and human-reading acceptance
-remain open.
+Replay retains instrumented reference observations and checks their recorded relationships. It does not execute the product, reconstruct original observer source, or retain DLL/PDB
+bytes. The getter contract remains unresolved, and native, memory, performance, and human-reading acceptance remain open.
 
 ### SubUnsub observations from source 2cb38b46
 
-Published and restored from GitHub on 2026-11-15. This revision retains the complete player log
-and all 48 canonical comparison CSV rows. Its existing observation reducer normalizes every one
-of the eight SubUnsub library rows from one Standalone IL2CPP Release player.
+Published and restored from GitHub on 2026-11-15. This revision retains the complete player log and all 48 canonical comparison CSV rows. Its existing observation reducer
+normalizes every one of the eight SubUnsub library rows from one Standalone IL2CPP Release player.
 
 | Field                    | Value                                                                                                                                                                              |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -627,27 +491,22 @@ of the eight SubUnsub library rows from one Standalone IL2CPP Release player.
 | Published restore        | New anonymous download; archive, manifest, inventory and identity verified; exact normalized replay from a fresh remote clone with pinned dependencies; clean checkout             |
 | Denied-access control    | Actual asset API with isolated invalid authentication: HTTP `401`, curl exit `22`, no file and no fallback; experiment remains incomplete in that context                          |
 
-Both allocation fields remain `-1` (unmeasured). Independent-build uncertainty, causal speedup,
-semantic parity, full native correctness and native binary privacy acceptance remain unqualified.
-The reducer retains descriptive SubUnsub observations; the broader log and CSV remain raw context.
-The source and verifier commits differ. Their evidence tools, helper subtrees and locked dependencies
-match; a separate repository policy check differs. Whole-repository byte equality is not claimed.
+Both allocation fields remain `-1` (unmeasured). Independent-build uncertainty, causal speedup, semantic parity, full native correctness and native binary privacy acceptance remain
+unqualified. The reducer retains descriptive SubUnsub observations; the broader log and CSV remain raw context. The source and verifier commits differ. Their evidence tools, helper
+subtrees and locked dependencies match; a separate repository policy check differs. Whole-repository byte equality is not claimed.
 
-The restore used a new remote verifier clone at the named commit and `npm ci --ignore-scripts`,
-with new published-asset download and extraction directories. It verified all declared bytes and
-recomputed the normalized result exactly. [Preparation and limits](https://github.com/Ambiguous-Interactive/DxMessaging/issues/500#issuecomment-6890852896)
+The restore used a new remote verifier clone at the named commit and `npm ci --ignore-scripts`, with new published-asset download and extraction directories. It verified all
+declared bytes and recomputed the normalized result exactly. [Preparation and limits](https://github.com/Ambiguous-Interactive/DxMessaging/issues/500#issuecomment-6890852896)
 remain separate from [release readiness](https://github.com/Ambiguous-Interactive/DxMessaging/issues/575).
 
-Repository-wide immutable releases were enabled with maintainer approval on 2026-09-10. The
-authenticated setting read back `enabled: true`. Publication remains an operator procedure, not
-an automatic upload of every workflow artifact. Retain all indexed revisions without expiry.
+Repository-wide immutable releases were enabled with maintainer approval on 2026-09-10. The authenticated setting read back `enabled: true`. Publication remains an operator
+procedure, not an automatic upload of every workflow artifact. Retain all indexed revisions without expiry.
 
 ### session242-paired-screen-replay, revision 1
 
-Status: published and restored from GitHub in a fresh verifier clone on 2026-10-07. This retains
-the cached untargeted route experiment's original `uninterpretable` verdict. `Filtered`,
-`PostProcess`, and `FilteredPostProcess` sentinels exceeded the fixed 3% band. The candidate
-was reverted; its apparent target gains do not establish a causal performance improvement.
+Status: published and restored from GitHub in a fresh verifier clone on 2026-10-07. This retains the cached untargeted route experiment's original `uninterpretable` verdict.
+`Filtered`, `PostProcess`, and `FilteredPostProcess` sentinels exceeded the fixed 3% band. The candidate was reverted; its apparent target gains do not establish a causal
+performance improvement.
 
 | Identity                        | Value                                                                                                                                                                                                           |
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -665,30 +524,24 @@ was reverted; its apparent target gains do not establish a causal performance im
 | Bundle digest                   | `f85cadc3010ebfd515c555e235b4c971a3f94fb3d9a900cd45a770ca594d868d`                                                                                                                                              |
 | Verifier and release tag commit | `f90dca2f2e1b388ce2946a92248f6643433a9955`                                                                                                                                                                      |
 
-All three raw-cycle summaries match their retained ZIP members and original committed declaration.
-The original workflow artifact listings are now empty; the recorded local ZIP hashes cannot be
-checked against GitHub's historical artifact digests. The control's measurements and upload
-completed before its license-cleanup gate failed. Candidate two recovered the runner. Those
-provenance limits remain explicit; immutable publication does not repair missing original metadata.
+All three raw-cycle summaries match their retained ZIP members and original committed declaration. The original workflow artifact listings are now empty; the recorded local ZIP
+hashes cannot be checked against GitHub's historical artifact digests. The control's measurements and upload completed before its license-cleanup gate failed. Candidate two
+recovered the runner. Those provenance limits remain explicit; immutable publication does not repair missing original metadata.
 
-The complete draft inventory and download passed before publication. Published metadata reported
-`draft: false`, `prerelease: true`, and `immutable: true`; the tag resolves to the verifier commit.
-A new remote clone with `npm ci --ignore-scripts` checked the separately downloaded published
-archive, manifest, every file, and all three source trees and candidate-source digests fetched
-from GitHub. Both `verify` and `replay` exited zero and reproduced the original verdict exactly;
-the verifier stayed clean. The actual required asset returned HTTP 401 in an isolated
-invalid-credential context, with no archive or fallback; that context remained incomplete.
+The complete draft inventory and download passed before publication. Published metadata reported `draft: false`, `prerelease: true`, and `immutable: true`; the tag resolves to the
+verifier commit. A new remote clone with `npm ci --ignore-scripts` checked the separately downloaded published archive, manifest, every file, and all three source trees and
+candidate-source digests fetched from GitHub. Both `verify` and `replay` exited zero and reproduced the original verdict exactly; the verifier stayed clean. The actual required
+asset returned HTTP 401 in an isolated invalid-credential context, with no archive or fallback; that context remained incomplete.
 
-This reviewed text bundle excludes the locally retained original ZIPs, native binaries, maps,
-codegen, and full logs. It establishes legacy-screen retention, with no calibrated confirmation,
-native-cost attribution, allocation, or production-acceptance claim. See [the original session 242 decision](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414#issuecomment-5430405546).
+This reviewed text bundle excludes the locally retained original ZIPs, native binaries, maps, codegen, and full logs. It establishes legacy-screen retention, with no calibrated
+confirmation, native-cost attribution, allocation, or production-acceptance claim. See
+[the original session 242 decision](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414#issuecomment-5430405546).
 
 ### session243-paired-screen-replay, revision 1
 
-Status: published and restored from GitHub in a fresh verifier clone on 2026-10-07. This retains
-the borrowed post-route experiment's original `uninterpretable` verdict. `GlobalToOne`,
-`GlobalToMany`, and `StructNoBox` sentinels exceeded the fixed 3% band. The candidate was
-reverted; its apparent target gain does not establish a causal performance improvement.
+Status: published and restored from GitHub in a fresh verifier clone on 2026-10-07. This retains the borrowed post-route experiment's original `uninterpretable` verdict.
+`GlobalToOne`, `GlobalToMany`, and `StructNoBox` sentinels exceeded the fixed 3% band. The candidate was reverted; its apparent target gain does not establish a causal performance
+improvement.
 
 | Identity                        | Value                                                                                                                                                                                                           |
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -706,30 +559,23 @@ reverted; its apparent target gain does not establish a causal performance impro
 | Bundle digest                   | `bebb1b31ae0c96ee5e51651d7bcd954f581176cb4626381b3a5e0cac9da5afaa`                                                                                                                                              |
 | Verifier and release tag commit | `f90dca2f2e1b388ce2946a92248f6643433a9955`                                                                                                                                                                      |
 
-The original raw-cycle summaries match retained ZIP members; ZIP hashes match the original
-experiment record. All three comparison jobs passed cleanup. Separate intermediate Unity
-workflows were cancelled after the performance arms began, and the first candidate's oldest-Unity
-job passed its test modes before a cleanup failure. Later jobs recovered. These original outcomes
-remain explicit in the retention provenance.
+The original raw-cycle summaries match retained ZIP members; ZIP hashes match the original experiment record. All three comparison jobs passed cleanup. Separate intermediate Unity
+workflows were cancelled after the performance arms began, and the first candidate's oldest-Unity job passed its test modes before a cleanup failure. Later jobs recovered. These
+original outcomes remain explicit in the retention provenance.
 
-The complete draft inventory and download passed before publication. Published metadata reported
-`draft: false`, `prerelease: true`, and `immutable: true`; the tag resolves to the verifier commit.
-A new remote clone with `npm ci --ignore-scripts` checked the separately downloaded published
-archive, manifest, every file, and all three source trees and candidate-source digests fetched
-from GitHub. Both `verify` and `replay` exited zero and reproduced the original verdict exactly;
-the verifier stayed clean. The actual required asset returned HTTP 401 in an isolated
-invalid-credential context, with no archive or fallback; that context remained incomplete.
+The complete draft inventory and download passed before publication. Published metadata reported `draft: false`, `prerelease: true`, and `immutable: true`; the tag resolves to the
+verifier commit. A new remote clone with `npm ci --ignore-scripts` checked the separately downloaded published archive, manifest, every file, and all three source trees and
+candidate-source digests fetched from GitHub. Both `verify` and `replay` exited zero and reproduced the original verdict exactly; the verifier stayed clean. The actual required
+asset returned HTTP 401 in an isolated invalid-credential context, with no archive or fallback; that context remained incomplete.
 
-This reviewed text bundle excludes the locally retained original ZIPs, native binaries, maps,
-codegen, and full logs. It establishes legacy-screen retention, with no calibrated confirmation,
-native-cost attribution, allocation, or production-acceptance claim. See [the original session 243 decision](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414#issuecomment-5432013543).
+This reviewed text bundle excludes the locally retained original ZIPs, native binaries, maps, codegen, and full logs. It establishes legacy-screen retention, with no calibrated
+confirmation, native-cost attribution, allocation, or production-acceptance claim. See
+[the original session 243 decision](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414#issuecomment-5432013543).
 
 ### session244-paired-screen-replay, revision 1
 
-Status: published and restored from GitHub in a fresh verifier clone on 2026-10-07. This retains
-the historical borrowed untargeted-interceptor screen's original `uninterpretable` verdict.
-The candidate was reverted. Four sentinels exceeded the fixed 3% band; the target's apparent
-gain does not establish a causal performance improvement.
+Status: published and restored from GitHub in a fresh verifier clone on 2026-10-07. This retains the historical borrowed untargeted-interceptor screen's original `uninterpretable`
+verdict. The candidate was reverted. Four sentinels exceeded the fixed 3% band; the target's apparent gain does not establish a causal performance improvement.
 
 | Identity                        | Value                                                                                                                                                                                                           |
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -747,31 +593,24 @@ gain does not establish a causal performance improvement.
 | Bundle digest                   | `c061da941ae6e9a18769f988dcd7a9f7c7add74add021a93138f0638228d184d`                                                                                                                                              |
 | Verifier and release tag commit | `f90dca2f2e1b388ce2946a92248f6643433a9955`                                                                                                                                                                      |
 
-The declaration and all three raw-cycle summaries match the original committed declaration and
-retained artifact ZIPs. The reducer reproduces the original verdict exactly, including the
-`GlobalToOne`, `GlobalToMany`, `PostProcess`, and `StructNoBox` sentinel failures. Candidate one
-uploaded its measurements before a failed post-upload license-cleanup gate; the later retained
-arms passed cleanup. That failed outcome remains explicit in the retention provenance.
+The declaration and all three raw-cycle summaries match the original committed declaration and retained artifact ZIPs. The reducer reproduces the original verdict exactly,
+including the `GlobalToOne`, `GlobalToMany`, `PostProcess`, and `StructNoBox` sentinel failures. Candidate one uploaded its measurements before a failed post-upload license-cleanup
+gate; the later retained arms passed cleanup. That failed outcome remains explicit in the retention provenance.
 
-The complete draft inventory was downloaded and verified before publication. Published metadata
-reported `draft: false`, `prerelease: true`, and `immutable: true`; the tag resolves to the verifier
-commit. A fresh remote clone with `npm ci --ignore-scripts` verified the separately downloaded
-published archive, exact file inventory and hashes, and all three source trees and candidate-source
-digests fetched from GitHub. Both `verify` and `replay` exited zero; the verifier stayed clean.
-The actual required asset returned HTTP 401 in an isolated invalid-credential context, with no
-archive or fallback; that context's experiment remained incomplete.
+The complete draft inventory was downloaded and verified before publication. Published metadata reported `draft: false`, `prerelease: true`, and `immutable: true`; the tag resolves
+to the verifier commit. A fresh remote clone with `npm ci --ignore-scripts` verified the separately downloaded published archive, exact file inventory and hashes, and all three
+source trees and candidate-source digests fetched from GitHub. Both `verify` and `replay` exited zero; the verifier stayed clean. The actual required asset returned HTTP 401 in an
+isolated invalid-credential context, with no archive or fallback; that context's experiment remained incomplete.
 
-This is legacy-screen retention. The reviewed text bundle excludes the locally retained original
-ZIPs, native binaries, symbol maps, codegen, and full job logs. It does not establish calibrated
-independent-build confirmation, native-cost attribution, allocation behavior, or production
-acceptance. The original decision is recorded in [the session 244 result](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414#issuecomment-5434491863).
+This is legacy-screen retention. The reviewed text bundle excludes the locally retained original ZIPs, native binaries, symbol maps, codegen, and full job logs. It does not
+establish calibrated independent-build confirmation, native-cost attribution, allocation behavior, or production acceptance. The original decision is recorded in
+[the session 244 result](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414#issuecomment-5434491863).
 
 ### editor-settings-cache-613-6000.4.6f1, revision 1
 
-Status: published and restored from GitHub in a fresh verifier clone on 2026-10-07. This retains
-the #613 native Unity 6000.4.6f1 Editor characterization, its stopped baseline, adaptive descriptive
-followup, native test/control results, and source/fixture restoration observations. It is not
-supported-version matrix, player performance, allocation-recorder, leak, or OOM-cause evidence.
+Status: published and restored from GitHub in a fresh verifier clone on 2026-10-07. This retains the #613 native Unity 6000.4.6f1 Editor characterization, its stopped baseline,
+adaptive descriptive followup, native test/control results, and source/fixture restoration observations. It is not supported-version matrix, player performance,
+allocation-recorder, leak, or OOM-cause evidence.
 
 | Identity                | Value                                                                                                                                                                                                                 |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -794,22 +633,17 @@ supported-version matrix, player performance, allocation-recorder, leak, or OOM-
 | Denied access           | Actual required asset `619463560` returned HTTP 401 and retrieval exit 1 with isolated invalid authentication; no fallback; experiment remained incomplete in that context                                            |
 | Verifier CI             | [Historical 17-job success recorded at the verifier commit](https://github.com/Ambiguous-Interactive/DxMessaging/issues/613#issuecomment-6044423075); run `37666819976` page is unavailable                           |
 
-The full ordinary Editor suite passed 975 leaves, including all 13 imported sample quality cases.
-The postprocessor negative control retains three expected failures; candidate import tests passed.
-The original 64-call legacy phase stopped at 3,931.2884 ms before any paired B phase. The separately
-preregistered 8-call followup retains all four ABBA/BAAB blocks: 64 legacy searches, 64 cached calls
-and zero cached searches. Signed working-set and live-memory changes remain in the normalized
-result. No speedup ratio or confirmatory interval is reported. Original samples, package sources
-and the clean saved scene were restored. Supported shipping Editor/player gates and maintainer
-review remain pending; this publication does not close #613.
+The full ordinary Editor suite passed 975 leaves, including all 13 imported sample quality cases. The postprocessor negative control retains three expected failures; candidate
+import tests passed. The original 64-call legacy phase stopped at 3,931.2884 ms before any paired B phase. The separately preregistered 8-call followup retains all four ABBA/BAAB
+blocks: 64 legacy searches, 64 cached calls and zero cached searches. Signed working-set and live-memory changes remain in the normalized result. No speedup ratio or confirmatory
+interval is reported. Original samples, package sources and the clean saved scene were restored. Supported shipping Editor/player gates and maintainer review remain pending; this
+publication does not close #613.
 
 ### native-lifecycle-replay-failure, revision 1
 
-Status: published and restored from GitHub in a fresh verifier clone on 2026-09-13. This is a
-deterministic Unity 6000.4.6f1 PlayMode Mono differential-oracle observation. It retains the seed,
-original and minimized operations, and control and faulty-adapter traces for a skipped host
-destruction across all three message kinds. It is behavioral oracle evidence, not a performance
-claim.
+Status: published and restored from GitHub in a fresh verifier clone on 2026-09-13. This is a deterministic Unity 6000.4.6f1 PlayMode Mono differential-oracle observation. It
+retains the seed, original and minimized operations, and control and faulty-adapter traces for a skipped host destruction across all three message kinds. It is behavioral oracle
+evidence, not a performance claim.
 
 | Identity                        | Value                                                                                                                                                                                                         |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -825,23 +659,19 @@ claim.
 | Verifier and release tag commit | `bef2f36bdf79a92959c09390a5084c724cf4cf43`                                                                                                                                                                    |
 | Reducer                         | `differential-replay-failure-v1`                                                                                                                                                                              |
 
-The draft contained exactly one asset. Its downloaded bytes matched the archive hash before
-publication. Published metadata reported `draft: false`, `prerelease: true`, and
+The draft contained exactly one asset. Its downloaded bytes matched the archive hash before publication. Published metadata reported `draft: false`, `prerelease: true`, and
 `immutable: true`; the tag resolves to the verifier commit.
 
-The restore used a new remote clone at the verifier commit and a fresh pinned dependency install.
-The archive was downloaded anonymously. Its eight entries were relative regular files with
-normalized ownership and no links. Archive and manifest hashes matched this index. `verify`
-accepted all seven declared files, and `replay` reproduced the three normalized message-kind
-cases. The verifier worktree stayed clean. A denied-access request for actual asset `561869392`
-with invalid credentials returned HTTP 401, so failed required retrieval remains incomplete.
+The restore used a new remote clone at the verifier commit and a fresh pinned dependency install. The archive was downloaded anonymously. Its eight entries were relative regular
+files with normalized ownership and no links. Archive and manifest hashes matched this index. `verify` accepted all seven declared files, and `replay` reproduced the three
+normalized message-kind cases. The verifier worktree stayed clean. A denied-access request for actual asset `561869392` with invalid credentials returned HTTP 401, so failed
+required retrieval remains incomplete.
 
 ### shipping-fidelity-matrix-6000.5.2f1, revision 1
 
-Status: published and restored from GitHub in a fresh verifier clone on 2026-09-11. This is a
-20-cell Unity 6000.5.2f1 shipping-fidelity characterization across Minimal, Low, Medium, and High
-stripping. It retains text evidence for five message-shape and cardinality topologies per level.
-It does not retain player binaries or establish confirmatory performance.
+Status: published and restored from GitHub in a fresh verifier clone on 2026-09-11. This is a 20-cell Unity 6000.5.2f1 shipping-fidelity characterization across Minimal, Low,
+Medium, and High stripping. It retains text evidence for five message-shape and cardinality topologies per level. It does not retain player binaries or establish confirmatory
+performance.
 
 | Identity                        | Value                                                                                                                                                                                                                  |
 | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -857,23 +687,18 @@ It does not retain player binaries or establish confirmatory performance.
 | Verifier and release tag commit | `1590dd334982cd832e65401138b5bd11904d520b`                                                                                                                                                                             |
 | Reducer                         | `shipping-fidelity-matrix-v1`                                                                                                                                                                                          |
 
-The draft contained exactly one asset. Its downloaded bytes matched the archive hash before
-publication. Published metadata reported `draft: false`, `prerelease: true`, and `immutable: true`;
-the tag resolves to the verifier commit.
+The draft contained exactly one asset. Its downloaded bytes matched the archive hash before publication. Published metadata reported `draft: false`, `prerelease: true`, and
+`immutable: true`; the tag resolves to the verifier commit.
 
-The restore used a new remote clone at the verifier commit and a fresh pinned dependency install.
-The archive was downloaded anonymously. Its 43 entries contained only relative regular files and
-directories with normalized ownership and no links. Archive and manifest hashes matched this
-index. `verify` accepted all 21 declared files, and `replay` reproduced all 20 normalized cells.
-The verifier worktree stayed clean.
+The restore used a new remote clone at the verifier commit and a fresh pinned dependency install. The archive was downloaded anonymously. Its 43 entries contained only relative
+regular files and directories with normalized ownership and no links. Archive and manifest hashes matched this index. `verify` accepted all 21 declared files, and `replay`
+reproduced all 20 normalized cells. The verifier worktree stayed clean.
 
 ### shipping-fidelity-matrix-2021.3.45f1, revision 1
 
-Status: published and restored from GitHub in a fresh verifier clone on 2026-09-14. This is the
-20-cell Unity 2021.3.45f1 endpoint characterization at the PR #591 merge revision. It covers
-Minimal, Low, Medium, and High stripping with five message-shape and cardinality topologies per
-level. It retains the reviewed text build and result evidence, not player binaries or confirmatory
-performance.
+Status: published and restored from GitHub in a fresh verifier clone on 2026-09-14. This is the 20-cell Unity 2021.3.45f1 endpoint characterization at the PR #591 merge revision.
+It covers Minimal, Low, Medium, and High stripping with five message-shape and cardinality topologies per level. It retains the reviewed text build and result evidence, not player
+binaries or confirmatory performance.
 
 | Identity                        | Value                                                                                                                                                                                                                                 |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -889,27 +714,22 @@ performance.
 | Verifier and release tag commit | `eadc9b8a427a2a44922c4fa49653bb0ae3abb497`                                                                                                                                                                                            |
 | Reducer                         | `shipping-fidelity-matrix-v1`                                                                                                                                                                                                         |
 
-The draft contained exactly one asset. Its downloaded bytes matched the archive hash before
-publication. Published metadata reported `draft: false`, `prerelease: true`, and `immutable: true`;
-the tag resolves to the verifier commit.
+The draft contained exactly one asset. Its downloaded bytes matched the archive hash before publication. Published metadata reported `draft: false`, `prerelease: true`, and
+`immutable: true`; the tag resolves to the verifier commit.
 
-The restore used a new remote clone at the verifier commit and a fresh pinned dependency install.
-The archive was downloaded anonymously. Its 542 files were relative regular entries with
-normalized ownership and no links or special files. Archive and manifest hashes matched this
-index. `verify` accepted all 541 declared files, and `replay` reproduced all 20 normalized cells.
-The verifier worktree stayed clean. A denied-access request for actual asset `562702894` with
-invalid credentials returned HTTP 401, produced no file, and did not use a cached fallback.
+The restore used a new remote clone at the verifier commit and a fresh pinned dependency install. The archive was downloaded anonymously. Its 542 files were relative regular
+entries with normalized ownership and no links or special files. Archive and manifest hashes matched this index. `verify` accepted all 541 declared files, and `replay` reproduced
+all 20 normalized cells. The verifier worktree stayed clean. A denied-access request for actual asset `562702894` with invalid credentials returned HTTP 401, produced no file, and
+did not use a cached fallback.
 
 ### shipping-fidelity-matrix-2021.3.45f1, revision 2
 
-Status: **restore incomplete.** The immutable tag and this entry identify revision `2`, but the
-sealed manifest identifies revision `1`. Its manifest bytes differ from the earlier revision `1`
-entry. The archive and manifest hashes below match the downloaded bytes. Keep this archive for
-historical review and exclude it from restore acceptance. See [#732](https://github.com/Ambiguous-Interactive/DxMessaging/issues/732).
+Status: **restore incomplete.** The immutable tag and this entry identify revision `2`, but the sealed manifest identifies revision `1`. Its manifest bytes differ from the earlier
+revision `1` entry. The archive and manifest hashes below match the downloaded bytes. Keep this archive for historical review and exclude it from restore acceptance. See
+[#732](https://github.com/Ambiguous-Interactive/DxMessaging/issues/732).
 
-The 2026-09-14 verification and replay below concern the exact PR #593 merge endpoint after the
-clean-predecessor snapshot correction. All 20 clean shipping cells and the separately bound
-High-semantic incremental build completed. Those observations do not resolve the revision mismatch.
+The 2026-09-14 verification and replay below concern the exact PR #593 merge endpoint after the clean-predecessor snapshot correction. All 20 clean shipping cells and the
+separately bound High-semantic incremental build completed. Those observations do not resolve the revision mismatch.
 
 | Identity                        | Value                                                                                                                                                                                                                                                |
 | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -925,23 +745,18 @@ High-semantic incremental build completed. Those observations do not resolve the
 | Verifier and release tag commit | `b6ce2f59f9c3e2115708226d51d7586c3e8846d1`                                                                                                                                                                                                           |
 | Reducer                         | `shipping-fidelity-matrix-v1`                                                                                                                                                                                                                        |
 
-The draft contained exactly one asset. Its downloaded bytes matched the archive hash before
-publication. Published metadata reported `draft: false`, `prerelease: true`, and `immutable: true`;
-the tag resolves to the verifier commit.
+The draft contained exactly one asset. Its downloaded bytes matched the archive hash before publication. Published metadata reported `draft: false`, `prerelease: true`, and
+`immutable: true`; the tag resolves to the verifier commit.
 
-The restore used a new remote clone at the verifier commit and a fresh pinned dependency install.
-The archive was downloaded anonymously. Its 555 files were relative regular entries with
-normalized ownership and no links or special files. Archive and manifest hashes matched this
-index. `verify` accepted all 554 declared files, and `replay` reproduced all 20 normalized cells.
-The verifier worktree stayed clean. A denied-access request for actual asset `564376681` with
-invalid credentials returned HTTP 401, produced no file, and did not use a cached fallback.
+The restore used a new remote clone at the verifier commit and a fresh pinned dependency install. The archive was downloaded anonymously. Its 555 files were relative regular
+entries with normalized ownership and no links or special files. Archive and manifest hashes matched this index. `verify` accepted all 554 declared files, and `replay` reproduced
+all 20 normalized cells. The verifier worktree stayed clean. A denied-access request for actual asset `564376681` with invalid credentials returned HTTP 401, produced no file, and
+did not use a cached fallback.
 
 ### shipping-fidelity-matrix-6000.5.2f1, revision 2
 
-Status: published and restored from GitHub in a fresh verifier clone on 2026-09-14. This revision
-retains the exact PR #591 merge endpoint after the repeated-scalar redaction fix. All 20 shipping
-cells completed, and artifact redaction finished inside its unchanged two-minute gate. Revision 1
-remains immutable and available above.
+Status: published and restored from GitHub in a fresh verifier clone on 2026-09-14. This revision retains the exact PR #591 merge endpoint after the repeated-scalar redaction fix.
+All 20 shipping cells completed, and artifact redaction finished inside its unchanged two-minute gate. Revision 1 remains immutable and available above.
 
 | Identity                        | Value                                                                                                                                                                                                                               |
 | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -957,27 +772,21 @@ remains immutable and available above.
 | Verifier and release tag commit | `eadc9b8a427a2a44922c4fa49653bb0ae3abb497`                                                                                                                                                                                          |
 | Reducer                         | `shipping-fidelity-matrix-v1`                                                                                                                                                                                                       |
 
-The draft contained exactly one asset. Its downloaded bytes matched the archive hash before
-publication. Published metadata reported `draft: false`, `prerelease: true`, and `immutable: true`;
-the tag resolves to the verifier commit.
+The draft contained exactly one asset. Its downloaded bytes matched the archive hash before publication. Published metadata reported `draft: false`, `prerelease: true`, and
+`immutable: true`; the tag resolves to the verifier commit.
 
-The same new verifier clone downloaded this archive anonymously. Its 582 files were relative
-regular entries with normalized ownership and no links or special files. Archive and manifest
-hashes matched this index. `verify` accepted all 581 declared files, and `replay` reproduced all 20
-normalized cells. The verifier worktree stayed clean. A denied-access request for actual asset
-`562703727` with invalid credentials returned HTTP 401, produced no file, and did not use a cached
-fallback.
+The same new verifier clone downloaded this archive anonymously. Its 582 files were relative regular entries with normalized ownership and no links or special files. Archive and
+manifest hashes matched this index. `verify` accepted all 581 declared files, and `replay` reproduced all 20 normalized cells. The verifier worktree stayed clean. A denied-access
+request for actual asset `562703727` with invalid credentials returned HTTP 401, produced no file, and did not use a cached fallback.
 
 ### shipping-fidelity-matrix-6000.5.2f1, revision 3
 
-Status: **restore incomplete.** The immutable tag and this entry identify revision `3`, but the
-sealed manifest identifies revision `1`. Its manifest bytes differ from the earlier revision `1`
-entry. The archive and manifest hashes below match the downloaded bytes. Keep this archive for
-historical review and exclude it from restore acceptance. See [#732](https://github.com/Ambiguous-Interactive/DxMessaging/issues/732).
+Status: **restore incomplete.** The immutable tag and this entry identify revision `3`, but the sealed manifest identifies revision `1`. Its manifest bytes differ from the earlier
+revision `1` entry. The archive and manifest hashes below match the downloaded bytes. Keep this archive for historical review and exclude it from restore acceptance. See
+[#732](https://github.com/Ambiguous-Interactive/DxMessaging/issues/732).
 
-The 2026-09-14 verification and replay below concern the exact PR #593 merge endpoint after the
-clean-predecessor snapshot correction. All 20 clean shipping cells and the separately bound
-High-semantic incremental build completed. Those observations do not resolve the revision mismatch.
+The 2026-09-14 verification and replay below concern the exact PR #593 merge endpoint after the clean-predecessor snapshot correction. All 20 clean shipping cells and the
+separately bound High-semantic incremental build completed. Those observations do not resolve the revision mismatch.
 
 | Identity                        | Value                                                                                                                                                                                                                                              |
 | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -993,29 +802,22 @@ High-semantic incremental build completed. Those observations do not resolve the
 | Verifier and release tag commit | `b6ce2f59f9c3e2115708226d51d7586c3e8846d1`                                                                                                                                                                                                         |
 | Reducer                         | `shipping-fidelity-matrix-v1`                                                                                                                                                                                                                      |
 
-The draft contained exactly one asset. Its downloaded bytes matched the archive hash before
-publication. Published metadata reported `draft: false`, `prerelease: true`, and `immutable: true`;
-the tag resolves to the verifier commit.
+The draft contained exactly one asset. Its downloaded bytes matched the archive hash before publication. Published metadata reported `draft: false`, `prerelease: true`, and
+`immutable: true`; the tag resolves to the verifier commit.
 
-The restore used a new remote clone at the verifier commit and a fresh pinned dependency install.
-The archive was downloaded anonymously. Its 596 files were relative regular entries with
-normalized ownership and no links or special files. Archive and manifest hashes matched this
-index. `verify` accepted all 595 declared files, and `replay` reproduced all 20 normalized cells.
-The verifier worktree stayed clean. A denied-access request for actual asset `564455344` with
-invalid credentials returned HTTP 401, produced no file, and did not use a cached fallback.
+The restore used a new remote clone at the verifier commit and a fresh pinned dependency install. The archive was downloaded anonymously. Its 596 files were relative regular
+entries with normalized ownership and no links or special files. Archive and manifest hashes matched this index. `verify` accepted all 595 declared files, and `replay` reproduced
+all 20 normalized cells. The verifier worktree stayed clean. A denied-access request for actual asset `564455344` with invalid credentials returned HTTP 401, produced no file, and
+did not use a cached fallback.
 
-The endpoint jobs also retained native player payloads as expiring workflow artifacts. A
-values-suppressed scan found credential or network-identifier pattern classes in every binary.
-Those native bytes remain excluded from immutable publication unless the format-aware
-investigation in issue #508 can prove every finding safe. The text bundles do not establish native
-payload retention.
+The endpoint jobs also retained native player payloads as expiring workflow artifacts. A values-suppressed scan found credential or network-identifier pattern classes in every
+binary. Those native bytes remain excluded from immutable publication unless the format-aware investigation in issue #508 can prove every finding safe. The text bundles do not
+establish native payload retention.
 
 ### session247-paired-screen-replay, revision 1
 
-Status: published and restored from GitHub in a fresh verifier clone on 2026-09-11. This historical
-Windows x64 Standalone IL2CPP Release screen retains three raw paired summaries and reproduces an
-`uninterpretable` decision because two sentinels exceed the 3% band. It is not a parity or
-performance-improvement claim.
+Status: published and restored from GitHub in a fresh verifier clone on 2026-09-11. This historical Windows x64 Standalone IL2CPP Release screen retains three raw paired summaries
+and reproduces an `uninterpretable` decision because two sentinels exceed the 3% band. It is not a parity or performance-improvement claim.
 
 | Identity                        | Value                                                                                                                                                                                                           |
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1031,21 +833,17 @@ performance-improvement claim.
 | Verifier and release tag commit | `1590dd334982cd832e65401138b5bd11904d520b`                                                                                                                                                                      |
 | Reducer                         | `paired-throughput-screen-v1`                                                                                                                                                                                   |
 
-The draft contained exactly one asset. Its downloaded bytes matched the archive hash before
-publication. Published metadata reported `draft: false`, `prerelease: true`, and `immutable: true`;
-the tag resolves to the verifier commit.
+The draft contained exactly one asset. Its downloaded bytes matched the archive hash before publication. Published metadata reported `draft: false`, `prerelease: true`, and
+`immutable: true`; the tag resolves to the verifier commit.
 
-The restore used the same new remote verifier clone as the shipping-fidelity entry and downloaded
-this archive anonymously. Its six entries contained only relative regular files and one directory,
-with normalized ownership and no links. Archive and manifest hashes matched this index. `verify`
-accepted all four declared files, and `replay` reproduced the sealed `uninterpretable` result. The
-verifier worktree stayed clean.
+The restore used the same new remote verifier clone as the shipping-fidelity entry and downloaded this archive anonymously. Its six entries contained only relative regular files
+and one directory, with normalized ownership and no links. Archive and manifest hashes matched this index. `verify` accepted all four declared files, and `replay` reproduced the
+sealed `uninterpretable` result. The verifier worktree stayed clean.
 
 ### session271-subunsub-measured, revision 1
 
-Status: published and restored from GitHub in a fresh verifier clone on 2026-09-10. This is a
-historical Editor PlayMode Mono x64 Debug observation on Unity 6000.4.6f1. It does not establish
-per-operation allocation cost, campaign acceptance, MessagePipe parity, or an IL2CPP headline.
+Status: published and restored from GitHub in a fresh verifier clone on 2026-09-10. This is a historical Editor PlayMode Mono x64 Debug observation on Unity 6000.4.6f1. It does not
+establish per-operation allocation cost, campaign acceptance, MessagePipe parity, or an IL2CPP headline.
 
 | Identity                        | Value                                                                                                                                                                                                  |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -1061,30 +859,22 @@ per-operation allocation cost, campaign acceptance, MessagePipe parity, or an IL
 | Verifier and release tag commit | `c2065e63e1d4605874dff0f7971df9f3371c6e99`                                                                                                                                                             |
 | Reducer                         | `allocation-subunsub-observations-v1`                                                                                                                                                                  |
 
-The draft contained exactly one asset. Its downloaded bytes matched the archive hash before
-publication. Published metadata reported `draft: false`, `prerelease: true`, and `immutable: true`;
-the tag resolved to the verifier commit. No asset was replaced.
+The draft contained exactly one asset. Its downloaded bytes matched the archive hash before publication. Published metadata reported `draft: false`, `prerelease: true`, and
+`immutable: true`; the tag resolved to the verifier commit. No asset was replaced.
 
-The restore used a new remote clone at the verifier commit, `npm ci --ignore-scripts`, and
-Node.js 24.20.0. Git status was empty before and after verification. The archive was downloaded
-anonymously from the indexed GitHub URL, not copied from the producing checkout or an artifact
-cache. Its three regular files had relative paths and normalized ownership, with no links.
-Archive and manifest hashes matched the index. Both `verify` and `replay` exited zero; replay
-reproduced the exact sealed normalized result.
+The restore used a new remote clone at the verifier commit, `npm ci --ignore-scripts`, and Node.js 24.20.0. Git status was empty before and after verification. The archive was
+downloaded anonymously from the indexed GitHub URL, not copied from the producing checkout or an artifact cache. Its three regular files had relative paths and normalized
+ownership, with no links. Archive and manifest hashes matched the index. Both `verify` and `replay` exited zero; replay reproduced the exact sealed normalized result.
 
-The denied-access drill requested actual asset `555789190` through GitHub's release-asset API in a
-separate temporary process with deliberately invalid credentials. GitHub returned HTTP 401 and
-`curl --fail` exited 22. No asset file existed, verification and replay were not attempted, and
-the experiment remained incomplete. The drill did not change the release, fabricate a missing
-asset URL, or use cached evidence as a fallback. This proves the operator procedure's refusal;
-there is no automated remote restore service implied by this result.
+The denied-access drill requested actual asset `555789190` through GitHub's release-asset API in a separate temporary process with deliberately invalid credentials. GitHub returned
+HTTP 401 and `curl --fail` exited 22. No asset file existed, verification and replay were not attempted, and the experiment remained incomplete. The drill did not change the
+release, fabricate a missing asset URL, or use cached evidence as a fallback. This proves the operator procedure's refusal; there is no automated remote restore service implied by
+this result.
 
 ### s336-open-loop-editor, revision 1
 
-Status: published and restored from GitHub in a fresh verifier clone on 2026-09-17. This is an
-Editor PlayMode Mono protocol screen on Unity 6000.4.6f1. Its 12 traces and one tail-control
-effect are descriptive; they do not establish an independent player session, IL2CPP confirmation,
-an interval estimate, or a performance promotion verdict.
+Status: published and restored from GitHub in a fresh verifier clone on 2026-09-17. This is an Editor PlayMode Mono protocol screen on Unity 6000.4.6f1. Its 12 traces and one
+tail-control effect are descriptive; they do not establish an independent player session, IL2CPP confirmation, an interval estimate, or a performance promotion verdict.
 
 | Identity                        | Value                                                                                                                                                                                  |
 | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1100,28 +890,21 @@ an interval estimate, or a performance promotion verdict.
 | Verifier and release tag commit | `79279da3d50e52a7e452e86f5ef515a873b69be3`                                                                                                                                             |
 | Reducer                         | `open-loop-editor-capture-v1`                                                                                                                                                          |
 
-The draft held exactly one asset. Its fresh download matched the archive hash, and the extracted
-manifest matched the index before publication. Published metadata reported `draft: false`,
-`prerelease: true`, and `immutable: true`; the tag resolves to the verifier commit.
+The draft held exactly one asset. Its fresh download matched the archive hash, and the extracted manifest matched the index before publication. Published metadata reported
+`draft: false`, `prerelease: true`, and `immutable: true`; the tag resolves to the verifier commit.
 
-An anonymous postpublication download into a new directory matched the indexed archive hash.
-The archive contained eight relative regular files plus the manifest and one directory entry,
-with normalized ownership and no links or special files. A new remote verifier clone checked out
-the exact commit with clean status, installed pinned dependencies with `npm ci --ignore-scripts`,
-and reproduced the indexed manifest hash. `verify` accepted all eight declared files and `replay`
-reproduced the sealed result; both exited zero, and the worktree stayed clean.
+An anonymous postpublication download into a new directory matched the indexed archive hash. The archive contained eight relative regular files plus the manifest and one directory
+entry, with normalized ownership and no links or special files. A new remote verifier clone checked out the exact commit with clean status, installed pinned dependencies with
+`npm ci --ignore-scripts`, and reproduced the indexed manifest hash. `verify` accepted all eight declared files and `replay` reproduced the sealed result; both exited zero, and the
+worktree stayed clean.
 
-The denied-access drill requested actual asset `570580334` through GitHub's release-asset API with
-deliberately invalid credentials. GitHub returned HTTP 401 and `curl --fail` exited 22. No asset
-file was produced, and verification and replay were not attempted. The inaccessible experiment
-remained incomplete without using a cached fallback.
+The denied-access drill requested actual asset `570580334` through GitHub's release-asset API with deliberately invalid credentials. GitHub returned HTTP 401 and `curl --fail`
+exited 22. No asset file was produced, and verification and replay were not attempted. The inaccessible experiment remained incomplete without using a cached fallback.
 
 ### s337-editor-clock-control, revision 1
 
-Status: published and restored from GitHub on 2026-09-17. This Unity 6000.4.6f1 Editor PlayMode
-Mono control retains raw timer-only and empty-callback timestamp pairs. At 10 MHz, 226/256 and
-239/256 pairs, respectively, measured zero ticks. This is a quantization observation, not an
-individual player p99 or IL2CPP precision claim.
+Status: published and restored from GitHub on 2026-09-17. This Unity 6000.4.6f1 Editor PlayMode Mono control retains raw timer-only and empty-callback timestamp pairs. At 10 MHz,
+226/256 and 239/256 pairs, respectively, measured zero ticks. This is a quantization observation, not an individual player p99 or IL2CPP precision claim.
 
 | Identity                        | Value                                                                                                                                                                        |
 | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1139,11 +922,9 @@ individual player p99 or IL2CPP precision claim.
 
 ### s338-editor-clock-batch-control, revision 1
 
-Status: published and restored from GitHub on 2026-09-17. This Unity 6000.4.6f1 Editor PlayMode
-Mono control retains 128 nonzero elapsed windows for 4,096 timestamp calls each. Summed elapsed
-time was 59,636 ticks at 10 MHz across 524,288 calls. The 11.374664306640625 ns aggregate per
-call includes loop, checksum, and window boundary work; it does not isolate Stopwatch cost or
-establish an individual player p99 or IL2CPP precision claim.
+Status: published and restored from GitHub on 2026-09-17. This Unity 6000.4.6f1 Editor PlayMode Mono control retains 128 nonzero elapsed windows for 4,096 timestamp calls each.
+Summed elapsed time was 59,636 ticks at 10 MHz across 524,288 calls. The 11.374664306640625 ns aggregate per call includes loop, checksum, and window boundary work; it does not
+isolate Stopwatch cost or establish an individual player p99 or IL2CPP precision claim.
 
 | Identity                        | Value                                                                                                                                                                              |
 | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1159,27 +940,18 @@ establish an individual player p99 or IL2CPP precision claim.
 | Verifier and release tag commit | `f22d7ab35c214a23b3332b5ffcb67a74b30a6252`                                                                                                                                         |
 | Reducer                         | `editor-latency-clock-capture-v1`                                                                                                                                                  |
 
-Each draft contained exactly its one named asset. Fresh draft downloads matched the archive and
-manifest hashes, and clean remote verifier clones with `npm ci --ignore-scripts` passed `verify`
-and `replay` before publication. The published releases each reported `draft: false`,
-`prerelease: true`, and `immutable: true`; both tags resolve to the verifier commit, and their
-asset API digests match the index. A separate fresh verifier clone restored both anonymous
-postpublication downloads with clean status and exact replay. Each archive has seven declared
-regular files, a manifest, and one directory entry; paths are relative, ownership and timestamps
-are normalized, and there are no links or special files. A denied-access request to each actual
-asset API ID with invalid credentials returned HTTP 401 and `curl --fail` exit 22, produced no
-file, and did not start verification or replay. Static CI run
-[35246207564](https://github.com/Ambiguous-Interactive/DxMessaging/actions/runs/35246207564)
-passed the reducer suites on Linux, macOS, and Windows at the verifier commit. This CI run tests
-the code on those operating systems; the independent archive restore was performed in a fresh
-Linux reviewer environment.
+Each draft contained exactly its one named asset. Fresh draft downloads matched the archive and manifest hashes, and clean remote verifier clones with `npm ci --ignore-scripts`
+passed `verify` and `replay` before publication. The published releases each reported `draft: false`, `prerelease: true`, and `immutable: true`; both tags resolve to the verifier
+commit, and their asset API digests match the index. A separate fresh verifier clone restored both anonymous postpublication downloads with clean status and exact replay. Each
+archive has seven declared regular files, a manifest, and one directory entry; paths are relative, ownership and timestamps are normalized, and there are no links or special files.
+A denied-access request to each actual asset API ID with invalid credentials returned HTTP 401 and `curl --fail` exit 22, produced no file, and did not start verification or
+replay. Static CI run [35246207564](https://github.com/Ambiguous-Interactive/DxMessaging/actions/runs/35246207564) passed the reducer suites on Linux, macOS, and Windows at the
+verifier commit. This CI run tests the code on those operating systems; the independent archive restore was performed in a fresh Linux reviewer environment.
 
 ### subunsub-observations-44979039839, revision 1
 
-Status: published and restored from GitHub on 2026-11-27. This is a descriptive Standalone
-IL2CPP x64 Release observation from performance run `44979039839`. It retains the complete player
-log and canonical comparison CSV; normalized output contains all eight SubUnsub library
-observations. Both allocation fields remain `-1`/unmeasured.
+Status: published and restored from GitHub on 2026-11-27. This is a descriptive Standalone IL2CPP x64 Release observation from performance run `44979039839`. It retains the
+complete player log and canonical comparison CSV; normalized output contains all eight SubUnsub library observations. Both allocation fields remain `-1`/unmeasured.
 
 | Identity                     | Value                                                                                                                                                                                                                         |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1202,18 +974,14 @@ observations. Both allocation fields remain `-1`/unmeasured.
 | Verifier result              | `verify=0`, `replay=0`; clean checkout before and after                                                                                                                                                                       |
 | Denied access                | Actual asset API with invalid credentials returned HTTP `401`; no file or fallback                                                                                                                                            |
 
-These are descriptive points from one player process. This partial observation class supplies no
-independent-build interval, causal speedup, semantic parity, zero-allocation proof, full
-native-correctness qualification, or native binary/PDB privacy acceptance. The source and verifier
-commits differ; their bundle/helper code and pinned dependencies match, while the unrelated
-repository policy guard differs.
+These are descriptive points from one player process. This partial observation class supplies no independent-build interval, causal speedup, semantic parity, zero-allocation proof,
+full native-correctness qualification, or native binary/PDB privacy acceptance. The source and verifier commits differ; their bundle/helper code and pinned dependencies match,
+while the unrelated repository policy guard differs.
 
 ### subunsub-observations-45317077173, revision 1
 
-Status: published and restored from GitHub on 2026-11-27. This is a descriptive Standalone
-IL2CPP x64 Release observation from performance run `45317077173`. It retains the complete player
-log and canonical comparison CSV; normalized output contains all eight SubUnsub library
-observations. Both allocation fields remain `-1`/unmeasured.
+Status: published and restored from GitHub on 2026-11-27. This is a descriptive Standalone IL2CPP x64 Release observation from performance run `45317077173`. It retains the
+complete player log and canonical comparison CSV; normalized output contains all eight SubUnsub library observations. Both allocation fields remain `-1`/unmeasured.
 
 | Identity                     | Value                                                                                                                                                                                                                         |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1236,18 +1004,14 @@ observations. Both allocation fields remain `-1`/unmeasured.
 | Verifier result              | `verify=0`, `replay=0`; clean checkout before and after                                                                                                                                                                       |
 | Denied access                | Actual asset API with invalid credentials returned HTTP `401`; no file or fallback                                                                                                                                            |
 
-These are descriptive points from one player process. This partial observation class supplies no
-independent-build interval, causal speedup, semantic parity, zero-allocation proof, full
-native-correctness qualification, or native binary/PDB privacy acceptance. The source and verifier
-commits differ; their bundle/helper code and pinned dependencies match, while the unrelated
-repository policy guard differs.
+These are descriptive points from one player process. This partial observation class supplies no independent-build interval, causal speedup, semantic parity, zero-allocation proof,
+full native-correctness qualification, or native binary/PDB privacy acceptance. The source and verifier commits differ; their bundle/helper code and pinned dependencies match,
+while the unrelated repository policy guard differs.
 
 ### subunsub-observations-45537567670, revision 1
 
-Status: published and restored from GitHub on 2026-11-27. This is a descriptive Standalone
-IL2CPP x64 Release observation from the current nightly run `45537567670`. It retains the complete
-player log and canonical comparison CSV; normalized output contains all eight SubUnsub library
-observations. Both allocation fields remain `-1`/unmeasured.
+Status: published and restored from GitHub on 2026-11-27. This is a descriptive Standalone IL2CPP x64 Release observation from the current nightly run `45537567670`. It retains the
+complete player log and canonical comparison CSV; normalized output contains all eight SubUnsub library observations. Both allocation fields remain `-1`/unmeasured.
 
 | Identity                     | Value                                                                                                                                                                                                                         |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1270,8 +1034,6 @@ observations. Both allocation fields remain `-1`/unmeasured.
 | Verifier result              | `verify=0`, `replay=0`; clean checkout before and after                                                                                                                                                                       |
 | Denied access                | Actual asset API with invalid credentials returned HTTP `401`; no file or fallback                                                                                                                                            |
 
-These are descriptive points from one player process. This partial observation class supplies no
-independent-build interval, causal speedup, semantic parity, zero-allocation proof, full
-native-correctness qualification, or native binary/PDB privacy acceptance. The source and verifier
-commits differ; their bundle/helper code and pinned dependencies match, while the unrelated
-repository policy guard differs.
+These are descriptive points from one player process. This partial observation class supplies no independent-build interval, causal speedup, semantic parity, zero-allocation proof,
+full native-correctness qualification, or native binary/PDB privacy acceptance. The source and verifier commits differ; their bundle/helper code and pinned dependencies match,
+while the unrelated repository policy guard differs.

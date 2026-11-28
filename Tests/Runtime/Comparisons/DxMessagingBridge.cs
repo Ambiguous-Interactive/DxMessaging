@@ -94,42 +94,25 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         {
             _scenario = scenario;
 #if DXM_PILOT_CONTROL
-            string vectorText = Environment.GetEnvironmentVariable(
-                "DXM_PILOT_CPU_WORK_BY_SCENARIO"
-            );
+            string vectorText = Environment.GetEnvironmentVariable("DXM_PILOT_CPU_WORK_BY_SCENARIO");
             string scalarText = Environment.GetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH");
             if (vectorText != null && scalarText != null)
             {
-                throw new InvalidOperationException(
-                    "Pilot scalar and per-scenario CPU work assignments are mutually exclusive."
-                );
+                throw new InvalidOperationException("Pilot scalar and per-scenario CPU work assignments are mutually exclusive.");
             }
             if (vectorText != null)
             {
                 string[] values = vectorText.Split(',');
                 if (values.Length != 5)
                 {
-                    throw new InvalidOperationException(
-                        "DXM_PILOT_CPU_WORK_BY_SCENARIO requires exactly five target values."
-                    );
+                    throw new InvalidOperationException("DXM_PILOT_CPU_WORK_BY_SCENARIO requires exactly five target values.");
                 }
                 int targetIndex = PilotTargetIndex(scenario);
                 for (int index = 0; index < values.Length; index++)
                 {
-                    if (
-                        !int.TryParse(
-                            values[index],
-                            NumberStyles.None,
-                            CultureInfo.InvariantCulture,
-                            out int value
-                        )
-                        || value < 0
-                        || 1000000 < value
-                    )
+                    if (!int.TryParse(values[index], NumberStyles.None, CultureInfo.InvariantCulture, out int value) || value < 0 || 1000000 < value)
                     {
-                        throw new InvalidOperationException(
-                            "DXM_PILOT_CPU_WORK_BY_SCENARIO values must be integers from 0 through 1000000."
-                        );
+                        throw new InvalidOperationException("DXM_PILOT_CPU_WORK_BY_SCENARIO values must be integers from 0 through 1000000.");
                     }
                     if (index == targetIndex)
                     {
@@ -140,23 +123,11 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             else
             {
                 string workText = scalarText ?? "0";
-                if (
-                    !int.TryParse(
-                        workText,
-                        NumberStyles.None,
-                        CultureInfo.InvariantCulture,
-                        out int workIterations
-                    )
-                    || workIterations < 0
-                    || 1000000 < workIterations
-                )
+                if (!int.TryParse(workText, NumberStyles.None, CultureInfo.InvariantCulture, out int workIterations) || workIterations < 0 || 1000000 < workIterations)
                 {
-                    throw new InvalidOperationException(
-                        "DXM_PILOT_CPU_WORK_PER_BATCH must be an integer from 0 through 1000000."
-                    );
+                    throw new InvalidOperationException("DXM_PILOT_CPU_WORK_PER_BATCH must be an integer from 0 through 1000000.");
                 }
-                _pilotCpuWorkIterationsPerBatch =
-                    0 <= PilotTargetIndex(scenario) ? workIterations : 0;
+                _pilotCpuWorkIterationsPerBatch = 0 <= PilotTargetIndex(scenario) ? workIterations : 0;
             }
 #endif
             _bus = new MessageBus { DiagnosticsMode = false };
@@ -202,10 +173,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 case ComparisonScenario.KeyedToOneOfMany:
                     for (int index = 0; index < ComparisonScenarios.KeyedListenerCount; index++)
                     {
-                        _ = _token.RegisterTargeted<SimpleTargetedMessage>(
-                            new InstanceId(KeyedTargetBase + index),
-                            HandleTargeted
-                        );
+                        _ = _token.RegisterTargeted<SimpleTargetedMessage>(new InstanceId(KeyedTargetBase + index), HandleTargeted);
                     }
                     _dispatchTarget = new InstanceId(KeyedTargetBase);
                     return;
@@ -220,24 +188,16 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                     }
                     return;
                 case ComparisonScenario.FilteredDispatch:
-                    _ = _token.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(
-                        AllowUntargeted
-                    );
+                    _ = _token.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(AllowUntargeted);
                     _ = _token.RegisterUntargeted<SimpleUntargetedMessage>(Handle);
                     return;
                 case ComparisonScenario.PostProcessingDispatch:
-                    _ = _token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
-                        PostProcess
-                    );
+                    _ = _token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(PostProcess);
                     _ = _token.RegisterUntargeted<SimpleUntargetedMessage>(Handle);
                     return;
                 case ComparisonScenario.InterceptedPostProcessingDispatch:
-                    _ = _token.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(
-                        AllowUntargeted
-                    );
-                    _ = _token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
-                        PostProcess
-                    );
+                    _ = _token.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(AllowUntargeted);
+                    _ = _token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(PostProcess);
                     _ = _token.RegisterUntargeted<SimpleUntargetedMessage>(Handle);
                     return;
                 case ComparisonScenario.SubscribeUnsubscribeChurn:
@@ -261,8 +221,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                     _bus.TargetedBroadcast(ref _dispatchTarget, ref _targeted);
                     return;
                 case ComparisonScenario.SubscribeUnsubscribeChurn:
-                    MessageRegistrationHandle handle =
-                        _token.RegisterUntargeted<SimpleUntargetedMessage>(_churnHandler);
+                    MessageRegistrationHandle handle = _token.RegisterUntargeted<SimpleUntargetedMessage>(_churnHandler);
                     _token.RemoveRegistration(handle);
                     _progress++;
                     return;
@@ -310,8 +269,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             _bus = null;
         }
 
-        internal string[] CaptureTopologyForContract() =>
-            DispatchThroughputBenchmarks.CaptureTopologyForContract(_bus, _tokens);
+        internal string[] CaptureTopologyForContract() => DispatchThroughputBenchmarks.CaptureTopologyForContract(_bus, _tokens);
 
         internal MessageBus BusForContract => _bus;
 

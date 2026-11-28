@@ -91,9 +91,7 @@ namespace DxMessaging.Tests.Runtime.Core
         public void IdentifierRejectsUnrelatedArguments(int value, int kind)
         {
             IComparable comparable = new InstanceId(value);
-            ArgumentException exception = Assert.Throws<ArgumentException>(() =>
-                comparable.CompareTo(Unrelated(kind))
-            );
+            ArgumentException exception = Assert.Throws<ArgumentException>(() => comparable.CompareTo(Unrelated(kind)));
             Assert.That(exception.ParamName, Is.EqualTo("rhs"));
         }
 
@@ -101,10 +99,7 @@ namespace DxMessaging.Tests.Runtime.Core
         public void HandleBoxedOrderingAgreesWithTypedOrder(int left, int right)
         {
             int expected = Math.Sign(Handles[left].CompareTo(Handles[right]));
-            Assert.That(
-                Math.Sign(((IComparable)Handles[left]).CompareTo(Handles[right])),
-                Is.EqualTo(expected)
-            );
+            Assert.That(Math.Sign(((IComparable)Handles[left]).CompareTo(Handles[right])), Is.EqualTo(expected));
         }
 
         [TestCase(0)]
@@ -119,9 +114,7 @@ namespace DxMessaging.Tests.Runtime.Core
         public void HandleRejectsUnrelatedArguments(int index, int kind)
         {
             IComparable comparable = Handles[index];
-            ArgumentException exception = Assert.Throws<ArgumentException>(() =>
-                comparable.CompareTo(Unrelated(kind))
-            );
+            ArgumentException exception = Assert.Throws<ArgumentException>(() => comparable.CompareTo(Unrelated(kind)));
             Assert.That(exception.ParamName, Is.EqualTo("obj"));
         }
 
@@ -153,9 +146,7 @@ namespace DxMessaging.Tests.Runtime.Core
         public void HandlerRejectsUnrelatedArguments(int value, int kind)
         {
             IComparable comparable = new MessageHandler(new InstanceId(value));
-            ArgumentException exception = Assert.Throws<ArgumentException>(() =>
-                comparable.CompareTo(Unrelated(kind))
-            );
+            ArgumentException exception = Assert.Throws<ArgumentException>(() => comparable.CompareTo(Unrelated(kind)));
             Assert.That(exception.ParamName, Is.EqualTo("obj"));
         }
     }

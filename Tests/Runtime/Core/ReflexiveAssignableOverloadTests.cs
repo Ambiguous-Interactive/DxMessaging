@@ -29,9 +29,7 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 foreach (ReceiverShape shape in Enum.GetValues(typeof(ReceiverShape)))
                 {
-                    yield return new TestCaseData(isPublic, shape).SetName(
-                        $"ReflexiveAssignableOverload_public{isPublic}_{shape}"
-                    );
+                    yield return new TestCaseData(isPublic, shape).SetName($"ReflexiveAssignableOverload_public{isPublic}_{shape}");
                 }
             }
         }
@@ -44,8 +42,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [TestCaseSource(nameof(Cases))]
         public void AssignableConcreteReceiverMethodsDeliver(bool isPublic, ReceiverShape shape)
         {
-            DxMessagingRuntimeSettings settings =
-                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            DxMessagingRuntimeSettings settings = ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
             try
             {
                 settings._bufferMaxDistinctEntries = 4;
@@ -61,8 +58,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         bus.ResetState();
                         GameObject host = new("AssignableOverload" + cycle);
                         _spawned.Add(host);
-                        ReflexiveAssignableOverloadReceiver receiver =
-                            host.AddComponent<ReflexiveAssignableOverloadReceiver>();
+                        ReflexiveAssignableOverloadReceiver receiver = host.AddComponent<ReflexiveAssignableOverloadReceiver>();
                         Assert.That(host.GetComponents<MonoBehaviour>(), Has.Length.EqualTo(1));
                         List<string> deliveries = new();
                         bool validArguments = true;
@@ -84,12 +80,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         int secondDeliveries = deliveries.Count;
                         string secondTrace = string.Join(",", deliveries);
                         deliveries.Clear();
-                        ReflexiveMessage recovery = new(
-                            nameof(ReflexiveAssignableOverloadReceiver.ReceiveRecovery),
-                            ReflexiveSendMode.Flat,
-                            7,
-                            11
-                        );
+                        ReflexiveMessage recovery = new(nameof(ReflexiveAssignableOverloadReceiver.ReceiveRecovery), ReflexiveSendMode.Flat, 7, 11);
                         Exception recoveryError = EmitAndCapture(ref recovery, target, bus);
                         int recoveryCache = MessageBusInspection.ReflexiveMethodCacheCount(bus);
                         int expectedCache = 1;
@@ -108,8 +99,7 @@ namespace DxMessaging.Tests.Runtime.Core
                             && secondCache == expectedCache
                             && recoveryCache == expectedCache + 1
                             && deliveries.Count == 1
-                            && deliveries[0]
-                                == nameof(ReflexiveAssignableOverloadReceiver.ReceiveRecovery)
+                            && deliveries[0] == nameof(ReflexiveAssignableOverloadReceiver.ReceiveRecovery)
                             && MessageBus.GetResetGeneration(bus) == generation;
                         string observation =
                             $"public={isPublic}; shape={shape}; cycle={cycle}; firstDeliveries={firstDeliveries}; firstTrace={firstTrace}; secondDeliveries={secondDeliveries}; secondTrace={secondTrace}; firstCache={firstCache}; secondCache={secondCache}; recoveryCache={recoveryCache}; genericCalls={receiver.GenericCalls}; validArguments={validArguments}; recoveryDeliveries={deliveries.Count}; generationBefore={generation}; generationAfter={MessageBus.GetResetGeneration(bus)}; firstError={firstError?.GetType().FullName ?? "none"}; secondError={secondError?.GetType().FullName ?? "none"}; recoveryError={recoveryError?.GetType().FullName ?? "none"}; passed={passed}";
@@ -144,22 +134,14 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private static void AssertReceiverMetadata(
-            string method,
-            bool isPublic,
-            ReceiverShape shape
-        )
+        private static void AssertReceiverMetadata(string method, bool isPublic, ReceiverShape shape)
         {
             BindingFlags flags = BindingFlags.Instance | BindingFlags.DeclaredOnly;
             flags |= isPublic ? BindingFlags.Public : BindingFlags.NonPublic;
             int definitions = 0;
             int genericDefinitions = 0;
             int concreteDefinitions = 0;
-            foreach (
-                MethodInfo candidate in typeof(ReflexiveAssignableOverloadReceiver).GetMethods(
-                    flags
-                )
-            )
+            foreach (MethodInfo candidate in typeof(ReflexiveAssignableOverloadReceiver).GetMethods(flags))
             {
                 if (candidate.Name != method)
                 {
@@ -180,8 +162,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     ++concreteDefinitions;
                     Assert.That(candidate.ContainsGenericParameters, Is.False);
-                    Type expected =
-                        shape == ReceiverShape.Interface ? typeof(IConvertible) : typeof(object);
+                    Type expected = shape == ReceiverShape.Interface ? typeof(IConvertible) : typeof(object);
                     Assert.That(parameters[0].ParameterType, Is.EqualTo(expected));
                 }
             }
@@ -194,11 +175,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
-        private static Exception EmitAndCapture(
-            ref ReflexiveMessage message,
-            InstanceId target,
-            MessageBus bus
-        )
+        private static Exception EmitAndCapture(ref ReflexiveMessage message, InstanceId target, MessageBus bus)
         {
             try
             {
